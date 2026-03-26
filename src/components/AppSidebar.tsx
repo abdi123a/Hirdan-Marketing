@@ -37,7 +37,7 @@ export function AppSidebar() {
         <img src={hirdanLogo} alt="Hirdan" className={collapsed ? "h-6" : "h-8"} />
       </div>
       <SidebarContent>
-        <SidebarGroup defaultOpen>
+        <SidebarGroup>
           <SidebarGroupLabel className="text-sidebar-foreground/50 text-xs uppercase tracking-wider">
             Management
           </SidebarGroupLabel>
