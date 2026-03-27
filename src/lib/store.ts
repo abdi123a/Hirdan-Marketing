@@ -272,7 +272,7 @@ export const useAgencyStore = create<AgencyStore>()(
       services: [],
       leads: [],
       settings: {
-        agencyName: "Hirdan Marketing Management",
+        agencyName: "Hirdan Marketing",
         adminEmail: "contact@hirdanmarketing.com",
         phone: "+1 555-0101",
         website: "https://hirdanmarketing.com",

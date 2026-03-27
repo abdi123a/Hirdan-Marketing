@@ -296,7 +296,7 @@ const ComingSoon = () => {
           transition={{ duration: 0.8 }}
           className="mb-8"
         >
-          <img src={settings?.logo || hirdanLogo} alt={settings?.agencyName || "Hirdan Marketing Management"} className="h-14 md:h-16 drop-shadow-2xl" />
+          <img src={settings?.logo || hirdanLogo} alt={settings?.agencyName || "Hirdan Marketing"} className="h-14 md:h-16 drop-shadow-2xl" />
         </motion.div>
 
         <motion.div
@@ -307,7 +307,7 @@ const ComingSoon = () => {
         >
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 mb-6 backdrop-blur-sm">
             <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
-            <span className="text-sm font-medium text-primary-foreground/70 uppercase tracking-widest">A New Era of Marketing</span>
+            <span className="text-sm font-medium text-primary-foreground/70 uppercase tracking-widest">Premium Full-Service Agency</span>
           </div>
 
           <h1 className="text-5xl md:text-6xl font-display font-bold text-primary-foreground leading-tight mb-8">
@@ -316,7 +316,7 @@ const ComingSoon = () => {
           </h1>
 
           <p className="text-lg md:text-xl text-primary-foreground/60 max-w-2xl mx-auto mb-12 font-body font-light leading-relaxed">
-            We are hard at work crafting a premium digital experience for {settings?.agencyName || "our clients"}. Our agency is dedicated to delivering exceptional results through strategic innovation.
+            Our website is currently undergoing a transformation to better serve our partners. We continue to deliver exceptional results through strategic innovation for our current clients.
           </p>
 
           <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -326,14 +326,14 @@ const ComingSoon = () => {
                 size="lg"
                 className="px-8 py-5 rounded-lg group transition-all duration-300 hover:scale-105 active:scale-95 shadow-lg"
               >
-                Notify Me <Mail className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                Join Our Waiting List <Mail className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[400px] p-6 bg-card border-white/10 shadow-2xl rounded-xl">
               <DialogHeader className="mb-2">
-                <DialogTitle className="text-xl font-display font-bold text-foreground">Get Notified</DialogTitle>
+                <DialogTitle className="text-xl font-display font-bold text-foreground">Join Our Client List</DialogTitle>
                 <DialogDescription className="text-muted-foreground text-sm">
-                  Be the first to know when we launch and get exclusive updates.
+                  We are currently accepting a limited number of new partners. Join our waiting list to be notified when a slot opens.
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="flex flex-col gap-3 py-2">
@@ -358,7 +358,7 @@ const ComingSoon = () => {
                   {isLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin mr-2" />
                   ) : (
-                    <>Subscribe Now <Send className="ml-2 w-4 h-4 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" /></>
+                    <>Join Waiting List <Send className="ml-2 w-4 h-4 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" /></>
                   )}
                 </Button>
               </form>
@@ -373,7 +373,7 @@ const ComingSoon = () => {
           className="mt-24 flex flex-col items-center gap-4"
         >
           <span className="text-primary-foreground/40 text-sm font-light tracking-widest uppercase text-center px-4">
-            © 2026 {settings?.agencyName || "Hirdan Marketing Management"} • Developed by Hirdan Marketing
+            © 2026 {settings?.agencyName || "Hirdan Marketing"} • Developed by Hirdan Marketing
           </span>
           <a href={APP_URL} className="text-primary-foreground/20 hover:text-primary-foreground/40 text-xs transition-colors">
             Agency Access
