@@ -3,6 +3,22 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+
+const teamDtoSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  phone: z.string().optional().nullable(),
+  role: z.string().min(1),
+  department: z.string().optional().nullable(),
+  status: z.enum(['ACTIVE', 'OFFLINE', 'AWAY']).optional(),
+  avatar: z.string().optional().nullable(),
+  hourlyRate: z.number().int().optional().nullable(),
+  startDate: z.string().or(z.date()).optional().nullable(),
+  bio: z.string().optional().nullable(),
+});
+
 const router = Router();
 router.use(authenticate);
 router.use(requireAdmin);
@@ -43,7 +59,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/team ──────────────────────────────────────────────
 
-router.post('/', async (req: Request, res: Response, next) => {
+router.post('/', validate({ body: teamDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const member = await prisma.teamMember.create({ data: req.body });
     res.status(201).json({ member });
@@ -54,7 +70,7 @@ router.post('/', async (req: Request, res: Response, next) => {
 
 // ─── PUT /api/team/:id ────────────────────────────────────────────
 
-router.put('/:id', async (req: Request, res: Response, next) => {
+router.put('/:id', validate({ body: teamDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const member = await prisma.teamMember.update({
       where: { id: req.params.id as string },

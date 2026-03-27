@@ -23,11 +23,10 @@ interface AuthStore {
   user: AuthUser | null;
   isAuthenticated: boolean;
   token: string | null;
-  refreshToken: string | null;
 
   loginAdmin: (email: string, password: string) => Promise<boolean>;
   loginClient: (email: string, accessCode: string) => Promise<boolean>;
-  setTokens: (accessToken: string, refreshToken: string) => void;
+  setToken: (accessToken: string) => void;
   logout: () => void;
 }
 
@@ -39,16 +38,16 @@ export const useAuthStore = create<AuthStore>()(
       user: null,
       isAuthenticated: false,
       token: null,
-      refreshToken: null,
 
-      setTokens: (accessToken: string, refreshToken: string) => {
-        set({ token: accessToken, refreshToken });
+      setToken: (accessToken: string) => {
+        set({ token: accessToken });
       },
 
       loginAdmin: async (email: string, password: string) => {
         try {
           const res = await fetch(`${API_URL}/auth/login`, {
             method: 'POST',
+            credentials: 'include', // Needed for cookies
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password }),
           });
@@ -62,7 +61,6 @@ export const useAuthStore = create<AuthStore>()(
               },
               isAuthenticated: true,
               token: data.accessToken,
-              refreshToken: data.refreshToken,
             });
             return true;
           }
@@ -76,6 +74,7 @@ export const useAuthStore = create<AuthStore>()(
         try {
           const res = await fetch(`${API_URL}/auth/client-login`, {
             method: 'POST',
+            credentials: 'include', // Needed for cookies
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, accessCode }),
           });
@@ -91,7 +90,6 @@ export const useAuthStore = create<AuthStore>()(
               },
               isAuthenticated: true,
               token: data.accessToken,
-              refreshToken: data.refreshToken,
             });
             return true;
           }
@@ -106,12 +104,15 @@ export const useAuthStore = create<AuthStore>()(
           user: null,
           isAuthenticated: false,
           token: null,
-          refreshToken: null,
         });
       },
     }),
     {
       name: 'agency-auth-storage',
+      partialize: (state) => ({ 
+        user: state.user, 
+        isAuthenticated: state.isAuthenticated 
+      }), // Security fix: Don't persist tokens to localStorage
     }
   )
 );

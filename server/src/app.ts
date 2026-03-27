@@ -1,26 +1,41 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import routes from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { AppError } from './lib/errors.js';
 import { prisma } from './lib/prisma.js';
 
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+
 const app = express();
 
-// ─── Global Middleware ────────────────────────────────────────────
+// ─── Security & Global Middleware ─────────────────────────────────
+
+// Add security headers
+app.use(helmet());
+
+// Global API Rate Limiting (e.g. max 200 requests per 15 mins per IP)
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  message: { error: true, message: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', globalLimiter);
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow any origin in development for network testing
-    if (process.env.NODE_ENV === 'development' || !origin) {
+    const allowedOrigins = process.env.NODE_ENV === 'production'
+      ? [process.env.FRONTEND_URL || 'http://localhost:8080']
+      : ['http://localhost:8080', 'http://localhost:5173', 'http://127.0.0.1:5173'];
+
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      const allowed = process.env.FRONTEND_URL || 'http://localhost:8080';
-      if (origin === allowed) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
@@ -28,6 +43,7 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // ─── Health Check ─────────────────────────────────────────────────
 

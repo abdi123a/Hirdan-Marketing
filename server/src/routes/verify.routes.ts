@@ -79,7 +79,8 @@ router.post('/', authenticate, async (req: Request, res: Response, next) => {
     });
 
     if (existing) {
-      return res.json({ token: existing.token });
+      res.json({ token: existing.token });
+      return;
     }
 
     // Create new token

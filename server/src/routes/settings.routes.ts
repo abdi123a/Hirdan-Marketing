@@ -1,14 +1,18 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
+import jwt from 'jsonwebtoken';
+import { env } from '../config/env.js';
 
 const router = Router();
 
 // ─── GET /api/settings ───────────────────────────────────────────
 // Public endpoint for guest users to see agency branding
 
-router.get('/', async (_req: Request, res: Response, next) => {
+router.get('/', async (req: Request, res: Response, next) => {
   try {
     // Get the singleton settings row (there should only be one)
     let settings = await prisma.agencySettings.findFirst();
@@ -26,15 +30,44 @@ router.get('/', async (_req: Request, res: Response, next) => {
       });
     }
 
-    // Parse JSON fields for the response
-    res.json({
-      settings: {
-        ...settings,
-        paymentMethods: settings.paymentMethods ? JSON.parse(settings.paymentMethods) : [],
-        socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
-        notifications: settings.notifications ? JSON.parse(settings.notifications) : {},
-      },
-    });
+    // Determine if requester is an admin
+    let isAdmin = false;
+    try {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        const decoded = jwt.verify(token, env.JWT_SECRET) as any;
+        if (decoded.role === 'ADMIN') isAdmin = true;
+      }
+    } catch (e) {
+      // Ignore token errors; default to guest access
+    }
+
+    if (isAdmin) {
+      // Parse JSON fields for the full response
+      res.json({
+        settings: {
+          ...settings,
+          paymentMethods: settings.paymentMethods ? JSON.parse(settings.paymentMethods) : [],
+          socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
+          notifications: settings.notifications ? JSON.parse(settings.notifications) : {},
+        },
+      });
+    } else {
+      // Expose ONLY safe public fields for guest/client branding
+      res.json({
+        settings: {
+          agencyName: settings.agencyName,
+          currency: settings.currency,
+          timezone: settings.timezone,
+          logo: settings.logo,
+          whiteLogo: settings.whiteLogo,
+          favicon: settings.favicon,
+          primaryColor: settings.primaryColor,
+          socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
+        },
+      });
+    }
   } catch (error) {
     next(error);
   }
@@ -42,7 +75,26 @@ router.get('/', async (_req: Request, res: Response, next) => {
 
 // ─── PUT /api/settings ───────────────────────────────────────────
 
-router.put('/', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
+const settingsDtoSchema = z.object({
+  agencyName: z.string().optional(),
+  adminEmail: z.string().email().optional(),
+  phone: z.string().optional().nullable(),
+  website: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+  currency: z.string().optional(),
+  timezone: z.string().optional(),
+  logo: z.string().optional().nullable(),
+  whiteLogo: z.string().optional().nullable(),
+  favicon: z.string().optional().nullable(),
+  primaryColor: z.string().optional().nullable(),
+  taxRate: z.number().optional().nullable(),
+  defaultInvoiceNotes: z.string().optional().nullable(),
+  paymentMethods: z.any().optional(),   // JSON arrays stored as strings
+  socialLinks: z.any().optional(),      // JSON objects stored as strings
+  notifications: z.any().optional(),    // JSON objects stored as strings
+}).passthrough(); // Allowing passthrough for frontend component meta temporarily
+
+router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     let existing = await prisma.agencySettings.findFirst();
 

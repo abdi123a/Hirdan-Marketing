@@ -3,6 +3,17 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+
+const serviceDtoSchema = z.object({
+  name: z.string().min(1),
+  category: z.string().min(1),
+  basePrice: z.number().int().nonnegative(),
+  description: z.string().min(1),
+  status: z.enum(['AVAILABLE', 'UNAVAILABLE']).optional(),
+});
+
 const router = Router();
 router.use(authenticate);
 // Authentication is required for all routes, admin for modifications
@@ -40,7 +51,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/services ─────────────────────────────────────────
 
-router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
+router.post('/', requireAdmin, validate({ body: serviceDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const service = await prisma.service.create({ data: req.body });
     res.status(201).json({ service });
@@ -51,7 +62,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
 
 // ─── PUT /api/services/:id ──────────────────────────────────────
 
-router.put('/:id', requireAdmin, async (req: Request, res: Response, next) => {
+router.put('/:id', requireAdmin, validate({ body: serviceDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const service = await prisma.service.update({
       where: { id: req.params.id as string },

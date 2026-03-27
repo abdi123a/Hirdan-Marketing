@@ -1,8 +1,11 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -64,7 +67,22 @@ router.get('/:id', requireAdmin, async (req: Request, res: Response, next) => {
 
 // ─── POST /api/clients ───────────────────────────────────────────
 
-router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
+const clientDtoSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  phone: z.string().optional().nullable(),
+  company: z.string().min(1),
+  website: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+  city: z.string().optional().nullable(),
+  country: z.string().optional().nullable(),
+  industry: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  status: z.enum(['ACTIVE', 'PAUSED', 'CHURNED']).optional(),
+  initials: z.string().optional().nullable(),
+});
+
+router.post('/', requireAdmin, validate({ body: clientDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const client = await prisma.client.create({
       data: req.body,
@@ -77,7 +95,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
 
 // ─── PUT /api/clients/:id ─────────────────────────────────────────
 
-router.put('/:id', requireAdmin, async (req: Request, res: Response, next) => {
+router.put('/:id', requireAdmin, validate({ body: clientDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const id = req.params.id as string;
     const client = await prisma.client.update({
@@ -144,7 +162,7 @@ router.post('/:id/portal-access', requireAdmin, async (req: Request, res: Respon
 
     if (!client) throw AppError.notFound('Client not found');
 
-    const accessCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const accessCode = crypto.randomBytes(3).toString('hex').toUpperCase(); // 6 uppercase hex chars, CSPRNG
     const passwordHash = await bcrypt.hash(accessCode, 12);
 
     let user = client.user;

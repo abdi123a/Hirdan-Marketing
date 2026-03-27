@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
 
 const router = Router();
@@ -43,6 +45,12 @@ router.get('/:id', async (req: Request, res: Response, next) => {
     });
 
     if (!invoice) throw AppError.notFound('Invoice not found');
+
+    if (req.user!.role === 'CLIENT') {
+      const client = await prisma.client.findUnique({ where: { userId: req.user!.userId } });
+      if (!client || invoice.clientId !== client.id) throw AppError.forbidden('Access denied');
+    }
+
     res.json({ invoice });
   } catch (error) {
     next(error);
@@ -51,7 +59,29 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/invoices ──────────────────────────────────────────
 
-router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
+const invoiceItemSchema = z.object({
+  description: z.string().min(1),
+  quantity: z.number().int().positive(),
+  unitPrice: z.number().int().nonnegative(),
+});
+
+const invoiceDtoSchema = z.object({
+  invoiceNumber: z.string().min(1),
+  clientId: z.string().uuid(),
+  amount: z.number().int().nonnegative(),
+  status: z.enum(['PAID', 'PENDING', 'OVERDUE']).optional(),
+  date: z.string().or(z.date()),
+  dueDate: z.string().or(z.date()),
+  notes: z.string().optional().nullable(),
+  taxRate: z.number().optional().nullable(),
+  discount: z.number().optional().nullable(),
+  discountType: z.enum(['PERCENTAGE', 'FIXED']).optional().nullable(),
+  deposit: z.number().int().optional().nullable(),
+  paymentMethod: z.string().optional().nullable(),
+  items: z.array(invoiceItemSchema).optional(),
+});
+
+router.post('/', requireAdmin, validate({ body: invoiceDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const { items, ...invoiceData } = req.body;
     const invoice = await prisma.invoice.create({
@@ -69,7 +99,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
 
 // ─── PUT /api/invoices/:id ────────────────────────────────────────
 
-router.put('/:id', requireAdmin, async (req: Request, res: Response, next) => {
+router.put('/:id', requireAdmin, validate({ body: invoiceDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const { items, ...invoiceData } = req.body;
 

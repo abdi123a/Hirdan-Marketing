@@ -3,6 +3,17 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+
+const packageDtoSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().min(1),
+  price: z.number().int().nonnegative(),
+  features: z.string().optional().nullable(),
+  type: z.enum(['SERVICE', 'SUBSCRIPTION', 'ONE_TIME']).optional(),
+});
+
 const router = Router();
 router.use(authenticate);
 // Authentication is required for all routes, admin for modifications
@@ -45,7 +56,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/packages ─────────────────────────────────────────
 
-router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
+router.post('/', requireAdmin, validate({ body: packageDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const pkg = await prisma.package.create({ data: req.body });
     res.status(201).json({ package: pkg });
@@ -56,7 +67,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
 
 // ─── PUT /api/packages/:id ──────────────────────────────────────
 
-router.put('/:id', requireAdmin, async (req: Request, res: Response, next) => {
+router.put('/:id', requireAdmin, validate({ body: packageDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const pkg = await prisma.package.update({
       where: { id: req.params.id as string },

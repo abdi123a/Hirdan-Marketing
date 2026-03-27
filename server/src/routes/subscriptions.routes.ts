@@ -3,6 +3,22 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+
+const subscriptionDtoSchema = z.object({
+  clientId: z.string().uuid(),
+  packageId: z.string().uuid().optional().nullable(),
+  plan: z.string().min(1),
+  amount: z.number().int().nonnegative(),
+  billingCycle: z.enum(['MONTHLY', 'QUARTERLY', 'ANNUAL']).optional(),
+  started: z.string().or(z.date()),
+  renewal: z.string().or(z.date()).optional().nullable(),
+  status: z.enum(['ACTIVE', 'PAUSED', 'CANCELLED', 'TRIAL']).optional(),
+  features: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
 const router = Router();
 router.use(authenticate);
 // ─── GET /api/subscriptions ──────────────────────────────────────
@@ -40,6 +56,12 @@ router.get('/:id', async (req: Request, res: Response, next) => {
     });
 
     if (!subscription) throw AppError.notFound('Subscription not found');
+
+    if (req.user!.role === 'CLIENT') {
+      const client = await prisma.client.findUnique({ where: { userId: req.user!.userId } });
+      if (!client || subscription.clientId !== client.id) throw AppError.forbidden('Access denied');
+    }
+
     res.json({ subscription });
   } catch (error) {
     next(error);
@@ -48,7 +70,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/subscriptions ────────────────────────────────────
 
-router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
+router.post('/', requireAdmin, validate({ body: subscriptionDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const subscription = await prisma.subscription.create({ data: req.body });
     res.status(201).json({ subscription });
@@ -59,7 +81,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
 
 // ─── PUT /api/subscriptions/:id ─────────────────────────────────
 
-router.put('/:id', requireAdmin, async (req: Request, res: Response, next) => {
+router.put('/:id', requireAdmin, validate({ body: subscriptionDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const subscription = await prisma.subscription.update({
       where: { id: req.params.id as string },

@@ -15,26 +15,28 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   let response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     headers,
+    credentials: 'include', // Ensure cookies are sent (for refresh token)
   });
 
-  if (response.status === 401 && store.refreshToken && !endpoint.includes('/auth/refresh')) {
-    // Attempt to refresh token
+  if (response.status === 401 && store.isAuthenticated && !endpoint.includes('/auth/refresh')) {
+    // Attempt to refresh token using HttpOnly cookie
     try {
       const refreshRes = await fetch(`${API_URL}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: store.refreshToken }),
+        credentials: 'include',
       });
 
       if (refreshRes.ok) {
         const data = await refreshRes.json();
-        store.setTokens(data.accessToken, data.refreshToken);
+        store.setToken(data.accessToken);
         
         // Retry original request with new token
         headers['Authorization'] = `Bearer ${data.accessToken}`;
         response = await fetch(`${API_URL}${endpoint}`, {
           ...options,
           headers,
+          credentials: 'include',
         });
       } else {
         store.logout();

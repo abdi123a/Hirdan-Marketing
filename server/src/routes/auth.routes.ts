@@ -2,6 +2,8 @@ import { Router, type Request, type Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
+import rateLimit from 'express-rate-limit';
+
 import { prisma } from '../lib/prisma.js';
 import { env } from '../config/env.js';
 import { AppError } from '../lib/errors.js';
@@ -9,6 +11,16 @@ import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 
 const router = Router();
+
+// ─── Rate Limiter ───────────────────────────────────────────────
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 requests per windowMs
+  message: { error: true, message: 'Too many login attempts, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ─── Validation Schemas ───────────────────────────────────────────
 
@@ -46,10 +58,20 @@ function getRefreshTokenExpiry(): Date {
   return new Date(Date.now() + ms);
 }
 
+function setRefreshTokenCookie(res: Response, token: string) {
+  res.cookie('refreshToken', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax', // Protect against CSRF
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+}
+
 // ─── POST /api/auth/login ─────────────────────────────────────────
 
 router.post(
   '/login',
+  authLimiter,
   validate({ body: loginSchema }),
   async (req: Request, res: Response, next) => {
     try {
@@ -78,9 +100,11 @@ router.post(
         },
       });
 
+      setRefreshTokenCookie(res, refreshToken);
+
       res.json({
         accessToken,
-        refreshToken,
+        // refreshToken is now handled via cookie
         user: {
           id: user.id,
           email: user.email,
@@ -98,6 +122,7 @@ router.post(
 
 router.post(
   '/client-login',
+  authLimiter,
   validate({ body: clientLoginSchema }),
   async (req: Request, res: Response, next) => {
     try {
@@ -139,9 +164,11 @@ router.post(
         },
       });
 
+      setRefreshTokenCookie(res, refreshToken);
+
       res.json({
         accessToken,
-        refreshToken,
+        // refreshToken handled via cookie
         user: {
           id: matchedUser.id,
           email: matchedUser.email,
@@ -161,7 +188,7 @@ router.post(
 
 router.post('/refresh', async (req: Request, res: Response, next) => {
   try {
-    const { refreshToken } = req.body;
+    const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
     if (!refreshToken) {
       throw AppError.badRequest('Refresh token is required');
     }
@@ -200,9 +227,11 @@ router.post('/refresh', async (req: Request, res: Response, next) => {
       },
     });
 
+    setRefreshTokenCookie(res, newRefreshToken);
+
     res.json({
       accessToken: newAccessToken,
-      refreshToken: newRefreshToken,
+      // refreshToken handled via cookie
     });
   } catch (error) {
     next(error);
@@ -218,6 +247,7 @@ router.post('/logout', authenticate, async (req: Request, res: Response, next) =
       where: { userId: req.user!.userId },
     });
 
+    res.clearCookie('refreshToken');
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     next(error);

@@ -3,6 +3,26 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 
+import { z } from 'zod';
+import { validate } from '../middleware/validate.js';
+
+const proformaItemSchema = z.object({
+  description: z.string().min(1),
+  quantity: z.number().int().positive(),
+  unitPrice: z.number().int().nonnegative(),
+});
+
+const proformaDtoSchema = z.object({
+  proformaNumber: z.string().min(1),
+  clientId: z.string().uuid(),
+  amount: z.number().int().nonnegative(),
+  status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'EXPIRED']).optional(),
+  date: z.string().or(z.date()),
+  dueDate: z.string().or(z.date()),
+  notes: z.string().optional().nullable(),
+  items: z.array(proformaItemSchema).optional(),
+});
+
 const router = Router();
 router.use(authenticate);
 // ─── GET /api/proformas ───────────────────────────────────────────
@@ -40,6 +60,12 @@ router.get('/:id', async (req: Request, res: Response, next) => {
     });
 
     if (!proforma) throw AppError.notFound('Proforma not found');
+
+    if (req.user!.role === 'CLIENT') {
+      const client = await prisma.client.findUnique({ where: { userId: req.user!.userId } });
+      if (!client || proforma.clientId !== client.id) throw AppError.forbidden('Access denied');
+    }
+
     res.json({ proforma });
   } catch (error) {
     next(error);
@@ -48,7 +74,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/proformas ─────────────────────────────────────────
 
-router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
+router.post('/', requireAdmin, validate({ body: proformaDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const { items, ...proformaData } = req.body;
     const proforma = await prisma.proforma.create({
@@ -66,7 +92,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
 
 // ─── PUT /api/proformas/:id ──────────────────────────────────────
 
-router.put('/:id', requireAdmin, async (req: Request, res: Response, next) => {
+router.put('/:id', requireAdmin, validate({ body: proformaDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const { items, ...proformaData } = req.body;
     if (items) {
