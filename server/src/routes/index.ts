@@ -11,6 +11,7 @@ import servicesRoutes from './services.routes.js';
 import settingsRoutes from './settings.routes.js';
 import verifyRoutes from './verify.routes.js';
 import leadsRoutes from './leads.routes.js';
+import usersRoutes from './users.routes.js';
 
 const router = Router();
 
@@ -26,5 +27,6 @@ router.use('/services', servicesRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/verify', verifyRoutes);
 router.use('/leads', leadsRoutes);
+router.use('/users', usersRoutes);
 
 export default router;

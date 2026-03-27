@@ -164,6 +164,10 @@ router.post('/:id/portal-access', requireAdmin, async (req: Request, res: Respon
 
     if (!client) throw AppError.notFound('Client not found');
 
+    if (!client.email) {
+      throw AppError.badRequest('Client must have an email address to generate portal access');
+    }
+
     const accessCode = crypto.randomBytes(3).toString('hex').toUpperCase(); // 6 uppercase hex chars, CSPRNG
     const passwordHash = await bcrypt.hash(accessCode, 12);
 

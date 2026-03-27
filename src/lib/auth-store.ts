@@ -1,10 +1,22 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type UserRole = 'admin' | 'client';
+export type UserRole = 'admin' | 'manager' | 'staff' | 'client';
 
 export interface AdminUser {
   role: 'admin';
+  email: string;
+  name: string;
+}
+
+export interface ManagerUser {
+  role: 'manager';
+  email: string;
+  name: string;
+}
+
+export interface StaffUser {
+  role: 'staff';
   email: string;
   name: string;
 }
@@ -17,7 +29,7 @@ export interface ClientUser {
   clientId: string;
 }
 
-export type AuthUser = AdminUser | ClientUser;
+export type AuthUser = AdminUser | ManagerUser | StaffUser | ClientUser;
 
 interface AuthStore {
   user: AuthUser | null;
@@ -55,10 +67,10 @@ export const useAuthStore = create<AuthStore>()(
           if (res.ok && data.accessToken) {
             set({
               user: {
-                role: 'admin',
+                role: data.user.role.toLowerCase() as UserRole,
                 email: data.user.email,
                 name: data.user.name,
-              },
+              } as AuthUser,
               isAuthenticated: true,
               token: data.accessToken,
             });

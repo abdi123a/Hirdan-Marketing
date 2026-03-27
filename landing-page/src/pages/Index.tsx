@@ -373,7 +373,7 @@ const ComingSoon = () => {
           className="mt-24 flex flex-col items-center gap-4"
         >
           <span className="text-primary-foreground/40 text-sm font-light tracking-widest uppercase text-center px-4">
-            © 2026 {settings?.agencyName || "Hirdan Marketing"} • Developed by Hirdan Marketing
+            © 2026 {settings?.agencyName || "Hirdan Marketing Management"} • Developed by Hirdan Marketing
           </span>
           <a href={APP_URL} className="text-primary-foreground/20 hover:text-primary-foreground/40 text-xs transition-colors">
             Agency Access

@@ -6,7 +6,7 @@ import { AppError } from '../lib/errors.js';
 export interface JwtPayload {
   userId: string;
   email: string;
-  role: 'ADMIN' | 'CLIENT';
+  role: 'ADMIN' | 'MANAGER' | 'STAFF' | 'CLIENT';
   clientId?: string;
   company?: string;
 }
@@ -71,7 +71,7 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction): 
 /**
  * Require the authenticated user to have one of the specified roles.
  */
-export function requireRole(...roles: Array<'ADMIN' | 'CLIENT'>) {
+export function requireRole(...roles: Array<'ADMIN' | 'MANAGER' | 'STAFF' | 'CLIENT'>) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     if (!req.user) {
       next(AppError.unauthorized());

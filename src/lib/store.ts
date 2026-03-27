@@ -49,6 +49,7 @@ export interface Project {
 
 export interface TeamMember {
   id: string;
+  userId?: string | null;
   name: string;
   email: string;
   phone?: string;
@@ -152,6 +153,24 @@ export interface Lead {
   createdAt: string;
 }
 
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: 'ADMIN' | 'MANAGER' | 'STAFF' | 'CLIENT';
+  teamMemberId?: string | null;
+  teamMember?: {
+    id: string;
+    name: string;
+    role: string;
+  } | null;
+  client?: {
+    id: string;
+    company: string;
+  } | null;
+  createdAt: string;
+}
+
 export interface VerificationRecord {
   token: string;
   documentType: 'invoice' | 'proforma';
@@ -205,6 +224,7 @@ interface AgencyStore {
   packages: Package[];
   services: Service[];
   leads: Lead[];
+  users: User[];
   settings: AgencySettings;
 
   addClient: (client: Omit<Client, 'id' | 'createdAt'>) => Promise<Client>;
@@ -241,6 +261,11 @@ interface AgencyStore {
   deleteLead: (id: string) => Promise<void>;
   updateLeadStatus: (id: string, status: string) => Promise<void>;
 
+  fetchUsers: () => Promise<void>;
+  addUser: (user: Omit<User, 'id' | 'createdAt'> & { password?: string }) => Promise<void>;
+  updateUser: (id: string, user: Partial<User> & { password?: string }) => Promise<void>;
+  deleteUser: (id: string) => Promise<void>;
+
   updateSettings: (settings: Partial<AgencySettings>) => Promise<void>;
   getVerificationToken: (documentType: 'invoice' | 'proforma', documentId: string) => Promise<string>;
   verifyDocument: (token: string) => Promise<{ type: 'invoice' | 'proforma'; document: Invoice | Proforma } | null>;
@@ -272,8 +297,9 @@ export const useAgencyStore = create<AgencyStore>()(
       packages: [],
       services: [],
       leads: [],
+      users: [],
       settings: {
-        agencyName: "Hirdan Marketing",
+        agencyName: "Hirdan Marketing Management",
         adminEmail: "contact@hirdanmarketing.com",
         phone: "+1 555-0101",
         website: "https://hirdanmarketing.com",
@@ -555,6 +581,7 @@ export const useAgencyStore = create<AgencyStore>()(
           get().fetchServices(),
           get().fetchTeam(),
           get().fetchLeads(),
+          get().fetchUsers(),
           get().fetchSettings()
         ]);
       },
@@ -1146,6 +1173,51 @@ export const useAgencyStore = create<AgencyStore>()(
           await get().fetchLeads();
         } catch (error) {
           console.error("Failed to update lead status:", error);
+          throw error;
+        }
+      },
+
+      fetchUsers: async () => {
+        try {
+          const res = await apiFetch<{ users: User[] }>('/users');
+          set({ users: res.users });
+        } catch (error) {
+          console.error("Failed to fetch users:", error);
+        }
+      },
+
+      addUser: async (user) => {
+        try {
+          await apiFetch('/users', {
+            method: 'POST',
+            body: JSON.stringify(user),
+          });
+          await get().fetchUsers();
+        } catch (error) {
+          console.error("Failed to add user:", error);
+          throw error;
+        }
+      },
+
+      updateUser: async (id, user) => {
+        try {
+          await apiFetch(`/users/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(user),
+          });
+          await get().fetchUsers();
+        } catch (error) {
+          console.error("Failed to update user:", error);
+          throw error;
+        }
+      },
+
+      deleteUser: async (id) => {
+        try {
+          await apiFetch(`/users/${id}`, { method: 'DELETE' });
+          await get().fetchUsers();
+        } catch (error) {
+          console.error("Failed to delete user:", error);
           throw error;
         }
       },

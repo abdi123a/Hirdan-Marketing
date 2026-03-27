@@ -53,9 +53,11 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'An error occurred' }));
+    const errorData = await response.json().catch(() => ({ message: 'An error occurred' }));
     if (response.status === 401) store.logout();
-    throw new Error(error.message || `HTTP error! status: ${response.status}`);
+    const errorMsg = typeof errorData.message === 'string' ? errorData.message : 
+                    (typeof errorData.error === 'string' ? errorData.error : `HTTP error! status: ${response.status}`);
+    throw new Error(errorMsg);
   }
 
   return response.json();

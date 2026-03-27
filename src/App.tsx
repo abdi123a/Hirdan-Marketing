@@ -49,6 +49,8 @@ import PackageDetailsPage from "./pages/PackageDetailsPage.tsx";
 import ServiceDetailsPage from "./pages/ServiceDetailsPage.tsx";
 import LeadsPage from "./pages/LeadsPage.tsx";
 import VerifyDocumentPage from "./pages/VerifyDocumentPage.tsx";
+import UsersPage from './pages/UsersPage.tsx';
+import AddUserPage from './pages/AddUserPage.tsx';
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api-client";
@@ -114,7 +116,7 @@ function AppRoutes() {
       <Route
         path="/client/portal"
         element={
-          <ProtectedRoute allowedRole="client">
+          <ProtectedRoute allowedRoles="client">
             <ClientPortalPage />
           </ProtectedRoute>
         }
@@ -124,7 +126,7 @@ function AppRoutes() {
       <Route
         path="/dashboard"
         element={
-          <ProtectedRoute allowedRole="admin">
+          <ProtectedRoute allowedRoles="admin">
             <DashboardLayout />
           </ProtectedRoute>
         }
@@ -134,6 +136,24 @@ function AppRoutes() {
         <Route path="clients/add" element={<AddClientPage />} />
         <Route path="clients/edit/:id" element={<EditClientPage />} />
         <Route path="clients/view/:id" element={<ClientDetailsPage />} />
+
+        {/* User Management */}
+        <Route path="users" element={
+          <ProtectedRoute allowedRoles="admin">
+            <UsersPage />
+          </ProtectedRoute>
+        } />
+        <Route path="users/add" element={
+          <ProtectedRoute allowedRoles="admin">
+            <AddUserPage />
+          </ProtectedRoute>
+        } />
+        <Route path="users/edit/:id" element={
+          <ProtectedRoute allowedRoles="admin">
+            <AddUserPage />
+          </ProtectedRoute>
+        } />
+
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/add" element={<AddProjectPage />} />
         <Route path="projects/edit/:id" element={<EditProjectPage />} />

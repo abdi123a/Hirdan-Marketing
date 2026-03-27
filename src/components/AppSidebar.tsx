@@ -40,7 +40,7 @@ const mainItems = [
 export function AppSidebar() {
   const { state, toggleSidebar, isMobile } = useSidebar();
   const collapsed = state === "collapsed" && !isMobile;
-  const { logout } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const { settings } = useAgencyStore();
   const navigate = useNavigate();
 
@@ -106,6 +106,24 @@ export function AppSidebar() {
         <SidebarSeparator />
         <div className={collapsed ? "px-1.5 py-3" : "px-3 py-3"}>
           <SidebarMenu className={collapsed ? "items-center gap-1.5" : "gap-0.5"}>
+            {user?.role === 'admin' && (
+              <SidebarMenuItem className={collapsed ? "flex justify-center" : ""}>
+                <SidebarMenuButton asChild tooltip="System Users">
+                  <NavLink
+                    to="/dashboard/users"
+                    className={
+                      collapsed
+                        ? "flex items-center justify-center w-10 h-10 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
+                        : "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
+                    }
+                    activeClassName="text-sidebar-primary"
+                  >
+                    <Users className="h-[18px] w-[18px] shrink-0" />
+                    {!collapsed && <span className="text-[13px]">Users</span>}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
             <SidebarMenuItem className={collapsed ? "flex justify-center" : ""}>
               <SidebarMenuButton asChild tooltip="Settings">
                 <NavLink
