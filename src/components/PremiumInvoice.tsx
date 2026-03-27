@@ -56,9 +56,7 @@ export function PremiumInvoice({ type, data, settings, showSignature = true }: P
   const subtotalFromItems = sumItems(data.items);
   const subtotal = originalItemCount
     ? subtotalFromItems
-    : type === "Invoice"
-      ? deriveSubtotalFromTotal(parseAmountNumber(data.amount ?? 0), taxRate)
-      : parseAmountNumber(data.amount ?? 0);
+    : deriveSubtotalFromTotal(parseAmountNumber(data.amount ?? 0), taxRate);
 
   const tax = subtotal * taxRate / 100;
 

@@ -23,7 +23,7 @@ export default function VerifyDocumentPage() {
     }
   }, [token, verifyDocument, fetchSettings]);
 
-  const accent = '#504188'; // Hardcoded primary color
+  const accent = settings.primaryColor || '#504188'; // Use settings color or fallback
   const secondary = '#f6b317'; // Hardcoded secondary color
   const accentDark = '#3a2f64'; // Darker shade for gradient
 
@@ -86,9 +86,7 @@ export default function VerifyDocumentPage() {
   const parsedAmount = parseAmountNumber(doc.amount);
   const subtotal = rawItems.length
     ? subtotalFromItems
-    : isInvoice
-      ? deriveSubtotalFromTotal(parsedAmount, taxRate)
-      : parsedAmount;
+    : deriveSubtotalFromTotal(parsedAmount, taxRate);
 
   const items = rawItems.length
     ? rawItems

@@ -1,7 +1,9 @@
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Outlet, useNavigate } from "react-router-dom";
-import { Bell, Search, LogOut } from "lucide-react";
+import { Bell, Search, LogOut, Menu } from "lucide-react";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import hirdanLogo from "@/assets/hirdan-logo.png";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -57,6 +59,19 @@ export default function DashboardLayout() {
         <div className="flex-1 flex flex-col min-w-0">
           <header className="h-16 flex items-center justify-between border-b border-border px-4 md:px-6 bg-card shrink-0 sticky top-0 z-10 backdrop-blur-md bg-card/80">
             <div className="flex items-center gap-3">
+              {/* Mobile Sidebar Toggle & Logo */}
+              <div className="flex items-center gap-2 md:hidden">
+                <SidebarTrigger className="h-9 w-9">
+                  <Menu className="h-5 w-5 text-muted-foreground" />
+                </SidebarTrigger>
+                <div className="h-6 w-[1px] bg-border/60 mx-1" />
+                <img
+                  src={settings.logo || hirdanLogo}
+                  alt={settings.agencyName}
+                  className="h-8 w-auto object-contain"
+                />
+              </div>
+
               <form onSubmit={handleSearch} className="relative hidden md:block group">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                 <Input

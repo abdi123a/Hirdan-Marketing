@@ -4,11 +4,9 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 
 const router = Router();
-router.use(authenticate);
-// Only authentication is required for basic settings access
-// (Individual routes will handle more specific restrictions)
 
 // ─── GET /api/settings ───────────────────────────────────────────
+// Public endpoint for guest users to see agency branding
 
 router.get('/', async (_req: Request, res: Response, next) => {
   try {
@@ -44,7 +42,7 @@ router.get('/', async (_req: Request, res: Response, next) => {
 
 // ─── PUT /api/settings ───────────────────────────────────────────
 
-router.put('/', requireAdmin, async (req: Request, res: Response, next) => {
+router.put('/', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
   try {
     let existing = await prisma.agencySettings.findFirst();
 

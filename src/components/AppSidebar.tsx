@@ -37,8 +37,8 @@ const mainItems = [
 ];
 
 export function AppSidebar() {
-  const { state, toggleSidebar } = useSidebar();
-  const collapsed = state === "collapsed";
+  const { state, toggleSidebar, isMobile } = useSidebar();
+  const collapsed = state === "collapsed" && !isMobile;
   const { logout } = useAuthStore();
   const { settings } = useAgencyStore();
   const navigate = useNavigate();
@@ -139,16 +139,17 @@ export function AppSidebar() {
           </SidebarMenu>
         </div>
         <SidebarSeparator />
-        {/* Collapse Toggle */}
-        <div className={`flex ${collapsed ? "justify-center" : "justify-end px-3"} py-3`}>
-          <button
-            onClick={toggleSidebar}
-            className="h-8 w-8 flex items-center justify-center rounded-lg text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-all duration-200"
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-          </button>
-        </div>
+        {!isMobile && (
+          <div className={`flex ${collapsed ? "justify-center" : "justify-end px-3"} py-3`}>
+            <button
+              onClick={toggleSidebar}
+              className="h-8 w-8 flex items-center justify-center rounded-lg text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-all duration-200"
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </button>
+          </div>
+        )}
       </SidebarFooter>
     </Sidebar>
   );
