@@ -13,9 +13,10 @@ function generateSecureToken(): string {
 export interface Client {
   id: string;
   name: string;
-  email: string;
-  phone: string;
-  company: string;
+  email?: string;
+  phone?: string;
+  company?: string;
+  type: 'Business' | 'Individual';
   website?: string;
   address?: string;
   city?: string;
@@ -116,6 +117,10 @@ export interface Proforma {
   dueDate: string;
   items?: InvoiceItem[];
   notes?: string;
+  taxRate?: number;
+  discount?: number;
+  discountType?: 'percentage' | 'fixed';
+  deposit?: number;
   clientId?: string;
   _dbId?: string;
   createdAt: string;
@@ -202,7 +207,7 @@ interface AgencyStore {
   leads: Lead[];
   settings: AgencySettings;
 
-  addClient: (client: Omit<Client, 'id'>) => Promise<void>;
+  addClient: (client: Omit<Client, 'id' | 'createdAt'>) => Promise<Client>;
   updateClient: (id: string, client: Partial<Client>) => Promise<void>;
   deleteClient: (id: string) => Promise<void>;
 
@@ -267,8 +272,8 @@ export const useAgencyStore = create<AgencyStore>()(
       services: [],
       leads: [],
       settings: {
-        agencyName: "Hirdan Marketing",
-        adminEmail: "hirdan@agencyflow.com",
+        agencyName: "Hirdan Marketing Management",
+        adminEmail: "contact@hirdanmarketing.com",
         phone: "+1 555-0101",
         website: "https://hirdanmarketing.com",
         address: "123 Tech Ave, San Francisco, CA 94105",
@@ -312,6 +317,7 @@ export const useAgencyStore = create<AgencyStore>()(
             country: c.country,
             industry: c.industry,
             notes: c.notes,
+            type: (c.type?.charAt(0).toUpperCase() + c.type?.slice(1).toLowerCase()) as any || 'Business',
             status: c.status.charAt(0).toUpperCase() + c.status.slice(1).toLowerCase() as any,
             projects: c._count?.projects || 0,
             revenue: '$0',
@@ -420,6 +426,10 @@ export const useAgencyStore = create<AgencyStore>()(
               quantity: item.quantity,
               unitPrice: (item.unitPrice || 0) / 100,
             })),
+            taxRate: p.taxRate,
+            discount: p.discount,
+            discountType: p.discountType ? p.discountType.toLowerCase() as any : undefined,
+            deposit: p.deposit ? p.deposit / 100 : undefined,
             notes: p.notes,
             clientId: p.clientId || p.client?.id,
             _dbId: p.id,
@@ -552,11 +562,38 @@ export const useAgencyStore = create<AgencyStore>()(
         try {
           // Strip frontend-only fields not in DB schema
           const { revenue, projects, ...clientData } = client as any;
-          await apiFetch<{ client: any }>('/clients', {
+          const res = await apiFetch<{ client: any }>('/clients', {
             method: 'POST',
-            body: JSON.stringify({ ...clientData, status: clientData.status.toUpperCase() }),
+            body: JSON.stringify({ 
+              ...clientData, 
+              status: clientData.status.toUpperCase(),
+              type: clientData.type.toUpperCase()
+            }),
           });
           await get().fetchClients();
+          
+          // Map DB client back to Frontend Client format
+          const c = res.client;
+          return {
+            id: c.id,
+            name: c.name,
+            email: c.email,
+            phone: c.phone || '',
+            company: c.company,
+            website: c.website,
+            address: c.address,
+            city: c.city,
+            country: c.country,
+            industry: c.industry,
+            notes: c.notes,
+            type: (c.type?.charAt(0).toUpperCase() + c.type?.slice(1).toLowerCase()) as any || 'Business',
+            status: c.status.charAt(0).toUpperCase() + c.status.slice(1).toLowerCase() as any,
+            projects: c._count?.projects || 0,
+            revenue: '$0',
+            initials: c.initials || (c.company ? c.company.substring(0, 2).toUpperCase() : c.name.substring(0, 2).toUpperCase()),
+            createdAt: c.createdAt,
+            userId: c.userId
+          } as Client;
         } catch (error) {
           console.error("Failed to add client:", error);
           throw error;
@@ -568,6 +605,8 @@ export const useAgencyStore = create<AgencyStore>()(
           const { revenue, projects, ...clientData } = client as any;
           const payload = { ...clientData };
           if (payload.status) payload.status = payload.status.toUpperCase();
+          if (payload.type) payload.type = payload.type.toUpperCase();
+
           await apiFetch(`/clients/${id}`, {
             method: 'PUT',
             body: JSON.stringify(payload),
@@ -912,6 +951,10 @@ export const useAgencyStore = create<AgencyStore>()(
               status: proforma.status.toUpperCase(),
               date: proforma.date ? new Date(proforma.date).toISOString() : new Date().toISOString(),
               dueDate: proforma.dueDate ? new Date(proforma.dueDate).toISOString() : undefined,
+              taxRate: proforma.taxRate,
+              discount: proforma.discount,
+              discountType: proforma.discountType ? proforma.discountType.toUpperCase() : undefined,
+              deposit: proforma.deposit ? Math.round(Number(proforma.deposit) * 100) : undefined,
               notes: proforma.notes,
               items: itemsForDB,
             }),
@@ -928,6 +971,10 @@ export const useAgencyStore = create<AgencyStore>()(
           if (proforma.status) payload.status = proforma.status.toUpperCase();
           if (proforma.date) payload.date = new Date(proforma.date).toISOString();
           if (proforma.dueDate) payload.dueDate = new Date(proforma.dueDate).toISOString();
+          if (proforma.taxRate !== undefined) payload.taxRate = proforma.taxRate;
+          if (proforma.discount !== undefined) payload.discount = proforma.discount;
+          if (proforma.discountType) payload.discountType = proforma.discountType.toUpperCase();
+          if (proforma.deposit != null) payload.deposit = Math.round(Number(proforma.deposit) * 100);
           if (proforma.notes !== undefined) payload.notes = proforma.notes;
           if (proforma.client) {
             const clients = get().clients;

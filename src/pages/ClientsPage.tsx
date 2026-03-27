@@ -112,9 +112,17 @@ export default function ClientsPage() {
                         <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">{c.initials}</AvatarFallback>
                       </Avatar>
                       <div>
-                        <p className="font-semibold text-foreground leading-tight">{c.company || c.name}</p>
+                        <p className="font-semibold text-foreground leading-tight flex items-center gap-1.5">
+                          {c.company || c.name}
+                          {c.type === 'Individual' && (
+                            <Badge variant="secondary" className="text-[10px] h-3.5 px-1 py-0 font-medium bg-muted text-muted-foreground border-transparent">
+                              INDIVIDUAL
+                            </Badge>
+                          )}
+                        </p>
                         <p className="text-xs text-muted-foreground">{c.name}</p>
                       </div>
+
                     </div>
                   </TableCell>
                   <TableCell className="hidden md:table-cell">

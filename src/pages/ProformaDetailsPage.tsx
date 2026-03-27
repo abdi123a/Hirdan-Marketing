@@ -90,15 +90,24 @@ export default function ProformaDetailsPage() {
       const subtotal = proforma.items?.length
         ? sumItems(proforma.items)
         : parseAmountNumber(proforma.amount);
-      const taxRate = settings.taxRate ?? 0;
-      const totalDue = subtotal + (subtotal * taxRate) / 100;
+      
+      const taxRate = proforma.taxRate ?? settings.taxRate ?? 0;
+      const discount = proforma.discount ?? 0;
+      const discountType = proforma.discountType || 'fixed';
+
+      const taxAmount = (subtotal * taxRate) / 100;
+      const discountAmount = discountType === 'percentage' 
+        ? (subtotal * discount / 100) 
+        : discount;
+      
+      const finalTotal = subtotal + taxAmount - discountAmount;
 
       const newInvoice = {
         client: proforma.client,
         clientId: proforma.clientId,
         clientEmail: proforma.clientEmail || client?.email,
         clientAddress: client?.address,
-        amount: formatCurrency(totalDue),
+        amount: formatCurrency(finalTotal),
         status: 'Pending' as const,
         date: new Date().toISOString().split("T")[0],
         dueDate: proforma.dueDate,
@@ -107,6 +116,10 @@ export default function ProformaDetailsPage() {
           : [{ description: "Services rendered", quantity: 1, unitPrice: subtotal }],
         notes: proforma.notes,
         taxRate,
+        discount,
+        discountType,
+        deposit: proforma.deposit,
+        createdAt: new Date().toISOString(),
       };
 
       const invoiceId = generateInvoiceId();
@@ -274,7 +287,7 @@ export default function ProformaDetailsPage() {
             data={{
               ...proforma,
               clientAddress: client?.address,
-              taxRate: settings.taxRate,
+              taxRate: proforma.taxRate ?? settings.taxRate,
             }}
             settings={{
               ...settings,

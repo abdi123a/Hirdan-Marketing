@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatCurrency } from "@/lib/utils";
+import { ClientSelector } from "@/components/ClientSelector";
 
 const generateProformaId = () => `PRO-${Math.floor(Math.random() * 9000 + 1000)}`;
 
@@ -22,6 +23,7 @@ export default function AddProformaPage() {
 
   const proformaId = useState(generateProformaId)[0];
 
+  const { settings } = useAgencyStore();
   const [form, setForm] = useState<Partial<Proforma>>({
     client: "",
     clientEmail: "",
@@ -29,6 +31,10 @@ export default function AddProformaPage() {
     date: new Date().toISOString().split("T")[0],
     dueDate: new Date(Date.now() + 30 * 864e5).toISOString().split("T")[0],
     notes: "",
+    taxRate: settings.taxRate || 0,
+    discount: 0,
+    discountType: 'fixed',
+    deposit: 0,
   });
 
   const [items, setItems] = useState<InvoiceItem[]>([
@@ -47,7 +53,13 @@ export default function AddProformaPage() {
   const addItem = () => setItems((prev) => [...prev, { description: "", quantity: 1, unitPrice: 0 }]);
   const removeItem = (index: number) => setItems((prev) => prev.filter((_, i) => i !== index));
 
-  const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const tax = subtotal * ((form.taxRate ?? 0) / 100);
+  const discount = form.discountType === 'percentage' 
+    ? (subtotal * (form.discount || 0) / 100) 
+    : (form.discount || 0);
+  const total = subtotal + tax - discount;
+  const balanceDue = total - (form.deposit || 0);
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -61,9 +73,15 @@ export default function AddProformaPage() {
     if (!validate()) return;
     const totalStr = formatCurrency(total);
     try {
-      await addProforma({ ...form as Omit<Proforma, "id">, amount: totalStr, items, id: proformaId });
+      await addProforma({ 
+        ...form as Omit<Proforma, "id">, 
+        amount: totalStr, 
+        items, 
+        id: proformaId,
+        createdAt: new Date().toISOString()
+      });
       toast({ title: "Proforma created!", description: `Proforma ${proformaId} has been saved.` });
-      navigate("/dashboard/proforma");
+      navigate(`/dashboard/proforma/view/${proformaId}`);
     } catch (e) {
       toast({ title: "Error", description: "Failed to create proforma.", variant: "destructive" });
     }
@@ -71,7 +89,7 @@ export default function AddProformaPage() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 text-foreground">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="rounded-xl h-10 w-10 hover:bg-muted">
             <ArrowLeft className="h-5 w-5" />
@@ -81,14 +99,19 @@ export default function AddProformaPage() {
             <p className="text-muted-foreground mt-0.5">Create a draft invoice or quote</p>
           </div>
         </div>
+        <div className="hidden sm:flex items-center gap-2">
+          <Button variant="hero" className="gap-2" onClick={handleSave}>
+            <Save className="h-4 w-4" /> Save & View
+          </Button>
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-5">
+        <div className="lg:col-span-2 space-y-5 text-foreground">
           <Card className="shadow-card border-border">
             <CardHeader className="pb-4">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <FileText className="h-4 w-4 text-primary" /> Proforma Details
+                <FileText className="h-4 w-4 text-primary" /> Proforma Information
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -98,22 +121,17 @@ export default function AddProformaPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>Client <span className="text-destructive">*</span></Label>
-                <Select
-                  value={form.client}
-                  onValueChange={(v) => {
-                    const c = clients.find((cl) => cl.company === v || cl.name === v);
-                    setForm((p) => ({ ...p, client: v, clientEmail: c?.email }));
+                <ClientSelector
+                  value={form.client || ""}
+                  onValueChange={(v, client) => {
+                    setForm((p) => ({ 
+                      ...p, 
+                      client: v, 
+                      clientEmail: client?.email 
+                    }));
                   }}
-                >
-                  <SelectTrigger className={errors.client ? "border-destructive" : ""}>
-                    <SelectValue placeholder="Select a client" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clients.map((c) => (
-                      <SelectItem key={c.id} value={c.company || c.name}>{c.company || c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  error={errors.client}
+                />
                 {errors.client && <p className="text-xs text-destructive">{errors.client}</p>}
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
@@ -126,25 +144,58 @@ export default function AddProformaPage() {
                   <Input id="due" type="date" value={form.dueDate} onChange={(e) => setField("dueDate", e.target.value)} />
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>Status</Label>
-                <Select
-                  value={form.status}
-                  onValueChange={(v) => setField("status", v as Proforma["status"])}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Draft">Draft</SelectItem>
-                    <SelectItem value="Sent">Sent</SelectItem>
-                    <SelectItem value="Accepted">Accepted</SelectItem>
-                    <SelectItem value="Expired">Expired</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Status</Label>
+                  <Select
+                    value={form.status}
+                    onValueChange={(v) => setField("status", v as Proforma["status"])}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Draft">Draft</SelectItem>
+                      <SelectItem value="Sent">Sent</SelectItem>
+                      <SelectItem value="Accepted">Accepted</SelectItem>
+                      <SelectItem value="Expired">Expired</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="tax-rate">TVA Rate (%)</Label>
+                  <Input id="tax-rate" type="number" min="0" max="100" placeholder="0" value={form.taxRate} onChange={(e) => setField("taxRate", parseFloat(e.target.value) || 0)} />
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Discount Type</Label>
+                  <Select
+                    value={form.discountType || "fixed"}
+                    onValueChange={(v) => setField("discountType", v as 'percentage' | 'fixed')}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fixed">Fixed Amount</SelectItem>
+                      <SelectItem value="percentage">Percentage (%)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="discount">Discount {form.discountType === 'percentage' ? '(%)' : 'Value'}</Label>
+                  <Input id="discount" type="number" min="0" placeholder="0" value={form.discount} onChange={(e) => setField("discount", parseFloat(e.target.value) || 0)} />
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="deposit">Deposit / Paid Amount</Label>
+                  <Input id="deposit" type="number" min="0" placeholder="0" value={form.deposit} onChange={(e) => setField("deposit", parseFloat(e.target.value) || 0)} />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="shadow-card border-border">
+          <Card className="shadow-card border-border text-foreground">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base font-semibold">Line Items</CardTitle>
@@ -185,21 +236,101 @@ export default function AddProformaPage() {
                   </div>
                 </div>
               ))}
-              <div className="border-t border-border pt-3 mt-2 flex justify-between text-base font-bold text-foreground">
-                <span>Total Amount</span>
-                <span className="text-primary">{formatCurrency(total)}</span>
+
+              <div className="border-t border-border pt-3 mt-2 space-y-1.5">
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>Subtotal</span>
+                  <span className="font-medium text-foreground">{formatCurrency(subtotal)}</span>
+                </div>
+                {(form.taxRate ?? 0) > 0 && (
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>TVA ({form.taxRate}%)</span>
+                    <span className="font-medium text-foreground">{formatCurrency(tax)}</span>
+                  </div>
+                )}
+                {(form.discount ?? 0) > 0 && (
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>Discount {form.discountType === 'percentage' ? `(${form.discount}%)` : ''}</span>
+                    <span className="font-medium text-destructive">-{formatCurrency(discount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-base font-bold text-foreground border-t border-border pt-2">
+                  <span>Total</span>
+                  <span className="text-primary">{formatCurrency(total)}</span>
+                </div>
+                {(form.deposit ?? 0) > 0 && (
+                  <div className="flex justify-between text-sm text-muted-foreground italic">
+                    <span>Amount Paid (Deposit)</span>
+                    <span className="font-medium text-emerald-600">-{formatCurrency(form.deposit || 0)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm font-bold text-foreground border-t border-border/50 pt-1">
+                  <span>Balance Due</span>
+                  <span className="text-primary">{formatCurrency(balanceDue)}</span>
+                </div>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-card border-border text-foreground">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base font-semibold">Notes / Payment Terms</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Textarea placeholder="e.g. This is a proforma invoice valid for 30 days." className="min-h-[80px] resize-none" value={form.notes || ""} onChange={(e) => setField("notes", e.target.value)} />
             </CardContent>
           </Card>
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-5 text-foreground">
+          <Card className="shadow-card border-border bg-gradient-to-br from-primary/5 to-primary/10">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">Proforma Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex justify-between text-sm text-foreground">
+                <span className="text-muted-foreground">Items</span>
+                <span className="font-medium">{items.length}</span>
+              </div>
+              <div className="flex justify-between text-sm text-foreground">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="font-medium">{formatCurrency(subtotal)}</span>
+              </div>
+              {(form.taxRate ?? 0) > 0 && (
+                <div className="flex justify-between text-sm text-foreground">
+                  <span className="text-muted-foreground">TVA</span>
+                  <span className="font-medium text-foreground">{formatCurrency(tax)}</span>
+                </div>
+              )}
+              {(form.discount ?? 0) > 0 && (
+                <div className="flex justify-between text-sm text-foreground">
+                  <span className="text-muted-foreground">Discount</span>
+                  <span className="font-medium text-destructive">-{formatCurrency(discount)}</span>
+                </div>
+              )}
+              <div className="border-t border-border/60 pt-2 flex justify-between">
+                <span className="font-bold text-foreground">Total</span>
+                <span className="font-bold text-xl text-primary">{formatCurrency(total)}</span>
+              </div>
+              {(form.deposit ?? 0) > 0 && (
+                <div className="flex justify-between text-sm text-foreground italic">
+                  <span className="text-muted-foreground">Paid</span>
+                  <span className="font-medium text-emerald-600">-{formatCurrency(form.deposit || 0)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm text-foreground border-t border-border/40 pt-2">
+                <span className="font-bold text-foreground">Balance Due</span>
+                <span className="font-bold text-lg text-primary">{formatCurrency(balanceDue)}</span>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="shadow-card border-border bg-muted/30">
             <CardContent className="p-5 space-y-3">
               <Button onClick={handleSave} className="w-full gap-2" variant="hero">
-                <Save className="h-4 w-4" /> Save Proforma
+                <Save className="h-4 w-4" /> Save & View
               </Button>
-              <Button variant="outline" className="w-full" onClick={() => navigate(-1)}>
+              <Button variant="ghost" className="w-full" onClick={() => navigate(-1)}>
                 Cancel
               </Button>
             </CardContent>

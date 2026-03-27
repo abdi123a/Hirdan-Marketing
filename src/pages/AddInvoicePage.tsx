@@ -10,6 +10,7 @@ import { ArrowLeft, Save, Plus, Trash2, Receipt } from "lucide-react";
 import { useAgencyStore, Invoice, InvoiceItem } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
+import { ClientSelector } from "@/components/ClientSelector";
 
 const generateInvoiceId = () => `INV-${Math.floor(Math.random() * 9000 + 1000)}`;
 
@@ -122,22 +123,18 @@ export default function AddInvoicePage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Client <span className="text-destructive">*</span></Label>
-                  <Select
-                    value={form.client}
-                    onValueChange={(v) => {
-                      const c = clients.find((cl) => cl.company === v || cl.name === v);
-                      setForm((p) => ({ ...p, client: v, clientEmail: c?.email, clientAddress: c?.address }));
+                  <ClientSelector
+                    value={form.client || ""}
+                    onValueChange={(v, client) => {
+                      setForm((p) => ({ 
+                        ...p, 
+                        client: v, 
+                        clientEmail: client?.email, 
+                        clientAddress: client?.address 
+                      }));
                     }}
-                  >
-                    <SelectTrigger className={errors.client ? "border-destructive" : ""}>
-                      <SelectValue placeholder="Select a client" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {clients.map((c) => (
-                        <SelectItem key={c.id} value={c.company || c.name}>{c.company || c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    error={errors.client}
+                  />
                   {errors.client && <p className="text-xs text-destructive">{errors.client}</p>}
                 </div>
                 {form.clientEmail && (

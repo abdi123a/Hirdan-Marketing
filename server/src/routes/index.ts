@@ -11,14 +11,9 @@ import servicesRoutes from './services.routes.js';
 import settingsRoutes from './settings.routes.js';
 import verifyRoutes from './verify.routes.js';
 import leadsRoutes from './leads.routes.js';
-import installRoutes, { requireSetup } from './install.routes.js';
 
 const router = Router();
 
-// Middleware to block API if setup not complete
-router.use(requireSetup);
-
-router.use('/install', installRoutes);
 router.use('/auth', authRoutes);
 router.use('/clients', clientsRoutes);
 router.use('/projects', projectsRoutes);

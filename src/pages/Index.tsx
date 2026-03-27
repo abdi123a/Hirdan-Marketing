@@ -257,7 +257,7 @@ const ComingSoon = () => {
           transition={{ duration: 0.8 }}
           className="mb-8"
         >
-          <img src={hirdanLogo} alt="Hirdan Marketing" className="h-14 md:h-16 drop-shadow-2xl" />
+          <img src={hirdanLogo} alt="Hirdan Marketing Management" className="h-14 md:h-16 drop-shadow-2xl" />
         </motion.div>
 
         <motion.div
@@ -333,8 +333,8 @@ const ComingSoon = () => {
           transition={{ delay: 1, duration: 1 }}
           className="mt-24 flex flex-col items-center gap-4"
         >
-          <span className="text-primary-foreground/40 text-sm font-light tracking-widest uppercase">
-            © 2026 Hirdan Marketing • Built for Excellence
+          <span className="text-primary-foreground/40 text-sm font-light tracking-widest uppercase text-center px-4">
+            © 2026 Hirdan Marketing Management • Developed by Hirdan Marketing
           </span>
           <Link to="/login" className="text-primary-foreground/20 hover:text-primary-foreground/40 text-xs transition-colors">
             Agency Access

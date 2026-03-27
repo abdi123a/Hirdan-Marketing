@@ -69,9 +69,10 @@ router.get('/:id', requireAdmin, async (req: Request, res: Response, next) => {
 
 const clientDtoSchema = z.object({
   name: z.string().min(1),
-  email: z.string().email(),
+  email: z.string().email().optional().nullable(),
   phone: z.string().optional().nullable(),
-  company: z.string().min(1),
+  company: z.string().optional().nullable().default(''),
+  type: z.enum(['BUSINESS', 'INDIVIDUAL']).optional(),
   website: z.string().optional().nullable(),
   address: z.string().optional().nullable(),
   city: z.string().optional().nullable(),
@@ -81,6 +82,7 @@ const clientDtoSchema = z.object({
   status: z.enum(['ACTIVE', 'PAUSED', 'CHURNED']).optional(),
   initials: z.string().optional().nullable(),
 });
+
 
 router.post('/', requireAdmin, validate({ body: clientDtoSchema }), async (req: Request, res: Response, next) => {
   try {

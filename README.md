@@ -1,4 +1,4 @@
-# Hirdan Marketing
+# Hirdan Marketing Management
 
 A premium digital marketing agency website.
 

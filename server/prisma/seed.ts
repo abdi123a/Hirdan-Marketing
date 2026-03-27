@@ -63,8 +63,8 @@ async function main() {
   if (!existingSettings) {
     await prisma.agencySettings.create({
       data: {
-        agencyName: 'Hirdan Marketing',
-        adminEmail: 'hirdan@agencyflow.com',
+        agencyName: 'Hirdan Marketing Management',
+        adminEmail: 'contact@hirdanmarketing.com',
         phone: '+1 555-0101',
         website: 'https://hirdanmarketing.com',
         address: '123 Tech Ave, San Francisco, CA 94105',

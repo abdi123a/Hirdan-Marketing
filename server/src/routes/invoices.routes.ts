@@ -36,8 +36,13 @@ router.get('/', async (req: Request, res: Response, next) => {
 
 router.get('/:id', async (req: Request, res: Response, next) => {
   try {
-    const invoice = await prisma.invoice.findUnique({
-      where: { id: req.params.id as string },
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        OR: [
+          { id: req.params.id as string },
+          { invoiceNumber: req.params.id as string }
+        ]
+      },
       include: {
         client: true,
         items: true,
@@ -97,19 +102,29 @@ router.post('/', requireAdmin, validate({ body: invoiceDtoSchema }), async (req:
   }
 });
 
-// ─── PUT /api/invoices/:id ────────────────────────────────────────
-
 router.put('/:id', requireAdmin, validate({ body: invoiceDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
+    // Find the invoice first to get the real UUID if an invoiceNumber was provided
+    const targetInvoice = await prisma.invoice.findFirst({
+      where: {
+        OR: [
+          { id: req.params.id as string },
+          { invoiceNumber: req.params.id as string }
+        ]
+      }
+    });
+
+    if (!targetInvoice) throw AppError.notFound('Invoice not found');
+
     const { items, ...invoiceData } = req.body;
 
     // If items are provided, delete existing and recreate
     if (items) {
-      await prisma.invoiceItem.deleteMany({ where: { invoiceId: req.params.id as string } });
+      await prisma.invoiceItem.deleteMany({ where: { invoiceId: targetInvoice.id } });
     }
 
     const invoice = await prisma.invoice.update({
-      where: { id: req.params.id as string },
+      where: { id: targetInvoice.id },
       data: {
         ...invoiceData,
         items: items ? { create: items } : undefined,
@@ -126,7 +141,17 @@ router.put('/:id', requireAdmin, validate({ body: invoiceDtoSchema.partial() }),
 
 router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) => {
   try {
-    await prisma.invoice.delete({ where: { id: req.params.id as string } });
+    const targetInvoice = await prisma.invoice.findFirst({
+      where: {
+        OR: [
+          { id: req.params.id as string },
+          { invoiceNumber: req.params.id as string }
+        ]
+      }
+    });
+    if (!targetInvoice) throw AppError.notFound('Invoice not found');
+
+    await prisma.invoice.delete({ where: { id: targetInvoice.id } });
     res.json({ message: 'Invoice deleted' });
   } catch (error) {
     next(error);

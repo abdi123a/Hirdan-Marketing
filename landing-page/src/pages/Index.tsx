@@ -17,10 +17,10 @@ import hirdanLogo from "@/assets/hirdan-logo.png";
 import { useEffect, useRef } from "react";
 
 // API base URL - points to api.hirdanmarketing.com in production
-const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://api.hirdanmarketing.com";
 
 // App URL - points to app.hirdanmarketing.com in production
-const APP_URL = import.meta.env.VITE_APP_URL || "/login";
+const APP_URL = import.meta.env.VITE_APP_URL || "https://app.hirdanmarketing.com/login";
 
 const ParticleMesh = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -166,6 +166,40 @@ const ComingSoon = () => {
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [settings, setSettings] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/settings`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.settings) {
+            setSettings(data.settings);
+            
+            // Update favicon
+            if (data.settings.favicon) {
+              let link = document.querySelector("link[rel*='icon']") as HTMLLinkElement;
+              if (!link) {
+                link = document.createElement('link');
+                link.rel = 'icon';
+                document.getElementsByTagName('head')[0].appendChild(link);
+              }
+              link.href = data.settings.favicon;
+            }
+            
+            // Update title
+            if (data.settings.agencyName) {
+              document.title = `${data.settings.agencyName} | Elevating Your Brand`;
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch settings:", error);
+      }
+    };
+    fetchSettings();
+  }, []);
 
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
@@ -262,7 +296,7 @@ const ComingSoon = () => {
           transition={{ duration: 0.8 }}
           className="mb-8"
         >
-          <img src={hirdanLogo} alt="Hirdan Marketing" className="h-14 md:h-16 drop-shadow-2xl" />
+          <img src={settings?.logo || hirdanLogo} alt={settings?.agencyName || "Hirdan Marketing Management"} className="h-14 md:h-16 drop-shadow-2xl" />
         </motion.div>
 
         <motion.div
@@ -282,7 +316,7 @@ const ComingSoon = () => {
           </h1>
 
           <p className="text-lg md:text-xl text-primary-foreground/60 max-w-2xl mx-auto mb-12 font-body font-light leading-relaxed">
-            We are hard at work crafting a premium digital experience. Our agency is dedicated to delivering exceptional results through strategic innovation.
+            We are hard at work crafting a premium digital experience for {settings?.agencyName || "our clients"}. Our agency is dedicated to delivering exceptional results through strategic innovation.
           </p>
 
           <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -338,8 +372,8 @@ const ComingSoon = () => {
           transition={{ delay: 1, duration: 1 }}
           className="mt-24 flex flex-col items-center gap-4"
         >
-          <span className="text-primary-foreground/40 text-sm font-light tracking-widest uppercase">
-            © 2026 Hirdan Marketing • Built for Excellence
+          <span className="text-primary-foreground/40 text-sm font-light tracking-widest uppercase text-center px-4">
+            © 2026 {settings?.agencyName || "Hirdan Marketing Management"} • Developed by Hirdan Marketing
           </span>
           <a href={APP_URL} className="text-primary-foreground/20 hover:text-primary-foreground/40 text-xs transition-colors">
             Agency Access

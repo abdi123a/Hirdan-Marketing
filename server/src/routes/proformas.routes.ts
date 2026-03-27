@@ -20,6 +20,10 @@ const proformaDtoSchema = z.object({
   date: z.string().or(z.date()),
   dueDate: z.string().or(z.date()),
   notes: z.string().optional().nullable(),
+  taxRate: z.number().optional().nullable(),
+  discount: z.number().optional().nullable(),
+  discountType: z.enum(['PERCENTAGE', 'FIXED']).optional().nullable(),
+  deposit: z.number().int().optional().nullable(),
   items: z.array(proformaItemSchema).optional(),
 });
 
@@ -54,8 +58,13 @@ router.get('/', async (req: Request, res: Response, next) => {
 
 router.get('/:id', async (req: Request, res: Response, next) => {
   try {
-    const proforma = await prisma.proforma.findUnique({
-      where: { id: req.params.id as string },
+    const proforma = await prisma.proforma.findFirst({
+      where: {
+        OR: [
+          { id: req.params.id as string },
+          { proformaNumber: req.params.id as string }
+        ]
+      },
       include: { client: true, items: true },
     });
 
@@ -94,12 +103,24 @@ router.post('/', requireAdmin, validate({ body: proformaDtoSchema }), async (req
 
 router.put('/:id', requireAdmin, validate({ body: proformaDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
+    // Find the proforma first to get the real UUID if a proformaNumber was provided
+    const targetProforma = await prisma.proforma.findFirst({
+      where: {
+        OR: [
+          { id: req.params.id as string },
+          { proformaNumber: req.params.id as string }
+        ]
+      }
+    });
+
+    if (!targetProforma) throw AppError.notFound('Proforma not found');
+
     const { items, ...proformaData } = req.body;
     if (items) {
-      await prisma.proformaItem.deleteMany({ where: { proformaId: req.params.id as string } });
+      await prisma.proformaItem.deleteMany({ where: { proformaId: targetProforma.id } });
     }
     const proforma = await prisma.proforma.update({
-      where: { id: req.params.id as string },
+      where: { id: targetProforma.id },
       data: {
         ...proformaData,
         items: items ? { create: items } : undefined,
@@ -116,7 +137,17 @@ router.put('/:id', requireAdmin, validate({ body: proformaDtoSchema.partial() })
 
 router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) => {
   try {
-    await prisma.proforma.delete({ where: { id: req.params.id as string } });
+    const targetProforma = await prisma.proforma.findFirst({
+      where: {
+        OR: [
+          { id: req.params.id as string },
+          { proformaNumber: req.params.id as string }
+        ]
+      }
+    });
+    if (!targetProforma) throw AppError.notFound('Proforma not found');
+
+    await prisma.proforma.delete({ where: { id: targetProforma.id } });
     res.json({ message: 'Proforma deleted' });
   } catch (error) {
     next(error);

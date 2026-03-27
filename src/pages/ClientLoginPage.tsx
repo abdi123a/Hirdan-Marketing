@@ -69,7 +69,7 @@ export default function ClientLoginPage() {
         <div className="bg-card rounded-3xl shadow-elevated border border-border/50 p-8 md:p-10">
           {/* Header */}
           <div className="text-center mb-8">
-            <img src={hirdanLogo} alt={settings.agencyName} className="h-14 mx-auto mb-6" />
+            <img src={settings.logo || hirdanLogo} alt={settings.agencyName} className="h-14 mx-auto mb-6" />
             <h2 className="text-2xl font-display font-bold text-foreground">Client Portal</h2>
             <p className="text-muted-foreground mt-2 text-sm">Sign in to your client portal</p>
           </div>

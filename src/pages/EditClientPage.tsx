@@ -39,9 +39,8 @@ export default function EditClientPage() {
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.name?.trim()) e.name = "Contact name is required";
-    if (!form.company?.trim()) e.company = "Company name is required";
-    if (!form.email?.trim()) e.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(form.email || "")) e.email = "Invalid email address";
+    if (form.type === "Business" && !form.company?.trim()) e.company = "Company name is required";
+    if (form.email?.trim() && !/\S+@\S+\.\S+/.test(form.email || "")) e.email = "Invalid email address";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -72,6 +71,35 @@ export default function EditClientPage() {
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Main Form */}
         <div className="lg:col-span-2 space-y-5">
+          {/* Client Type */}
+          <Card className="shadow-card border-border">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Briefcase className="h-4 w-4 text-primary" /> Client Type
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4">
+                <Button 
+                  type="button"
+                  variant={form.type === "Business" ? "hero" : "outline"} 
+                  className="w-full gap-2 h-12"
+                  onClick={() => set("type", "Business")}
+                >
+                  <Building2 className="h-4 w-4" /> Business
+                </Button>
+                <Button 
+                  type="button"
+                  variant={form.type === "Individual" ? "hero" : "outline"} 
+                  className="w-full gap-2 h-12"
+                  onClick={() => set("type", "Individual")}
+                >
+                  <User className="h-4 w-4" /> Individual
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Contact Info */}
           <Card className="shadow-card border-border">
             <CardHeader className="pb-4">
@@ -87,14 +115,22 @@ export default function EditClientPage() {
                   {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="company" className="text-sm font-medium">Company Name <span className="text-destructive">*</span></Label>
-                  <Input id="company" placeholder="Acme Corporation" value={form.company} onChange={(e) => set("company", e.target.value)} className={errors.company ? "border-destructive" : ""} />
+                  <Label htmlFor="company" className="text-sm font-medium">
+                    Company Name {form.type === "Business" && <span className="text-destructive">*</span>}
+                  </Label>
+                  <Input 
+                    id="company" 
+                    placeholder={form.type === "Business" ? "Acme Corporation" : "Optional"} 
+                    value={form.company || ""} 
+                    onChange={(e) => set("company", e.target.value)} 
+                    className={errors.company ? "border-destructive" : ""} 
+                  />
                   {errors.company && <p className="text-xs text-destructive">{errors.company}</p>}
                 </div>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="email" className="text-sm font-medium">Email Address <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="email" className="text-sm font-medium">Email Address</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input id="email" type="email" placeholder="jane@acme.com" className={`pl-9 ${errors.email ? "border-destructive" : ""}`} value={form.email} onChange={(e) => set("email", e.target.value)} />

@@ -50,7 +50,6 @@ import ServiceDetailsPage from "./pages/ServiceDetailsPage.tsx";
 import LeadsPage from "./pages/LeadsPage.tsx";
 import VerifyDocumentPage from "./pages/VerifyDocumentPage.tsx";
 
-import SetupPage from "./pages/SetupPage.tsx";
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api-client";
 import { Loader2 } from "lucide-react";
@@ -58,7 +57,6 @@ import { Loader2 } from "lucide-react";
 const queryClient = new QueryClient();
 
 function AppRoutes() {
-  const [isInstalled, setIsInstalled] = useState<boolean | null>(null);
   const [isVerifying, setIsVerifying] = useState(true);
   const { user, isAuthenticated, logout, setToken } = useAuthStore();
 
@@ -93,43 +91,15 @@ function AppRoutes() {
       }
     };
 
-    if (isInstalled === true) {
-      verifyAuth();
-    } else if (isInstalled === false) {
-      setIsVerifying(false);
-    }
-  }, [isInstalled]); // Only run when install status changes
-
-  useEffect(() => {
-    // Check if the application is installed
-    apiFetch<{ isInstalled: boolean }>('/install/status')
-      .then(res => {
-        setIsInstalled(res.isInstalled);
-      })
-      .catch((error) => {
-        console.error("Failed to check install status", error);
-        // By default, if the endpoint is completely unreachable, we assume it's set up or we show an error.
-        // For local development, assume uninstalled if we get a 503 from backend requiring setup.
-        if (error.message?.includes('503') || String(error).includes('503')) {
-          setIsInstalled(false);
-        } else {
-          // If we can't tell, err on the side of false to show the setup page,
-          // OR if backend is down, we might just stay on normal app and break elsewhere.
-          setIsInstalled(false);
-        }
-      });
+    verifyAuth();
   }, []);
 
-  if (isInstalled === null || (isInstalled === true && isVerifying)) {
+  if (isVerifying) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
       </div>
     );
-  }
-
-  if (isInstalled === false) {
-    return <SetupPage />;
   }
 
   return (

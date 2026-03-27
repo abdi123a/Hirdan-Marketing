@@ -10,6 +10,7 @@ import { ArrowLeft, Save, Plus, Trash2, FileText } from "lucide-react";
 import { useAgencyStore, Proforma, InvoiceItem } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
+import { ClientSelector } from "@/components/ClientSelector";
 
 export default function EditProformaPage() {
   const { id } = useParams();
@@ -20,17 +21,20 @@ export default function EditProformaPage() {
   const [form, setForm] = useState<Partial<Proforma>>({});
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
+    if (isLoaded) return;
     const prof = proformas.find((p) => p.id === id);
     if (prof) {
       setForm(prof);
-      setItems(prof.items || []);
-    } else {
+      setItems(prof.items && prof.items.length > 0 ? prof.items : [{ description: "", quantity: 1, unitPrice: 0 }]);
+      setIsLoaded(true);
+    } else if (proformas.length > 0) {
       toast({ title: "Proforma not found", variant: "destructive" });
       navigate("/dashboard/proforma");
     }
-  }, [id, proformas, navigate, toast]);
+  }, [id, proformas, navigate, toast, isLoaded]);
 
   const setField = (field: keyof Proforma, value: string | number) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -42,7 +46,13 @@ export default function EditProformaPage() {
   const addItem = () => setItems((prev) => [...prev, { description: "", quantity: 1, unitPrice: 0 }]);
   const removeItem = (index: number) => setItems((prev) => prev.filter((_, i) => i !== index));
 
-  const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const tax = subtotal * ((form.taxRate ?? 0) / 100);
+  const discount = form.discountType === 'percentage' 
+    ? (subtotal * (form.discount || 0) / 100) 
+    : (form.discount || 0);
+  const total = subtotal + tax - discount;
+  const balanceDue = total - (form.deposit || 0);
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -58,7 +68,7 @@ export default function EditProformaPage() {
     try {
       await updateProforma(id, { ...form, amount: totalStr, items });
       toast({ title: "Proforma updated!", description: `Proforma ${id} has been updated.` });
-      navigate("/dashboard/proforma");
+      navigate(`/dashboard/proforma/view/${id}`);
     } catch (e) {
       toast({ title: "Error", description: "Failed to update proforma.", variant: "destructive" });
     }
@@ -68,7 +78,7 @@ export default function EditProformaPage() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 text-foreground">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="rounded-xl h-10 w-10 hover:bg-muted">
             <ArrowLeft className="h-5 w-5" />
@@ -78,10 +88,15 @@ export default function EditProformaPage() {
             <p className="text-muted-foreground mt-0.5">Update details for {id}</p>
           </div>
         </div>
+        <div className="hidden sm:flex items-center gap-2">
+          <Button variant="hero" className="gap-2" onClick={handleSubmit}>
+            <Save className="h-4 w-4" /> Save & View
+          </Button>
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-5">
+        <div className="lg:col-span-2 space-y-5 text-foreground">
           <Card className="shadow-card border-border">
             <CardHeader className="pb-4">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -89,24 +104,24 @@ export default function EditProformaPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-primary/5 rounded-xl border border-primary/10">
+                <span className="text-sm text-muted-foreground font-medium">Proforma Number</span>
+                <span className="font-bold text-primary text-lg">{id}</span>
+              </div>
               <div className="space-y-1.5">
                 <Label>Client <span className="text-destructive">*</span></Label>
-                <Select
-                  value={form.client}
-                  onValueChange={(v) => {
-                    const c = clients.find((cl) => cl.company === v || cl.name === v);
-                    setForm((p) => ({ ...p, client: v, clientEmail: c?.email }));
+                <ClientSelector
+                  value={form.client || ""}
+                  onValueChange={(v, client) => {
+                    setForm((p) => ({ 
+                      ...p, 
+                      client: v, 
+                      clientEmail: client?.email 
+                    }));
                   }}
-                >
-                  <SelectTrigger className={errors.client ? "border-destructive" : ""}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clients.map((c) => (
-                      <SelectItem key={c.id} value={c.company || c.name}>{c.company || c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  error={errors.client}
+                />
+                {errors.client && <p className="text-xs text-destructive">{errors.client}</p>}
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -118,25 +133,58 @@ export default function EditProformaPage() {
                   <Input id="due" type="date" value={form.dueDate} onChange={(e) => setField("dueDate", e.target.value)} />
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>Status</Label>
-                <Select
-                  value={form.status}
-                  onValueChange={(v) => setField("status", v as Proforma["status"])}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Draft">Draft</SelectItem>
-                    <SelectItem value="Sent">Sent</SelectItem>
-                    <SelectItem value="Accepted">Accepted</SelectItem>
-                    <SelectItem value="Expired">Expired</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Status</Label>
+                  <Select
+                    value={form.status}
+                    onValueChange={(v) => setField("status", v as Proforma["status"])}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Draft">Draft</SelectItem>
+                      <SelectItem value="Sent">Sent</SelectItem>
+                      <SelectItem value="Accepted">Accepted</SelectItem>
+                      <SelectItem value="Expired">Expired</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="tax-rate">TVA Rate (%)</Label>
+                  <Input id="tax-rate" type="number" min="0" max="100" placeholder="0" value={form.taxRate} onChange={(e) => setField("taxRate", parseFloat(e.target.value) || 0)} />
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Discount Type</Label>
+                  <Select
+                    value={form.discountType || "fixed"}
+                    onValueChange={(v) => setField("discountType", v as 'percentage' | 'fixed')}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fixed">Fixed Amount</SelectItem>
+                      <SelectItem value="percentage">Percentage (%)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="discount">Discount {form.discountType === 'percentage' ? '(%)' : 'Value'}</Label>
+                  <Input id="discount" type="number" min="0" placeholder="0" value={form.discount} onChange={(e) => setField("discount", parseFloat(e.target.value) || 0)} />
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="deposit">Deposit / Paid Amount</Label>
+                  <Input id="deposit" type="number" min="0" placeholder="0" value={form.deposit} onChange={(e) => setField("deposit", parseFloat(e.target.value) || 0)} />
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="shadow-card border-border">
+          <Card className="shadow-card border-border text-foreground">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base font-semibold">Line Items</CardTitle>
@@ -146,6 +194,7 @@ export default function EditProformaPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
+              {errors.items && <p className="text-xs text-destructive">{errors.items}</p>}
               <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1">
                 <span className="col-span-6">Description</span>
                 <span className="col-span-2 text-center">Qty</span>
@@ -176,21 +225,101 @@ export default function EditProformaPage() {
                   </div>
                 </div>
               ))}
-              <div className="border-t border-border pt-3 mt-2 flex justify-between text-base font-bold text-foreground">
-                <span>Total Amount</span>
-                <span className="text-primary">{formatCurrency(total)}</span>
+
+              <div className="border-t border-border pt-3 mt-2 space-y-1.5">
+                <div className="flex justify-between text-sm text-muted-foreground">
+                  <span>Subtotal</span>
+                  <span className="font-medium text-foreground">{formatCurrency(subtotal)}</span>
+                </div>
+                {(form.taxRate ?? 0) > 0 && (
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>TVA ({form.taxRate}%)</span>
+                    <span className="font-medium text-foreground">{formatCurrency(tax)}</span>
+                  </div>
+                )}
+                {(form.discount ?? 0) > 0 && (
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>Discount {form.discountType === 'percentage' ? `(${form.discount}%)` : ''}</span>
+                    <span className="font-medium text-destructive">-{formatCurrency(discount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-base font-bold text-foreground border-t border-border pt-2">
+                  <span>Total</span>
+                  <span className="text-primary">{formatCurrency(total)}</span>
+                </div>
+                {(form.deposit ?? 0) > 0 && (
+                  <div className="flex justify-between text-sm text-muted-foreground italic">
+                    <span>Amount Paid (Deposit)</span>
+                    <span className="font-medium text-emerald-600">-{formatCurrency(form.deposit || 0)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm font-bold text-foreground border-t border-border/50 pt-1">
+                  <span>Balance Due</span>
+                  <span className="text-primary">{formatCurrency(balanceDue)}</span>
+                </div>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-card border-border text-foreground">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base font-semibold">Notes / Payment Terms</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Textarea placeholder="e.g. This is a proforma invoice valid for 30 days." className="min-h-[80px] resize-none" value={form.notes || ""} onChange={(e) => setField("notes", e.target.value)} />
             </CardContent>
           </Card>
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-5 text-foreground">
+          <Card className="shadow-card border-border bg-gradient-to-br from-primary/5 to-primary/10">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">Proforma Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex justify-between text-sm text-foreground">
+                <span className="text-muted-foreground">Items</span>
+                <span className="font-medium">{items.length}</span>
+              </div>
+              <div className="flex justify-between text-sm text-foreground">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="font-medium">{formatCurrency(subtotal)}</span>
+              </div>
+              {(form.taxRate ?? 0) > 0 && (
+                <div className="flex justify-between text-sm text-foreground">
+                  <span className="text-muted-foreground">TVA</span>
+                  <span className="font-medium text-foreground">{formatCurrency(tax)}</span>
+                </div>
+              )}
+              {(form.discount ?? 0) > 0 && (
+                <div className="flex justify-between text-sm text-foreground">
+                  <span className="text-muted-foreground">Discount</span>
+                  <span className="font-medium text-destructive">-{formatCurrency(discount)}</span>
+                </div>
+              )}
+              <div className="border-t border-border/60 pt-2 flex justify-between">
+                <span className="font-bold text-foreground">Total</span>
+                <span className="font-bold text-xl text-primary">{formatCurrency(total)}</span>
+              </div>
+              {(form.deposit ?? 0) > 0 && (
+                <div className="flex justify-between text-sm text-foreground italic">
+                  <span className="text-muted-foreground">Paid</span>
+                  <span className="font-medium text-emerald-600">-{formatCurrency(form.deposit || 0)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm text-foreground border-t border-border/40 pt-2">
+                <span className="font-bold text-foreground">Balance Due</span>
+                <span className="font-bold text-lg text-primary">{formatCurrency(balanceDue)}</span>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="shadow-card border-border bg-muted/30">
             <CardContent className="p-5 space-y-3">
               <Button onClick={handleSubmit} className="w-full gap-2" variant="hero">
                 <Save className="h-4 w-4" /> Save Changes
               </Button>
-              <Button variant="outline" className="w-full" onClick={() => navigate(-1)}>
+              <Button variant="ghost" className="w-full" onClick={() => navigate(-1)}>
                 Cancel
               </Button>
             </CardContent>

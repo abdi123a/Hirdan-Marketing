@@ -37,9 +37,10 @@ model Client {
   id            String         @id @default(uuid())
   userId        String?        @unique @map("user_id")
   name          String
-  email         String
+  email         String?
   phone         String?
   company       String
+  type          ClientType     @default(BUSINESS)
   website       String?
   address       String?
   city          String?
@@ -60,6 +61,12 @@ model Client {
   @@index([company])
   @@map("clients")
 }
+
+enum ClientType {
+  BUSINESS
+  INDIVIDUAL
+}
+
 
 model Project {
   id          String              @id @default(uuid())
@@ -159,6 +166,10 @@ model Proforma {
   date               DateTime
   dueDate            DateTime            @map("due_date")
   notes              String?             @db.Text
+  taxRate            Float?              @map("tax_rate")
+  discount           Float?
+  discountType       DiscountType?       @map("discount_type")
+  deposit            Int?
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   items              ProformaItem[]

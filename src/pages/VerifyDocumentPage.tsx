@@ -78,7 +78,9 @@ export default function VerifyDocumentPage() {
 
   const clientName = (doc.client && typeof doc.client === 'object') ? (doc.client.company || doc.client.name) : doc.client;
 
-  const taxRate = ("taxRate" in doc ? doc.taxRate : settings.taxRate) ?? 0;
+  const taxRate = doc.taxRate ?? settings.taxRate ?? 0;
+  const discount = doc.discount ?? 0;
+  const discountType = (doc.discountType ? (doc.discountType as string).toLowerCase() : 'fixed') as 'percentage' | 'fixed';
 
   const rawItems = doc.items || [];
   const subtotalFromItems = rawItems.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0);
@@ -93,7 +95,10 @@ export default function VerifyDocumentPage() {
     : [{ description: "Services rendered", quantity: 1, unitPrice: subtotal }];
 
   const tax = subtotal * taxRate / 100;
-  const total = subtotal + tax;
+  const discountAmount = discountType === 'percentage' 
+    ? (subtotal * discount / 100) 
+    : discount;
+  const total = subtotal + tax - discountAmount;
 
   return (
     <div style={{
@@ -231,6 +236,12 @@ export default function VerifyDocumentPage() {
                   <div className="flex justify-between text-sm">
                     <span className="text-[#64748b]">Tax ({taxRate}%)</span>
                     <span className="text-[#0f172a] font-semibold">{formatCurrency(tax)}</span>
+                  </div>
+                )}
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-destructive">Discount {discountType === 'percentage' ? `(${discount}%)` : ''}</span>
+                    <span className="text-destructive font-semibold">-{formatCurrency(discountAmount)}</span>
                   </div>
                 )}
               </div>
