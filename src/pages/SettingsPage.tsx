@@ -86,9 +86,10 @@ const currencies = [
 
 export default function SettingsPage() {
   const { toast } = useToast();
-  const { settings, updateSettings, fetchSettings } = useAgencyStore();
+  const { settings, updateSettings, fetchSettings, uploadFile } = useAgencyStore();
   const [formData, setFormData] = useState<AgencySettings>(settings);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState<{ [key: string]: boolean }>({});
 
   useEffect(() => {
     fetchSettings();
@@ -104,12 +105,21 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     setIsSaving(true);
-    await updateSettings(formData);
-    setIsSaving(false);
-    toast({
-      title: "Settings Saved",
-      description: "Your agency preferences have been updated successfully.",
-    });
+    try {
+      await updateSettings(formData);
+      toast({
+        title: "Settings Saved",
+        description: "Your agency preferences have been updated successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Save Failed",
+        description: "There was an error saving your settings. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -135,23 +145,35 @@ export default function SettingsPage() {
     }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, key: 'logo' | 'whiteLogo' | 'favicon') => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, key: 'logo' | 'whiteLogo' | 'favicon') => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) {
+      if (file.size > 5 * 1024 * 1024) { // Increased to 5MB to match server
         toast({
           title: "File too large",
-          description: "Please upload an image smaller than 2MB.",
+          description: "Please upload an image smaller than 5MB.",
           variant: "destructive"
         });
         return;
       }
 
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, [key]: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
+      setIsUploading(prev => ({ ...prev, [key]: true }));
+      try {
+        const url = await uploadFile(file);
+        setFormData(prev => ({ ...prev, [key]: url }));
+        toast({
+          title: "Upload Successful",
+          description: "Your image has been uploaded to the server.",
+        });
+      } catch (error) {
+        toast({
+          title: "Upload Failed",
+          description: "There was an error uploading your image. Please try again.",
+          variant: "destructive"
+        });
+      } finally {
+        setIsUploading(prev => ({ ...prev, [key]: false }));
+      }
     }
   };
 
@@ -294,7 +316,12 @@ export default function SettingsPage() {
                     className="group relative border border-dashed border-border rounded-xl p-8 bg-muted/20 flex flex-col items-center justify-center gap-4 group-hover:border-primary/50 transition-all cursor-pointer overflow-hidden h-48 hover:shadow-lg hover:bg-muted/30 active:scale-[0.98]"
                     onClick={() => mainLogoInputRef.current?.click()}
                   >
-                    {formData.logo ? (
+                    {isUploading['logo'] ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        <p className="text-xs text-muted-foreground">Uploading...</p>
+                      </div>
+                    ) : formData.logo ? (
                       <div className="relative w-full h-full flex items-center justify-center p-4">
                         <img src={formData.logo} alt="Main Logo" className="max-h-full object-contain drop-shadow-sm" />
                         <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity gap-2">
@@ -326,7 +353,12 @@ export default function SettingsPage() {
                     className="group relative border border-dashed border-slate-700/50 rounded-xl p-8 bg-slate-900 flex flex-col items-center justify-center gap-4 group-hover:border-white/30 transition-all cursor-pointer overflow-hidden h-48 hover:shadow-lg hover:shadow-slate-900/40 active:scale-[0.98]"
                     onClick={() => whiteLogoInputRef.current?.click()}
                   >
-                    {formData.whiteLogo ? (
+                    {isUploading['whiteLogo'] ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        <p className="text-xs text-white/70">Uploading...</p>
+                      </div>
+                    ) : formData.whiteLogo ? (
                       <div className="relative w-full h-full flex items-center justify-center p-4">
                         <img src={formData.whiteLogo} alt="White Logo" className="max-h-full object-contain" />
                         <div className="absolute inset-0 bg-slate-800/80 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white gap-2">
@@ -358,7 +390,12 @@ export default function SettingsPage() {
                     className="group relative border border-dashed border-border rounded-xl p-8 bg-muted/20 flex flex-col items-center justify-center gap-4 group-hover:border-primary/50 transition-all cursor-pointer overflow-hidden h-48 hover:shadow-lg hover:bg-muted/30 active:scale-[0.98]"
                     onClick={() => faviconInputRef.current?.click()}
                   >
-                    {formData.favicon ? (
+                    {isUploading['favicon'] ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        <p className="text-xs text-muted-foreground">Uploading...</p>
+                      </div>
+                    ) : formData.favicon ? (
                       <div className="relative w-20 h-20 flex items-center justify-center">
                         <img src={formData.favicon} alt="Favicon" className="w-full h-full object-contain rounded-lg shadow-sm" />
                         <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-lg gap-2">

@@ -249,7 +249,16 @@ export function PremiumInvoice({ type, data, settings, showSignature = true }: P
           <tbody>
             {itemsForTable.map((item, index) => (
               <tr key={index}>
-                <td style={{ padding: '16px', borderBottom: `1px solid ${borderColor}`, fontSize: '12px', color: textDark, fontWeight: 700, verticalAlign: 'top' }}>
+                <td style={{ 
+                  padding: '16px', 
+                  borderBottom: `1px solid ${borderColor}`, 
+                  fontSize: '12px', 
+                  color: textDark, 
+                  fontWeight: 700, 
+                  verticalAlign: 'top',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word'
+                }}>
                   {item.description}
                 </td>
                 <td style={{ padding: '16px', borderBottom: `1px solid ${borderColor}`, fontSize: '12px', color: secondary, textAlign: 'center', verticalAlign: 'top', fontWeight: 600 }}>
@@ -303,7 +312,7 @@ export function PremiumInvoice({ type, data, settings, showSignature = true }: P
                 Payment Methods & Conditions
               </div>
 
-              <div style={{ fontSize: '12px', color: secondary, lineHeight: 1.7, fontWeight: 500 }}>
+              <div style={{ fontSize: '12px', color: secondary, lineHeight: 1.7, fontWeight: 500, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                 {data.notes || settings.defaultInvoiceNotes || "Bank Transfer, Credit Card. Please make payment by the due date. Thank you for your business!"}
                 {data.paymentMethod && <div style={{ marginTop: '8px', fontWeight: 700, color: primaryColor }}>Paid via: {data.paymentMethod}</div>}
               </div>

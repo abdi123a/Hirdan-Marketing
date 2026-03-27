@@ -193,8 +193,8 @@ export default function VerifyDocumentPage() {
               {items.map((item: any, i: number) => (
                 <div key={i} className="bg-white p-4 md:p-4 rounded-2xl md:rounded-xl border border-[#e2e8f0] shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] md:shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                   {/* Desktop Item Layout */}
-                  <div className="hidden md:grid md:grid-cols-[1fr_60px_100px_110px] gap-4 items-center">
-                    <div className="text-[#0f172a] text-sm font-semibold truncate" title={item.description}>{item.description}</div>
+                  <div className="hidden md:grid md:grid-cols-[1fr_60px_100px_110px] gap-4 items-start">
+                    <div className="text-[#0f172a] text-sm font-semibold whitespace-pre-wrap break-words" title={item.description}>{item.description}</div>
                     <div className="text-[#475569] text-sm text-center">{item.quantity}</div>
                     <div className="text-[#475569] text-sm text-right">{formatCurrency(item.unitPrice)}</div>
                     <div className="text-[#0f172a] text-sm font-black text-right">{formatCurrency(item.quantity * item.unitPrice)}</div>

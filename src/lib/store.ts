@@ -257,6 +257,7 @@ interface AgencyStore {
   fetchLeads: () => Promise<void>;
   fetchAllData: () => Promise<void>;
   generatePortalAccess: (clientId: string) => Promise<{ accessCode: string }>;
+  uploadFile: (file: File) => Promise<string>;
 }
 
 export const useAgencyStore = create<AgencyStore>()(
@@ -1223,13 +1224,28 @@ export const useAgencyStore = create<AgencyStore>()(
           throw error;
         }
       },
+      uploadFile: async (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await apiFetch<{ url: string }>('/settings/upload', {
+          method: 'POST',
+          body: formData,
+          headers: { 'Content-Type': 'SKIP' as any }
+        });
+        return res.url;
+      },
     }),
     {
       name: 'agency-data-sync-v2',
       // Only persist settings.
       // All entity lists and tokens are always fetched or generated via backend.
       partialize: (state) => ({
-        settings: state.settings,
+        settings: {
+          ...state.settings,
+          logo: state.settings.logo?.startsWith('data:') ? '' : state.settings.logo,
+          whiteLogo: state.settings.whiteLogo?.startsWith('data:') ? '' : state.settings.whiteLogo,
+          favicon: state.settings.favicon?.startsWith('data:') ? '' : state.settings.favicon,
+        },
       }),
       merge: (persistedState: any, currentState: AgencyStore) => {
         return {

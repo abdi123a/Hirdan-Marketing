@@ -6,11 +6,15 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   const store = useAuthStore.getState();
   const token = store.token;
   
-  const headers = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...options.headers,
+    ...((options.headers as any) || {}),
   };
+
+  if (headers['Content-Type'] === 'SKIP') {
+    delete headers['Content-Type'];
+  }
 
   let response = await fetch(`${API_URL}${endpoint}`, {
     ...options,

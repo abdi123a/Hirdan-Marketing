@@ -6,6 +6,40 @@ import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
+import multer from 'multer';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadsDir = path.join(__dirname, '../../public/uploads');
+
+// Configure multer storage
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    cb(null, uploadsDir);
+  },
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images are allowed'));
+    }
+  }
+});
 
 const router = Router();
 
@@ -141,6 +175,21 @@ router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }
         notifications: settings.notifications ? JSON.parse(settings.notifications) : {},
       },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── POST /api/settings/upload ───────────────────────────────────
+
+router.post('/upload', authenticate, requireAdmin, upload.single('file'), async (req: Request, res: Response, next) => {
+  try {
+    if (!req.file) {
+      throw AppError.badRequest('No file uploaded');
+    }
+
+    const fileUrl = `/uploads/${req.file.filename}`;
+    res.json({ url: fileUrl });
   } catch (error) {
     next(error);
   }
