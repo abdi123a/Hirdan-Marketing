@@ -1,85 +1,191 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { useState } from "react";
-
-const events = [
-  { id: 1, title: "Client Call — TechStart", date: "2026-03-26", time: "10:00 AM", type: "Meeting" },
-  { id: 2, title: "SEO Report Due", date: "2026-03-27", time: "5:00 PM", type: "Deadline" },
-  { id: 3, title: "Team Standup", date: "2026-03-26", time: "9:00 AM", type: "Meeting" },
-  { id: 4, title: "Social Media Review", date: "2026-03-28", time: "2:00 PM", type: "Review" },
-  { id: 5, title: "Invoice Due — MediaCo", date: "2026-03-30", time: "EOD", type: "Deadline" },
-  { id: 6, title: "Sprint Planning", date: "2026-03-31", time: "11:00 AM", type: "Meeting" },
-  { id: 7, title: "Content Delivery — Nova", date: "2026-04-02", time: "3:00 PM", type: "Deadline" },
-];
+import { Plus, ChevronLeft, ChevronRight, Briefcase, FileText, Layers } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { useAgencyStore } from "@/lib/store";
+import { format, addMonths, subMonths, getDaysInMonth, startOfMonth, getDay } from "date-fns";
+import { useNavigate } from "react-router-dom";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const typeColor = (t: string) =>
-  t === "Meeting" ? "bg-blue-100 text-blue-700 hover:bg-blue-100" :
-  t === "Deadline" ? "bg-red-100 text-red-700 hover:bg-red-100" :
-  "bg-amber-100 text-amber-700 hover:bg-amber-100";
+  t === "Deadline" ? "bg-red-100 text-red-700 border-red-200" :
+  t === "Invoice" ? "bg-amber-100 text-amber-700 border-amber-200" :
+  t === "Renewal" ? "bg-blue-100 text-blue-700 border-blue-200" :
+  "bg-primary/10 text-primary border-primary/20";
 
 const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function CalendarPage() {
-  const [currentDate] = useState(new Date(2026, 2, 1)); // March 2026
-  const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-  const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
+  const [currentDate, setCurrentDate] = useState(new Date()); 
+  const { toast } = useToast();
+  const navigate = useNavigate();
+  const { projects, invoices, subscriptions, fetchProjects, fetchInvoices, fetchSubscriptions } = useAgencyStore();
+
+  useEffect(() => {
+    fetchProjects();
+    fetchInvoices();
+    fetchSubscriptions();
+  }, [fetchProjects, fetchInvoices, fetchSubscriptions]);
+
+  const events = useMemo(() => {
+    interface CalendarEvent {
+      id: string;
+      title: string;
+      subtitle: string;
+      date: string;
+      type: string;
+    }
+    const allEvents: CalendarEvent[] = [];
+    
+    projects.forEach(p => {
+      if (p.dueDate && p.status !== 'Completed' && p.status !== 'Archived') {
+        allEvents.push({ id: `proj-${p.id}`, title: p.name, subtitle: p.client, date: p.dueDate, type: "Deadline" });
+      }
+    });
+
+    invoices.forEach(i => {
+      if (i.dueDate && i.status !== 'Paid') {
+        allEvents.push({ id: `inv-${i.id}`, title: `Invoice Due - ${formatCurrency(i.amount)}`, subtitle: i.client, date: i.dueDate, type: "Invoice" });
+      }
+    });
+
+    subscriptions.forEach(s => {
+      if (s.renewal && s.renewal !== 'N/A' && s.status === 'Active') {
+        allEvents.push({ id: `sub-${s.id}`, title: `Plan Renewal - ${s.plan}`, subtitle: s.client, date: s.renewal, type: "Renewal" });
+      }
+    });
+
+    // sort by date
+    return allEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [projects, invoices, subscriptions]);
+
+  const daysInMonth = getDaysInMonth(currentDate);
+  const startDay = getDay(startOfMonth(currentDate));
+  
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  const blanks = Array.from({ length: firstDay }, (_, i) => i);
-  const today = 26;
+  const blanks = Array.from({ length: startDay }, (_, i) => i);
+  
+  const today = new Date();
+  const isCurrentMonth = today.getMonth() === currentDate.getMonth() && today.getFullYear() === currentDate.getFullYear();
+  const todayDay = today.getDate();
 
   const getEventsForDay = (day: number) => {
-    const dateStr = `2026-03-${String(day).padStart(2, "0")}`;
+    const dateStr = format(new Date(currentDate.getFullYear(), currentDate.getMonth(), day), 'yyyy-MM-dd');
     return events.filter((e) => e.date === dateStr);
   };
 
+  const currentMonthEvents = useMemo(() => {
+    const monthStr = format(currentDate, 'yyyy-MM');
+    return events.filter(e => e.date.startsWith(monthStr));
+  }, [events, currentDate]);
+
+  const handleEventClick = (eventId: string) => {
+    if (eventId.startsWith('proj-')) {
+      navigate(`/dashboard/projects/view/${eventId.replace('proj-', '')}`);
+    } else if (eventId.startsWith('inv-')) {
+      navigate(`/dashboard/invoices/view/${eventId.replace('inv-', '')}`);
+    } else if (eventId.startsWith('sub-')) {
+      navigate(`/dashboard/subscriptions/view/${eventId.replace('sub-', '')}`);
+    }
+  };
+
+  const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+  const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-[1400px]">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-display font-bold text-foreground">Calendar</h1>
-          <p className="text-muted-foreground mt-1">Schedule and upcoming events</p>
+          <p className="text-muted-foreground mt-1 text-sm">Schedule and upcoming events</p>
         </div>
-        <Button variant="hero" className="gap-2"><Plus className="h-4 w-4" /> Add Event</Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button className="gap-2">
+              <Plus className="h-4 w-4" /> Add Event
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuLabel>Create New</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => navigate("/dashboard/projects/add")}>
+              <Briefcase className="h-4 w-4" /> Project Deadline
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => navigate("/dashboard/invoices/add")}>
+              <FileText className="h-4 w-4" /> Invoice Date
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => navigate("/dashboard/subscriptions/add")}>
+              <Layers className="h-4 w-4" /> Renewal Reminder
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2 shadow-card border-border">
-          <CardHeader className="pb-3">
+      <div className="grid lg:grid-cols-[1fr_380px] gap-6">
+        <Card className="border-border/50 shadow-sm h-fit">
+          <CardHeader className="pb-4">
             <div className="flex items-center justify-between">
-              <CardTitle className="font-display text-lg">March 2026</CardTitle>
+              <CardTitle className="font-display text-lg">{format(currentDate, 'MMMM yyyy')}</CardTitle>
               <div className="flex gap-1">
-                <Button variant="ghost" size="icon"><ChevronLeft className="h-4 w-4" /></Button>
-                <Button variant="ghost" size="icon"><ChevronRight className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" onClick={prevMonth} className="h-8 w-8"><ChevronLeft className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" onClick={nextMonth} className="h-8 w-8"><ChevronRight className="h-4 w-4" /></Button>
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-7 gap-px">
+            <div className="grid grid-cols-7 gap-1">
               {daysOfWeek.map((d) => (
                 <div key={d} className="text-center text-xs font-medium text-muted-foreground py-2">{d}</div>
               ))}
               {blanks.map((b) => (
-                <div key={`blank-${b}`} className="aspect-square p-1" />
+                <div key={`blank-${b}`} className="min-h-[80px] p-2 bg-muted/20 rounded-md border border-transparent" />
               ))}
               {days.map((day) => {
                 const dayEvents = getEventsForDay(day);
+                const isToday = isCurrentMonth && day === todayDay;
                 return (
                   <div
                     key={day}
-                    className={`aspect-square p-1 rounded-lg border text-sm transition-colors cursor-pointer hover:bg-accent ${
-                      day === today ? "bg-primary/10 border-primary" : "border-transparent"
+                    className={`min-h-[80px] p-2 rounded-md border transition-all duration-200 ${
+                      isToday 
+                        ? "bg-primary/[0.03] border-primary/30 shadow-sm" 
+                        : "bg-card border-border/50 hover:border-primary/20 hover:shadow-sm"
                     }`}
                   >
-                    <span className={`text-xs font-medium ${day === today ? "text-primary" : "text-foreground"}`}>{day}</span>
-                    {dayEvents.length > 0 && (
-                      <div className="mt-0.5">
-                        {dayEvents.slice(0, 2).map((e) => (
-                          <div key={e.id} className="w-full h-1 rounded-full bg-secondary mt-0.5" />
-                        ))}
-                      </div>
-                    )}
+                    <div className="flex justify-between items-start mb-1.5">
+                      <span className={`text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full ${isToday ? "bg-primary text-primary-foreground" : "text-foreground"}`}>
+                        {day}
+                      </span>
+                      {dayEvents.length > 0 && (
+                        <span className="text-[10px] bg-muted text-muted-foreground px-1.5 rounded-sm font-medium">{dayEvents.length}</span>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      {dayEvents.slice(0, 3).map((e) => (
+                        <div 
+                          key={e.id} 
+                          className={`text-[10px] px-1.5 py-0.5 rounded truncate border cursor-pointer hover:brightness-95 transition-all ${typeColor(e.type)}`}
+                          onClick={() => handleEventClick(e.id)}
+                        >
+                          {e.title}
+                        </div>
+                      ))}
+                      {dayEvents.length > 3 && (
+                        <div className="text-[10px] text-muted-foreground pl-1 font-medium">
+                          +{dayEvents.length - 3} more
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -87,22 +193,32 @@ export default function CalendarPage() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-card border-border">
+        <Card className="border-border/50 shadow-sm h-fit">
           <CardHeader>
-            <CardTitle className="font-display text-lg">Upcoming Events</CardTitle>
+            <CardTitle className="font-display text-lg">Events in {format(currentDate, 'MMMM')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {events.map((e) => (
-                <div key={e.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                  <div className="w-1 h-full min-h-[40px] rounded-full bg-secondary shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">{e.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{e.date} · {e.time}</p>
-                    <Badge className={`mt-1.5 ${typeColor(e.type)}`}>{e.type}</Badge>
+              {currentMonthEvents.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-8">No events scheduled.</div>
+              ) : (
+                currentMonthEvents.map((e) => (
+                  <div 
+                    key={e.id} 
+                    className="flex flex-col gap-1 p-3 rounded-lg border border-border/50 hover:bg-muted/30 transition-colors cursor-pointer group"
+                    onClick={() => handleEventClick(e.id)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <p className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">{e.title}</p>
+                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 rounded ${typeColor(e.type)}`}>{e.type}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground font-medium">{e.subtitle}</p>
+                    <p className="text-xs text-muted-foreground mt-1 bg-muted w-fit px-2 py-0.5 rounded-md">
+                      {formatDate(e.date)}
+                    </p>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>

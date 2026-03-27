@@ -1,9 +1,10 @@
 import { motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { BarChart3, Users, Briefcase, ArrowRight } from "lucide-react";
 import hirdanLogo from "@/assets/hirdan-logo.png";
 
-const Navbar = () => (
+export const Navbar = () => (
   <nav className="fixed top-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-xl border-b border-border">
     <div className="container flex items-center justify-between h-16">
       <img src={hirdanLogo} alt="Hirdan Marketing" className="h-9" />
@@ -15,8 +16,12 @@ const Navbar = () => (
         ))}
       </div>
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm">Log in</Button>
-        <Button variant="hero" size="sm">Get Started</Button>
+        <Link to="/client/login">
+          <Button variant="ghost" size="sm">Client Portal</Button>
+        </Link>
+        <Link to="/login">
+          <Button variant="hero" size="sm">Admin Login</Button>
+        </Link>
       </div>
     </div>
   </nav>
@@ -47,12 +52,16 @@ const Hero = () => (
           Streamline clients, projects, and team workflows in one powerful platform built for modern marketing agencies.
         </motion.p>
         <motion.div variants={fadeUp} custom={3} className="flex flex-wrap gap-4">
-          <Button variant="hero" size="lg" className="text-base px-8 py-6">
-            Start Free Trial <ArrowRight className="ml-1" />
-          </Button>
-          <Button variant="hero-outline" size="lg" className="text-base px-8 py-6">
-            Book a Demo
-          </Button>
+          <Link to="/login">
+            <Button variant="hero" size="lg" className="text-base px-8 py-6">
+              Admin Dashboard <ArrowRight className="ml-1" />
+            </Button>
+          </Link>
+          <Link to="/client/login">
+            <Button variant="hero-outline" size="lg" className="text-base px-8 py-6">
+              Client Portal
+            </Button>
+          </Link>
         </motion.div>
         <motion.div variants={fadeUp} custom={4} className="flex items-center gap-8 mt-12">
           {[["500+", "Agencies"], ["10K+", "Projects"], ["99.9%", "Uptime"]].map(([num, label]) => (
@@ -118,15 +127,17 @@ const CTA = () => (
         <p className="text-lg text-primary-foreground/60 max-w-xl mx-auto mb-10 relative z-10">
           Join hundreds of agencies already using Hirdan to streamline operations and grow revenue.
         </p>
-        <Button variant="hero" size="lg" className="text-base px-10 py-6 relative z-10">
-          Get Started Free <ArrowRight className="ml-1" />
-        </Button>
+        <Link to="/login" className="relative z-10">
+          <Button variant="hero" size="lg" className="text-base px-10 py-6">
+            Get Started Free <ArrowRight className="ml-1" />
+          </Button>
+        </Link>
       </motion.div>
     </div>
   </section>
 );
 
-const Footer = () => (
+export const Footer = () => (
   <footer className="border-t border-border py-12">
     <div className="container flex flex-col md:flex-row items-center justify-between gap-4">
       <img src={hirdanLogo} alt="Hirdan Marketing" className="h-8" />

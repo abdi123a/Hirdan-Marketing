@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -128,4 +128,60 @@
   .shadow-elevated {
     box-shadow: var(--shadow-elevated);
   }
+}
+
+[data-radix-portal]>div[style*="background-color: rgba(0, 0, 0, 0.8)"],
+[role="dialog"]>button,
+[role="dialog"] .DialogClose {
+  display: none !important;
+}
+
+/* Reset Dialog Content for Print */
+[role="dialog"] {
+  position: static !important;
+  display: block !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: auto !important;
+  transform: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* Hide the preview modal's header and action buttons */
+[role="dialog"] .flex.items-center.justify-between,
+[role="dialog"] header,
+[role="dialog"] .DialogHeader {
+  display: none !important;
+}
+
+/* Ensure only the invoice content is visible */
+#premium-invoice-content {
+  display: block !important;
+  visibility: visible !important;
+  margin: 0 auto !important;
+  background: white !important;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Force background colors and gradients */
+* {
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+  color-adjust: exact !important;
+}
+
+/* Reset scale and shadow from the preview */
+.scale-90 {
+  transform: scale(1) !important;
+}
+
+.shadow-2xl {
+  box-shadow: none !important;
 }

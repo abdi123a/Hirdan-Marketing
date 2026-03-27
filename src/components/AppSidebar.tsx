@@ -1,8 +1,12 @@
-import { 
-  LayoutDashboard, Users, Briefcase, UserCircle, 
-  Receipt, CreditCard, CalendarDays, Settings, LogOut, PanelLeftClose, PanelLeft
+import {
+  LayoutDashboard, Users, Briefcase, UserCircle,
+  Receipt, CreditCard, CalendarDays, Settings, LogOut, PanelLeftClose, PanelLeft,
+  FileText, Package, Zap
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
+import { useAuthStore } from "@/lib/auth-store";
+import { useAgencyStore } from "@/lib/store";
 import hirdanLogo from "@/assets/hirdan-logo.png";
 import {
   Sidebar,
@@ -24,23 +28,34 @@ const mainItems = [
   { title: "Clients", url: "/dashboard/clients", icon: Users },
   { title: "Projects", url: "/dashboard/projects", icon: Briefcase },
   { title: "Team", url: "/dashboard/team", icon: UserCircle },
+  { title: "Proforma", url: "/dashboard/proforma", icon: FileText },
   { title: "Invoices", url: "/dashboard/invoices", icon: Receipt },
   { title: "Subscriptions", url: "/dashboard/subscriptions", icon: CreditCard },
+  { title: "Packages", url: "/dashboard/packages", icon: Package },
+  { title: "Services", url: "/dashboard/services", icon: Zap },
   { title: "Calendar", url: "/dashboard/calendar", icon: CalendarDays },
 ];
 
 export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
+  const { logout } = useAuthStore();
+  const { settings } = useAgencyStore();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login', { replace: true });
+  };
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       {/* Logo */}
       <SidebarHeader className="p-0">
         <div className={`flex items-center ${collapsed ? "justify-center py-5" : "justify-center py-6"}`}>
-          <img 
-            src={hirdanLogo} 
-            alt="Hirdan Marketing" 
+          <img
+            src={settings.logo || hirdanLogo}
+            alt={settings.agencyName}
             className={collapsed ? "h-9 w-9 object-contain" : "h-14 object-contain"}
           />
         </div>
@@ -92,8 +107,8 @@ export function AppSidebar() {
           <SidebarMenu className={collapsed ? "items-center gap-1.5" : "gap-0.5"}>
             <SidebarMenuItem className={collapsed ? "flex justify-center" : ""}>
               <SidebarMenuButton asChild tooltip="Settings">
-                <NavLink 
-                  to="/dashboard/settings" 
+                <NavLink
+                  to="/dashboard/settings"
                   className={
                     collapsed
                       ? "flex items-center justify-center w-10 h-10 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
@@ -107,18 +122,18 @@ export function AppSidebar() {
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem className={collapsed ? "flex justify-center" : ""}>
-              <SidebarMenuButton asChild tooltip="Back to Site">
-                <a 
-                  href="/" 
+              <SidebarMenuButton asChild tooltip="Sign Out">
+                <button
+                  onClick={handleLogout}
                   className={
                     collapsed
-                      ? "flex items-center justify-center w-10 h-10 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
-                      : "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
+                      ? "flex items-center justify-center w-10 h-10 rounded-xl text-sidebar-foreground/50 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200"
+                      : "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sidebar-foreground/50 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200"
                   }
                 >
                   <LogOut className="h-[18px] w-[18px] shrink-0" />
-                  {!collapsed && <span className="text-[13px]">Back to Site</span>}
-                </a>
+                  {!collapsed && <span className="text-[13px]">Sign Out</span>}
+                </button>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
