@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, Link, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/lib/auth-store';
 import { useAgencyStore } from '@/lib/store';
@@ -19,10 +19,13 @@ export default function ClientLoginPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Redirect if already logged in as client
-  if (isAuthenticated && user?.role === 'client') {
-    navigate('/client/portal', { replace: true });
-    return null;
+  // Redirect if already logged in
+  if (isAuthenticated) {
+    if (user?.role === 'client') {
+      return <Navigate to="/client/portal" replace />;
+    } else if (user?.role === 'admin') {
+      return <Navigate to="/dashboard" replace />;
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

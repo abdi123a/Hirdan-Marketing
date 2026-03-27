@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/lib/auth-store';
 import { useAgencyStore } from '@/lib/store';
@@ -21,11 +21,22 @@ export default function AdminLoginPage() {
   const location = useLocation();
   const { toast } = useToast();
 
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
+  const stateFrom = (location.state as { from?: { pathname: string } })?.from?.pathname;
+  const from = stateFrom && stateFrom !== '/login' ? stateFrom : '/dashboard';
 
-  // Redirect if already logged in as admin
-  if (isAuthenticated && user?.role === 'admin') {
-    navigate(from, { replace: true });
+  // Redirection logic for authenticated users
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      if (user.role === 'admin') {
+        navigate(from, { replace: true });
+      } else if (user.role === 'client') {
+        navigate('/client/portal', { replace: true });
+      }
+    }
+  }, [isAuthenticated, user, navigate, from]);
+
+  // Prevent rendering login form if already authenticated
+  if (isAuthenticated && user) {
     return null;
   }
 
@@ -73,8 +84,6 @@ export default function AdminLoginPage() {
           {/* Header */}
           <div className="text-center mb-8">
             <img src={hirdanLogo} alt={settings.agencyName} className="h-14 mx-auto mb-6" />
-            <h2 className="text-2xl font-display font-bold text-foreground">Agency Command Center</h2>
-            <p className="text-muted-foreground mt-2 text-sm">Sign in to your admin dashboard</p>
           </div>
 
             {/* Form */}
@@ -161,9 +170,9 @@ export default function AdminLoginPage() {
 
           {/* Back to site */}
           <div className="text-center mt-6">
-            <Link to="/" className="text-sm text-white/40 hover:text-white/70 transition-colors">
+            <a href={import.meta.env.VITE_LANDING_URL || "https://hirdanmarketing.com"} className="text-sm text-white/40 hover:text-white/70 transition-colors">
               ← Back to website
-            </Link>
+            </a>
           </div>
       </motion.div>
     </div>

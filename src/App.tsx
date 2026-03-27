@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import Index from "./pages/Index.tsx";
+import { useAuthStore } from "@/lib/auth-store";
+
 import NotFound from "./pages/NotFound.tsx";
 import AdminLoginPage from "./pages/AdminLoginPage.tsx";
 import ClientLoginPage from "./pages/ClientLoginPage.tsx";
@@ -49,7 +50,156 @@ import ServiceDetailsPage from "./pages/ServiceDetailsPage.tsx";
 import LeadsPage from "./pages/LeadsPage.tsx";
 import VerifyDocumentPage from "./pages/VerifyDocumentPage.tsx";
 
+import SetupPage from "./pages/SetupPage.tsx";
+import { useState, useEffect } from "react";
+import { apiFetch } from "@/lib/api-client";
+import { Loader2 } from "lucide-react";
+
 const queryClient = new QueryClient();
+
+function AppRoutes() {
+  const [isInstalled, setIsInstalled] = useState<boolean | null>(null);
+  const [isVerifying, setIsVerifying] = useState(true);
+  const { user, isAuthenticated, logout, setToken } = useAuthStore();
+
+  useEffect(() => {
+    const verifyAuth = async () => {
+      // If we seem to be authenticated, verify with the backend
+      try {
+        const data = await apiFetch<{ user: any }>('/auth/me');
+        if (data.user) {
+          // Normalize role to lowercase for the store
+          const normalizedUser = {
+            role: data.user.role.toLowerCase() as any,
+            email: data.user.email,
+            name: data.user.name,
+            ...(data.user.client ? {
+              company: data.user.client.company,
+              clientId: data.user.client.id,
+            } : {})
+          };
+          
+          useAuthStore.setState({
+            user: normalizedUser,
+            isAuthenticated: true
+          });
+        } else {
+          logout();
+        }
+      } catch (err) {
+        logout();
+      } finally {
+        setIsVerifying(false);
+      }
+    };
+
+    if (isInstalled === true) {
+      verifyAuth();
+    } else if (isInstalled === false) {
+      setIsVerifying(false);
+    }
+  }, [isInstalled]); // Only run when install status changes
+
+  useEffect(() => {
+    // Check if the application is installed
+    apiFetch<{ isInstalled: boolean }>('/install/status')
+      .then(res => {
+        setIsInstalled(res.isInstalled);
+      })
+      .catch((error) => {
+        console.error("Failed to check install status", error);
+        // By default, if the endpoint is completely unreachable, we assume it's set up or we show an error.
+        // For local development, assume uninstalled if we get a 503 from backend requiring setup.
+        if (error.message?.includes('503') || String(error).includes('503')) {
+          setIsInstalled(false);
+        } else {
+          // If we can't tell, err on the side of false to show the setup page,
+          // OR if backend is down, we might just stay on normal app and break elsewhere.
+          setIsInstalled(false);
+        }
+      });
+  }, []);
+
+  if (isInstalled === null || (isInstalled === true && isVerifying)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  if (isInstalled === false) {
+    return <SetupPage />;
+  }
+
+  return (
+    <Routes>
+      {/* Public routes */}
+      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="/login" element={<AdminLoginPage />} />
+      <Route path="/client/login" element={<ClientLoginPage />} />
+      <Route path="/verify/:token" element={<VerifyDocumentPage />} />
+
+      {/* Client portal (protected - client role) */}
+      <Route
+        path="/client/portal"
+        element={
+          <ProtectedRoute allowedRole="client">
+            <ClientPortalPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Admin dashboard (protected - admin role) */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute allowedRole="admin">
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<DashboardOverview />} />
+        <Route path="clients" element={<ClientsPage />} />
+        <Route path="clients/add" element={<AddClientPage />} />
+        <Route path="clients/edit/:id" element={<EditClientPage />} />
+        <Route path="clients/view/:id" element={<ClientDetailsPage />} />
+        <Route path="projects" element={<ProjectsPage />} />
+        <Route path="projects/add" element={<AddProjectPage />} />
+        <Route path="projects/edit/:id" element={<EditProjectPage />} />
+        <Route path="projects/view/:id" element={<ProjectDetailsPage />} />
+        <Route path="team" element={<TeamPage />} />
+        <Route path="team/add" element={<AddTeamMemberPage />} />
+        <Route path="team/edit/:id" element={<EditTeamMemberPage />} />
+        <Route path="team/view/:id" element={<TeamMemberDetailsPage />} />
+        <Route path="invoices" element={<InvoicesPage />} />
+        <Route path="invoices/add" element={<AddInvoicePage />} />
+        <Route path="invoices/edit/:id" element={<EditInvoicePage />} />
+        <Route path="invoices/view/:id" element={<InvoiceDetailsPage />} />
+        <Route path="subscriptions" element={<SubscriptionsPage />} />
+        <Route path="subscriptions/add" element={<AddSubscriptionPage />} />
+        <Route path="subscriptions/edit/:id" element={<EditSubscriptionPage />} />
+        <Route path="subscriptions/view/:id" element={<SubscriptionDetailsPage />} />
+        <Route path="calendar" element={<CalendarPage />} />
+        <Route path="proforma" element={<ProformaPage />} />
+        <Route path="proforma/add" element={<AddProformaPage />} />
+        <Route path="proforma/edit/:id" element={<EditProformaPage />} />
+        <Route path="proforma/view/:id" element={<ProformaDetailsPage />} />
+        <Route path="packages" element={<PackagesPage />} />
+        <Route path="packages/add" element={<AddPackagePage />} />
+        <Route path="packages/edit/:id" element={<EditPackagePage />} />
+        <Route path="packages/view/:id" element={<PackageDetailsPage />} />
+        <Route path="services" element={<ServicesPage />} />
+        <Route path="services/add" element={<AddServicePage />} />
+        <Route path="services/edit/:id" element={<EditServicePage />} />
+        <Route path="services/view/:id" element={<ServiceDetailsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="leads" element={<LeadsPage />} />
+      </Route>
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+}
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -58,71 +208,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AgencyAppearanceManager />
-        <Routes>
-          {/* Public routes */}
-          <Route path="/" element={<Index />} />
-          <Route path="/login" element={<AdminLoginPage />} />
-          <Route path="/client/login" element={<ClientLoginPage />} />
-          <Route path="/verify/:token" element={<VerifyDocumentPage />} />
-
-          {/* Client portal (protected - client role) */}
-          <Route
-            path="/client/portal"
-            element={
-              <ProtectedRoute allowedRole="client">
-                <ClientPortalPage />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* Admin dashboard (protected - admin role) */}
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute allowedRole="admin">
-                <DashboardLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<DashboardOverview />} />
-            <Route path="clients" element={<ClientsPage />} />
-            <Route path="clients/add" element={<AddClientPage />} />
-            <Route path="clients/edit/:id" element={<EditClientPage />} />
-            <Route path="clients/view/:id" element={<ClientDetailsPage />} />
-            <Route path="projects" element={<ProjectsPage />} />
-            <Route path="projects/add" element={<AddProjectPage />} />
-            <Route path="projects/edit/:id" element={<EditProjectPage />} />
-            <Route path="projects/view/:id" element={<ProjectDetailsPage />} />
-            <Route path="team" element={<TeamPage />} />
-            <Route path="team/add" element={<AddTeamMemberPage />} />
-            <Route path="team/edit/:id" element={<EditTeamMemberPage />} />
-            <Route path="team/view/:id" element={<TeamMemberDetailsPage />} />
-            <Route path="invoices" element={<InvoicesPage />} />
-            <Route path="invoices/add" element={<AddInvoicePage />} />
-            <Route path="invoices/edit/:id" element={<EditInvoicePage />} />
-            <Route path="invoices/view/:id" element={<InvoiceDetailsPage />} />
-            <Route path="subscriptions" element={<SubscriptionsPage />} />
-            <Route path="subscriptions/add" element={<AddSubscriptionPage />} />
-            <Route path="subscriptions/edit/:id" element={<EditSubscriptionPage />} />
-            <Route path="subscriptions/view/:id" element={<SubscriptionDetailsPage />} />
-            <Route path="calendar" element={<CalendarPage />} />
-            <Route path="proforma" element={<ProformaPage />} />
-            <Route path="proforma/add" element={<AddProformaPage />} />
-            <Route path="proforma/edit/:id" element={<EditProformaPage />} />
-            <Route path="proforma/view/:id" element={<ProformaDetailsPage />} />
-            <Route path="packages" element={<PackagesPage />} />
-            <Route path="packages/add" element={<AddPackagePage />} />
-            <Route path="packages/edit/:id" element={<EditPackagePage />} />
-            <Route path="packages/view/:id" element={<PackageDetailsPage />} />
-            <Route path="services" element={<ServicesPage />} />
-            <Route path="services/add" element={<AddServicePage />} />
-            <Route path="services/edit/:id" element={<EditServicePage />} />
-            <Route path="services/view/:id" element={<ServiceDetailsPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="leads" element={<LeadsPage />} />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AppRoutes />
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

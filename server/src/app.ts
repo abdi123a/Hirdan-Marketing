@@ -16,10 +16,10 @@ const app = express();
 // Add security headers
 app.use(helmet());
 
-// Global API Rate Limiting (e.g. max 200 requests per 15 mins per IP)
+// Global API Rate Limiting
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: process.env.NODE_ENV === 'production' ? 100 : 20000,
   message: { error: true, message: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -29,8 +29,16 @@ app.use('/api', globalLimiter);
 app.use(cors({
   origin: (origin, callback) => {
     const allowedOrigins = process.env.NODE_ENV === 'production'
-      ? [process.env.FRONTEND_URL || 'http://localhost:8080']
-      : ['http://localhost:8080', 'http://localhost:5173', 'http://127.0.0.1:5173'];
+      ? [
+          process.env.FRONTEND_URL || 'https://app.hirdanmarketing.com',
+          process.env.LANDING_URL || 'https://hirdanmarketing.com',
+        ].filter(Boolean)
+      : [
+          'http://localhost:8080',
+          'http://localhost:3000',
+          'http://localhost:5173',
+          'http://127.0.0.1:5173',
+        ];
 
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
