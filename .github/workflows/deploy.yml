@@ -63,6 +63,11 @@ jobs:
             # Fix ownership permissions for the frontend site
             chown -R hirdanmarketing-app:hirdanmarketing-app /home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
             
+            # Ensure uploads symlink is intact (protects branding files from being wiped)
+            mkdir -p /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/public
+            ln -sfn /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/uploads \
+              /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/public/uploads
+            
             # Finish backend setup
             cd /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
             
