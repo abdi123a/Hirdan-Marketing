@@ -40,6 +40,8 @@ interface PremiumInvoiceProps {
     currency: string;
     timezone: string;
     primaryColor?: string;
+    signature?: string;
+    stamp?: string;
   };
   showSignature?: boolean;
 }
@@ -364,22 +366,59 @@ export function PremiumInvoice({ type, data, settings, showSignature = true }: P
             </div>
 
 
-            {/* Signature Block - Text Removed */}
+            {/* Signature Block */}
             {showSignature && (
-              <div style={{ textAlign: 'right', paddingRight: '20px' }}>
-                <div style={{
-                  width: '200px',
-                  height: '80px',
-                  borderBottom: `2px solid ${secondary}`,
-                  marginBottom: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                  {/* Space for manual signature and stamp */}
-                </div>
-                <div style={{ fontSize: '10px', fontWeight: 800, color: textDark, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Authorized Signature
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-end', justifyContent: 'flex-end', paddingRight: '20px' }}>
+                {/* Stamp */}
+                {settings.stamp && (
+                  <div style={{
+                    width: '90px',
+                    height: '90px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: '10px'
+                  }}>
+                    <img 
+                      src={settings.stamp} 
+                      alt="Official Stamp" 
+                      style={{ 
+                        maxHeight: '100%', 
+                        maxWidth: '100%', 
+                        objectFit: 'contain',
+                        opacity: 0.85
+                      }} 
+                    />
+                  </div>
+                )}
+
+                {/* Signature */}
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{
+                    width: '180px',
+                    height: '70px',
+                    borderBottom: `2px solid ${secondary}`,
+                    marginBottom: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    position: 'relative',
+                  }}>
+                    {settings.signature ? (
+                      <img 
+                        src={settings.signature} 
+                        alt="Authorized Signature" 
+                        style={{ 
+                          maxHeight: '100%', 
+                          maxWidth: '100%', 
+                          objectFit: 'contain' 
+                        }} 
+                      />
+                    ) : null}
+                  </div>
+                  <div style={{ fontSize: '10px', fontWeight: 800, color: textDark, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    Authorized Signature
+                  </div>
                 </div>
               </div>
             )}

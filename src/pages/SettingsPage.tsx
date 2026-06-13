@@ -34,6 +34,8 @@ import {
   ChevronRight,
   Settings,
   Briefcase,
+  PenTool,
+  Award,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyStore, AgencySettings, PaymentMethod } from "@/lib/store";
@@ -102,6 +104,8 @@ export default function SettingsPage() {
   const mainLogoInputRef = useRef<HTMLInputElement>(null);
   const whiteLogoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
+  const signatureInputRef = useRef<HTMLInputElement>(null);
+  const stampInputRef = useRef<HTMLInputElement>(null);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -145,7 +149,7 @@ export default function SettingsPage() {
     }));
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, key: 'logo' | 'whiteLogo' | 'favicon') => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, key: 'logo' | 'whiteLogo' | 'favicon' | 'signature' | 'stamp') => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) { // Increased to 5MB to match server
@@ -205,7 +209,7 @@ export default function SettingsPage() {
     }));
   };
 
-  const removeImage = (e: React.MouseEvent, key: 'logo' | 'whiteLogo' | 'favicon') => {
+  const removeImage = (e: React.MouseEvent, key: 'logo' | 'whiteLogo' | 'favicon' | 'signature' | 'stamp') => {
     e.stopPropagation();
     setFormData(prev => ({ ...prev, [key]: '' }));
   };
@@ -317,6 +321,8 @@ export default function SettingsPage() {
               <input type="file" ref={mainLogoInputRef} onChange={(e) => handleFileChange(e, 'logo')} accept="image/*" className="hidden" />
               <input type="file" ref={whiteLogoInputRef} onChange={(e) => handleFileChange(e, 'whiteLogo')} accept="image/*" className="hidden" />
               <input type="file" ref={faviconInputRef} onChange={(e) => handleFileChange(e, 'favicon')} accept="image/*" className="hidden" />
+              <input type="file" ref={signatureInputRef} onChange={(e) => handleFileChange(e, 'signature')} accept="image/*" className="hidden" />
+              <input type="file" ref={stampInputRef} onChange={(e) => handleFileChange(e, 'stamp')} accept="image/*" className="hidden" />
 
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                 <div className="space-y-4">
@@ -423,6 +429,95 @@ export default function SettingsPage() {
                         </div>
                       </>
                     ) }
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                    <PenTool className="h-5 w-5 text-primary" /> Invoice Signature & Stamp
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">Upload your authorized signature and official stamp. These will be rendered dynamically on generated invoices and proformas.</p>
+                </div>
+                
+                <div className="grid md:grid-cols-2 gap-8">
+                  {/* Authorized Signature */}
+                  <div className="space-y-4">
+                    <Label className="font-bold text-sm uppercase tracking-wider text-muted-foreground underline decoration-primary decoration-2 underline-offset-4">Authorized Signature</Label>
+                    <div 
+                      className="group relative border border-dashed border-border rounded-xl p-8 bg-muted/20 flex flex-col items-center justify-center gap-4 group-hover:border-primary/50 transition-all cursor-pointer overflow-hidden h-48 hover:shadow-lg hover:bg-muted/30 active:scale-[0.98]"
+                      onClick={() => signatureInputRef.current?.click()}
+                    >
+                      {isUploading['signature'] ? (
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          <p className="text-xs text-muted-foreground">Uploading...</p>
+                        </div>
+                      ) : formData.signature ? (
+                        <div className="relative w-full h-full flex items-center justify-center p-4">
+                          <img src={formData.signature} alt="Signature" className="max-h-full object-contain drop-shadow-sm" />
+                          <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity gap-2">
+                            <Button variant="secondary" size="sm" className="gap-2 shadow-sm">
+                              <Upload className="h-4 w-4" /> Change
+                            </Button>
+                            <Button variant="destructive" size="icon" className="h-8 w-8" onClick={(e) => removeImage(e, 'signature')}>
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="p-3 rounded-full bg-background shadow-sm border border-border group-hover:scale-110 transition-transform">
+                            <PenTool className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-sm font-medium">Upload Signature</p>
+                            <p className="text-xs text-muted-foreground mt-1">PNG with transparent background</p>
+                          </div>
+                        </>
+                      ) }
+                    </div>
+                  </div>
+
+                  {/* Official Stamp */}
+                  <div className="space-y-4">
+                    <Label className="font-bold text-sm uppercase tracking-wider text-muted-foreground underline decoration-primary decoration-2 underline-offset-4">Official Stamp</Label>
+                    <div 
+                      className="group relative border border-dashed border-border rounded-xl p-8 bg-muted/20 flex flex-col items-center justify-center gap-4 group-hover:border-primary/50 transition-all cursor-pointer overflow-hidden h-48 hover:shadow-lg hover:bg-muted/30 active:scale-[0.98]"
+                      onClick={() => stampInputRef.current?.click()}
+                    >
+                      {isUploading['stamp'] ? (
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                          <p className="text-xs text-muted-foreground">Uploading...</p>
+                        </div>
+                      ) : formData.stamp ? (
+                        <div className="relative w-full h-full flex items-center justify-center p-4">
+                          <img src={formData.stamp} alt="Stamp" className="max-h-full object-contain drop-shadow-sm" />
+                          <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity gap-2">
+                            <Button variant="secondary" size="sm" className="gap-2 shadow-sm">
+                              <Upload className="h-4 w-4" /> Change
+                            </Button>
+                            <Button variant="destructive" size="icon" className="h-8 w-8" onClick={(e) => removeImage(e, 'stamp')}>
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="p-3 rounded-full bg-background shadow-sm border border-border group-hover:scale-110 transition-transform">
+                            <Award className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-sm font-medium">Upload Stamp</p>
+                            <p className="text-xs text-muted-foreground mt-1">PNG with transparent background</p>
+                          </div>
+                        </>
+                      ) }
+                    </div>
                   </div>
                 </div>
               </div>

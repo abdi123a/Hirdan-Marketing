@@ -198,6 +198,8 @@ export interface AgencySettings {
   whiteLogo: string;
   favicon: string;
   primaryColor: string;
+  signature: string;
+  stamp: string;
   taxRate: number;
   defaultInvoiceNotes: string;
   paymentMethods: PaymentMethod[];
@@ -310,6 +312,8 @@ export const useAgencyStore = create<AgencyStore>()(
         whiteLogo: "https://placehold.co/200x60/white/504188?text=LOGO",
         favicon: "https://placehold.co/32x32/504188/white?text=H",
         primaryColor: "#504188",
+        signature: "",
+        stamp: "",
         taxRate: 15,
         defaultInvoiceNotes: "Thank you for your business! Please make payment within 14 days.",
         paymentMethods: [

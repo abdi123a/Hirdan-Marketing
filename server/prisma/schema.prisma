@@ -202,8 +202,8 @@ model Subscription {
   plan         String
   amount       Int
   billingCycle BillingCycle       @default(MONTHLY) @map("billing_cycle")
-  started      DateTime
-  renewal      DateTime?
+  started      DateTime           @default(now()) @map("start_date")
+  renewal      DateTime?          @map("end_date")
   status       SubscriptionStatus @default(ACTIVE)
   features     String?            @db.Text
   notes        String?            @db.Text
@@ -291,6 +291,12 @@ model AgencySettings {
   paymentMethods      String?  @map("payment_methods") @db.LongText
   socialLinks         String?  @map("social_links") @db.LongText
   notifications       String?  @db.LongText
+  signature           String?  @db.LongText
+  stamp               String?  @db.LongText
+  enableRecaptcha     Boolean  @default(false) @map("enable_recaptcha")
+  recaptchaSecretKey  String?  @map("recaptcha_secret_key")
+  recaptchaSiteKey    String?  @map("recaptcha_site_key")
+  openAiApiKey        String?  @map("open_ai_api_key")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 

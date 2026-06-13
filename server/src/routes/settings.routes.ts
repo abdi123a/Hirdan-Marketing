@@ -98,6 +98,8 @@ router.get('/', async (req: Request, res: Response, next) => {
           whiteLogo: settings.whiteLogo,
           favicon: settings.favicon,
           primaryColor: settings.primaryColor,
+          signature: settings.signature,
+          stamp: settings.stamp,
           socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
         },
       });
@@ -126,6 +128,8 @@ const settingsDtoSchema = z.object({
   paymentMethods: z.any().optional(),   // JSON arrays stored as strings
   socialLinks: z.any().optional(),      // JSON objects stored as strings
   notifications: z.any().optional(),    // JSON objects stored as strings
+  signature: z.string().optional().nullable(),
+  stamp: z.string().optional().nullable(),
 }).passthrough(); // Allowing passthrough for frontend component meta temporarily
 
 router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }), async (req: Request, res: Response, next) => {
