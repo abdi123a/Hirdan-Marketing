@@ -124,22 +124,24 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
-            <SidebarMenuItem className={collapsed ? "flex justify-center" : ""}>
-              <SidebarMenuButton asChild tooltip="Settings">
-                <NavLink
-                  to="/dashboard/settings"
-                  className={
-                    collapsed
-                      ? "flex items-center justify-center w-10 h-10 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
-                      : "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
-                  }
-                  activeClassName="text-sidebar-primary"
-                >
-                  <Settings className="h-[18px] w-[18px] shrink-0" />
-                  {!collapsed && <span className="text-[13px]">Settings</span>}
-                </NavLink>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+            {(user?.role === 'admin' || user?.role === 'manager') && (
+              <SidebarMenuItem className={collapsed ? "flex justify-center" : ""}>
+                <SidebarMenuButton asChild tooltip="Settings">
+                  <NavLink
+                    to="/dashboard/settings"
+                    className={
+                      collapsed
+                        ? "flex items-center justify-center w-10 h-10 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
+                        : "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
+                    }
+                    activeClassName="text-sidebar-primary"
+                  >
+                    <Settings className="h-[18px] w-[18px] shrink-0" />
+                    {!collapsed && <span className="text-[13px]">Settings</span>}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
             <SidebarMenuItem className={collapsed ? "flex justify-center" : ""}>
               <SidebarMenuButton asChild tooltip="Sign Out">
                 <button

@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate, requireAdmin, requireRole } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 
 import { z } from 'zod';
@@ -73,7 +73,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/projects ──────────────────────────────────────────
 
-router.post('/', requireAdmin, validate({ body: projectDtoSchema }), async (req: Request, res: Response, next) => {
+router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: projectDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const project = await prisma.project.create({
       data: req.body,
@@ -86,7 +86,7 @@ router.post('/', requireAdmin, validate({ body: projectDtoSchema }), async (req:
 
 // ─── PUT /api/projects/:id ────────────────────────────────────────
 
-router.put('/:id', requireAdmin, validate({ body: projectDtoSchema.partial() }), async (req: Request, res: Response, next) => {
+router.put('/:id', requireRole('ADMIN', 'MANAGER', 'STAFF'), validate({ body: projectDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const project = await prisma.project.update({
       where: { id: req.params.id as string },

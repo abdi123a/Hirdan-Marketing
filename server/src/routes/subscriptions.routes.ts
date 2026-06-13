@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate, requireAdmin, requireRole } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 
 import { z } from 'zod';
@@ -70,7 +70,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/subscriptions ────────────────────────────────────
 
-router.post('/', requireAdmin, validate({ body: subscriptionDtoSchema }), async (req: Request, res: Response, next) => {
+router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: subscriptionDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const subscription = await prisma.subscription.create({ data: req.body });
     res.status(201).json({ subscription });
@@ -81,7 +81,7 @@ router.post('/', requireAdmin, validate({ body: subscriptionDtoSchema }), async 
 
 // ─── PUT /api/subscriptions/:id ─────────────────────────────────
 
-router.put('/:id', requireAdmin, validate({ body: subscriptionDtoSchema.partial() }), async (req: Request, res: Response, next) => {
+router.put('/:id', requireRole('ADMIN', 'MANAGER'), validate({ body: subscriptionDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const subscription = await prisma.subscription.update({
       where: { id: req.params.id as string },

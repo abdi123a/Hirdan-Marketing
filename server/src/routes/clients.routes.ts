@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate, requireAdmin, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
@@ -42,7 +42,7 @@ router.get('/', async (req: Request, res: Response, next) => {
 
 // ─── GET /api/clients/:id ─────────────────────────────────────────
 
-router.get('/:id', requireAdmin, async (req: Request, res: Response, next) => {
+router.get('/:id', requireRole('ADMIN', 'MANAGER', 'STAFF'), async (req: Request, res: Response, next) => {
   try {
     const id = req.params.id as string;
     const client = await prisma.client.findUnique({
@@ -84,7 +84,7 @@ const clientDtoSchema = z.object({
 });
 
 
-router.post('/', requireAdmin, validate({ body: clientDtoSchema }), async (req: Request, res: Response, next) => {
+router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: clientDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const client = await prisma.client.create({
       data: req.body,
@@ -97,7 +97,7 @@ router.post('/', requireAdmin, validate({ body: clientDtoSchema }), async (req: 
 
 // ─── PUT /api/clients/:id ─────────────────────────────────────────
 
-router.put('/:id', requireAdmin, validate({ body: clientDtoSchema.partial() }), async (req: Request, res: Response, next) => {
+router.put('/:id', requireRole('ADMIN', 'MANAGER'), validate({ body: clientDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const id = req.params.id as string;
     const client = await prisma.client.update({
@@ -124,7 +124,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) =>
 
 // ─── GET /api/clients/:id/invoices ────────────────────────────────
 
-router.get('/:id/invoices', requireAdmin, async (req: Request, res: Response, next) => {
+router.get('/:id/invoices', requireRole('ADMIN', 'MANAGER', 'STAFF'), async (req: Request, res: Response, next) => {
   try {
     const invoices = await prisma.invoice.findMany({
       where: { clientId: req.params.id as string },
@@ -139,7 +139,7 @@ router.get('/:id/invoices', requireAdmin, async (req: Request, res: Response, ne
 
 // ─── GET /api/clients/:id/projects ────────────────────────────────
 
-router.get('/:id/projects', requireAdmin, async (req: Request, res: Response, next) => {
+router.get('/:id/projects', requireRole('ADMIN', 'MANAGER', 'STAFF'), async (req: Request, res: Response, next) => {
   try {
     const projects = await prisma.project.findMany({
       where: { clientId: req.params.id as string },

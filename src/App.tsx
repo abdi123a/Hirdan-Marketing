@@ -122,11 +122,11 @@ function AppRoutes() {
         }
       />
 
-      {/* Admin dashboard (protected - admin role) */}
+      {/* Dashboard (protected - admin, manager, staff) */}
       <Route
         path="/dashboard"
         element={
-          <ProtectedRoute allowedRoles="admin">
+          <ProtectedRoute allowedRoles={["admin", "manager", "staff"]}>
             <DashboardLayout />
           </ProtectedRoute>
         }
@@ -137,7 +137,7 @@ function AppRoutes() {
         <Route path="clients/edit/:id" element={<EditClientPage />} />
         <Route path="clients/view/:id" element={<ClientDetailsPage />} />
 
-        {/* User Management */}
+        {/* User Management — admin only */}
         <Route path="users" element={
           <ProtectedRoute allowedRoles="admin">
             <UsersPage />
@@ -151,6 +151,13 @@ function AppRoutes() {
         <Route path="users/edit/:id" element={
           <ProtectedRoute allowedRoles="admin">
             <AddUserPage />
+          </ProtectedRoute>
+        } />
+
+        {/* Settings — admin only */}
+        <Route path="settings" element={
+          <ProtectedRoute allowedRoles="admin">
+            <SettingsPage />
           </ProtectedRoute>
         } />
 
@@ -183,7 +190,6 @@ function AppRoutes() {
         <Route path="services/add" element={<AddServicePage />} />
         <Route path="services/edit/:id" element={<EditServicePage />} />
         <Route path="services/view/:id" element={<ServiceDetailsPage />} />
-        <Route path="settings" element={<SettingsPage />} />
         <Route path="leads" element={<LeadsPage />} />
       </Route>
       <Route path="*" element={<NotFound />} />

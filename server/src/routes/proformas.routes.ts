@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate, requireAdmin, requireRole } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 
 import { z } from 'zod';
@@ -83,7 +83,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/proformas ─────────────────────────────────────────
 
-router.post('/', requireAdmin, validate({ body: proformaDtoSchema }), async (req: Request, res: Response, next) => {
+router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: proformaDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const { items, ...proformaData } = req.body;
     const proforma = await prisma.proforma.create({
@@ -101,7 +101,7 @@ router.post('/', requireAdmin, validate({ body: proformaDtoSchema }), async (req
 
 // ─── PUT /api/proformas/:id ──────────────────────────────────────
 
-router.put('/:id', requireAdmin, validate({ body: proformaDtoSchema.partial() }), async (req: Request, res: Response, next) => {
+router.put('/:id', requireRole('ADMIN', 'MANAGER'), validate({ body: proformaDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     // Find the proforma first to get the real UUID if a proformaNumber was provided
     const targetProforma = await prisma.proforma.findFirst({

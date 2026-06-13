@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate, requireAdmin, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
@@ -86,7 +86,7 @@ const invoiceDtoSchema = z.object({
   items: z.array(invoiceItemSchema).optional(),
 });
 
-router.post('/', requireAdmin, validate({ body: invoiceDtoSchema }), async (req: Request, res: Response, next) => {
+router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: invoiceDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const { items, ...invoiceData } = req.body;
     const invoice = await prisma.invoice.create({
@@ -102,7 +102,7 @@ router.post('/', requireAdmin, validate({ body: invoiceDtoSchema }), async (req:
   }
 });
 
-router.put('/:id', requireAdmin, validate({ body: invoiceDtoSchema.partial() }), async (req: Request, res: Response, next) => {
+router.put('/:id', requireRole('ADMIN', 'MANAGER'), validate({ body: invoiceDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     // Find the invoice first to get the real UUID if an invoiceNumber was provided
     const targetInvoice = await prisma.invoice.findFirst({

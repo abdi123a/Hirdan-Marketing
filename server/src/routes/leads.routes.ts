@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate, requireAdmin, requireRole } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 
 const router = Router();
@@ -27,7 +27,7 @@ router.post('/', async (req: Request, res: Response, next) => {
 });
 
 // Admin routes require authentication and admin role
-router.get('/', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
+router.get('/', authenticate, requireRole('ADMIN', 'MANAGER', 'STAFF'), async (req: Request, res: Response, next) => {
   try {
     const leads = await prisma.lead.findMany({
       orderBy: { createdAt: 'desc' },
@@ -38,7 +38,7 @@ router.get('/', authenticate, requireAdmin, async (req: Request, res: Response, 
   }
 });
 
-router.put('/:id', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
+router.put('/:id', authenticate, requireRole('ADMIN', 'MANAGER'), async (req: Request, res: Response, next) => {
   try {
     const id = req.params.id as string;
     const { status } = req.body;

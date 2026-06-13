@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate, requireAdmin, requireRole } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 
 import { z } from 'zod';
@@ -56,7 +56,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/packages ─────────────────────────────────────────
 
-router.post('/', requireAdmin, validate({ body: packageDtoSchema }), async (req: Request, res: Response, next) => {
+router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: packageDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const pkg = await prisma.package.create({ data: req.body });
     res.status(201).json({ package: pkg });
@@ -67,7 +67,7 @@ router.post('/', requireAdmin, validate({ body: packageDtoSchema }), async (req:
 
 // ─── PUT /api/packages/:id ──────────────────────────────────────
 
-router.put('/:id', requireAdmin, validate({ body: packageDtoSchema.partial() }), async (req: Request, res: Response, next) => {
+router.put('/:id', requireRole('ADMIN', 'MANAGER'), validate({ body: packageDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const pkg = await prisma.package.update({
       where: { id: req.params.id as string },

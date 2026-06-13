@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate, requireAdmin, requireRole } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 
 import { z } from 'zod';
@@ -51,7 +51,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/services ─────────────────────────────────────────
 
-router.post('/', requireAdmin, validate({ body: serviceDtoSchema }), async (req: Request, res: Response, next) => {
+router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: serviceDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const service = await prisma.service.create({ data: req.body });
     res.status(201).json({ service });
@@ -62,7 +62,7 @@ router.post('/', requireAdmin, validate({ body: serviceDtoSchema }), async (req:
 
 // ─── PUT /api/services/:id ──────────────────────────────────────
 
-router.put('/:id', requireAdmin, validate({ body: serviceDtoSchema.partial() }), async (req: Request, res: Response, next) => {
+router.put('/:id', requireRole('ADMIN', 'MANAGER'), validate({ body: serviceDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const service = await prisma.service.update({
       where: { id: req.params.id as string },
