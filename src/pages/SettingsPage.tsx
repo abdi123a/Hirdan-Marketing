@@ -294,6 +294,15 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
+
+              <Separator className="my-8" />
+              
+              <div>
+                <Label className="font-semibold flex items-center gap-2 text-muted-foreground">
+                  <Settings className="h-4 w-4" /> App Version
+                </Label>
+                <p className="text-sm font-mono mt-2 bg-muted/50 w-fit px-3 py-1 rounded-md border">v{__APP_VERSION__}</p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
