@@ -78,11 +78,6 @@ jobs:
             
             # --- RESTART NODEJS SERVICE ---
             echo "🔄 Restarting Node.js service for api.hirdanmarketing.com..."
-            # CloudPanel creates a systemd service for the NodeJS app.
-            # We try common CloudPanel service names:
-            systemctl restart api.hirdanmarketing.com || \
-            systemctl restart node-api-hirdanmarketing-com || \
-            systemctl restart clp-node-api-hirdanmarketing-com || \
-            echo "Node.js restart command triggered."
+            pm2 restart api || pm2 restart all || echo "Restart command failed, manual intervention needed."
             
             echo "✅ Deployment completed successfully!"
