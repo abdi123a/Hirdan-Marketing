@@ -67,7 +67,6 @@ import {
   formatDistanceToNow, 
   isAfter, 
   isBefore, 
-  addDays,
   format,
   subWeeks,
   startOfWeek,
@@ -86,7 +85,7 @@ import {
   isSameMonth,
   isSameYear
 } from "date-fns";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -207,26 +206,35 @@ export default function DashboardOverview() {
 
       const recurring = subscriptions
         .filter(s => {
+          if (s.status !== 'Active') return false;
           const start = new Date(s.started);
-          const status = s.status === 'Active';
-          if (!status) return false;
-          
-          if (trajectoryView === 'daily') return isBefore(start, addDays(period, 1)) || isSameDay(start, period);
-          if (trajectoryView === 'weekly') return isBefore(start, endOfWeek(period)) || isSameWeek(start, period);
-          if (trajectoryView === 'monthly') return isBefore(start, endOfMonth(period)) || isSameMonth(start, period);
-          return isBefore(start, endOfYear(period)) || isSameYear(start, period);
+          // The subscription must have already started by the beginning of this period
+          let periodStart: Date;
+          if (trajectoryView === 'daily') periodStart = period;
+          else if (trajectoryView === 'weekly') periodStart = startOfWeek(period);
+          else if (trajectoryView === 'monthly') periodStart = startOfMonth(period);
+          else periodStart = startOfYear(period);
+
+          if (isAfter(start, periodStart)) return false; // not started yet in this period
+
+          // If there's a renewal/end date, the subscription must not have expired before this period
+          if (s.renewal && s.renewal !== 'N/A') {
+            const renewal = new Date(s.renewal);
+            if (isBefore(renewal, periodStart)) return false; // already ended
+          }
+          return true;
         })
         .reduce((sum, s) => {
           const amt = parseCurrency(s.amount);
           let periodAmt = 0;
           if (trajectoryView === 'daily') {
-            periodAmt = (s.billingCycle === 'Annual' ? amt / 365 : amt / 30);
+            periodAmt = (s.billingCycle === 'Annual' ? amt / 365 : s.billingCycle === 'Quarterly' ? amt / 91 : amt / 30);
           } else if (trajectoryView === 'weekly') {
-            periodAmt = (s.billingCycle === 'Annual' ? amt / 52 : amt / 4);
+            periodAmt = (s.billingCycle === 'Annual' ? amt / 52 : s.billingCycle === 'Quarterly' ? amt / 13 : amt / 4);
           } else if (trajectoryView === 'monthly') {
-            periodAmt = (s.billingCycle === 'Annual' ? amt / 12 : amt);
+            periodAmt = (s.billingCycle === 'Annual' ? amt / 12 : s.billingCycle === 'Quarterly' ? amt / 3 : amt);
           } else { // yearly
-            periodAmt = (s.billingCycle === 'Annual' ? amt : amt * 12);
+            periodAmt = (s.billingCycle === 'Annual' ? amt : s.billingCycle === 'Quarterly' ? amt * 4 : amt * 12);
           }
           return sum + periodAmt;
         }, 0);
