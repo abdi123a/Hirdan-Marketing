@@ -13,85 +13,76 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Step 1: Set up Node.js and build the static Frontend in GitHub Actions
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
 
+      # Step 1: Build the static Frontend
       - name: Build Frontend
         run: |
           npm install --legacy-peer-deps
           npm run build
 
-      # Step 2: Deploy to VPS via SSH
-      - name: Deploy Frontend and Backend via SSH
+      # Step 2: Build the Backend in GitHub Action
+      - name: Build Backend
+        run: |
+          cd server
+          npm install --legacy-peer-deps
+          npx prisma generate
+          npm run build
+
+      # Step 3: Deploy pre-compiled files via Rsync
+      - name: Deploy files to VPS via Rsync
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          
+          echo "📁 Copying Frontend static files to app.hirdanmarketing.com..."
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
+            dist/ root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
+            
+          echo "📁 Copying Backend compiled files to api.hirdanmarketing.com..."
+          # Copy compiled build folder, package configuration, and prisma setup
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
+            server/dist/ server/package.json server/package-lock.json server/prisma/ \
+            root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
+
+      # Step 4: Run server commands (dependencies install & restart service)
+      - name: Execute Server Commands
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
-          username: root # Use root user to access both site folders
+          username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
           script: |
-            echo "🚀 Starting Deployment on VPS..."
+            echo "🚀 Finalizing Server Setup..."
             
-            # --- 1. DEPLOY FRONTEND ---
-            echo "📁 Deploying Frontend to app.hirdanmarketing.com..."
-            # Clean old static files first, then we will copy from our Git commit
-            # (Note: We use rsync inside SSH step or we will clone/pull the repo to a temporary location on the server)
-            
-            # We clone the repo to a temporary directory on the server to update the code
-            mkdir -p /tmp/hirdan-deploy
-            cd /tmp/hirdan-deploy
-            
-            # Clone or pull fresh repo
-            if [ -d "repo" ]; then
-              cd repo
-              git fetch --all
-              git reset --hard origin/client-portal-overhaul-final
-            else
-              git clone -b client-portal-overhaul-final https://github.com/abdi123a/agency-flow-pro.git repo
-              cd repo
-            fi
-            
-            # Build frontend on server or copy the built static files
-            # If server has enough RAM, we can just build it on the server:
-            echo "📦 Building Frontend on server..."
-            npm install --legacy-peer-deps
-            npm run build
-            
-            echo "📂 Copying Frontend build files to static directory..."
-            # Copy to static web folder and fix ownership permissions
-            rsync -av --delete dist/ /home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
+            # Fix ownership permissions for the frontend site
             chown -R hirdanmarketing-app:hirdanmarketing-app /home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
             
-            # --- 2. DEPLOY BACKEND ---
-            echo "📂 Deploying Backend to api.hirdanmarketing.com..."
-            # Sync the server files
-            rsync -av --delete server/ /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/ --exclude node_modules --exclude .env
-            
+            # Finish backend setup
             cd /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
             
-            echo "📦 Installing Backend dependencies..."
+            echo "📦 Installing Production Backend dependencies..."
             npm install --production --legacy-peer-deps
             
-            echo "⚙️ Generating Database Client..."
-            npx prisma generate
+            echo "⚙️ Generating Database Client on server..."
+            # Run using the locally installed prisma version (v6)
+            npx --no-install prisma generate
             
-            # Build backend TypeScript
-            echo "🛠 Compiling Backend..."
-            npm run build
-            
-            # Fix ownership permissions for the backend
+            # Fix ownership permissions for the backend site
             chown -R hirdanmarketing-api:hirdanmarketing-api /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
             
-            # --- 3. RESTART NODEJS APP ---
-            echo "🔄 Restarting api.hirdanmarketing.com node service..."
-            # CloudPanel Node.js restart command
-            clpctl app:nodejs:restart --domain=api.hirdanmarketing.com || systemctl restart node-app || echo "Node.js restart initiated."
-            
-            # Clean up temporary folder
-            rm -rf /tmp/hirdan-deploy
+            # --- RESTART NODEJS SERVICE ---
+            echo "🔄 Restarting Node.js service for api.hirdanmarketing.com..."
+            # CloudPanel creates a systemd service for the NodeJS app.
+            # We try common CloudPanel service names:
+            systemctl restart api.hirdanmarketing.com || \
+            systemctl restart node-api-hirdanmarketing-com || \
+            systemctl restart clp-node-api-hirdanmarketing-com || \
+            echo "Node.js restart command triggered."
             
             echo "✅ Deployment completed successfully!"
