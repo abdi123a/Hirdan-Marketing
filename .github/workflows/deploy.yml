@@ -76,7 +76,7 @@ jobs:
             
             echo "⚙️ Generating Database Client on server..."
             # Run using the locally installed prisma version (v6)
-            npx --no-install prisma generate
+            ./node_modules/.bin/prisma generate
             
             # Fix ownership permissions for the backend site
             chown -R hirdanmarketing-api:hirdanmarketing-api /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
