@@ -22,7 +22,7 @@ jobs:
 
       - name: Build Frontend
         run: |
-          npm install
+          npm install --legacy-peer-deps
           npm run build
 
       # Step 2: Deploy to VPS via SSH
@@ -58,7 +58,7 @@ jobs:
             # Build frontend on server or copy the built static files
             # If server has enough RAM, we can just build it on the server:
             echo "📦 Building Frontend on server..."
-            npm install
+            npm install --legacy-peer-deps
             npm run build
             
             echo "📂 Copying Frontend build files to static directory..."
@@ -74,7 +74,7 @@ jobs:
             cd /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
             
             echo "📦 Installing Backend dependencies..."
-            npm install --production
+            npm install --production --legacy-peer-deps
             
             echo "⚙️ Generating Database Client..."
             npx prisma generate
