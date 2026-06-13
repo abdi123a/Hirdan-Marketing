@@ -1,0 +1,64 @@
+name: Deploy to Hostinger VPS
+
+on:
+  push:
+    branches:
+      - client-portal-overhaul-final
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            echo "🚀 Connecting to server and starting deployment..."
+            
+            # Navigate to deploy path
+            cd ${{ secrets.DEPLOY_PATH }}
+            
+            # Reset any local changes and pull latest code
+            git reset --hard HEAD
+            git pull origin client-portal-overhaul-final
+            
+            # 1. Update Frontend
+            echo "📦 Installing Frontend dependencies..."
+            npm install
+            echo "🛠 Building Frontend..."
+            npm run build
+            
+            # 2. Update Backend
+            echo "📦 Installing Backend dependencies..."
+            cd server
+            npm install
+            echo "⚙️ Generating Database Client..."
+            npx prisma generate
+            echo "🛠 Building Backend..."
+            npm run build
+            
+            # 3. Restart Node.js Application
+            echo "🔄 Restarting application..."
+            # Note: CloudPanel Node.js apps run under systemd.
+            # You can restart it via PM2 if you use PM2, or via systemctl.
+            # Below is a standard command to restart the application service if PM2 is used:
+            if command -v pm2 &> /dev/null; then
+              pm2 restart all
+            else
+              # CloudPanel uses systemd. The service is typically named after the domain: e.g., site-domain.service
+              # Since restart requires sudo/systemctl, make sure SSH_USER has passwordless sudo for systemctl, 
+              # or use the systemd user service:
+              # systemctl --user restart app
+              echo "Checking for systemctl user service..."
+              systemctl --user restart app || sudo systemctl restart node-app || echo "Manual restart required or configure service restart command."
+            fi
+            
+            echo "✅ Deployment completed successfully!"
