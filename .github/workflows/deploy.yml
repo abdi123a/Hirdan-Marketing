@@ -41,12 +41,12 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           
           echo "📁 Copying Frontend static files to app.hirdanmarketing.com..."
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
+          rsync -avz -e "ssh -p ${{ secrets.SSH_PORT || 22 }} -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
             dist/ root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
             
           echo "📁 Copying Backend compiled files to api.hirdanmarketing.com..."
           # Copy compiled build folder, package configuration, and prisma setup
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
+          rsync -avz -e "ssh -p ${{ secrets.SSH_PORT || 22 }} -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
             server/dist/ server/package.json server/package-lock.json server/prisma/ \
             root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
 
@@ -57,6 +57,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
           script: |
             echo "🚀 Finalizing Server Setup..."
             
