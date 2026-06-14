@@ -381,7 +381,7 @@ export const useAgencyStore = create<AgencyStore>()(
             status: p.status.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ') as any,
             priority: p.priority.charAt(0).toUpperCase() + p.priority.slice(1).toLowerCase() as any,
             progress: p.progress,
-            budget: formatCurrency(p.budget),
+            budget: p.budget != null ? formatCurrency(p.budget / 100) : '',
             startDate: p.startDate ? p.startDate.split('T')[0] : '',
             dueDate: p.dueDate ? p.dueDate.split('T')[0] : '',
             team: [],
