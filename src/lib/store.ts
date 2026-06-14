@@ -359,7 +359,7 @@ export const useAgencyStore = create<AgencyStore>()(
             type: (c.type?.charAt(0).toUpperCase() + c.type?.slice(1).toLowerCase()) as any || 'Business',
             status: c.status.charAt(0).toUpperCase() + c.status.slice(1).toLowerCase() as any,
             projects: c._count?.projects || 0,
-            revenue: '$0',
+            revenue: formatCurrency((c.revenue || 0) / 100),
             initials: c.initials || (c.company ? c.company.substring(0, 2).toUpperCase() : c.name.substring(0, 2).toUpperCase()),
             createdAt: c.createdAt,
             userId: c.userId
@@ -452,14 +452,14 @@ export const useAgencyStore = create<AgencyStore>()(
       fetchProformas: async () => {
         try {
           const res = await apiFetch<{ proformas: any[] }>('/proformas');
-          const mapped = res.proformas.map(p => ({
+          const mapped = (res.proformas || []).map(p => ({
             id: p.proformaNumber || p.id,
             client: p.client?.company || p.client?.name || 'Unknown',
             clientEmail: p.client?.email || '',
             amount: formatCurrency((p.amount || 0) / 100),
-            status: p.status.charAt(0).toUpperCase() + p.status.slice(1).toLowerCase() as any,
-            date: p.date.split('T')[0],
-            dueDate: p.dueDate?.split('T')[0] || '',
+            status: p.status ? (p.status.charAt(0).toUpperCase() + p.status.slice(1).toLowerCase() as any) : 'Draft',
+            date: p.date ? p.date.split('T')[0] : '',
+            dueDate: p.dueDate ? p.dueDate.split('T')[0] : '',
             items: (p.items || []).map((item: any) => ({
               description: item.description,
               quantity: item.quantity,

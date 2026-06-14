@@ -25,6 +25,12 @@ router.get('/', async (req: Request, res: Response, next) => {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
+        invoices: {
+          select: {
+            amount: true,
+            status: true
+          }
+        },
         _count: {
           select: {
             projects: true,
@@ -34,7 +40,20 @@ router.get('/', async (req: Request, res: Response, next) => {
         },
       },
     });
-    res.json({ clients });
+
+    const clientsWithRevenue = clients.map(client => {
+      const revenue = client.invoices
+        .filter(inv => inv.status === 'PAID')
+        .reduce((sum, inv) => sum + inv.amount, 0);
+      
+      const { invoices, ...rest } = client;
+      return {
+        ...rest,
+        revenue
+      };
+    });
+
+    res.json({ clients: clientsWithRevenue });
   } catch (error) {
     next(error);
   }
