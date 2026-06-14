@@ -36,6 +36,9 @@ import {
   Briefcase,
   PenTool,
   Award,
+  Eye,
+  EyeOff,
+  KeyRound,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyStore, AgencySettings, PaymentMethod } from "@/lib/store";
@@ -92,6 +95,8 @@ export default function SettingsPage() {
   const [formData, setFormData] = useState<AgencySettings>(settings);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState<{ [key: string]: boolean }>({});
+  const [showOpenAiKey, setShowOpenAiKey] = useState(false);
+  const [showRecaptchaSecretKey, setShowRecaptchaSecretKey] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -252,6 +257,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="notifications" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
             <Bell className="h-4 w-4" /> Notifications
+          </TabsTrigger>
+          <TabsTrigger value="security" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
+            <Shield className="h-4 w-4" /> Security
           </TabsTrigger>
         </TabsList>
 
@@ -905,6 +913,107 @@ export default function SettingsPage() {
                   onCheckedChange={(val) => handleNotificationChange('billingAlerts', val)} 
                   className="data-[state=checked]:bg-primary"
                 />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="security" className="mt-0 outline-none space-y-6">
+          <Card className="shadow-card border-border overflow-hidden">
+            <CardHeader className="bg-muted/30 border-b pb-6">
+              <CardTitle className="font-display text-xl flex items-center gap-2">
+                <Shield className="h-5 w-5 text-primary" /> Security & Integrations
+              </CardTitle>
+              <CardDescription>Configure application security settings, Google reCAPTCHA, and AI integrations.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-8 space-y-8">
+              {/* Google reCAPTCHA section */}
+              <div className="space-y-6">
+                <div className="flex items-center justify-between p-6 rounded-2xl border bg-background hover:bg-muted/10 transition-all group">
+                  <div className="space-y-1">
+                    <p className="font-bold flex items-center gap-2">
+                      <Shield className="h-4 w-4 text-primary" /> Google reCAPTCHA v2
+                    </p>
+                    <p className="text-sm text-muted-foreground max-w-md">Enable reCAPTCHA validation on the admin and client login screens to protect your system from bots and brute force attacks.</p>
+                  </div>
+                  <Switch 
+                    checked={formData.enableRecaptcha || false} 
+                    onCheckedChange={(val) => setFormData(prev => ({ ...prev, enableRecaptcha: val }))} 
+                    className="data-[state=checked]:bg-primary"
+                  />
+                </div>
+
+                {formData.enableRecaptcha && (
+                  <div className="grid md:grid-cols-2 gap-6 p-6 rounded-2xl border bg-muted/10">
+                    <div className="grid gap-2">
+                      <Label htmlFor="recaptchaSiteKey" className="font-semibold">reCAPTCHA Site Key</Label>
+                      <Input 
+                        id="recaptchaSiteKey" 
+                        value={formData.recaptchaSiteKey || ''} 
+                        onChange={handleInputChange} 
+                        placeholder="Enter Google reCAPTCHA v2 Site Key" 
+                        className="h-11 focus-visible:ring-primary font-mono text-sm"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="recaptchaSecretKey" className="font-semibold">reCAPTCHA Secret Key</Label>
+                      <div className="relative">
+                        <Input 
+                          id="recaptchaSecretKey" 
+                          type={showRecaptchaSecretKey ? "text" : "password"}
+                          value={formData.recaptchaSecretKey || ''} 
+                          onChange={handleInputChange} 
+                          placeholder="Enter Google reCAPTCHA v2 Secret Key" 
+                          className="h-11 pr-10 focus-visible:ring-primary font-mono text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowRecaptchaSecretKey(!showRecaptchaSecretKey)}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          {showRecaptchaSecretKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground md:col-span-2">
+                      * Requires a **v2 "I'm not a robot" Checkbox** site type. You can register your keys in the <a href="https://www.google.com/recaptcha/admin" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-semibold" onClick={(e) => e.stopPropagation()}>Google reCAPTCHA Admin Console</a>.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* OpenAI API section */}
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-bold flex items-center gap-2">
+                    <KeyRound className="h-5 w-5 text-primary" /> AI Integrations
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">Configure artificial intelligence integrations used across the platform.</p>
+                </div>
+
+                <div className="grid gap-2 max-w-xl">
+                  <Label htmlFor="openAiApiKey" className="font-semibold">OpenAI API Key</Label>
+                  <div className="relative">
+                    <Input 
+                      id="openAiApiKey" 
+                      type={showOpenAiKey ? "text" : "password"}
+                      value={formData.openAiApiKey || ''} 
+                      onChange={handleInputChange} 
+                      placeholder="sk-proj-..." 
+                      className="h-11 pr-10 focus-visible:ring-primary font-mono text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowOpenAiKey(!showOpenAiKey)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showOpenAiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Used for generating automated summaries, project descriptions, and AI features.</p>
+                </div>
               </div>
             </CardContent>
           </Card>

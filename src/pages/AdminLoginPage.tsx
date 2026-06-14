@@ -9,17 +9,23 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, ArrowRight, Lock, Mail } from 'lucide-react';
 import hirdanLogo from '@/assets/hirdan-logo.png';
+import ReCAPTCHA from '@/components/ReCAPTCHA';
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const { loginAdmin, isAuthenticated, user } = useAuthStore();
-  const { settings } = useAgencyStore();
+  const { settings, fetchSettings } = useAgencyStore();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
 
   const stateFrom = (location.state as { from?: { pathname: string } })?.from?.pathname;
   const from = stateFrom && stateFrom !== '/login' ? stateFrom : '/dashboard';
@@ -42,12 +48,20 @@ export default function AdminLoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (settings.enableRecaptcha && !recaptchaToken) {
+      toast({
+        title: 'Verification required',
+        description: 'Please complete the reCAPTCHA verification.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsLoading(true);
 
     // Brief delay for UX feel
     await new Promise((r) => setTimeout(r, 600));
 
-    const success = await loginAdmin(email, password);
+    const success = await loginAdmin(email, password, recaptchaToken || undefined);
     setIsLoading(false);
 
     if (success) {
@@ -128,6 +142,10 @@ export default function AdminLoginPage() {
                   </button>
                 </div>
               </div>
+
+              {settings.enableRecaptcha && settings.recaptchaSiteKey && (
+                <ReCAPTCHA siteKey={settings.recaptchaSiteKey} onChange={setRecaptchaToken} />
+              )}
 
               <Button
                 type="submit"

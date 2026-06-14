@@ -214,6 +214,10 @@ export interface AgencySettings {
     projectUpdates: boolean;
     billingAlerts: boolean;
   };
+  enableRecaptcha?: boolean;
+  recaptchaSiteKey?: string;
+  recaptchaSecretKey?: string;
+  openAiApiKey?: string;
 }
 
 interface AgencyStore {
@@ -330,7 +334,11 @@ export const useAgencyStore = create<AgencyStore>()(
           emailAlerts: true,
           projectUpdates: true,
           billingAlerts: true,
-        }
+        },
+        enableRecaptcha: false,
+        recaptchaSiteKey: "",
+        recaptchaSecretKey: "",
+        openAiApiKey: "",
       },
 
       fetchClients: async () => {

@@ -36,8 +36,8 @@ interface AuthStore {
   isAuthenticated: boolean;
   token: string | null;
 
-  loginAdmin: (email: string, password: string) => Promise<boolean>;
-  loginClient: (email: string, accessCode: string) => Promise<boolean>;
+  loginAdmin: (email: string, password: string, recaptchaToken?: string) => Promise<boolean>;
+  loginClient: (email: string, accessCode: string, recaptchaToken?: string) => Promise<boolean>;
   setToken: (accessToken: string) => void;
   logout: () => void;
 }
@@ -55,13 +55,13 @@ export const useAuthStore = create<AuthStore>()(
         set({ token: accessToken });
       },
 
-      loginAdmin: async (email: string, password: string) => {
+      loginAdmin: async (email: string, password: string, recaptchaToken?: string) => {
         try {
           const res = await fetch(`${API_URL}/auth/login`, {
             method: 'POST',
             credentials: 'include', // Needed for cookies
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password }),
+            body: JSON.stringify({ email, password, recaptchaToken }),
           });
           const data = await res.json();
           if (res.ok && data.accessToken) {
@@ -82,13 +82,13 @@ export const useAuthStore = create<AuthStore>()(
         return false;
       },
 
-      loginClient: async (email: string, accessCode: string) => {
+      loginClient: async (email: string, accessCode: string, recaptchaToken?: string) => {
         try {
           const res = await fetch(`${API_URL}/auth/client-login`, {
             method: 'POST',
             credentials: 'include', // Needed for cookies
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, accessCode }),
+            body: JSON.stringify({ email, accessCode, recaptchaToken }),
           });
           const data = await res.json();
           if (res.ok && data.accessToken) {

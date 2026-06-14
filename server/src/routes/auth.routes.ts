@@ -27,11 +27,13 @@ const authLimiter = rateLimit({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  recaptchaToken: z.string().optional().nullable(),
 });
 
 const clientLoginSchema = z.object({
   email: z.string().email(),
   accessCode: z.string().min(1),
+  recaptchaToken: z.string().optional().nullable(),
 });
 
 // ─── Helper: Generate Tokens ─────────────────────────────────────
@@ -75,7 +77,37 @@ router.post(
   validate({ body: loginSchema }),
   async (req: Request, res: Response, next) => {
     try {
-      const { email, password } = req.body;
+      const { email, password, recaptchaToken } = req.body;
+
+      // Google reCAPTCHA Verification
+      const settings = await prisma.agencySettings.findFirst();
+      if (settings?.enableRecaptcha) {
+        if (!recaptchaToken) {
+          throw AppError.badRequest('Please complete the reCAPTCHA verification.');
+        }
+
+        try {
+          const verifyUrl = 'https://www.google.com/recaptcha/api/siteverify';
+          const verifyRes = await fetch(verifyUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              secret: settings.recaptchaSecretKey || '',
+              response: recaptchaToken,
+            }).toString(),
+          });
+          const verifyData = (await verifyRes.json()) as any;
+          if (!verifyData.success) {
+            throw AppError.unauthorized('reCAPTCHA verification failed. Please try again.');
+          }
+        } catch (err: any) {
+          if (err.status) throw err;
+          console.error('reCAPTCHA verification error:', err);
+          throw AppError.internal('Failed to verify reCAPTCHA. Please try again.');
+        }
+      }
 
       const user = await prisma.user.findUnique({ where: { email } });
       if (!user) {
@@ -126,7 +158,37 @@ router.post(
   validate({ body: clientLoginSchema }),
   async (req: Request, res: Response, next) => {
     try {
-      const { email, accessCode } = req.body;
+      const { email, accessCode, recaptchaToken } = req.body;
+
+      // Google reCAPTCHA Verification
+      const settings = await prisma.agencySettings.findFirst();
+      if (settings?.enableRecaptcha) {
+        if (!recaptchaToken) {
+          throw AppError.badRequest('Please complete the reCAPTCHA verification.');
+        }
+
+        try {
+          const verifyUrl = 'https://www.google.com/recaptcha/api/siteverify';
+          const verifyRes = await fetch(verifyUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              secret: settings.recaptchaSecretKey || '',
+              response: recaptchaToken,
+            }).toString(),
+          });
+          const verifyData = (await verifyRes.json()) as any;
+          if (!verifyData.success) {
+            throw AppError.unauthorized('reCAPTCHA verification failed. Please try again.');
+          }
+        } catch (err: any) {
+          if (err.status) throw err;
+          console.error('reCAPTCHA verification error:', err);
+          throw AppError.internal('Failed to verify reCAPTCHA. Please try again.');
+        }
+      }
 
       // Find the specific client user by email
       const matchedUser = await prisma.user.findFirst({

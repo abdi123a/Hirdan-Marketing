@@ -9,15 +9,21 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowRight, Mail, KeyRound } from 'lucide-react';
 import hirdanLogo from '@/assets/hirdan-logo.png';
+import ReCAPTCHA from '@/components/ReCAPTCHA';
 
 export default function ClientLoginPage() {
   const [email, setEmail] = useState('');
   const [accessCode, setAccessCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const { isAuthenticated, user, loginClient } = useAuthStore();
-  const { clients, settings } = useAgencyStore();
+  const { clients, settings, fetchSettings } = useAgencyStore();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
 
   // Redirect if already logged in
   if (isAuthenticated) {
@@ -30,11 +36,19 @@ export default function ClientLoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (settings.enableRecaptcha && !recaptchaToken) {
+      toast({
+        title: 'Verification required',
+        description: 'Please complete the reCAPTCHA verification.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsLoading(true);
 
     await new Promise((r) => setTimeout(r, 600));
 
-    const success = await loginClient(email, accessCode);
+    const success = await loginClient(email, accessCode, recaptchaToken || undefined);
     setIsLoading(false);
 
     if (success) {
@@ -113,6 +127,10 @@ export default function ClientLoginPage() {
                   Your access code was provided by your account manager.
                 </p>
               </div>
+
+              {settings.enableRecaptcha && settings.recaptchaSiteKey && (
+                <ReCAPTCHA siteKey={settings.recaptchaSiteKey} onChange={setRecaptchaToken} />
+              )}
 
               <Button
                 type="submit"

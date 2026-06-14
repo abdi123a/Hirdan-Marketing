@@ -101,6 +101,8 @@ router.get('/', async (req: Request, res: Response, next) => {
           signature: settings.signature,
           stamp: settings.stamp,
           socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
+          enableRecaptcha: settings.enableRecaptcha,
+          recaptchaSiteKey: settings.recaptchaSiteKey,
         },
       });
     }
@@ -130,6 +132,10 @@ const settingsDtoSchema = z.object({
   notifications: z.any().optional(),    // JSON objects stored as strings
   signature: z.string().optional().nullable(),
   stamp: z.string().optional().nullable(),
+  enableRecaptcha: z.boolean().optional(),
+  recaptchaSecretKey: z.string().optional().nullable(),
+  recaptchaSiteKey: z.string().optional().nullable(),
+  openAiApiKey: z.string().optional().nullable(),
 }).passthrough(); // Allowing passthrough for frontend component meta temporarily
 
 router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }), async (req: Request, res: Response, next) => {
