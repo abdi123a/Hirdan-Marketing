@@ -2,9 +2,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, MoreHorizontal, Edit, Trash2, Search, FileText, Eye, FileDown, CheckCircle2, Clock, Send, Loader2 } from "lucide-react";
+import { Plus, MoreHorizontal, Edit, Trash2, Search, FileText, Eye, FileDown, CheckCircle2, Clock, Send, Loader2, RefreshCw, AlertCircle } from "lucide-react";
 import { useAgencyStore, Proforma } from "@/lib/store";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,16 +32,27 @@ const statusColor = (s: string) =>
 export default function ProformaPage() {
   const { proformas, clients, settings, deleteProforma, addInvoice, updateProforma, fetchProformas, fetchClients } = useAgencyStore();
   const [search, setSearch] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  // Only show loading if the store is empty (i.e., data hasn't been fetched yet by DashboardLayout)
+  const [isLoading, setIsLoading] = useState(proformas.length === 0);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
-    Promise.all([fetchProformas(), fetchClients()]).finally(() => {
+    setFetchError(null);
+    try {
+      await Promise.all([fetchProformas(), fetchClients()]);
+    } catch (err: any) {
+      setFetchError(err?.message || "Failed to load proformas. Please try again.");
+    } finally {
       setIsLoading(false);
-    });
+    }
   }, [fetchProformas, fetchClients]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
   const [isDownloading, setIsDownloading] = useState(false);
   const pdfRef = useRef<HTMLDivElement>(null);
   const [activeProforma, setActiveProforma] = useState<Proforma | null>(null);
@@ -222,6 +233,18 @@ export default function ProformaPage() {
                     <div className="flex flex-col items-center gap-3 text-muted-foreground">
                       <Loader2 className="h-8 w-8 animate-spin text-primary/50" />
                       <p className="text-sm">Loading proformas...</p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : fetchError ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-16">
+                    <div className="flex flex-col items-center gap-3">
+                      <AlertCircle className="h-8 w-8 text-destructive/60" />
+                      <p className="text-sm text-destructive">{fetchError}</p>
+                      <Button variant="outline" size="sm" className="gap-2" onClick={loadData}>
+                        <RefreshCw className="h-4 w-4" /> Retry
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>

@@ -477,6 +477,7 @@ export const useAgencyStore = create<AgencyStore>()(
           set({ proformas: mapped });
         } catch (error) {
           console.error("Failed to fetch proformas:", error);
+          throw error;
         }
       },
 
@@ -583,7 +584,7 @@ export const useAgencyStore = create<AgencyStore>()(
       },
 
       fetchAllData: async () => {
-        await Promise.all([
+        await Promise.allSettled([
           get().fetchClients(),
           get().fetchProjects(),
           get().fetchInvoices(),
