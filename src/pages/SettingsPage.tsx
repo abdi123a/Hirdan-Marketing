@@ -932,7 +932,7 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between p-6 rounded-2xl border bg-background hover:bg-muted/10 transition-all group">
                   <div className="space-y-1">
                     <p className="font-bold flex items-center gap-2">
-                      <Shield className="h-4 w-4 text-primary" /> Google reCAPTCHA v2
+                      <Shield className="h-4 w-4 text-primary" /> Google reCAPTCHA v3
                     </p>
                     <p className="text-sm text-muted-foreground max-w-md">Enable reCAPTCHA validation on the admin and client login screens to protect your system from bots and brute force attacks.</p>
                   </div>
@@ -951,7 +951,7 @@ export default function SettingsPage() {
                         id="recaptchaSiteKey" 
                         value={formData.recaptchaSiteKey || ''} 
                         onChange={handleInputChange} 
-                        placeholder="Enter Google reCAPTCHA v2 Site Key" 
+                        placeholder="Enter Google reCAPTCHA v3 Site Key" 
                         className="h-11 focus-visible:ring-primary font-mono text-sm"
                       />
                     </div>
@@ -963,7 +963,7 @@ export default function SettingsPage() {
                           type={showRecaptchaSecretKey ? "text" : "password"}
                           value={formData.recaptchaSecretKey || ''} 
                           onChange={handleInputChange} 
-                          placeholder="Enter Google reCAPTCHA v2 Secret Key" 
+                          placeholder="Enter Google reCAPTCHA v3 Secret Key" 
                           className="h-11 pr-10 focus-visible:ring-primary font-mono text-sm"
                         />
                         <button
@@ -976,7 +976,7 @@ export default function SettingsPage() {
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground md:col-span-2">
-                      * Requires a **v2 "I'm not a robot" Checkbox** site type. You can register your keys in the <a href="https://www.google.com/recaptcha/admin" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-semibold" onClick={(e) => e.stopPropagation()}>Google reCAPTCHA Admin Console</a>.
+                      * Requires a **v3 (Score-based, Invisible)** site type — no checkbox, no challenge. You can register your keys in the <a href="https://www.google.com/recaptcha/admin" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-semibold" onClick={(e) => e.stopPropagation()}>Google reCAPTCHA Admin Console</a>.
                     </p>
                   </div>
                 )}

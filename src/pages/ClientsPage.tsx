@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useState, useEffect } from "react";
 import { useAgencyStore } from "@/lib/store";
-import { formatCurrency } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -138,7 +137,7 @@ export default function ClientsPage() {
                     <Badge className={statusColor(c.status)}>{c.status}</Badge>
                   </TableCell>
                   <TableCell className="hidden sm:table-cell text-muted-foreground font-medium">{c.projects}</TableCell>
-                  <TableCell className="font-semibold text-foreground">{formatCurrency(c.revenue)}</TableCell>
+                  <TableCell className="font-semibold text-foreground">{c.revenue}</TableCell>
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>

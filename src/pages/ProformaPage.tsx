@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, MoreHorizontal, Edit, Trash2, Search, FileText, Eye, FileDown, CheckCircle2, Clock, Send } from "lucide-react";
+import { Plus, MoreHorizontal, Edit, Trash2, Search, FileText, Eye, FileDown, CheckCircle2, Clock, Send, Loader2 } from "lucide-react";
 import { useAgencyStore, Proforma } from "@/lib/store";
 import { useState, useMemo, useEffect } from "react";
 import {
@@ -32,12 +32,15 @@ const statusColor = (s: string) =>
 export default function ProformaPage() {
   const { proformas, clients, settings, deleteProforma, addInvoice, updateProforma, fetchProformas, fetchClients } = useAgencyStore();
   const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchProformas();
-    fetchClients();
+    setIsLoading(true);
+    Promise.all([fetchProformas(), fetchClients()]).finally(() => {
+      setIsLoading(false);
+    });
   }, [fetchProformas, fetchClients]);
   const [isDownloading, setIsDownloading] = useState(false);
   const pdfRef = useRef<HTMLDivElement>(null);
@@ -213,7 +216,16 @@ export default function ProformaPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.length === 0 ? (
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-16">
+                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary/50" />
+                      <p className="text-sm">Loading proformas...</p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
                     No proformas found. <button className="text-primary underline underline-offset-2" onClick={() => navigate("/dashboard/proforma/add")}>Create your first proforma</button>
