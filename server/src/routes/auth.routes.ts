@@ -79,7 +79,7 @@ router.post(
     try {
       const { email, password, recaptchaToken } = req.body;
 
-      // Google reCAPTCHA Verification
+      // Google reCAPTCHA Verification (supports both v2 checkbox and v3 invisible)
       const settings = await prisma.agencySettings.findFirst();
       if (settings?.enableRecaptcha) {
         if (!recaptchaToken) {
@@ -101,6 +101,10 @@ router.post(
           const verifyData = (await verifyRes.json()) as any;
           if (!verifyData.success) {
             throw AppError.unauthorized('reCAPTCHA verification failed. Please try again.');
+          }
+          // For v3: also check the score (>= 0.5 = likely human)
+          if (typeof verifyData.score === 'number' && verifyData.score < 0.5) {
+            throw AppError.unauthorized('Suspicious activity detected. Please try again.');
           }
         } catch (err: any) {
           if (err.status) throw err;
