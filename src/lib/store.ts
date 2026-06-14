@@ -673,7 +673,7 @@ export const useAgencyStore = create<AgencyStore>()(
         try {
           // Resolve clientId from company/name match
           const clients = get().clients;
-          const matched = clients.find(c => c.company === project.client || c.name === project.client);
+          const matched = clients.find(c => c.company?.toLowerCase() === project.client?.toLowerCase() || c.name?.toLowerCase() === project.client?.toLowerCase());
           if (!matched) throw new Error(`Client not found: ${project.client}`);
           const budgetCents = project.budget
             ? Math.round(parseFloat(String(project.budget).replace(/[^0-9.]/g, '')) * 100)
@@ -705,7 +705,7 @@ export const useAgencyStore = create<AgencyStore>()(
           // Resolve clientId if client name provided
           if (payload.client) {
             const clients = get().clients;
-            const matched = clients.find((c: any) => c.company === payload.client || c.name === payload.client);
+            const matched = clients.find((c: any) => c.company?.toLowerCase() === payload.client?.toLowerCase() || c.name?.toLowerCase() === payload.client?.toLowerCase());
             if (matched) payload.clientId = matched.id;
             delete payload.client;
           }
@@ -801,7 +801,7 @@ export const useAgencyStore = create<AgencyStore>()(
           let clientId = (invoice as any).clientId;
           if (!clientId) {
             const clients = get().clients;
-            const matched = clients.find(c => c.company === invoice.client || c.name === invoice.client);
+            const matched = clients.find(c => c.company?.toLowerCase() === invoice.client?.toLowerCase() || c.name?.toLowerCase() === invoice.client?.toLowerCase());
             if (!matched) throw new Error(`Client not found: ${invoice.client}`);
             clientId = matched.id;
           }
@@ -856,7 +856,7 @@ export const useAgencyStore = create<AgencyStore>()(
           if (invoice.deposit != null) payload.deposit = Math.round(Number(invoice.deposit) * 100);
           if (invoice.client) {
             const clients = get().clients;
-            const matched = clients.find((c: any) => c.company === invoice.client || c.name === invoice.client);
+            const matched = clients.find((c: any) => c.company?.toLowerCase() === invoice.client?.toLowerCase() || c.name?.toLowerCase() === invoice.client?.toLowerCase());
             if (matched) payload.clientId = matched.id;
           }
           if (invoice.amount) {
@@ -899,7 +899,7 @@ export const useAgencyStore = create<AgencyStore>()(
       addSubscription: async (subscription) => {
         try {
           const clients = get().clients;
-          const matched = clients.find(c => c.company === subscription.client || c.name === subscription.client);
+          const matched = clients.find(c => c.company?.toLowerCase() === subscription.client?.toLowerCase() || c.name?.toLowerCase() === subscription.client?.toLowerCase());
           if (!matched) throw new Error(`Client not found: ${subscription.client}`);
           const amountCents = subscription.amount
             ? Math.round(parseFloat(String(subscription.amount).replace(/[^0-9.]/g, '')) * 100)
@@ -947,7 +947,7 @@ export const useAgencyStore = create<AgencyStore>()(
           if (subscription.notes !== undefined) payload.notes = subscription.notes;
           if (subscription.client) {
             const clients = get().clients;
-            const matched = clients.find((c: any) => c.company === subscription.client || c.name === subscription.client);
+            const matched = clients.find((c: any) => c.company?.toLowerCase() === subscription.client?.toLowerCase() || c.name?.toLowerCase() === subscription.client?.toLowerCase());
             if (matched) payload.clientId = matched.id;
           }
           await apiFetch(`/subscriptions/${id}`, {
@@ -973,7 +973,7 @@ export const useAgencyStore = create<AgencyStore>()(
       addProforma: async (proforma) => {
         try {
           const clients = get().clients;
-          const matched = clients.find(c => c.company === proforma.client || c.name === proforma.client);
+          const matched = clients.find(c => c.company?.toLowerCase() === proforma.client?.toLowerCase() || c.name?.toLowerCase() === proforma.client?.toLowerCase());
           if (!matched) throw new Error(`Client not found: ${proforma.client}`);
           const amountCents = proforma.amount
             ? Math.round(parseFloat(String(proforma.amount).replace(/[^0-9.]/g, '')) * 100)
@@ -1019,7 +1019,7 @@ export const useAgencyStore = create<AgencyStore>()(
           if (proforma.notes !== undefined) payload.notes = proforma.notes;
           if (proforma.client) {
             const clients = get().clients;
-            const matched = clients.find((c: any) => c.company === proforma.client || c.name === proforma.client);
+            const matched = clients.find((c: any) => c.company?.toLowerCase() === proforma.client?.toLowerCase() || c.name?.toLowerCase() === proforma.client?.toLowerCase());
             if (matched) payload.clientId = matched.id;
           }
           if (proforma.amount) {

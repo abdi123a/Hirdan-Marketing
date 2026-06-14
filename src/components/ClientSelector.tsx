@@ -79,8 +79,8 @@ export function ClientSelector({ value, onValueChange, error }: ClientSelectorPr
                     <CommandItem
                       key={client.id}
                       value={clientName}
-                      onSelect={(currentValue) => {
-                        onValueChange(currentValue === value ? "" : currentValue, client);
+                      onSelect={() => {
+                        onValueChange(clientName === value ? "" : clientName, client);
                         setOpen(false);
                       }}
                     >
