@@ -1,0 +1,89 @@
+name: Deploy to Hostinger VPS (CloudPanel)
+
+on:
+  push:
+    branches:
+      - clean-version
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # Step 1: Build the static Frontend
+      - name: Build Frontend
+        run: |
+          npm install --legacy-peer-deps
+          npm run build
+
+      # Step 2: Build the Backend in GitHub Action
+      - name: Build Backend
+        run: |
+          cd server
+          npm install --legacy-peer-deps
+          npx prisma generate
+          npm run build
+
+      # Step 3: Deploy pre-compiled files via Rsync
+      - name: Deploy files to VPS via Rsync
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          
+          echo "📁 Copying Frontend static files to app.hirdanmarketing.com..."
+          rsync -avz -e "ssh -p ${{ secrets.SSH_PORT || 22 }} -o StrictHostKeyChecking=no -o BatchMode=yes -i ~/.ssh/id_ed25519" \
+            dist/ root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
+            
+          echo "📁 Copying Backend compiled files to api.hirdanmarketing.com..."
+          # Copy compiled build folder, package configuration, and prisma setup
+          rsync -avz -e "ssh -p ${{ secrets.SSH_PORT || 22 }} -o StrictHostKeyChecking=no -o BatchMode=yes -i ~/.ssh/id_ed25519" \
+            server/dist/ server/package.json server/package-lock.json server/prisma/ \
+            root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
+
+      # Step 4: Run server commands (dependencies install & restart service)
+      - name: Execute Server Commands
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            echo "🚀 Finalizing Server Setup..."
+            
+            # Fix ownership permissions for the frontend site
+            chown -R hirdanmarketing-app:hirdanmarketing-app /home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
+            
+            # Ensure uploads symlink is intact (protects branding files from being wiped)
+            mkdir -p /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/public
+            ln -sfn /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/uploads \
+              /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/public/uploads
+            
+            # Finish backend setup
+            cd /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
+            
+            echo "📦 Installing Production Backend dependencies..."
+            npm install --production --legacy-peer-deps
+            
+            echo "⚙️ Generating Database Client on server..."
+            # Run using the locally installed prisma version (v6)
+            ./node_modules/.bin/prisma generate
+            
+            # Fix ownership permissions for the backend site
+            chown -R hirdanmarketing-api:hirdanmarketing-api /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
+            
+            # --- RESTART NODEJS SERVICE ---
+            echo "🔄 Restarting Node.js service for api.hirdanmarketing.com..."
+            pm2 restart api || pm2 restart all || echo "Restart command failed, manual intervention needed."
+            
+            echo "✅ Deployment completed successfully!"
