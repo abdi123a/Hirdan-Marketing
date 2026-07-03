@@ -1774,20 +1774,37 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setShowAddDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={saving} className="gap-1.5">
-              {saving ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : editingPost ? (
-                <Pencil className="h-3.5 w-3.5" />
-              ) : (
-                <Plus className="h-3.5 w-3.5" />
-              )}
-              {saving ? "Saving..." : editingPost ? "Update Post" : "Add Post"}
-            </Button>
+          <DialogFooter className="flex items-center justify-between w-full">
+            {editingPost ? (
+              <Button
+                type="button"
+                variant="destructive"
+                className="mr-auto gap-1.5 text-xs font-semibold"
+                onClick={async () => {
+                  if (confirm("Are you sure you want to delete this post?")) {
+                    await handleDelete(editingPost.postIds);
+                    setShowAddDialog(false);
+                  }
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </Button>
+            ) : null}
+            <div className="flex items-center gap-2 ml-auto">
+              <Button variant="ghost" onClick={() => setShowAddDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSave} disabled={saving} className="gap-1.5">
+                {saving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : editingPost ? (
+                  <Pencil className="h-3.5 w-3.5" />
+                ) : (
+                  <Plus className="h-3.5 w-3.5" />
+                )}
+                {saving ? "Saving..." : editingPost ? "Update Post" : "Add Post"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
