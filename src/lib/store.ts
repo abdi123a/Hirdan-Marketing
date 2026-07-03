@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { apiFetch } from './api-client';
-import { formatCurrency } from './utils';
+import { apiFetch, apiUpload } from './api-client';
+import { formatCurrency, normalizeFeatureList } from './utils';
 
 // Secure token generation using crypto API
 function generateSecureToken(): string {
@@ -76,7 +76,7 @@ export interface Invoice {
   clientEmail?: string;
   clientAddress?: string;
   amount: string;
-  status: 'Paid' | 'Pending' | 'Overdue';
+  status: 'Paid' | 'Pending' | 'Overdue' | 'Partially Paid';
   date: string;
   dueDate: string;
   items?: InvoiceItem[];
@@ -88,6 +88,8 @@ export interface Invoice {
   paymentMethod?: string;
   clientId?: string;
   _dbId?: string;
+  showSignature?: boolean;
+  showStamp?: boolean;
   createdAt: string;
 }
 
@@ -95,17 +97,33 @@ export interface Subscription {
   id: string;
   client: string;
   clientEmail?: string;
+  clientId: string;
   packageId?: string; // Link to a Package
   serviceId?: string; // Link to a Service
   plan: string; // Dynamic plan name (e.g. Package name or Service name)
   amount: string;
   billingCycle: 'Monthly' | 'Quarterly' | 'Annual';
-  started: string;
-  renewal: string;
+  startDate: string;
+  endDate: string;
   status: 'Active' | 'Paused' | 'Cancelled' | 'Trial';
   features?: string[];
   notes?: string;
   createdAt: string;
+}
+
+/** Minimal fields returned by GET /api/verify/:token (public). */
+export interface PublicVerificationDocument {
+  documentNumber?: string;
+  date?: string;
+  status: string;
+  amountFormatted?: string;
+  clientMask: string;
+  plan?: string;
+  startDate?: string;
+  endDate?: string;
+  title?: string;
+  month?: number;
+  year?: number;
 }
 
 export interface Proforma {
@@ -113,7 +131,7 @@ export interface Proforma {
   client: string;
   clientEmail?: string;
   amount: string;
-  status: 'Draft' | 'Sent' | 'Accepted' | 'Expired';
+  status: 'Draft' | 'Sent' | 'Accepted' | 'Expired' | 'Partially Paid';
   date: string;
   dueDate: string;
   items?: InvoiceItem[];
@@ -124,7 +142,18 @@ export interface Proforma {
   deposit?: number;
   clientId?: string;
   _dbId?: string;
+  showSignature?: boolean;
+  showStamp?: boolean;
   createdAt: string;
+}
+
+export interface PackageDeliverable {
+  id?: string;
+  name: string;
+  type: 'POST' | 'STORY' | 'REEL' | 'SHORT' | 'VIDEO' | 'REPORT' | 'OTHER';
+  quantity: number;
+  description?: string;
+  platforms: ('INSTAGRAM' | 'FACEBOOK' | 'TIKTOK' | 'LINKEDIN' | 'X' | 'SNAPCHAT' | 'YOUTUBE' | 'PINTEREST' | 'OTHER')[];
 }
 
 export interface Package {
@@ -135,6 +164,7 @@ export interface Package {
   features: string[];
   type: 'Service' | 'Subscription' | 'One-time';
   serviceIds?: string[]; // IDs of services included in this package
+  deliverables?: PackageDeliverable[];
 }
 
 export interface Service {
@@ -173,7 +203,7 @@ export interface User {
 
 export interface VerificationRecord {
   token: string;
-  documentType: 'invoice' | 'proforma';
+  documentType: 'invoice' | 'proforma' | 'subscription' | 'monthly_report';
   documentId: string;
   createdAt: string;
 }
@@ -197,9 +227,14 @@ export interface AgencySettings {
   logo: string;
   whiteLogo: string;
   favicon: string;
+  signature: string;
+  stamp: string;
   primaryColor: string;
   taxRate: number;
   defaultInvoiceNotes: string;
+  enableRecaptcha: boolean;
+  recaptchaSiteKey: string;
+  recaptchaSecretKey: string;
   paymentMethods: PaymentMethod[];
   socialLinks: {
     facebook?: string;
@@ -212,6 +247,26 @@ export interface AgencySettings {
     projectUpdates: boolean;
     billingAlerts: boolean;
   };
+  openAiApiKey: string;
+  updatedAt: string;
+}
+
+export interface TaskAnalytics {
+  velocity: { date: string; count: number }[];
+  warnings: {
+    id: string;
+    label: string;
+    client: string;
+    plan: string;
+    progress: number;
+    total: number;
+    completed: number;
+  }[];
+  workload: {
+    id: string;
+    name: string;
+    count: number;
+  }[];
 }
 
 interface AgencyStore {
@@ -226,6 +281,9 @@ interface AgencyStore {
   leads: Lead[];
   users: User[];
   settings: AgencySettings;
+  taskAnalytics: TaskAnalytics | null;
+  globalUploadProgress: number;
+  isGlobalUploading: boolean;
 
   addClient: (client: Omit<Client, 'id' | 'createdAt'>) => Promise<Client>;
   updateClient: (id: string, client: Partial<Client>) => Promise<void>;
@@ -267,9 +325,9 @@ interface AgencyStore {
   deleteUser: (id: string) => Promise<void>;
 
   updateSettings: (settings: Partial<AgencySettings>) => Promise<void>;
-  getVerificationToken: (documentType: 'invoice' | 'proforma', documentId: string) => Promise<string>;
-  verifyDocument: (token: string) => Promise<{ type: 'invoice' | 'proforma'; document: Invoice | Proforma } | null>;
-  
+  getVerificationToken: (documentType: 'invoice' | 'proforma' | 'subscription' | 'monthly_report', documentId: string) => Promise<string>;
+  verifyDocument: (token: string) => Promise<{ type: 'invoice' | 'proforma' | 'subscription' | 'monthly_report'; document: PublicVerificationDocument } | null>;
+
   fetchClients: () => Promise<void>;
   fetchProjects: () => Promise<void>;
   fetchInvoices: () => Promise<void>;
@@ -280,10 +338,46 @@ interface AgencyStore {
   fetchTeam: () => Promise<void>;
   fetchSettings: () => Promise<void>;
   fetchLeads: () => Promise<void>;
+  fetchTaskAnalytics: () => Promise<void>;
   fetchAllData: () => Promise<void>;
-  generatePortalAccess: (clientId: string) => Promise<{ accessCode: string }>;
-  uploadFile: (file: File) => Promise<string>;
+  generatePortalAccess: (clientId: string) => Promise<{ tempPassword: string }>;
+  uploadFile: (file: File, onProgress?: (progress: number) => void, isPrivate?: boolean) => Promise<string>;
 }
+
+const createDefaultSettings = (): AgencySettings => ({
+  agencyName: "",
+  adminEmail: "",
+  phone: "",
+  website: "",
+  address: "",
+  currency: "DJF",
+  timezone: "Africa/Djibouti",
+  logo: "https://placehold.co/200x60/504188/white?text=LOGO",
+  whiteLogo: "https://placehold.co/200x60/white/504188?text=LOGO",
+  favicon: "https://placehold.co/32x32/504188/white?text=H",
+  signature: "",
+  stamp: "",
+  primaryColor: "#504188",
+  taxRate: 15,
+  defaultInvoiceNotes: "Thank you for your business! Please make payment within 14 days.",
+  enableRecaptcha: false,
+  recaptchaSiteKey: "",
+  recaptchaSecretKey: "",
+  paymentMethods: [],
+  socialLinks: {
+    linkedin: "",
+    twitter: "",
+    instagram: "",
+    facebook: "",
+  },
+  notifications: {
+    emailAlerts: true,
+    projectUpdates: true,
+    billingAlerts: true,
+  },
+  openAiApiKey: "",
+  updatedAt: new Date().toISOString(),
+});
 
 export const useAgencyStore = create<AgencyStore>()(
   persist(
@@ -298,36 +392,10 @@ export const useAgencyStore = create<AgencyStore>()(
       services: [],
       leads: [],
       users: [],
-      settings: {
-        agencyName: "Hirdan Marketing Management",
-        adminEmail: "contact@hirdanmarketing.com",
-        phone: "+1 555-0101",
-        website: "https://hirdanmarketing.com",
-        address: "123 Tech Ave, San Francisco, CA 94105",
-        currency: "DJF",
-        timezone: "Africa/Djibouti",
-        logo: "https://placehold.co/200x60/504188/white?text=LOGO",
-        whiteLogo: "https://placehold.co/200x60/white/504188?text=LOGO",
-        favicon: "https://placehold.co/32x32/504188/white?text=H",
-        primaryColor: "#504188",
-        taxRate: 15,
-        defaultInvoiceNotes: "Thank you for your business! Please make payment within 14 days.",
-        paymentMethods: [
-          { id: '1', name: "Bank Transfer", type: 'bank', details: 'IBAN: GB1234567890\nSWIFT: BANKGB22', isActive: true },
-          { id: '2', name: "Stripe", type: 'stripe', details: 'Connected', isActive: true },
-          { id: '3', name: "PayPal", type: 'paypal', details: 'payments@hirdan.com', isActive: true },
-          { id: '4', name: "Cash", type: 'other', details: 'In-person payments only', isActive: true }
-        ],
-        socialLinks: {
-          linkedin: "https://linkedin.com/company/hirdan",
-          twitter: "https://twitter.com/hirdan",
-        },
-        notifications: {
-          emailAlerts: true,
-          projectUpdates: true,
-          billingAlerts: true,
-        }
-      },
+      taskAnalytics: null,
+      globalUploadProgress: 0,
+      isGlobalUploading: false,
+      settings: createDefaultSettings(),
 
       fetchClients: async () => {
         try {
@@ -347,7 +415,7 @@ export const useAgencyStore = create<AgencyStore>()(
             type: (c.type?.charAt(0).toUpperCase() + c.type?.slice(1).toLowerCase()) as any || 'Business',
             status: c.status.charAt(0).toUpperCase() + c.status.slice(1).toLowerCase() as any,
             projects: c._count?.projects || 0,
-            revenue: '$0',
+            revenue: formatCurrency((c.revenue || 0) / 100),
             initials: c.initials || (c.company ? c.company.substring(0, 2).toUpperCase() : c.name.substring(0, 2).toUpperCase()),
             createdAt: c.createdAt,
             userId: c.userId
@@ -390,7 +458,7 @@ export const useAgencyStore = create<AgencyStore>()(
             client: i.client?.company || i.client?.name || 'Unknown',
             clientEmail: i.client?.email || '',
             amount: formatCurrency((i.amount || 0) / 100),
-            status: i.status.charAt(0).toUpperCase() + i.status.slice(1).toLowerCase() as any,
+            status: i.status.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ') as any,
             date: i.date.split('T')[0],
             dueDate: i.dueDate.split('T')[0],
             items: (i.items || []).map((item: any) => ({
@@ -406,6 +474,8 @@ export const useAgencyStore = create<AgencyStore>()(
             notes: i.notes,
             clientId: i.clientId || i.client?.id,
             _dbId: i.id,
+            showSignature: i.showSignature,
+            showStamp: i.showStamp,
             createdAt: i.createdAt
           }));
           set({ invoices: mapped });
@@ -424,10 +494,10 @@ export const useAgencyStore = create<AgencyStore>()(
             plan: s.package?.name || s.plan || 'Custom',
             amount: formatCurrency((s.amount || 0) / 100),
             billingCycle: s.billingCycle.charAt(0).toUpperCase() + s.billingCycle.slice(1).toLowerCase() as any,
-            started: s.started ? s.started.split('T')[0] : '',
-            renewal: s.renewal ? s.renewal.split('T')[0] : 'N/A',
+            startDate: s.startDate ? s.startDate.split('T')[0] : '',
+            endDate: s.endDate ? s.endDate.split('T')[0] : 'N/A',
             status: s.status.charAt(0).toUpperCase() + s.status.slice(1).toLowerCase() as any,
-            features: s.features ? (typeof s.features === 'string' ? JSON.parse(s.features) : s.features) : [],
+            features: normalizeFeatureList(s.features),
             packageId: s.packageId,
             createdAt: s.createdAt
           }));
@@ -445,7 +515,7 @@ export const useAgencyStore = create<AgencyStore>()(
             client: p.client?.company || p.client?.name || 'Unknown',
             clientEmail: p.client?.email || '',
             amount: formatCurrency((p.amount || 0) / 100),
-            status: p.status.charAt(0).toUpperCase() + p.status.slice(1).toLowerCase() as any,
+            status: p.status.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ') as any,
             date: p.date.split('T')[0],
             dueDate: p.dueDate?.split('T')[0] || '',
             items: (p.items || []).map((item: any) => ({
@@ -460,6 +530,8 @@ export const useAgencyStore = create<AgencyStore>()(
             notes: p.notes,
             clientId: p.clientId || p.client?.id,
             _dbId: p.id,
+            showSignature: p.showSignature,
+            showStamp: p.showStamp,
             createdAt: p.createdAt
           }));
           set({ proformas: mapped });
@@ -483,9 +555,17 @@ export const useAgencyStore = create<AgencyStore>()(
               name: p.name,
               description: p.description,
               price: priceDisplay,
-              features: p.features ? (typeof p.features === 'string' ? JSON.parse(p.features) : p.features) : [],
+              features: normalizeFeatureList(p.features),
               type: typeDisplay,
               serviceIds: (p.packageServices || []).map((ps: any) => ps.serviceId || ps.service?.id).filter(Boolean),
+              deliverables: p.deliverables?.map((d: any) => ({
+                id: d.id,
+                name: d.name,
+                type: d.type,
+                quantity: d.quantity,
+                description: d.description,
+                platforms: d.platforms?.map((plat: any) => plat.platform) || []
+              })) || [],
             };
           });
           set({ packages: mapped });
@@ -554,7 +634,16 @@ export const useAgencyStore = create<AgencyStore>()(
                 return m;
               });
             }
-            set({ settings: { ...get().settings, ...settings } });
+            const defaults = createDefaultSettings();
+            set({
+              settings: {
+                ...defaults,
+                ...settings,
+                paymentMethods: settings.paymentMethods ?? defaults.paymentMethods,
+                socialLinks: { ...defaults.socialLinks, ...(settings.socialLinks || {}) },
+                notifications: { ...defaults.notifications, ...(settings.notifications || {}) },
+              },
+            });
           }
         } catch (error) {
           console.error("Failed to fetch settings:", error);
@@ -570,6 +659,15 @@ export const useAgencyStore = create<AgencyStore>()(
         }
       },
 
+      fetchTaskAnalytics: async () => {
+        try {
+          const res = await apiFetch<TaskAnalytics>('/tasks/analytics/dashboard');
+          set({ taskAnalytics: res });
+        } catch (error) {
+          console.error("Failed to fetch task analytics:", error);
+        }
+      },
+
       fetchAllData: async () => {
         await Promise.all([
           get().fetchClients(),
@@ -582,7 +680,8 @@ export const useAgencyStore = create<AgencyStore>()(
           get().fetchTeam(),
           get().fetchLeads(),
           get().fetchUsers(),
-          get().fetchSettings()
+          get().fetchSettings(),
+          get().fetchTaskAnalytics()
         ]);
       },
 
@@ -592,14 +691,14 @@ export const useAgencyStore = create<AgencyStore>()(
           const { revenue, projects, ...clientData } = client as any;
           const res = await apiFetch<{ client: any }>('/clients', {
             method: 'POST',
-            body: JSON.stringify({ 
-              ...clientData, 
+            body: JSON.stringify({
+              ...clientData,
               status: clientData.status.toUpperCase(),
               type: clientData.type.toUpperCase()
             }),
           });
           await get().fetchClients();
-          
+
           // Map DB client back to Frontend Client format
           const c = res.client;
           return {
@@ -617,7 +716,7 @@ export const useAgencyStore = create<AgencyStore>()(
             type: (c.type?.charAt(0).toUpperCase() + c.type?.slice(1).toLowerCase()) as any || 'Business',
             status: c.status.charAt(0).toUpperCase() + c.status.slice(1).toLowerCase() as any,
             projects: c._count?.projects || 0,
-            revenue: '$0',
+            revenue: formatCurrency((c.revenue || 0) / 100),
             initials: c.initials || (c.company ? c.company.substring(0, 2).toUpperCase() : c.name.substring(0, 2).toUpperCase()),
             createdAt: c.createdAt,
             userId: c.userId
@@ -811,7 +910,7 @@ export const useAgencyStore = create<AgencyStore>()(
               invoiceNumber: (invoice as any).id || invoice.id,
               clientId,
               amount: amountCents,
-              status: invoice.status.toUpperCase(),
+              status: invoice.status.toUpperCase().replace(/\s+/g, '_'),
               date: invoice.date ? new Date(invoice.date).toISOString() : new Date().toISOString(),
               dueDate: invoice.dueDate ? new Date(invoice.dueDate).toISOString() : undefined,
               taxRate: invoice.taxRate,
@@ -820,6 +919,8 @@ export const useAgencyStore = create<AgencyStore>()(
               deposit: depositCents,
               paymentMethod: invoice.paymentMethod,
               notes: invoice.notes,
+              showSignature: invoice.showSignature,
+              showStamp: invoice.showStamp,
               items: itemsForDB,
             }),
           });
@@ -832,7 +933,7 @@ export const useAgencyStore = create<AgencyStore>()(
       updateInvoice: async (id, invoice) => {
         try {
           const payload: any = {};
-          if (invoice.status) payload.status = invoice.status.toUpperCase();
+          if (invoice.status) payload.status = invoice.status.toUpperCase().replace(/\s+/g, '_');
           if (invoice.date) payload.date = new Date(invoice.date).toISOString();
           if (invoice.dueDate) payload.dueDate = new Date(invoice.dueDate).toISOString();
           if (invoice.taxRate !== undefined) payload.taxRate = invoice.taxRate;
@@ -840,8 +941,11 @@ export const useAgencyStore = create<AgencyStore>()(
           if (invoice.discountType) payload.discountType = invoice.discountType.toUpperCase();
           if (invoice.paymentMethod) payload.paymentMethod = invoice.paymentMethod;
           if (invoice.notes !== undefined) payload.notes = invoice.notes;
+          if (invoice.showSignature !== undefined) payload.showSignature = invoice.showSignature;
+          if (invoice.showStamp !== undefined) payload.showStamp = invoice.showStamp;
           if (invoice.deposit != null) payload.deposit = Math.round(Number(invoice.deposit) * 100);
-          if (invoice.client) {
+          if (invoice.clientId) payload.clientId = invoice.clientId;
+          if (invoice.client && !payload.clientId) {
             const clients = get().clients;
             const matched = clients.find((c: any) => c.company === invoice.client || c.name === invoice.client);
             if (matched) payload.clientId = matched.id;
@@ -855,6 +959,9 @@ export const useAgencyStore = create<AgencyStore>()(
               quantity: item.quantity,
               unitPrice: Math.round(Number(item.unitPrice) * 100),
             }));
+          }
+          if (invoice.id && invoice.id.startsWith('INV-')) {
+            payload.invoiceNumber = invoice.id;
           }
           // Resolve _dbId if the display-id (invoiceNumber) was used
           const allInvoices = get().invoices;
@@ -891,9 +998,8 @@ export const useAgencyStore = create<AgencyStore>()(
           const amountCents = subscription.amount
             ? Math.round(parseFloat(String(subscription.amount).replace(/[^0-9.]/g, '')) * 100)
             : 0;
-          const featuresJson = subscription.features?.length
-            ? JSON.stringify(subscription.features)
-            : undefined;
+          const featureList = normalizeFeatureList(subscription.features);
+          const featuresJson = featureList.length ? JSON.stringify(featureList) : undefined;
           await apiFetch('/subscriptions', {
             method: 'POST',
             body: JSON.stringify({
@@ -902,8 +1008,8 @@ export const useAgencyStore = create<AgencyStore>()(
               plan: subscription.plan,
               amount: amountCents,
               billingCycle: subscription.billingCycle.toUpperCase(),
-              started: subscription.started ? new Date(subscription.started).toISOString() : new Date().toISOString(),
-              renewal: subscription.renewal && subscription.renewal !== 'N/A' ? new Date(subscription.renewal).toISOString() : undefined,
+              startDate: subscription.startDate ? new Date(subscription.startDate).toISOString() : new Date().toISOString(),
+              endDate: subscription.endDate && subscription.endDate !== 'N/A' ? new Date(subscription.endDate).toISOString() : undefined,
               status: subscription.status.toUpperCase(),
               features: featuresJson,
               notes: subscription.notes,
@@ -924,12 +1030,13 @@ export const useAgencyStore = create<AgencyStore>()(
           if (subscription.amount !== undefined) {
             payload.amount = Math.round(parseFloat(String(subscription.amount).replace(/[^0-9.]/g, '')) * 100);
           }
-          if (subscription.started) payload.started = new Date(subscription.started).toISOString();
-          if (subscription.renewal) {
-            payload.renewal = subscription.renewal !== 'N/A' ? new Date(subscription.renewal).toISOString() : undefined;
+          if (subscription.startDate) payload.startDate = new Date(subscription.startDate).toISOString();
+          if (subscription.endDate) {
+            payload.endDate = subscription.endDate !== 'N/A' ? new Date(subscription.endDate).toISOString() : undefined;
           }
           if (subscription.features !== undefined) {
-            payload.features = subscription.features?.length ? JSON.stringify(subscription.features) : undefined;
+            const featureList = normalizeFeatureList(subscription.features);
+            payload.features = featureList.length ? JSON.stringify(featureList) : undefined;
           }
           if (subscription.notes !== undefined) payload.notes = subscription.notes;
           if (subscription.client) {
@@ -976,7 +1083,7 @@ export const useAgencyStore = create<AgencyStore>()(
               proformaNumber: (proforma as any).id || proforma.id,
               clientId: matched.id,
               amount: amountCents,
-              status: proforma.status.toUpperCase(),
+              status: proforma.status.toUpperCase().replace(/\s+/g, '_'),
               date: proforma.date ? new Date(proforma.date).toISOString() : new Date().toISOString(),
               dueDate: proforma.dueDate ? new Date(proforma.dueDate).toISOString() : undefined,
               taxRate: proforma.taxRate,
@@ -984,6 +1091,8 @@ export const useAgencyStore = create<AgencyStore>()(
               discountType: proforma.discountType ? proforma.discountType.toUpperCase() : undefined,
               deposit: proforma.deposit ? Math.round(Number(proforma.deposit) * 100) : undefined,
               notes: proforma.notes,
+              showSignature: proforma.showSignature,
+              showStamp: proforma.showStamp,
               items: itemsForDB,
             }),
           });
@@ -996,7 +1105,7 @@ export const useAgencyStore = create<AgencyStore>()(
       updateProforma: async (id, proforma) => {
         try {
           const payload: any = {};
-          if (proforma.status) payload.status = proforma.status.toUpperCase();
+          if (proforma.status) payload.status = proforma.status.toUpperCase().replace(/\s+/g, '_');
           if (proforma.date) payload.date = new Date(proforma.date).toISOString();
           if (proforma.dueDate) payload.dueDate = new Date(proforma.dueDate).toISOString();
           if (proforma.taxRate !== undefined) payload.taxRate = proforma.taxRate;
@@ -1004,7 +1113,10 @@ export const useAgencyStore = create<AgencyStore>()(
           if (proforma.discountType) payload.discountType = proforma.discountType.toUpperCase();
           if (proforma.deposit != null) payload.deposit = Math.round(Number(proforma.deposit) * 100);
           if (proforma.notes !== undefined) payload.notes = proforma.notes;
-          if (proforma.client) {
+          if (proforma.showSignature !== undefined) payload.showSignature = proforma.showSignature;
+          if (proforma.showStamp !== undefined) payload.showStamp = proforma.showStamp;
+          if (proforma.clientId) payload.clientId = proforma.clientId;
+          if (proforma.client && !payload.clientId) {
             const clients = get().clients;
             const matched = clients.find((c: any) => c.company === proforma.client || c.name === proforma.client);
             if (matched) payload.clientId = matched.id;
@@ -1018,6 +1130,9 @@ export const useAgencyStore = create<AgencyStore>()(
               quantity: item.quantity,
               unitPrice: Math.round(Number(item.unitPrice) * 100),
             }));
+          }
+          if (proforma.id && proforma.id.startsWith('PRO-')) {
+            payload.proformaNumber = proforma.id;
           }
           const allProformas = get().proformas;
           const found = allProformas.find((p: any) => p.id === id || p._dbId === id);
@@ -1063,6 +1178,8 @@ export const useAgencyStore = create<AgencyStore>()(
               price: priceCents,
               type: dbType,
               features: featuresJson,
+              serviceIds: pkg.serviceIds,
+              deliverables: pkg.deliverables,
             }),
           });
           await get().fetchPackages();
@@ -1084,7 +1201,7 @@ export const useAgencyStore = create<AgencyStore>()(
           if (payload.features !== undefined) {
             payload.features = payload.features?.length ? JSON.stringify(payload.features) : undefined;
           }
-          delete payload.serviceIds;
+          // The backend expects deliverables if provided, which we've already defined as PackageDeliverable[]
           await apiFetch(`/packages/${id}`, {
             method: 'PUT',
             body: JSON.stringify(payload),
@@ -1242,9 +1359,15 @@ export const useAgencyStore = create<AgencyStore>()(
           if (documentType === 'invoice') {
             const inv = get().invoices.find(i => i.id === documentId || (i as any)._dbId === documentId);
             if (inv) dbId = (inv as any)._dbId || inv.id;
-          } else {
+          } else if (documentType === 'proforma') {
             const prof = get().proformas.find(p => p.id === documentId || (p as any)._dbId === documentId);
             if (prof) dbId = (prof as any)._dbId || prof.id;
+          } else if (documentType === 'subscription') {
+            const sub = get().subscriptions.find(s => s.id === documentId);
+            if (sub) dbId = sub.id;
+          } else if (documentType === 'monthly_report') {
+            // Document ID is already the UUID for reports in the current UI flow
+            dbId = documentId;
           }
 
           const res = await apiFetch<{ token: string }>('/verify', {
@@ -1260,22 +1383,27 @@ export const useAgencyStore = create<AgencyStore>()(
 
       verifyDocument: async (token) => {
         try {
-          const res = await apiFetch<{ verified: boolean; type: 'invoice' | 'proforma'; document: any }>(`/verify/${token}`);
+          const res = await apiFetch<{
+            verified: boolean;
+            type: 'invoice' | 'proforma' | 'subscription' | 'monthly_report';
+            document: any;
+          }>(`/verify/${token}`);
           if (res.verified && res.document) {
             const d = res.document;
-            const mappedDoc = {
-              ...d,
-              id: d.invoiceNumber || d.proformaNumber || d.id,
-              status: d.status.charAt(0).toUpperCase() + d.status.slice(1).toLowerCase(),
-              amount: formatCurrency((d.amount || 0) / 100),
-              // Map client name/company if nested
-              client: (d.client && typeof d.client === 'object') ? (d.client.company || d.client.name) : d.client,
-              items: (d.items || []).map((item: any) => ({
-                ...item,
-                unitPrice: item.unitPrice / 100 // convert cents to readable for formatCurrency to re-convert later? Wait, the UI uses formatCurrency(total)
-                // Actually the UI in VerifyDocumentPage uses formatCurrency directly on the raw unitPrice it gets from the store.
-                // fetchInvoices maps (i.amount)/100 but items are raw in fetchInvoices too?
-              }))
+            const mappedDoc: PublicVerificationDocument = {
+              documentNumber: d.number,
+              date: d.date,
+              status: d.status
+                ? d.status.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')
+                : '',
+              amountFormatted: d.amount !== undefined ? formatCurrency((d.amount || 0) / 100) : undefined,
+              clientMask: d.clientMask || '•••***',
+              plan: d.plan,
+              startDate: d.startDate,
+              endDate: d.endDate,
+              title: d.title,
+              month: d.month,
+              year: d.year,
             };
             return { type: res.type, document: mappedDoc };
           }
@@ -1287,7 +1415,7 @@ export const useAgencyStore = create<AgencyStore>()(
       },
       generatePortalAccess: async (clientId: string) => {
         try {
-          const res = await apiFetch<{ accessCode: string }>(`/clients/${clientId}/portal-access`, {
+          const res = await apiFetch<{ tempPassword: string }>(`/clients/${clientId}/portal-access`, {
             method: 'POST'
           });
           return res;
@@ -1296,15 +1424,23 @@ export const useAgencyStore = create<AgencyStore>()(
           throw error;
         }
       },
-      uploadFile: async (file: File) => {
+      uploadFile: async (file: File, onProgress?: (progress: number) => void, isPrivate?: boolean) => {
         const formData = new FormData();
         formData.append('file', file);
-        const res = await apiFetch<{ url: string }>('/settings/upload', {
-          method: 'POST',
-          body: formData,
-          headers: { 'Content-Type': 'SKIP' as any }
-        });
-        return res.url;
+        set({ isGlobalUploading: true, globalUploadProgress: 0 });
+        try {
+          const endpoint = isPrivate ? '/settings/upload?private=true' : '/settings/upload';
+          const res = await apiUpload<{ url: string }>(endpoint, formData, (progress) => {
+            set({ globalUploadProgress: progress });
+            if (onProgress) onProgress(progress);
+          });
+          return res.url;
+        } finally {
+          // Add a small delay for a smoother UI transition after 100%
+          setTimeout(() => {
+            set({ isGlobalUploading: false, globalUploadProgress: 0 });
+          }, 1000);
+        }
       },
     }),
     {

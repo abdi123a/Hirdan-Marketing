@@ -57,14 +57,16 @@ export default function ProjectsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="rounded-2xl border border-border/60 bg-card/60 p-5 md:p-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-foreground tracking-tight">Projects</h1>
-          <p className="text-muted-foreground mt-1">Track all campaigns and deliverables</p>
+          <p className="text-muted-foreground mt-1">Track all campaigns and deliverables in one place</p>
         </div>
-        <Button variant="hero" className="gap-2" onClick={() => navigate("/dashboard/projects/add")}>
-          <Plus className="h-4 w-4" /> New Project
-        </Button>
+          <Button variant="hero" className="gap-2 shadow-sm" onClick={() => navigate("/dashboard/projects/add")}>
+            <Plus className="h-4 w-4" /> New Project
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -75,7 +77,7 @@ export default function ProjectsPage() {
           { label: "Completed", value: projects.filter(p => p.status === "Completed").length, color: "text-emerald-600" },
           { label: "On Hold", value: projects.filter(p => p.status === "On Hold").length, color: "text-amber-600" },
         ].map((stat) => (
-          <Card key={stat.label} className="shadow-card border-border">
+          <Card key={stat.label} className="shadow-sm border-border/60">
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{stat.label}</p>
               <p className={`text-2xl font-bold mt-1 ${stat.color}`}>{stat.value}</p>
@@ -85,20 +87,25 @@ export default function ProjectsPage() {
       </div>
 
       {/* Search & Filters */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/30 p-3">
         <div className="relative max-w-sm flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search projects..." className="pl-9 bg-muted border-0" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input placeholder="Search projects..." className="pl-9 bg-background border-border/60" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        {clientFilter && (
-          <Badge variant="secondary" className="h-9 px-3 gap-2 bg-primary/10 text-primary border-primary/20">
-            Client: {clientFilter}
-            <X className="h-3 w-3 cursor-pointer hover:text-foreground" onClick={() => {
-              searchParams.delete("client");
-              setSearchParams(searchParams);
-            }} />
-          </Badge>
-        )}
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-muted-foreground whitespace-nowrap">
+            Showing <span className="font-semibold text-foreground">{filtered.length}</span> of {projects.length}
+          </p>
+          {clientFilter && (
+            <Badge variant="secondary" className="h-9 px-3 gap-2 bg-primary/10 text-primary border-primary/20">
+              Client: {clientFilter}
+              <X className="h-3 w-3 cursor-pointer hover:text-foreground" onClick={() => {
+                searchParams.delete("client");
+                setSearchParams(searchParams);
+              }} />
+            </Badge>
+          )}
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -111,7 +118,11 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((p) => (
-            <Card key={p.id} className="shadow-card border-border hover:shadow-elevated transition-all duration-200 group cursor-pointer" onClick={() => navigate(`/dashboard/projects/view/${p.id}`)}>
+            <Card
+              key={p.id}
+              className="border-border/60 bg-card/80 shadow-sm hover:shadow-md hover:border-primary/30 transition-all duration-200 group cursor-pointer"
+              onClick={() => navigate(`/dashboard/projects/view/${p.id}`)}
+            >
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
@@ -120,7 +131,7 @@ export default function ProjectsPage() {
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                      <Button variant="ghost" size="icon" className="shrink-0 -mt-1 h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon" className="shrink-0 -mt-1 h-8 w-8 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -152,7 +163,7 @@ export default function ProjectsPage() {
                   <Badge className={statusColor(p.status)}>{p.status}</Badge>
                   <Badge className={priorityColor(p.priority)}>{p.priority}</Badge>
                 </div>
-                <div>
+                <div className="rounded-lg bg-muted/40 p-2.5">
                   <div className="flex items-center justify-between text-sm mb-1.5">
                     <span className="text-muted-foreground">Progress</span>
                     <span className="font-semibold text-foreground">{p.progress}%</span>

@@ -3,12 +3,8 @@ import { useLocation } from 'react-router-dom';
 import { useAgencyStore } from '@/lib/store';
 
 export const AgencyAppearanceManager = () => {
-  const { settings, fetchSettings } = useAgencyStore();
+  const { settings } = useAgencyStore();
   const location = useLocation();
-
-  useEffect(() => {
-    fetchSettings();
-  }, [fetchSettings]);
 
   useEffect(() => {
     // Update favicon

@@ -19,7 +19,7 @@ export default function AddSubscriptionPage() {
 
   const subscriptionOptions = useMemo(() => {
     const opts: any[] = [];
-    
+
     // Add Packages that are explicitly marked as Subscription
     packages.filter(p => p.type === 'Subscription').forEach(pkg => {
       opts.push({
@@ -35,9 +35,9 @@ export default function AddSubscriptionPage() {
     });
 
     // Add Services that look like subscriptions (recurring pricing)
-    services.filter(svc => 
-      svc.basePrice.toLowerCase().includes('/mo') || 
-      svc.basePrice.toLowerCase().includes('/month') || 
+    services.filter(svc =>
+      svc.basePrice.toLowerCase().includes('/mo') ||
+      svc.basePrice.toLowerCase().includes('/month') ||
       svc.basePrice.toLowerCase().includes('/yr') ||
       svc.basePrice.toLowerCase().includes('/year')
     ).forEach(svc => {
@@ -57,6 +57,7 @@ export default function AddSubscriptionPage() {
   }, [packages, services]);
 
   const [form, setForm] = useState<Partial<Subscription>>({
+    clientId: "",
     client: "",
     clientEmail: "",
     plan: "",
@@ -64,8 +65,8 @@ export default function AddSubscriptionPage() {
     serviceId: "",
     amount: "",
     billingCycle: "Monthly",
-    started: new Date().toISOString().split("T")[0],
-    renewal: new Date(Date.now() + 30 * 864e5).toISOString().split("T")[0],
+    startDate: new Date().toISOString().split("T")[0],
+    endDate: new Date(Date.now() + 30 * 864e5).toISOString().split("T")[0],
     status: "Active",
     features: [],
     notes: "",
@@ -78,9 +79,9 @@ export default function AddSubscriptionPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
 
   const selectOption = (opt: any) => {
-    setForm((prev) => ({ 
-      ...prev, 
-      plan: opt.name, 
+    setForm((prev) => ({
+      ...prev,
+      plan: opt.name,
       packageId: opt.type === 'package' ? opt.id : undefined,
       serviceId: opt.type === 'service' ? opt.id : undefined,
       amount: opt.price,
@@ -110,7 +111,10 @@ export default function AddSubscriptionPage() {
   const handleSubmit = async () => {
     if (!validate()) return;
     try {
-      await addSubscription(form as Omit<Subscription, "id">);
+      await addSubscription({
+        ...form,
+        features: form.features || [],
+      } as Omit<Subscription, "id">);
       toast({ title: "Subscription added!", description: `${form.plan} plan for ${form.client} has been created.` });
       navigate("/dashboard/subscriptions");
     } catch (e) {
@@ -145,11 +149,10 @@ export default function AddSubscriptionPage() {
                   <button
                     key={`${opt.type}-${opt.id}`}
                     onClick={() => selectOption(opt)}
-                    className={`p-4 rounded-xl border-2 text-left transition-all relative overflow-hidden group ${
-                      (opt.type === 'package' ? form.packageId === opt.id : form.serviceId === opt.id)
-                        ? "border-primary bg-primary/5 shadow-sm"
-                        : "border-border hover:border-primary/40 hover:bg-muted/50"
-                    }`}
+                    className={`p-4 rounded-xl border-2 text-left transition-all relative overflow-hidden group ${(opt.type === 'package' ? form.packageId === opt.id : form.serviceId === opt.id)
+                      ? "border-primary bg-primary/5 shadow-sm"
+                      : "border-border hover:border-primary/40 hover:bg-muted/50"
+                      }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
@@ -165,7 +168,7 @@ export default function AddSubscriptionPage() {
                       <span className="text-[10px] text-muted-foreground font-medium">/{opt.displayPrice.split('/')[1] || 'mo'}</span>
                     </div>
                     <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">{opt.description}</p>
-                    
+
                     {(opt.type === 'package' ? form.packageId === opt.id : form.serviceId === opt.id) && (
                       <div className="absolute top-0 right-0 w-8 h-8 flex items-center justify-center translate-x-3 -translate-y-3 rotate-45 bg-primary">
                         <CheckCircleIcon className="h-3 w-3 text-white -rotate-45 -translate-x-1 translate-y-1" />
@@ -174,7 +177,7 @@ export default function AddSubscriptionPage() {
                   </button>
                 ))}
               </div>
-              
+
               {subscriptionOptions.length === 0 && (
                 <div className="text-center py-8 bg-muted/20 rounded-xl border border-dashed">
                   <p className="text-sm text-muted-foreground">No recurring packages or services available.</p>
@@ -187,12 +190,12 @@ export default function AddSubscriptionPage() {
                   <Label htmlFor="custom-amount">Monthly Amount (override)</Label>
                   <div className="relative">
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-bold">{settings.currency}</div>
-                    <Input 
-                      id="custom-amount" 
-                      placeholder="499" 
-                      className="pl-12" 
-                      value={form.amount} 
-                      onChange={(e) => setField("amount", e.target.value)} 
+                    <Input
+                      id="custom-amount"
+                      placeholder="499"
+                      className="pl-12"
+                      value={form.amount}
+                      onChange={(e) => setField("amount", e.target.value)}
                     />
                   </div>
                 </div>
@@ -225,7 +228,7 @@ export default function AddSubscriptionPage() {
                   value={form.client}
                   onValueChange={(v) => {
                     const c = clients.find((cl) => cl.company === v || cl.name === v);
-                    setForm((p) => ({ ...p, client: v, clientEmail: c?.email }));
+                    setForm((p) => ({ ...p, client: v, clientId: c?.id, clientEmail: c?.email }));
                   }}
                 >
                   <SelectTrigger className={errors.client ? "border-destructive" : ""}>
@@ -252,11 +255,11 @@ export default function AddSubscriptionPage() {
             <CardContent className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="sub-start">Start Date</Label>
-                <Input id="sub-start" type="date" value={form.started} onChange={(e) => setField("started", e.target.value)} />
+                <Input id="sub-start" type="date" value={form.startDate} onChange={(e) => setField("startDate", e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="sub-renewal">Renewal Date</Label>
-                <Input id="sub-renewal" type="date" value={form.renewal} onChange={(e) => setField("renewal", e.target.value)} />
+                <Label htmlFor="sub-renewal">End Date</Label>
+                <Input id="sub-renewal" type="date" value={form.endDate} onChange={(e) => setField("endDate", e.target.value)} />
               </div>
             </CardContent>
           </Card>

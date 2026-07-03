@@ -1,16 +1,52 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-dotenv.config();
+const currentFile = fileURLToPath(import.meta.url);
+const currentDir = path.dirname(currentFile);
+const serverEnvPath = path.resolve(currentDir, '../../.env');
+
+// Force project-local .env values to win over any globally exported shell vars.
+// This avoids accidental runtime failures when a user has DATABASE_URL set in their profile.
+dotenv.config({ path: serverEnvPath, override: true });
+
+function isStrongSecret(value: string): boolean {
+  // Minimum bar: 32+ chars, not a common placeholder.
+  if (value.length < 32) return false;
+  const lowered = value.toLowerCase();
+  if (lowered.includes('changeme') || lowered.includes('change-me') || lowered.includes('default')) return false;
+  // Reject secrets that look like short/simple patterns (very rough).
+  const uniqueChars = new Set(value).size;
+  return uniqueChars >= 12;
+}
+
+function isNonRootMysqlUrl(databaseUrl: string, envMode?: string): boolean {
+  if (envMode === 'development') return true;
+  try {
+    const url = new URL(databaseUrl);
+    if (!['mysql:', 'mysql2:'].includes(url.protocol)) return true; // only enforce for mysql URLs
+    return url.username !== 'root';
+  } catch {
+    // If parsing fails, keep existing behavior (schema requires non-empty).
+    return true;
+  }
+}
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-  JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
-  JWT_REFRESH_SECRET: z.string().min(16, 'JWT_REFRESH_SECRET must be at least 16 characters'),
+  JWT_SECRET: z.string().refine(isStrongSecret, 'JWT_SECRET must be at least 32 characters and not a weak/default value'),
+  JWT_REFRESH_SECRET: z.string().refine(isStrongSecret, 'JWT_REFRESH_SECRET must be at least 32 characters and not a weak/default value'),
   PORT: z.string().default('3001').transform(Number),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   JWT_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+  FRONTEND_URL: z.string().optional(),
+  LANDING_URL: z.string().optional(),
+  COOKIE_DOMAIN: z.string().optional(),
+}).refine((v) => isNonRootMysqlUrl(v.DATABASE_URL, v.NODE_ENV), {
+  message: 'DATABASE_URL must not use the root MySQL user',
+  path: ['DATABASE_URL'],
 });
 
 const parsed = envSchema.safeParse(process.env);

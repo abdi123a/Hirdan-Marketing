@@ -6,9 +6,18 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Save, Package, Plus, X, Layers } from "lucide-react";
-import { useAgencyStore, Package as PackageType } from "@/lib/store";
+import { ArrowLeft, Save, Package, Plus, X, Layers, Trash2, CheckCircle2, Share2 } from "lucide-react";
+import { useAgencyStore, Package as PackageType, PackageDeliverable } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
+
+const PLATFORMS = [
+  'INSTAGRAM', 'FACEBOOK', 'TIKTOK', 'LINKEDIN',
+  'X', 'SNAPCHAT', 'YOUTUBE', 'PINTEREST', 'OTHER',
+] as const;
+
+const DELIVERABLE_TYPES = [
+  'POST', 'STORY', 'REEL', 'SHORT', 'VIDEO', 'REPORT', 'OTHER',
+] as const;
 
 export default function EditPackagePage() {
   const { id } = useParams();
@@ -42,6 +51,28 @@ export default function EditPackagePage() {
 
   const removeFeature = (f: string) => {
     setField("features", (form.features || []).filter((x) => x !== f));
+  };
+
+  const addDeliverable = () => {
+    const newDeliverable: PackageDeliverable = {
+      name: "New Deliverable",
+      type: "POST",
+      quantity: 1,
+      platforms: ["INSTAGRAM"],
+    };
+    setField("deliverables", [...(form.deliverables || []), newDeliverable]);
+  };
+
+  const removeDeliverable = (index: number) => {
+    const next = [...(form.deliverables || [])];
+    next.splice(index, 1);
+    setField("deliverables", next);
+  };
+
+  const updateDeliverable = (index: number, updates: Partial<PackageDeliverable>) => {
+    const next = [...(form.deliverables || [])];
+    next[index] = { ...next[index], ...updates };
+    setField("deliverables", next);
   };
 
   const validate = () => {
@@ -155,6 +186,102 @@ export default function EditPackagePage() {
                 <p className="text-sm text-muted-foreground text-center py-4 bg-muted/20 rounded-xl border border-dashed">
                   No services available. Create services first to link them to packages.
                 </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Deliverable Templates Section */}
+          <Card className="shadow-card border-border border-t-4 border-t-amber-500/20">
+            <CardHeader className="pb-4 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <Share2 className="h-4 w-4 text-amber-500" /> Deliverable Templates
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">Define recurring social media outputs for this package.</p>
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={addDeliverable} className="h-8 gap-1 text-[10px] font-bold uppercase tracking-wider">
+                <Plus className="h-3 w-3" /> Add Template
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {form.deliverables?.map((del, idx) => (
+                <div key={idx} className="p-4 rounded-xl border border-border/50 bg-muted/5 relative group animate-in fade-in slide-in-from-top-2 duration-300">
+                  <button 
+                    onClick={() => removeDeliverable(idx)}
+                    className="absolute top-2 right-2 p-1.5 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-bold uppercase tracking-widest">Deliverable Name</Label>
+                      <Input 
+                        placeholder="e.g. Weekly Instagram Reel" 
+                        value={del.name} 
+                        onChange={(e) => updateDeliverable(idx, { name: e.target.value })}
+                        className="h-8 text-xs font-semibold"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] font-bold uppercase tracking-widest">Type</Label>
+                        <Select value={del.type} onValueChange={(v: any) => updateDeliverable(idx, { type: v })}>
+                          <SelectTrigger className="h-8 text-xs font-semibold"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {DELIVERABLE_TYPES.map(t => <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[10px] font-bold uppercase tracking-widest">Quantity / Mo</Label>
+                        <Input 
+                          type="number" 
+                          min={1} 
+                          value={del.quantity} 
+                          onChange={(e) => updateDeliverable(idx, { quantity: parseInt(e.target.value) || 1 })}
+                          className="h-8 text-xs font-semibold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    <Label className="text-[10px] font-bold uppercase tracking-widest">Target Platforms</Label>
+                    <div className="flex flex-wrap gap-x-4 gap-y-2 p-3 rounded-lg bg-background border border-border/40">
+                      {PLATFORMS.map((platform) => (
+                        <label key={platform} className="flex items-center gap-2 cursor-pointer group/label">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+                            checked={del.platforms.includes(platform)}
+                            onChange={(e) => {
+                              const current = del.platforms || [];
+                              if (e.target.checked) {
+                                updateDeliverable(idx, { platforms: [...current, platform] });
+                              } else {
+                                updateDeliverable(idx, { platforms: current.filter(p => p !== platform) });
+                              }
+                            }}
+                          />
+                          <span className={`text-[10px] font-bold tracking-tight transition-colors ${del.platforms.includes(platform) ? "text-primary" : "text-muted-foreground group-hover/label:text-foreground"}`}>
+                            {platform}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {(!form.deliverables || form.deliverables.length === 0) && (
+                <div className="py-8 text-center border border-dashed rounded-xl bg-muted/20">
+                  <Share2 className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-xs text-muted-foreground font-medium">No standardized deliverables defined yet.</p>
+                  <Button type="button" variant="link" size="sm" onClick={addDeliverable} className="text-[10px] font-bold uppercase tracking-wider h-6 mt-1">
+                    Add first template
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>

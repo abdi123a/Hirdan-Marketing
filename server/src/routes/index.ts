@@ -12,6 +12,17 @@ import settingsRoutes from './settings.routes.js';
 import verifyRoutes from './verify.routes.js';
 import leadsRoutes from './leads.routes.js';
 import usersRoutes from './users.routes.js';
+import aiRoutes from './ai.routes.js';
+
+// Social Media Module
+import socialProfilesRoutes from './social-profiles.routes.js';
+import clientDocumentsRoutes from './client-documents.routes.js';
+import packageDeliverablesRoutes from './package-deliverables.routes.js';
+import tasksRoutes from './tasks.routes.js';
+import portalSocialRoutes from './portal-social.routes.js';
+import fileRoutes from './files.routes.js';
+import contentPostsRoutes from './content-posts.routes.js';
+import reportsRoutes from './reports.routes.js';
 
 const router = Router();
 
@@ -28,5 +39,17 @@ router.use('/settings', settingsRoutes);
 router.use('/verify', verifyRoutes);
 router.use('/leads', leadsRoutes);
 router.use('/users', usersRoutes);
+router.use('/ai', aiRoutes);
+
+// Social Media Module — nested under existing resource paths
+router.use('/clients', socialProfilesRoutes);
+router.use('/clients', clientDocumentsRoutes);
+router.use('/clients', contentPostsRoutes);
+router.use('/packages', packageDeliverablesRoutes);
+router.use('/tasks', tasksRoutes);
+router.use('/portal/social', portalSocialRoutes);
+router.use('/reports', reportsRoutes);
+// router.use('/files', fileRoutes); // Moved to /uploads in app.ts
 
 export default router;
+

@@ -5,22 +5,36 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { 
   ArrowLeft, Mail, Phone, Globe, MapPin, Building2, 
   Briefcase, Receipt, FileText, Settings, User, 
   TrendingUp, CreditCard, Calendar, CheckCircle2, Clock,
-  Plus, Layers, Eye, KeyRound, Copy, RefreshCw
+  Plus, Layers, Eye, EyeOff, KeyRound, Copy, RefreshCw,
+  Instagram, Facebook, Linkedin, Youtube, Twitter,
+  Trash2, Pencil, Upload, Download, ExternalLink, Share2,
+  Loader2, Zap, Send, Image, Sparkles, ChevronDown, ChevronRight, Video, MoreVertical, AlertCircle
 } from "lucide-react";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, apiUpload, downloadProtectedFile } from "@/lib/api-client";
+import { DocumentViewer } from "@/components/DocumentViewer";
+import { Progress } from "@/components/ui/progress";
+import { ClientMonthlyPlannerTab } from "@/pages/SocialMediaPlannerPage";
 
 export default function ClientDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { clients, projects, invoices, proformas, subscriptions, fetchAllData } = useAgencyStore();
+  const [selectedPreviewDoc, setSelectedPreviewDoc] = useState<{ title: string, fileUrl: string, type?: string } | null>(null);
 
   useEffect(() => {
     if (clients.length === 0) {
@@ -72,13 +86,24 @@ export default function ClientDetailsPage() {
     );
   }
 
-  const totalRevenue = clientInvoices
-    .filter(inv => inv.status === 'Paid')
-    .reduce((sum, inv) => sum + parseFloat(inv.amount.replace(/[^0-9.-]+/g, "")), 0);
+  const totalRevenue = clientInvoices.reduce((sum, inv) => {
+    const amount = parseFloat(inv.amount.replace(/[^0-9.-]+/g, ""));
+    if (inv.status === 'Paid') return sum + amount;
+    if (inv.status === 'Partially Paid') return sum + (inv.deposit || 0);
+    return sum;
+  }, 0);
 
-  const pendingRevenue = clientInvoices
-    .filter(inv => inv.status === 'Pending' || inv.status === 'Overdue')
-    .reduce((sum, inv) => sum + parseFloat(inv.amount.replace(/[^0-9.-]+/g, "")), 0);
+  const pendingRevenue = clientInvoices.reduce((sum, inv) => {
+    const totalAmount = parseFloat(inv.amount.replace(/[^0-9.-]+/g, ""));
+    if (inv.status === 'Pending' || inv.status === 'Overdue') {
+      return sum + totalAmount;
+    }
+    if (inv.status === 'Partially Paid') {
+      const paid = inv.deposit || 0;
+      return sum + Math.max(0, totalAmount - paid);
+    }
+    return sum;
+  }, 0);
 
   const statusColor = (s: string) =>
     s === "Active" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
@@ -145,11 +170,14 @@ export default function ClientDetailsPage() {
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
           <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="bg-muted/30 p-1 border border-border/40 rounded-xl">
+            <TabsList className="bg-muted/30 p-1 border border-border/40 rounded-xl flex-wrap">
               <TabsTrigger value="overview" className="rounded-lg text-xs font-semibold tracking-tight">Overview</TabsTrigger>
               <TabsTrigger value="projects" className="rounded-lg text-xs font-semibold tracking-tight">Projects ({clientProjects.length})</TabsTrigger>
               <TabsTrigger value="billing" className="rounded-lg text-xs font-semibold tracking-tight">Financials</TabsTrigger>
               <TabsTrigger value="subscriptions" className="rounded-lg text-xs font-semibold tracking-tight">Subscriptions</TabsTrigger>
+              <TabsTrigger value="social" className="rounded-lg text-xs font-semibold tracking-tight gap-1"><Share2 className="h-3 w-3" /> Social</TabsTrigger>
+              <TabsTrigger value="planner" className="rounded-lg text-xs font-semibold tracking-tight gap-1"><Calendar className="h-3 w-3" /> Planner</TabsTrigger>
+              <TabsTrigger value="documents" className="rounded-lg text-xs font-semibold tracking-tight gap-1"><FileText className="h-3 w-3" /> Documents</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="mt-6 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -362,7 +390,7 @@ export default function ClientDetailsPage() {
                       <TableRow>
                         <TableHead className="font-bold text-xs uppercase">Plan</TableHead>
                         <TableHead className="font-bold text-xs uppercase">Billing</TableHead>
-                        <TableHead className="font-bold text-xs uppercase">Renewal</TableHead>
+                        <TableHead className="font-bold text-xs uppercase">End Date</TableHead>
                         <TableHead className="font-bold text-xs uppercase">Status</TableHead>
                         <TableHead className="text-right font-bold text-xs uppercase">Amount</TableHead>
                       </TableRow>
@@ -377,7 +405,7 @@ export default function ClientDetailsPage() {
                           <TableRow key={sub.id} className="cursor-pointer hover:bg-muted/50 group" onClick={() => navigate(`/dashboard/subscriptions/view/${sub.id}`)}>
                             <TableCell className="font-bold group-hover:text-primary transition-colors">{sub.plan}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">{sub.billingCycle}</TableCell>
-                            <TableCell className="text-xs font-medium text-foreground/80">{sub.renewal}</TableCell>
+                            <TableCell className="text-xs font-medium text-foreground/80">{sub.endDate}</TableCell>
                             <TableCell>
                               <Badge className={`${sub.status === 'Active' ? "bg-emerald-50 text-emerald-600" : "bg-muted text-muted-foreground/60"} text-[9px] font-bold uppercase border-0 tracking-wider`}>{sub.status}</Badge>
                             </TableCell>
@@ -390,7 +418,33 @@ export default function ClientDetailsPage() {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            {/* Social Profiles Tab */}
+            <TabsContent value="social" className="mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <ClientSocialProfilesTab clientId={client.id} />
+            </TabsContent>
+
+            {/* Content Planner Tab */}
+            <TabsContent value="planner" className="mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <ClientMonthlyPlannerTab
+                clientId={client.id}
+                clientName={client.name}
+                clientCompany={client.company}
+              />
+            </TabsContent>
+
+            {/* Documents Tab */}
+            <TabsContent value="documents" className="mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <ClientDocumentsTab clientId={client.id} setPreviewDoc={setSelectedPreviewDoc} />
+            </TabsContent>
           </Tabs>
+
+          {/* Document Viewer Modal */}
+          <DocumentViewer
+            isOpen={!!selectedPreviewDoc}
+            onClose={() => setSelectedPreviewDoc(null)}
+            document={selectedPreviewDoc}
+          />
         </div>
 
         {/* Sidebar */}
@@ -471,8 +525,8 @@ export default function ClientDetailsPage() {
 function ClientPortalAccessCard({ client }: { client: any }) {
   const { toast } = useToast();
   const { generatePortalAccess, fetchClients } = useAgencyStore();
-  const [showCode, setShowCode] = useState(false);
-  const [tempCode, setTempCode] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const hasAccess = !!client.userId;
@@ -481,16 +535,16 @@ function ClientPortalAccessCard({ client }: { client: any }) {
     try {
       setIsLoading(true);
       const res = await generatePortalAccess(client.id);
-      const code = res.accessCode;
+      const password = res.tempPassword;
       
       // Refresh local clients list to update userId field
       await fetchClients();
 
-      setTempCode(code);
-      setShowCode(true);
+      setTempPassword(password);
+      setShowPassword(true);
       toast({
-        title: hasAccess ? 'Access code reset' : 'Access code generated',
-        description: `Portal access code for this client: ${code}`,
+        title: hasAccess ? 'Password reset' : 'Password generated',
+        description: `Temporary portal password: ${password}`,
       });
     } catch (error) {
       toast({
@@ -504,11 +558,11 @@ function ClientPortalAccessCard({ client }: { client: any }) {
   };
 
   const handleCopy = () => {
-    if (tempCode) {
-      navigator.clipboard.writeText(tempCode);
+    if (tempPassword) {
+      navigator.clipboard.writeText(tempPassword);
       toast({
         title: 'Copied!',
-        description: 'Access code copied to clipboard.',
+        description: 'Temporary password copied to clipboard.',
       });
     }
   };
@@ -525,26 +579,26 @@ function ClientPortalAccessCard({ client }: { client: any }) {
           )}
         </div>
         <CardDescription className="text-xs">
-          {hasAccess ? 'Manage or reset client login credentials' : 'Create login credentials for the client portal'}
+          {hasAccess ? 'Manage or reset client login password' : 'Create initial login password for the client portal'}
         </CardDescription>
       </CardHeader>
       <CardContent className="p-4 pt-5">
-        {tempCode ? (
+        {tempPassword ? (
           <div className="space-y-4">
             <div className="p-3 rounded-xl bg-muted/30 border border-border/50">
-              <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1.5">Access Code</p>
+              <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mb-1.5">Temporary Password</p>
               <div className="flex items-center justify-between">
-                <code className="text-lg font-mono font-bold text-foreground tracking-[0.3em]">
-                  {showCode ? tempCode : '••••••'}
+                <code className="text-lg font-mono font-bold text-foreground">
+                  {showPassword ? tempPassword : '••••••••••'}
                 </code>
                 <div className="flex items-center gap-1.5">
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 rounded-lg hover:bg-muted"
-                    onClick={() => setShowCode(!showCode)}
+                    onClick={() => setShowPassword(!showPassword)}
                   >
-                    <Eye className="h-3.5 w-3.5" />
+                    {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </Button>
                   <Button
                     variant="ghost"
@@ -562,7 +616,7 @@ function ClientPortalAccessCard({ client }: { client: any }) {
               <p className="text-sm font-medium text-foreground">{client.email}</p>
             </div>
             <p className="text-[10px] text-amber-600 bg-amber-500/5 p-2 rounded-lg border border-amber-500/10 font-medium leading-relaxed">
-              For security, this code is shown only once. Please provide it to your client immediately.
+              For security, this temporary password is shown only once. Ask the client to log in and change it from their portal account.
             </p>
           </div>
         ) : (
@@ -584,13 +638,13 @@ function ClientPortalAccessCard({ client }: { client: any }) {
                   disabled={isLoading}
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-                  {isLoading ? 'Resetting...' : 'Reset Access Code'}
+                  {isLoading ? 'Resetting...' : 'Reset Password'}
                 </Button>
               </div>
             ) : (
               <>
                 <p className="text-[11px] text-muted-foreground font-medium mb-4">
-                  Client currently has no portal access credentials.
+                  Client currently has no portal password set.
                 </p>
                 <Button
                   variant="hero"
@@ -604,7 +658,7 @@ function ClientPortalAccessCard({ client }: { client: any }) {
                   ) : (
                     <KeyRound className="w-3.5 h-3.5" />
                   )}
-                  {isLoading ? 'Generating...' : 'Setup Portal Access'}
+                  {isLoading ? 'Generating...' : 'Generate Password'}
                 </Button>
               </>
             )}
@@ -612,5 +666,439 @@ function ClientPortalAccessCard({ client }: { client: any }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Platform config ──────────────────────────────────────────────
+
+const PLATFORM_CONFIG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
+  INSTAGRAM: { icon: Instagram, color: "text-pink-500", bg: "bg-gradient-to-br from-purple-500/10 to-pink-500/10", label: "Instagram" },
+  FACEBOOK: { icon: Facebook, color: "text-blue-600", bg: "bg-blue-500/10", label: "Facebook" },
+  LINKEDIN: { icon: Linkedin, color: "text-blue-700", bg: "bg-blue-700/10", label: "LinkedIn" },
+  YOUTUBE: { icon: Youtube, color: "text-red-600", bg: "bg-red-500/10", label: "YouTube" },
+  X: { icon: Twitter, color: "text-foreground", bg: "bg-foreground/5", label: "X (Twitter)" },
+  TIKTOK: { icon: Zap, color: "text-cyan-500", bg: "bg-cyan-500/10", label: "TikTok" },
+  SNAPCHAT: { icon: Send, color: "text-yellow-500", bg: "bg-yellow-500/10", label: "Snapchat" },
+  PINTEREST: { icon: Image, color: "text-red-500", bg: "bg-red-500/10", label: "Pinterest" },
+  OTHER: { icon: Sparkles, color: "text-muted-foreground", bg: "bg-muted/50", label: "Other" },
+};
+
+const ALL_PLATFORMS = ["INSTAGRAM", "FACEBOOK", "TIKTOK", "LINKEDIN", "X", "SNAPCHAT", "YOUTUBE", "PINTEREST", "OTHER"];
+
+// ─── Social Profiles Tab ──────────────────────────────────────────
+
+function ClientSocialProfilesTab({ clientId }: { clientId: string }) {
+  const { toast } = useToast();
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ platform: "", handle: "", profileUrl: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+
+  const fetchProfiles = async () => {
+    try {
+      const res = await apiFetch<{ profiles: any[] }>(`/clients/${clientId}/social-profiles`);
+      setProfiles(res.profiles);
+    } catch { /* ignore */ }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchProfiles(); }, [clientId]);
+
+  const handleAdd = async () => {
+    try {
+      setSaving(true);
+      await apiFetch(`/clients/${clientId}/social-profiles`, {
+        method: "POST",
+        body: JSON.stringify(form),
+      });
+      setShowAdd(false);
+      setForm({ platform: "", handle: "", profileUrl: "", notes: "" });
+      await fetchProfiles();
+      toast({ title: "Profile added", description: `${PLATFORM_CONFIG[form.platform]?.label || form.platform} profile connected.` });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to add profile", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (profileId: string) => {
+    try {
+      await apiFetch(`/clients/${clientId}/social-profiles/${profileId}`, { method: "DELETE" });
+      await fetchProfiles();
+      toast({ title: "Removed", description: "Social profile disconnected." });
+    } catch {
+      toast({ title: "Error", description: "Failed to remove profile", variant: "destructive" });
+    }
+  };
+
+  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-display font-bold">Connected Platforms</h3>
+          <p className="text-xs text-muted-foreground font-medium">Manage this client's social media accounts</p>
+        </div>
+        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-bold" onClick={() => setShowAdd(true)}>
+          <Plus className="h-3.5 w-3.5" /> Connect Platform
+        </Button>
+      </div>
+
+      {profiles.length === 0 ? (
+        <Card className="border-border/50 border-dashed">
+          <CardContent className="py-12 text-center">
+            <Share2 className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">No social profiles connected yet</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">Connect platforms to track this client's social media presence</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {profiles.map(profile => {
+            const config = PLATFORM_CONFIG[profile.platform] || PLATFORM_CONFIG.OTHER;
+            const Icon = config.icon;
+            return (
+              <Card key={profile.id} className="border-border/50 hover:border-primary/20 transition-all group">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className={`w-10 h-10 rounded-xl ${config.bg} flex items-center justify-center shrink-0`}>
+                      <Icon className={`h-5 w-5 ${config.color}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold">{config.label}</p>
+                      {profile.handle && <p className="text-xs text-muted-foreground font-medium">@{profile.handle}</p>}
+                      {profile.profileUrl && (
+                        <a href={profile.profileUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary font-bold hover:underline flex items-center gap-1 mt-1">
+                          <ExternalLink className="h-3 w-3" /> Profile Link
+                        </a>
+                      )}
+                      {profile.notes && <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{profile.notes}</p>}
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Badge className={profile.isActive ? "bg-emerald-500/10 text-emerald-600 border-0 text-[9px]" : "bg-red-500/10 text-red-500 border-0 text-[9px]"}>
+                        {profile.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-500/10" onClick={() => handleDelete(profile.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add Profile Dialog */}
+      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="font-display">Connect Social Platform</DialogTitle>
+            <DialogDescription className="text-xs">Add a social media account for this client</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs font-bold">Platform</Label>
+              <Select value={form.platform} onValueChange={v => setForm(prev => ({ ...prev, platform: v }))}>
+                <SelectTrigger className="mt-1.5"><SelectValue placeholder="Select platform..." /></SelectTrigger>
+                <SelectContent>
+                  {ALL_PLATFORMS.filter(p => !profiles.some(ep => ep.platform === p)).map(p => (
+                    <SelectItem key={p} value={p}>{PLATFORM_CONFIG[p]?.label || p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs font-bold">Handle / Username</Label>
+              <Input placeholder="@username" value={form.handle} onChange={e => setForm(prev => ({ ...prev, handle: e.target.value }))} className="mt-1.5" />
+            </div>
+            <div>
+              <Label className="text-xs font-bold">Profile URL</Label>
+              <Input placeholder="https://..." value={form.profileUrl} onChange={e => setForm(prev => ({ ...prev, profileUrl: e.target.value }))} className="mt-1.5" />
+            </div>
+            <div>
+              <Label className="text-xs font-bold">Notes</Label>
+              <Textarea placeholder="Optional notes..." value={form.notes} onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))} className="mt-1.5" rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button variant="hero" onClick={handleAdd} disabled={saving || !form.platform} className="gap-2">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {saving ? "Connecting..." : "Connect"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─── Documents Tab ────────────────────────────────────────────────
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  CONTRACT: "Contract", REPORT: "Report", ONBOARDING: "Onboarding",
+  BRAND_GUIDE: "Brand Guide", CONTENT_CALENDAR: "Content Calendar", OTHER: "Other",
+};
+
+function ClientDocumentsTab({ clientId, setPreviewDoc }: { clientId: string, setPreviewDoc: (doc: any) => void }) {
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [form, setForm] = useState({
+    title: "", type: "OTHER", internalNotes: "", clientNotes: "",
+    expiryDate: "", clientVisible: true,
+  });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  const fetchDocuments = async () => {
+    try {
+      const res = await apiFetch<{ documents: any[] }>(`/clients/${clientId}/documents`);
+      setDocuments(res.documents);
+    } catch { /* ignore */ }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchDocuments(); }, [clientId]);
+
+  const handleUpload = async () => {
+    if (!selectedFile || !form.title) return;
+    try {
+      setUploading(true);
+      setUploadProgress(0);
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      formData.append("title", form.title);
+      formData.append("type", form.type);
+      if (form.internalNotes) formData.append("internalNotes", form.internalNotes);
+      if (form.clientNotes) formData.append("clientNotes", form.clientNotes);
+      if (form.expiryDate) formData.append("expiryDate", form.expiryDate);
+      formData.append("clientVisible", String(form.clientVisible));
+
+      await apiUpload(`/clients/${clientId}/documents`, formData, (progress) => {
+        setUploadProgress(progress);
+      });
+
+      setShowUpload(false);
+      setSelectedFile(null);
+      setForm({ title: "", type: "OTHER", internalNotes: "", clientNotes: "", expiryDate: "", clientVisible: true });
+      await fetchDocuments();
+      toast({ title: "Document uploaded", description: `"${form.title}" has been uploaded.` });
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message || "Could not upload document", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  };
+
+  const handleDelete = async (docId: string) => {
+    try {
+      await apiFetch(`/clients/${clientId}/documents/${docId}`, { method: "DELETE" });
+      await fetchDocuments();
+      toast({ title: "Deleted", description: "Document removed." });
+    } catch {
+      toast({ title: "Error", description: "Failed to delete document", variant: "destructive" });
+    }
+  };
+
+  const handleToggleVisibility = async (docId: string, visible: boolean) => {
+    try {
+      await apiFetch(`/clients/${clientId}/documents/${docId}`, {
+        method: "PUT",
+        body: JSON.stringify({ clientVisible: visible }),
+      });
+      await fetchDocuments();
+    } catch {
+      toast({ title: "Error", description: "Failed to update visibility", variant: "destructive" });
+    }
+  };
+
+
+  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-display font-bold">Documents & Contracts</h3>
+          <p className="text-xs text-muted-foreground font-medium">Uploaded files, contracts, and reports for this client</p>
+        </div>
+        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-bold" onClick={() => setShowUpload(true)}>
+          <Upload className="h-3.5 w-3.5" /> Upload Document
+        </Button>
+      </div>
+
+      {documents.length === 0 ? (
+        <Card className="border-border/50 border-dashed">
+          <CardContent className="py-12 text-center">
+            <FileText className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-sm font-medium text-muted-foreground">No documents uploaded yet</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">Upload contracts, brand guides, or reports</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-border/50 overflow-hidden">
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader className="bg-muted/30">
+                <TableRow>
+                  <TableHead className="font-bold text-xs">Document</TableHead>
+                  <TableHead className="font-bold text-xs">Type</TableHead>
+                  <TableHead className="font-bold text-xs">Expiry</TableHead>
+                  <TableHead className="font-bold text-xs text-center">Client Visible</TableHead>
+                  <TableHead className="text-right font-bold text-xs">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {documents.map(doc => (
+                  <TableRow key={doc.id} className="hover:bg-muted/30 transition-colors group">
+                    <TableCell>
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <FileText className="h-3.5 w-3.5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-foreground/90">{doc.title}</p>
+                          {doc.isSigned && <Badge className="bg-emerald-500/10 text-emerald-600 border-0 text-[9px] mt-0.5">Signed</Badge>}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="text-[10px] font-bold uppercase">{DOC_TYPE_LABELS[doc.type] || doc.type}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {doc.expiryDate ? new Date(doc.expiryDate).toLocaleDateString() : "—"}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Switch
+                        checked={doc.clientVisible}
+                        onCheckedChange={v => handleToggleVisibility(doc.id, v)}
+                        className="mx-auto"
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center gap-1 justify-end">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-primary hover:bg-primary/5"
+                          onClick={() => setPreviewDoc({
+                            title: doc.title,
+                            fileUrl: doc.fileUrl,
+                            type: doc.type
+                          })}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-7 w-7"
+                          onClick={() => downloadProtectedFile(doc.fileUrl, doc.title)}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-500/10" onClick={() => handleDelete(doc.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Upload Dialog */}
+      <Dialog open={showUpload} onOpenChange={setShowUpload}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="font-display">Upload Document</DialogTitle>
+            <DialogDescription className="text-xs">Upload a contract, report, or brand guide for this client</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div
+              className="border-2 border-dashed border-border/50 rounded-xl p-6 text-center cursor-pointer hover:border-primary/30 transition-colors"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {selectedFile ? (
+                <div className="space-y-1">
+                  <FileText className="h-8 w-8 text-primary mx-auto" />
+                  <p className="text-sm font-bold">{selectedFile.name}</p>
+                  <p className="text-[10px] text-muted-foreground">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <Upload className="h-8 w-8 text-muted-foreground/40 mx-auto" />
+                  <p className="text-sm font-medium text-muted-foreground">Click to select a file</p>
+                  <p className="text-[10px] text-muted-foreground/60">PDF, Word, Excel, or images (max 10MB)</p>
+                </div>
+              )}
+              <input ref={fileInputRef} type="file" className="hidden" onChange={e => setSelectedFile(e.target.files?.[0] || null)} />
+            </div>
+            <div>
+              <Label className="text-xs font-bold">Title</Label>
+              <Input placeholder="Document title..." value={form.title} onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))} className="mt-1.5" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-bold">Type</Label>
+                <Select value={form.type} onValueChange={v => setForm(prev => ({ ...prev, type: v }))}>
+                  <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs font-bold">Expiry Date</Label>
+                <Input type="date" value={form.expiryDate} onChange={e => setForm(prev => ({ ...prev, expiryDate: e.target.value }))} className="mt-1.5" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs font-bold">Internal Notes <span className="text-muted-foreground font-normal">(agency only)</span></Label>
+              <Textarea placeholder="Notes only visible to your team..." value={form.internalNotes} onChange={e => setForm(prev => ({ ...prev, internalNotes: e.target.value }))} className="mt-1.5" rows={2} />
+            </div>
+            <div>
+              <Label className="text-xs font-bold">Client Notes <span className="text-muted-foreground font-normal">(visible on portal)</span></Label>
+              <Textarea placeholder="Notes visible to the client..." value={form.clientNotes} onChange={e => setForm(prev => ({ ...prev, clientNotes: e.target.value }))} className="mt-1.5" rows={2} />
+            </div>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-bold">Visible to Client on Portal</Label>
+              <Switch checked={form.clientVisible} onCheckedChange={v => setForm(prev => ({ ...prev, clientVisible: v }))} />
+            </div>
+          </div>
+          <DialogFooter className="flex-col gap-2">
+            <div className="flex w-full items-center justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowUpload(false)} disabled={uploading}>Cancel</Button>
+              <Button variant="hero" onClick={handleUpload} disabled={uploading || !selectedFile || !form.title} className="gap-2">
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                {uploading ? "Uploading..." : "Upload"}
+              </Button>
+            </div>
+            {uploading && (
+              <div className="w-full space-y-1.5 mt-2">
+                <div className="flex justify-between text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                  <span>Uploading document</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <Progress value={uploadProgress} className="h-1.5" />
+              </div>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

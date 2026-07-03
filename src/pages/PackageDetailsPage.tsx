@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
 
 export default function PackageDetailsPage() {
   const { id } = useParams<{ id: string }>();
@@ -152,6 +152,54 @@ export default function PackageDetailsPage() {
             </CardContent>
           </Card>
 
+          {/* Monthly Deliverables Template */}
+          <Card className="border-border/50 shadow-sm overflow-hidden border-t-4 border-t-amber-500/20">
+            <CardHeader className="p-8 pb-4">
+              <CardTitle className="text-lg font-display flex items-center gap-2">
+                <Share2 className="h-4 w-4 text-amber-500" /> Monthly Deliverables Template
+              </CardTitle>
+              <CardDescription>Standardized recurring outputs for this subscription tier</CardDescription>
+            </CardHeader>
+            <CardContent className="p-8 pt-4">
+              <div className="grid sm:grid-cols-2 gap-4">
+                {pkg.deliverables?.map((del, i) => (
+                  <div key={i} className="p-5 rounded-xl border border-border/50 bg-muted/5 space-y-3 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition-opacity">
+                      <Zap className="w-10 h-10 text-amber-600" />
+                    </div>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="font-bold text-sm text-foreground">{del.name}</p>
+                        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest mt-0.5">{del.type}</p>
+                      </div>
+                      <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px] font-black h-5 px-1.5 uppercase">
+                        x{del.quantity} / mo
+                      </Badge>
+                    </div>
+                    {del.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                        {del.description}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-1 pt-2">
+                      {del.platforms.map(p => (
+                        <span key={p} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-muted border border-border/50 text-muted-foreground uppercase tracking-tighter">
+                          {p}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {(!pkg.deliverables || pkg.deliverables.length === 0) && (
+                  <div className="col-span-full py-12 text-center bg-muted/20 rounded-xl border border-dashed flex flex-col items-center">
+                    <Share2 className="h-8 w-8 text-muted-foreground/20 mb-3" />
+                    <p className="text-sm text-muted-foreground italic">No standardized deliverables defined for this package template.</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Business Impact / Performance */}
           <Card className="border-border/50 shadow-sm relative overflow-hidden bg-zinc-950/5 dark:bg-zinc-100/5">
              <CardHeader className="bg-muted/10 pb-3 border-b border-border/40 px-8 py-5">
@@ -232,7 +280,7 @@ export default function PackageDetailsPage() {
                       <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground uppercase">{sub.client.slice(0, 2)}</div>
                       <div className="space-y-0.5">
                         <p className="text-xs font-bold text-foreground leading-none group-hover:text-primary transition-colors">{sub.client.split(' ')[0]}</p>
-                        <p className="text-[9px] text-muted-foreground uppercase">{sub.started}</p>
+                        <p className="text-[9px] text-muted-foreground uppercase">{formatDate(sub.startDate)}</p>
                       </div>
                     </div>
                     <ChevronRight className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-all" />

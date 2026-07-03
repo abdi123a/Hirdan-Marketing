@@ -1,41 +1,57 @@
 import { useParams, Link } from "react-router-dom";
-import { useAgencyStore } from "@/lib/store";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { useAgencyStore, type PublicVerificationDocument } from "@/lib/store";
+import { formatDate } from "@/lib/utils";
 import { useEffect, useState } from "react";
-import { deriveSubtotalFromTotal, parseAmountNumber } from "@/lib/money";
-import { ShieldCheck, AlertTriangle, FileText, Calendar, User, Mail, MapPin, ExternalLink, Building2, Loader2 } from "lucide-react";
+import {
+  ShieldCheck,
+  AlertTriangle,
+  Calendar,
+  Building2,
+  ExternalLink,
+  Loader2,
+  CircleDollarSign,
+  UserRound,
+} from "lucide-react";
 
 export default function VerifyDocumentPage() {
   const { token } = useParams<{ token: string }>();
-  const { verifyDocument, clients, settings, fetchSettings } = useAgencyStore();
-  const [result, setResult] = useState<{ type: 'invoice' | 'proforma'; document: any } | null>(null);
+  const { verifyDocument, settings, fetchSettings } = useAgencyStore();
+  const [result, setResult] = useState<{ type: "invoice" | "proforma" | "subscription" | "monthly_report"; document: PublicVerificationDocument } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchSettings(); // Ensure we have agency name/logo
-    if (token) {
-      verifyDocument(token).then(res => {
-        setResult(res);
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        await fetchSettings();
+        if (token) {
+          const res = await verifyDocument(token);
+          setResult(res);
+        }
+      } catch (error) {
+        console.error("Failed to load verification data:", error);
+      } finally {
         setLoading(false);
-      });
-    } else {
-      setLoading(false);
-    }
+      }
+    };
+    fetchData();
   }, [token, verifyDocument, fetchSettings]);
 
-  const accent = settings.primaryColor || '#504188'; // Use settings color or fallback
-  const secondary = '#f6b317'; // Hardcoded secondary color
-  const accentDark = '#3a2f64'; // Darker shade for gradient
+  const accent = settings.primaryColor || "#504188";
+  const secondary = "#f6b317";
+  const accentDark = "#3a2f64";
 
   if (loading) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#ffffff',
-      }}>
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#ffffff",
+        }}
+      >
         <Loader2 className="animate-spin" size={48} color={accent} />
       </div>
     );
@@ -53,9 +69,7 @@ export default function VerifyDocumentPage() {
           <div className="w-20 h-20 rounded-full bg-[#ef44441a] flex items-center justify-center mx-auto mb-7">
             <AlertTriangle size={36} color="#ef4444" />
           </div>
-          <h1 className="text-2xl md:text-[26px] font-extrabold text-[#0f172a] mb-3 tracking-tight">
-            Document Not Found
-          </h1>
+          <h1 className="text-2xl md:text-[26px] font-extrabold text-[#0f172a] mb-3 tracking-tight">Document Not Found</h1>
           <p className="text-sm text-[#64748b] leading-relaxed mb-9 max-w-[340px] mx-auto">
             The verification link is invalid or the document has been removed. Please contact the issuing agency for assistance.
           </p>
@@ -73,196 +87,137 @@ export default function VerifyDocumentPage() {
   }
 
   const { type, document: doc } = result;
-  const isInvoice = type === 'invoice';
-  const docLabel = isInvoice ? 'Invoice' : 'Proforma Invoice';
+  const isInvoice = type === "invoice";
+  const isProforma = type === "proforma";
+  const isSubscription = type === "subscription";
+  const isMonthlyReport = type === "monthly_report";
 
-  const clientName = (doc.client && typeof doc.client === 'object') ? (doc.client.company || doc.client.name) : doc.client;
+  const docLabel =
+    isInvoice ? "Invoice" :
+    isProforma ? "Proforma" :
+    isSubscription ? "Subscription" :
+    "Monthly Report";
 
-  const taxRate = doc.taxRate ?? settings.taxRate ?? 0;
-  const discount = doc.discount ?? 0;
-  const discountType = (doc.discountType ? (doc.discountType as string).toLowerCase() : 'fixed') as 'percentage' | 'fixed';
-
-  const rawItems = doc.items || [];
-  const subtotalFromItems = rawItems.reduce((sum: number, item: any) => sum + (item.quantity * item.unitPrice), 0);
-
-  const parsedAmount = parseAmountNumber(doc.amount);
-  const subtotal = rawItems.length
-    ? subtotalFromItems
-    : deriveSubtotalFromTotal(parsedAmount, taxRate);
-
-  const items = rawItems.length
-    ? rawItems
-    : [{ description: "Services rendered", quantity: 1, unitPrice: subtotal }];
-
-  const tax = subtotal * taxRate / 100;
-  const discountAmount = discountType === 'percentage' 
-    ? (subtotal * discount / 100) 
-    : discount;
-  const total = subtotal + tax - discountAmount;
+  const statusPillClass =
+    doc.status === "Paid" || doc.status === "Accepted" || doc.status === "Active" || doc.status === "Finalized"
+      ? "bg-[#22c55e]"
+      : doc.status === "Partially Paid" || doc.status === "Draft"
+        ? "bg-[#10b981]"
+        : doc.status === "Overdue" || doc.status === "Expired" || doc.status === "Cancelled"
+          ? "bg-[#ef4444]"
+          : "bg-[#f59e0b]";
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: '#ffffff',
-      fontFamily: "'Inter', -apple-system, sans-serif",
-      padding: '40px 20px',
-      display: 'flex',
-      flexDirection: 'column',
-    }}>
-      {/* ─── Centered Logo ─── */}
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "linear-gradient(180deg, #fafbfc 0%, #ffffff 45%)",
+        fontFamily: "'Inter', -apple-system, sans-serif",
+        padding: "40px 20px 48px",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
       {settings.logo && (
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '32px' }}>
-          <img src={settings.logo} alt={settings.agencyName} style={{ height: '64px', width: 'auto', objectFit: 'contain' }} />
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: "28px" }}>
+          <img src={settings.logo} alt={settings.agencyName} style={{ height: "56px", width: "auto", objectFit: "contain" }} />
         </div>
       )}
 
-      {/* ─── Verification Success Banner ─── */}
-      <div className="w-full max-w-[760px] mx-auto mb-5 bg-[#22c55e14] rounded-2xl border border-[#22c55e33] p-5 md:p-7 flex items-center gap-4">
-        <div style={{
-          width: '48px', height: '48px', borderRadius: '50%',
-          background: '#22c55e',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0, boxShadow: '0 4px 12px rgba(34,197,94,0.25)',
-        }}>
-          <ShieldCheck size={24} color="#ffffff" />
+      <div className="w-full max-w-[560px] mx-auto mb-6 bg-[#f0fdf414] rounded-2xl border border-[#22c55e26] p-5 md:p-6 flex items-start gap-4 shadow-[0_1px_0_rgba(255,255,255,0.8)_inset]">
+        <div
+          style={{
+            width: "44px",
+            height: "44px",
+            borderRadius: "14px",
+            background: "linear-gradient(145deg, #22c55e, #16a34a)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            boxShadow: "0 8px 20px -6px rgba(34, 197, 94, 0.45)",
+          }}
+        >
+          <ShieldCheck size={22} color="#ffffff" strokeWidth={2.25} />
         </div>
-        <div>
-          <h2 style={{
-            fontSize: '16px', fontWeight: 800, color: '#16a34a',
-            marginBottom: '2px', letterSpacing: '-0.3px',
-          }}>
-            ✓ Document Verified
-          </h2>
-          <p style={{ fontSize: '13px', color: '#475569', margin: 0, lineHeight: 1.5 }}>
-            This is an authentic {docLabel.toLowerCase()} issued by <strong style={{ color: '#0f172a' }}>{settings.agencyName}</strong>
+        <div className="min-w-0 pt-0.5">
+          <h2 className="text-[15px] font-extrabold text-[#15803d] tracking-tight mb-1">Verification successful</h2>
+          <p className="text-[13px] text-[#475569] m-0 leading-relaxed">
+            This {docLabel.toLowerCase()} is authentic and was issued by{" "}
+            <span className="font-semibold text-[#0f172a]">{settings.agencyName}</span>.
           </p>
         </div>
       </div>
 
-      {/* ─── Document Card ─── */}
-      <div className="w-full max-w-[760px] mx-auto bg-white rounded-[20px] border border-[#e2e8f0] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.06)]">
-        {/* Card Hero Header */}
-        <div 
-          className="relative overflow-hidden p-8 md:p-10 border-b-4 border-[#f6b317]"
-          style={{ background: `linear-gradient(135deg, ${accent}, ${accentDark})` }}
+      <div className="w-full max-w-[560px] mx-auto bg-white rounded-[22px] border border-[#e8ecf1] overflow-hidden shadow-[0_24px_64px_-24px_rgba(15,23,42,0.12),0_0_0_1px_rgba(15,23,42,0.04)]">
+        <div
+          className="relative overflow-hidden px-8 py-9 md:px-10 md:py-10 border-b border-white/10"
+          style={{ background: `linear-gradient(135deg, ${accent} 0%, ${accentDark} 100%)` }}
         >
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,_rgba(255,255,255,0.15),_transparent_50%)]" />
-          <div className="relative z-10 flex flex-col md:flex-row justify-between items-start gap-6 md:items-center">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_100%_0%,rgba(255,255,255,0.12),transparent)] pointer-events-none" />
+          <div className="relative z-10 space-y-5">
             <div>
-              <div className="text-[10px] font-bold text-white/80 uppercase tracking-[4px] mb-2">
-                {docLabel}
-              </div>
-              <div className="text-3xl md:text-[42px] font-black text-white tracking-[-1px] md:tracking-[-2px] leading-none">
-                {doc.invoiceNumber || doc.proformaNumber || doc.id}
-              </div>
+              <p className="text-[10px] font-bold text-white/70 uppercase tracking-[0.2em] mb-2">{docLabel} {isMonthlyReport ? "title" : "number"}</p>
+              <p className="text-[28px] md:text-[34px] font-black text-white tracking-[-0.03em] leading-tight">
+                {isInvoice || isProforma ? doc.documentNumber : isSubscription ? doc.plan : doc.title}
+              </p>
             </div>
-            <div 
-              className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider text-white shadow-lg ${
-                doc.status === 'Paid' || doc.status === 'Accepted' ? 'bg-[#22c55e]' : 
-                doc.status === 'Overdue' || doc.status === 'Expired' ? 'bg-[#ef4444]' : 'bg-[#f59e0b]'
-              }`}
-            >
-              {doc.status}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-bold text-white/60 uppercase tracking-wider">{isSubscription ? "Plan" : "Document"} status</span>
+              <span
+                className={`inline-flex items-center px-3 py-1 rounded-lg text-[11px] font-extrabold uppercase tracking-wide text-white shadow-md ${statusPillClass}`}
+              >
+                {doc.status}
+              </span>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 p-8 border-b border-[#e2e8f0] bg-white text-left">
-          <DetailItem icon={<User size={16} />} label="Client" value={clientName} accent={accent} />
-          <DetailItem icon={<Calendar size={16} />} label="Issue Date" value={formatDate(doc.date)} accent={accent} />
-          <DetailItem icon={<Building2 size={16} />} label="Issued By" value={settings.agencyName} accent={accent} />
+        <div className="p-6 md:p-8 space-y-4 bg-[#fafbfc]">
+          <DetailRow icon={<UserRound size={17} />} label="Recipient" value={doc.clientMask} accent={accent} />
+          {isMonthlyReport ? (
+            <DetailRow icon={<Calendar size={17} />} label="Period" value={`${doc.month}/${doc.year}`} accent={accent} />
+          ) : isSubscription ? (
+            <>
+              <DetailRow icon={<Calendar size={17} />} label="Start date" value={formatDate(doc.startDate || '')} accent={accent} />
+              <DetailRow icon={<Calendar size={17} />} label="Valid until" value={formatDate(doc.endDate || '')} accent={accent} />
+            </>
+          ) : (
+            <DetailRow icon={<Calendar size={17} />} label="Issue date" value={formatDate(doc.date || '')} accent={accent} />
+          )}
+          <DetailRow icon={<Building2 size={17} />} label="Issued by" value={settings.agencyName || "—"} accent={accent} />
         </div>
 
-        {/* Line Items */}
-        {items.length > 0 && (
-          <div className="p-5 md:p-8 border-b border-[#e2e8f0] bg-[#f8fafc]">
-            <div className="text-[10px] font-extrabold text-[#f6b317] uppercase tracking-[3px] mb-6 flex items-center gap-2.5">
-              <span className="w-5 h-0.5 bg-[#f6b317]"></span>
-              Services & Line Items
-            </div>
-
-            {/* Desktop Header */}
-            <div className="hidden md:grid md:grid-cols-[1fr_60px_100px_110px] gap-4 px-4 mb-2 text-[10px] font-extrabold text-[#64748b] uppercase tracking-wider">
-              <div>Description</div>
-              <div className="text-center">Qty</div>
-              <div className="text-right">Price</div>
-              <div className="text-right">Total</div>
-            </div>
-
-            <div className="space-y-3">
-              {items.map((item: any, i: number) => (
-                <div key={i} className="bg-white p-4 md:p-4 rounded-2xl md:rounded-xl border border-[#e2e8f0] shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] md:shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-                  {/* Desktop Item Layout */}
-                  <div className="hidden md:grid md:grid-cols-[1fr_60px_100px_110px] gap-4 items-start">
-                    <div className="text-[#0f172a] text-sm font-semibold whitespace-pre-wrap break-words" title={item.description}>{item.description}</div>
-                    <div className="text-[#475569] text-sm text-center">{item.quantity}</div>
-                    <div className="text-[#475569] text-sm text-right">{formatCurrency(item.unitPrice)}</div>
-                    <div className="text-[#0f172a] text-sm font-black text-right">{formatCurrency(item.quantity * item.unitPrice)}</div>
-                  </div>
-
-                  {/* Mobile Item Layout (Matches Screenshot) */}
-                  <div className="md:hidden flex flex-col">
-                    <div className="text-[#0f172a] text-[15px] font-black mb-3">{item.description}</div>
-                    <div className="pt-3 border-t border-[#f1f5f9] flex justify-between items-end">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[9px] font-bold text-[#94a3b8] uppercase tracking-wider">Quantity & Price</span>
-                        <div className="text-[13px] text-[#64748b] font-medium">
-                          {item.quantity} × {formatCurrency(item.unitPrice)}
-                        </div>
-                      </div>
-                      <div className="text-right flex flex-col gap-1">
-                        <span className="text-[9px] font-bold text-[#94a3b8] uppercase tracking-wider">Subtotal</span>
-                        <div className="text-[18px] font-black text-[#0f172a] leading-none">
-                          {formatCurrency(item.quantity * item.unitPrice)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+        {(isInvoice || isProforma || isSubscription) && (
+          <div className="px-6 md:px-8 pb-8 md:pb-9 pt-0 bg-[#fafbfc]">
+            <div
+              className="rounded-2xl px-6 py-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+              style={{
+                background: `linear-gradient(135deg, ${accent} 0%, ${accentDark} 100%)`,
+                boxShadow: "0 12px 32px -12px rgba(15, 23, 42, 0.25)",
+              }}
+            >
+              <div className="flex items-center gap-3 text-white/90">
+                <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+                  <CircleDollarSign size={22} className="text-white" strokeWidth={2} />
                 </div>
-              ))}
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/75 mb-0.5">
+                    {isSubscription ? "Subscription fee" : "Total amount"}
+                  </p>
+                  <p className="text-xs text-white/80 m-0">Document total (incl. tax where applicable)</p>
+                </div>
+              </div>
+              <p className="text-[26px] md:text-[32px] font-black tracking-tight tabular-nums m-0 sm:text-right" style={{ color: secondary }}>
+                {doc.amountFormatted}
+              </p>
             </div>
           </div>
         )}
-
-        <div className="p-8 bg-white">
-          <div className="flex justify-end">
-            <div className="w-full md:w-80">
-              <div className="flex flex-col gap-3 p-6 bg-[#f8fafc] rounded-t-2xl border border-[#e2e8f0] border-b-0">
-                <div className="flex justify-between text-sm">
-                  <span className="text-[#64748b]">Subtotal</span>
-                  <span className="text-[#0f172a] font-semibold">{formatCurrency(subtotal)}</span>
-                </div>
-                {taxRate > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-[#64748b]">Tax ({taxRate}%)</span>
-                    <span className="text-[#0f172a] font-semibold">{formatCurrency(tax)}</span>
-                  </div>
-                )}
-                {discountAmount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-destructive">Discount {discountType === 'percentage' ? `(${discount}%)` : ''}</span>
-                    <span className="text-destructive font-semibold">-{formatCurrency(discountAmount)}</span>
-                  </div>
-                )}
-              </div>
-              <div 
-                className="rounded-b-2xl p-5 flex justify-between items-center shadow-lg"
-                style={{ background: `linear-gradient(135deg, ${accent}, ${accentDark})` }}
-              >
-                <span className="text-[10px] font-extrabold text-white/90 uppercase tracking-[2px]">Total Amount</span>
-                <span 
-                  className="text-2xl md:text-[32px] font-black tracking-tighter"
-                  style={{ color: secondary }}
-                >{formatCurrency(total)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* ─── Bottom Branding ─── */}
-      <div style={{ maxWidth: '760px', margin: 'auto auto 0', textAlign: 'center' }}>
-        <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>
+      <div className="max-w-[560px] mx-auto mt-10 text-center">
+        <p className="text-[12px] text-[#94a3b8] m-0">
           © {new Date().getFullYear()} {settings.agencyName}. All rights reserved.
         </p>
       </div>
@@ -270,22 +225,18 @@ export default function VerifyDocumentPage() {
   );
 }
 
-function DetailItem({ icon, label, value, accent }: { icon: React.ReactNode; label: string; value: string; accent: string }) {
+function DetailRow({ icon, label, value, accent }: { icon: React.ReactNode; label: string; value: string; accent: string }) {
   return (
-    <div className="flex items-start gap-4 p-4 md:p-5 bg-[#f8fafc] rounded-2xl border border-[#e2e8f0] transition-all hover:bg-white hover:shadow-sm">
-      <div 
-        className="w-9 h-9 rounded-[10px] bg-white flex items-center justify-center shrink-0 border border-[#e2e8f0] shadow-[0_2px_4px_rgba(0,0,0,0.02)]"
+    <div className="flex items-center gap-4 p-4 md:p-5 rounded-2xl bg-white border border-[#e8ecf1] shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div
+        className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-[#e8ecf1] bg-[#fafbfc]"
         style={{ color: accent }}
       >
         {icon}
       </div>
-      <div className="min-w-0">
-        <div className="text-[10px] font-bold text-[#64748b] uppercase tracking-[1.5px] mb-1">
-          {label}
-        </div>
-        <div className="text-[15px] font-bold text-[#0f172a] tracking-tight truncate">
-          {value}
-        </div>
+      <div className="min-w-0 flex-1 text-left">
+        <p className="text-[10px] font-bold text-[#64748b] uppercase tracking-[0.12em] mb-1 m-0">{label}</p>
+        <p className="text-[15px] font-semibold text-[#0f172a] m-0 tracking-tight tabular-nums">{value}</p>
       </div>
     </div>
   );

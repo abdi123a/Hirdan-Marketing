@@ -81,9 +81,9 @@ export default function TeamPage() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-sm">
+      <div className="relative w-full max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Search team members..." className="pl-9 bg-muted border-0" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input placeholder="Search team members..." className="pl-9 w-full bg-muted border-0" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
       {filtered.length === 0 ? (

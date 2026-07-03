@@ -34,9 +34,13 @@ import {
   ChevronRight,
   Settings,
   Briefcase,
+  Loader2,
+  Sparkles,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyStore, AgencySettings, PaymentMethod } from "@/lib/store";
+import { ProtectedBrandingImage } from "@/components/ProtectedBrandingImage";
+import { Progress } from "@/components/ui/progress";
 
 // Comprehensive Timezones list with countries
 const timezones = [
@@ -90,6 +94,7 @@ export default function SettingsPage() {
   const [formData, setFormData] = useState<AgencySettings>(settings);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState<{ [key: string]: boolean }>({});
+  const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
 
   useEffect(() => {
     fetchSettings();
@@ -102,6 +107,9 @@ export default function SettingsPage() {
   const mainLogoInputRef = useRef<HTMLInputElement>(null);
   const whiteLogoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
+  const signatureInputRef = useRef<HTMLInputElement>(null);
+  const stampInputRef = useRef<HTMLInputElement>(null);
+  const colorInputRef = useRef<HTMLInputElement>(null);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -145,7 +153,7 @@ export default function SettingsPage() {
     }));
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, key: 'logo' | 'whiteLogo' | 'favicon') => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, key: 'logo' | 'whiteLogo' | 'favicon' | 'signature' | 'stamp') => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) { // Increased to 5MB to match server
@@ -158,8 +166,12 @@ export default function SettingsPage() {
       }
 
       setIsUploading(prev => ({ ...prev, [key]: true }));
+      setUploadProgress(prev => ({ ...prev, [key]: 0 }));
       try {
-        const url = await uploadFile(file);
+        const isPrivate = key === 'signature' || key === 'stamp';
+        const url = await uploadFile(file, (progress) => {
+          setUploadProgress(prev => ({ ...prev, [key]: progress }));
+        }, isPrivate);
         setFormData(prev => ({ ...prev, [key]: url }));
         toast({
           title: "Upload Successful",
@@ -173,6 +185,7 @@ export default function SettingsPage() {
         });
       } finally {
         setIsUploading(prev => ({ ...prev, [key]: false }));
+        setUploadProgress(prev => ({ ...prev, [key]: 0 }));
       }
     }
   };
@@ -205,7 +218,7 @@ export default function SettingsPage() {
     }));
   };
 
-  const removeImage = (e: React.MouseEvent, key: 'logo' | 'whiteLogo' | 'favicon') => {
+  const removeImage = (e: React.MouseEvent, key: 'logo' | 'whiteLogo' | 'favicon' | 'signature' | 'stamp') => {
     e.stopPropagation();
     setFormData(prev => ({ ...prev, [key]: '' }));
   };
@@ -248,6 +261,12 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="notifications" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
             <Bell className="h-4 w-4" /> Notifications
+          </TabsTrigger>
+          <TabsTrigger value="security" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
+            <Shield className="h-4 w-4" /> Security
+          </TabsTrigger>
+          <TabsTrigger value="ai" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-purple-600 dark:text-purple-400 data-[state=active]:text-purple-700 dark:data-[state=active]:text-purple-300">
+            <Sparkles className="h-4 w-4" /> AI
           </TabsTrigger>
         </TabsList>
 
@@ -308,6 +327,8 @@ export default function SettingsPage() {
               <input type="file" ref={mainLogoInputRef} onChange={(e) => handleFileChange(e, 'logo')} accept="image/*" className="hidden" />
               <input type="file" ref={whiteLogoInputRef} onChange={(e) => handleFileChange(e, 'whiteLogo')} accept="image/*" className="hidden" />
               <input type="file" ref={faviconInputRef} onChange={(e) => handleFileChange(e, 'favicon')} accept="image/*" className="hidden" />
+              <input type="file" ref={signatureInputRef} onChange={(e) => handleFileChange(e, 'signature')} accept="image/*" className="hidden" />
+              <input type="file" ref={stampInputRef} onChange={(e) => handleFileChange(e, 'stamp')} accept="image/*" className="hidden" />
 
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                 <div className="space-y-4">
@@ -317,13 +338,17 @@ export default function SettingsPage() {
                     onClick={() => mainLogoInputRef.current?.click()}
                   >
                     {isUploading['logo'] ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                        <p className="text-xs text-muted-foreground">Uploading...</p>
+                      <div className="flex flex-col items-center gap-2 w-full px-8">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                          <span className="text-sm font-bold text-primary">{uploadProgress['logo'] || 0}%</span>
+                        </div>
+                        <Progress value={uploadProgress['logo'] || 0} className="h-1.5 w-full" />
+                        <p className="text-[10px] items-center uppercase font-bold text-muted-foreground tracking-widest mt-1">Uploading Logo...</p>
                       </div>
                     ) : formData.logo ? (
                       <div className="relative w-full h-full flex items-center justify-center p-4">
-                        <img src={formData.logo} alt="Main Logo" className="max-h-full object-contain drop-shadow-sm" />
+                        <ProtectedBrandingImage src={formData.logo} alt="Main Logo" className="max-h-full object-contain drop-shadow-sm" />
                         <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity gap-2">
                           <Button variant="secondary" size="sm" className="gap-2 shadow-sm">
                             <Upload className="h-4 w-4" /> Change
@@ -354,13 +379,17 @@ export default function SettingsPage() {
                     onClick={() => whiteLogoInputRef.current?.click()}
                   >
                     {isUploading['whiteLogo'] ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        <p className="text-xs text-white/70">Uploading...</p>
+                      <div className="flex flex-col items-center gap-2 w-full px-8">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-5 w-5 animate-spin text-white" />
+                          <span className="text-sm font-bold text-white">{uploadProgress['whiteLogo'] || 0}%</span>
+                        </div>
+                        <Progress value={uploadProgress['whiteLogo'] || 0} className="h-1.5 w-full bg-white/20" />
+                        <p className="text-[10px] items-center uppercase font-bold text-white/70 tracking-widest mt-1">Uploading Logo...</p>
                       </div>
                     ) : formData.whiteLogo ? (
                       <div className="relative w-full h-full flex items-center justify-center p-4">
-                        <img src={formData.whiteLogo} alt="White Logo" className="max-h-full object-contain" />
+                        <ProtectedBrandingImage src={formData.whiteLogo} alt="White Logo" className="max-h-full object-contain" />
                         <div className="absolute inset-0 bg-slate-800/80 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white gap-2">
                           <Button variant="secondary" size="sm" className="gap-2 bg-white/10 text-white hover:bg-white/20">
                             <Upload className="h-4 w-4" /> Change
@@ -391,13 +420,17 @@ export default function SettingsPage() {
                     onClick={() => faviconInputRef.current?.click()}
                   >
                     {isUploading['favicon'] ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                        <p className="text-xs text-muted-foreground">Uploading...</p>
+                      <div className="flex flex-col items-center gap-2 w-full px-8">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                          <span className="text-sm font-bold text-primary">{uploadProgress['favicon'] || 0}%</span>
+                        </div>
+                        <Progress value={uploadProgress['favicon'] || 0} className="h-1.5 w-full" />
+                        <p className="text-[10px] items-center uppercase font-bold text-muted-foreground tracking-widest mt-1">Uploading Icon...</p>
                       </div>
                     ) : formData.favicon ? (
                       <div className="relative w-20 h-20 flex items-center justify-center">
-                        <img src={formData.favicon} alt="Favicon" className="w-full h-full object-contain rounded-lg shadow-sm" />
+                        <ProtectedBrandingImage src={formData.favicon} alt="Favicon" className="w-full h-full object-contain rounded-lg shadow-sm" />
                         <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-lg gap-2">
                           <Upload className="h-4 w-4 text-primary" />
                           <X className="h-4 w-4 text-destructive" onClick={(e) => removeImage(e, 'favicon')} />
@@ -416,6 +449,88 @@ export default function SettingsPage() {
                     ) }
                   </div>
                 </div>
+
+                <div className="space-y-4">
+                  <Label className="font-bold text-sm uppercase tracking-wider text-muted-foreground underline decoration-primary decoration-2 underline-offset-4">Authorized Signature</Label>
+                  <div 
+                    className="group relative border border-dashed border-border rounded-xl p-8 bg-muted/20 flex flex-col items-center justify-center gap-4 group-hover:border-primary/50 transition-all cursor-pointer overflow-hidden h-48 hover:shadow-lg hover:bg-muted/30 active:scale-[0.98]"
+                    onClick={() => signatureInputRef.current?.click()}
+                  >
+                    {isUploading['signature'] ? (
+                      <div className="flex flex-col items-center gap-2 w-full px-8">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                          <span className="text-sm font-bold text-primary">{uploadProgress['signature'] || 0}%</span>
+                        </div>
+                        <Progress value={uploadProgress['signature'] || 0} className="h-1.5 w-full" />
+                        <p className="text-[10px] items-center uppercase font-bold text-muted-foreground tracking-widest mt-1">Uploading Signature...</p>
+                      </div>
+                    ) : formData.signature ? (
+                      <div className="relative w-full h-full flex items-center justify-center p-4">
+                        <ProtectedBrandingImage src={formData.signature} alt="Signature" className="max-h-full object-contain drop-shadow-sm" />
+                        <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity gap-2">
+                          <Button variant="secondary" size="sm" className="gap-2 shadow-sm">
+                            <Upload className="h-4 w-4" /> Change
+                          </Button>
+                          <Button variant="destructive" size="icon" className="h-8 w-8" onClick={(e) => removeImage(e, 'signature')}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="p-3 rounded-full bg-background shadow-sm border border-border group-hover:scale-110 transition-transform">
+                          <FileText className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                        <div className="text-center">
+                          <p className="text-sm font-medium">Upload Signature</p>
+                          <p className="text-xs text-muted-foreground mt-1">PNG with transparency</p>
+                        </div>
+                      </>
+                    ) }
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <Label className="font-bold text-sm uppercase tracking-wider text-muted-foreground underline decoration-primary decoration-2 underline-offset-4">Company Stamp</Label>
+                  <div 
+                    className="group relative border border-dashed border-border rounded-xl p-8 bg-muted/20 flex flex-col items-center justify-center gap-4 group-hover:border-primary/50 transition-all cursor-pointer overflow-hidden h-48 hover:shadow-lg hover:bg-muted/30 active:scale-[0.98]"
+                    onClick={() => stampInputRef.current?.click()}
+                  >
+                    {isUploading['stamp'] ? (
+                      <div className="flex flex-col items-center gap-2 w-full px-8">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                          <span className="text-sm font-bold text-primary">{uploadProgress['stamp'] || 0}%</span>
+                        </div>
+                        <Progress value={uploadProgress['stamp'] || 0} className="h-1.5 w-full" />
+                        <p className="text-[10px] items-center uppercase font-bold text-muted-foreground tracking-widest mt-1">Uploading Stamp...</p>
+                      </div>
+                    ) : formData.stamp ? (
+                      <div className="relative w-full h-full flex items-center justify-center p-4">
+                        <ProtectedBrandingImage src={formData.stamp} alt="Stamp" className="max-h-full object-contain drop-shadow-sm" />
+                        <div className="absolute inset-0 bg-background/80 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity gap-2">
+                          <Button variant="secondary" size="sm" className="gap-2 shadow-sm">
+                            <Upload className="h-4 w-4" /> Change
+                          </Button>
+                          <Button variant="destructive" size="icon" className="h-8 w-8" onClick={(e) => removeImage(e, 'stamp')}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="p-3 rounded-full bg-background shadow-sm border border-border group-hover:scale-110 transition-transform">
+                          <Shield className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                        <div className="text-center">
+                          <p className="text-sm font-medium">Upload Stamp</p>
+                          <p className="text-xs text-muted-foreground mt-1">PNG with transparency</p>
+                        </div>
+                      </>
+                    ) }
+                  </div>
+                </div>
               </div>
 
               <Separator />
@@ -428,14 +543,41 @@ export default function SettingsPage() {
                     </Label>
                     <p className="text-sm text-muted-foreground">This color will be used for buttons, links, and highlights.</p>
                   </div>
-                  <div className="flex items-center gap-3 bg-muted/50 p-3 rounded-xl border self-start md:self-center">
+                  <div className="flex items-center gap-4 bg-muted/30 p-2.5 pl-4 rounded-2xl border border-border/50 self-start md:self-center shadow-sm">
+                    <input 
+                      type="color" 
+                      ref={colorInputRef} 
+                      value={formData.primaryColor || '#3b82f6'} 
+                      onChange={(e) => setFormData(prev => ({ ...prev, primaryColor: e.target.value }))}
+                      className="sr-only"
+                    />
                     <div 
-                      className="h-10 w-10 rounded-lg shadow-sm flex items-center justify-center ring-2 ring-white"
+                      className="h-12 w-12 rounded-xl shadow-md flex items-center justify-center ring-4 ring-background cursor-pointer hover:scale-110 active:scale-95 transition-all duration-300 group relative"
                       style={{ backgroundColor: formData.primaryColor }}
+                      onClick={() => colorInputRef.current?.click()}
                     >
-                      <Check className="h-4 w-4 text-white drop-shadow-sm" />
+                      <Check className="h-5 w-5 text-white drop-shadow-sm" />
+                      <div className="absolute -top-1 -right-1 bg-primary text-[8px] text-white px-1.5 py-0.5 rounded-full font-bold shadow-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">Edit</div>
                     </div>
-                    <span className="font-mono text-sm font-bold pr-2 uppercase">{formData.primaryColor}</span>
+                    <div className="flex flex-col gap-0.5">
+                      <Label htmlFor="primaryColorInput" className="text-[10px] items-center font-bold text-muted-foreground uppercase tracking-widest px-0.5 flex gap-1">
+                        <Palette className="h-2.5 w-2.5" /> Hex Code
+                      </Label>
+                      <div className="relative">
+                        <Input 
+                          id="primaryColorInput"
+                          value={formData.primaryColor} 
+                          onChange={(e) => {
+                            let val = e.target.value;
+                            if (val && !val.startsWith('#') && val.length > 0) val = '#' + val;
+                            setFormData(prev => ({ ...prev, primaryColor: val }));
+                          }}
+                          placeholder="#000000"
+                          className="font-mono text-base font-bold border-none h-8 px-0.5 focus-visible:ring-0 bg-transparent uppercase w-28 tracking-wider"
+                        />
+                        <div className="absolute bottom-1 left-0.5 right-0 h-[1px] bg-primary/20"></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 
@@ -801,6 +943,87 @@ export default function SettingsPage() {
                   onCheckedChange={(val) => handleNotificationChange('billingAlerts', val)} 
                   className="data-[state=checked]:bg-primary"
                 />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="security" className="mt-0 outline-none space-y-6">
+          <Card className="shadow-card border-border overflow-hidden">
+            <CardHeader className="bg-muted/30 border-b pb-6">
+              <CardTitle className="font-display text-xl">Security Configuration</CardTitle>
+              <CardDescription>Setup Google reCAPTCHA v3 to protect your forms from spam.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-8 space-y-6">
+              <div className="flex items-center justify-between p-6 rounded-2xl border bg-background hover:bg-muted/10 transition-all group">
+                <div className="space-y-1">
+                  <p className="font-bold flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-primary" /> Enable Google reCAPTCHA v3
+                  </p>
+                  <p className="text-sm text-muted-foreground max-w-md">Protect your admin and client login forms from bots and abuse.</p>
+                </div>
+                <Switch 
+                  checked={formData.enableRecaptcha} 
+                  onCheckedChange={(val) => setFormData(p => ({ ...p, enableRecaptcha: val }))} 
+                  className="data-[state=checked]:bg-primary"
+                />
+              </div>
+
+              {formData.enableRecaptcha && (
+                <div className="grid md:grid-cols-2 gap-8 border bg-muted/10 p-6 rounded-2xl animate-in fade-in zoom-in duration-300">
+                  <div className="space-y-2">
+                    <Label htmlFor="recaptchaSiteKey" className="font-semibold">reCAPTCHA Site Key</Label>
+                    <Input 
+                      id="recaptchaSiteKey" 
+                      value={formData.recaptchaSiteKey || ''} 
+                      onChange={handleInputChange} 
+                      placeholder="Enter reCAPTCHA v3 Site Key" 
+                      className="h-11 focus-visible:ring-primary"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="recaptchaSecretKey" className="font-semibold">reCAPTCHA Secret Key</Label>
+                    <Input 
+                      id="recaptchaSecretKey" 
+                      type="password"
+                      value={formData.recaptchaSecretKey || ''} 
+                      onChange={handleInputChange} 
+                      placeholder="Enter reCAPTCHA v3 Secret Key" 
+                      className="h-11 focus-visible:ring-primary"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-1">Stored securely and never exposed to the client.</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="ai" className="mt-0 outline-none space-y-6">
+          <Card className="shadow-card border-purple-500/20 overflow-hidden ring-1 ring-purple-500/10">
+            <CardHeader className="bg-gradient-to-r from-purple-500/10 to-transparent border-b pb-6">
+              <CardTitle className="font-display text-xl text-purple-700 dark:text-purple-400 flex items-center gap-2">
+                <Sparkles className="h-5 w-5" /> AI Integration
+              </CardTitle>
+              <CardDescription>Configure OpenAI to power AI content generation features.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-8 space-y-6">
+              <div className="grid gap-2 max-w-xl">
+                <Label htmlFor="openAiApiKey" className="font-semibold">OpenAI API Key</Label>
+                <div className="relative">
+                  <Input 
+                    id="openAiApiKey" 
+                    type="password"
+                    value={formData.openAiApiKey || ''} 
+                    onChange={handleInputChange} 
+                    placeholder="sk-..." 
+                    className="h-11 focus-visible:ring-purple-500 border-purple-200"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Your key is encrypted and never sent to the client. Needs access to `gpt-4o` or similar.
+                  <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="ml-1 text-purple-600 hover:underline">Get an API key</a>
+                </p>
               </div>
             </CardContent>
           </Card>

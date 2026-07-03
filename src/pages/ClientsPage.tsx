@@ -32,7 +32,7 @@ export default function ClientsPage() {
   const filtered = clients.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     (c.company || "").toLowerCase().includes(search.toLowerCase()) ||
-    c.email.toLowerCase().includes(search.toLowerCase())
+    (c.email || "").toLowerCase().includes(search.toLowerCase())
   );
 
   const handleDelete = async (id: string, name: string) => {
@@ -76,11 +76,11 @@ export default function ClientsPage() {
 
       <Card className="shadow-card border-border">
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-lg font-semibold">All Clients ({filtered.length})</CardTitle>
-            <div className="relative">
+            <div className="relative w-full sm:w-56 shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search clients..." className="pl-9 w-56 bg-muted border-0" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input placeholder="Search clients..." className="pl-9 w-full bg-muted border-0" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>
@@ -138,7 +138,7 @@ export default function ClientsPage() {
                     <Badge className={statusColor(c.status)}>{c.status}</Badge>
                   </TableCell>
                   <TableCell className="hidden sm:table-cell text-muted-foreground font-medium">{c.projects}</TableCell>
-                  <TableCell className="font-semibold text-foreground">{formatCurrency(c.revenue)}</TableCell>
+                  <TableCell className="font-semibold text-foreground">{c.revenue}</TableCell>
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>

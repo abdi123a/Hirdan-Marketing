@@ -5,7 +5,7 @@ import { validate } from '../middleware/validate.js';
 import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
+import { parsePagination } from '../lib/pagination.js';
 
 const router = Router();
 
@@ -21,9 +21,12 @@ router.get('/', async (req: Request, res: Response, next) => {
       where.userId = req.user!.userId;
     }
 
+    const { take, skip } = parsePagination(req.query, { maxTake: 100, defaultTake: 50 });
     const clients = await prisma.client.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      take,
+      skip,
       include: {
         _count: {
           select: {
@@ -32,9 +35,27 @@ router.get('/', async (req: Request, res: Response, next) => {
             subscriptions: true,
           },
         },
+        // Only include invoices for aggregation if user is ADMIN
+        ...(req.user!.role === 'ADMIN' && {
+          invoices: {
+            where: { status: { in: ['PAID', 'PARTIALLY_PAID'] } },
+            select: { amount: true, deposit: true, status: true },
+          },
+        }),
       },
     });
-    res.json({ clients });
+
+    const clientsWithRevenue = clients.map(client => {
+      const revenue = (client as any).invoices?.reduce((sum: number, inv: any) => {
+        if (inv.status === 'PAID') return sum + inv.amount;
+        if (inv.status === 'PARTIALLY_PAID') return sum + (inv.deposit || 0);
+        return sum;
+      }, 0) ?? 0;
+      const { invoices, ...rest } = client as any;
+      return { ...rest, role: req.user!.role, revenue };
+    });
+
+    res.json({ clients: clientsWithRevenue });
   } catch (error) {
     next(error);
   }
@@ -51,7 +72,9 @@ router.get('/:id', requireAdmin, async (req: Request, res: Response, next) => {
         projects: true,
         invoices: { include: { items: true } },
         proformas: { include: { items: true } },
-        subscriptions: true,
+        subscriptions: { include: { package: true } },
+        socialProfiles: { orderBy: { platform: 'asc' } },
+        documents: { orderBy: { createdAt: 'desc' } },
       },
     });
 
@@ -69,18 +92,91 @@ router.get('/:id', requireAdmin, async (req: Request, res: Response, next) => {
 
 const clientDtoSchema = z.object({
   name: z.string().min(1),
-  email: z.string().email().optional().nullable(),
-  phone: z.string().optional().nullable(),
-  company: z.string().optional().nullable().default(''),
+  email: z.string().email().or(z.literal('')).nullable().transform(val => val === '' ? null : val),
+  phone: z.string().optional().nullable().transform(val => val || null),
+  company: z.string().optional().nullable().transform(val => val || ''), // Prisma needs non-null
   type: z.enum(['BUSINESS', 'INDIVIDUAL']).optional(),
-  website: z.string().optional().nullable(),
-  address: z.string().optional().nullable(),
-  city: z.string().optional().nullable(),
-  country: z.string().optional().nullable(),
-  industry: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
+  website: z.string().optional().nullable().transform(val => val || null),
+  address: z.string().optional().nullable().transform(val => val || null),
+  city: z.string().optional().nullable().transform(val => val || null),
+  country: z.string().optional().nullable().transform(val => val || null),
+  industry: z.string().optional().nullable().transform(val => val || null),
+  notes: z.string().optional().nullable().transform(val => val || null),
   status: z.enum(['ACTIVE', 'PAUSED', 'CHURNED']).optional(),
-  initials: z.string().optional().nullable(),
+  initials: z.string().optional().nullable().transform(val => val || null),
+});
+
+const clientSelfUpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  email: z.string().email().or(z.literal('')).nullable().optional().transform(val => val === '' ? null : val),
+  phone: z.string().optional().nullable().transform(val => val || null),
+  company: z.string().optional().nullable().transform(val => val || ''),
+  website: z.string().optional().nullable().transform(val => val || null),
+  address: z.string().optional().nullable().transform(val => val || null),
+  city: z.string().optional().nullable().transform(val => val || null),
+  country: z.string().optional().nullable().transform(val => val || null),
+});
+
+// ─── GET /api/clients/me ──────────────────────────────────────────
+
+router.get('/me', async (req: Request, res: Response, next) => {
+  try {
+    if (req.user!.role !== 'CLIENT') {
+      throw AppError.forbidden('Only clients can access this resource');
+    }
+
+    const client = await prisma.client.findUnique({
+      where: { userId: req.user!.userId },
+    });
+
+    if (!client) {
+      throw AppError.notFound('Client account not found');
+    }
+
+    res.json({ client });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── PUT /api/clients/me ──────────────────────────────────────────
+
+router.put('/me', validate({ body: clientSelfUpdateSchema }), async (req: Request, res: Response, next) => {
+  try {
+    if (req.user!.role !== 'CLIENT') {
+      throw AppError.forbidden('Only clients can update this resource');
+    }
+
+    const existingClient = await prisma.client.findUnique({
+      where: { userId: req.user!.userId },
+      include: { user: true },
+    });
+
+    if (!existingClient) {
+      throw AppError.notFound('Client account not found');
+    }
+
+    const data = req.body;
+
+    const client = await prisma.client.update({
+      where: { id: existingClient.id },
+      data,
+    });
+
+    if (existingClient.userId && (data.name !== undefined || data.email !== undefined)) {
+      await prisma.user.update({
+        where: { id: existingClient.userId },
+        data: {
+          ...(data.name !== undefined ? { name: data.name } : {}),
+          ...(data.email !== undefined ? { email: data.email } : {}),
+        },
+      });
+    }
+
+    res.json({ client });
+  } catch (error) {
+    next(error);
+  }
 });
 
 
@@ -126,10 +222,13 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) =>
 
 router.get('/:id/invoices', requireAdmin, async (req: Request, res: Response, next) => {
   try {
+    const { take, skip } = parsePagination(req.query, { maxTake: 200, defaultTake: 50 });
     const invoices = await prisma.invoice.findMany({
       where: { clientId: req.params.id as string },
       include: { items: true },
       orderBy: { date: 'desc' },
+      take,
+      skip,
     });
     res.json({ invoices });
   } catch (error) {
@@ -141,10 +240,13 @@ router.get('/:id/invoices', requireAdmin, async (req: Request, res: Response, ne
 
 router.get('/:id/projects', requireAdmin, async (req: Request, res: Response, next) => {
   try {
+    const { take, skip } = parsePagination(req.query, { maxTake: 200, defaultTake: 50 });
     const projects = await prisma.project.findMany({
       where: { clientId: req.params.id as string },
       include: { teamMembers: { include: { teamMember: true } } },
       orderBy: { createdAt: 'desc' },
+      take,
+      skip,
     });
     res.json({ projects });
   } catch (error) {
@@ -168,8 +270,13 @@ router.post('/:id/portal-access', requireAdmin, async (req: Request, res: Respon
       throw AppError.badRequest('Client must have an email address to generate portal access');
     }
 
-    const accessCode = crypto.randomBytes(3).toString('hex').toUpperCase(); // 6 uppercase hex chars, CSPRNG
-    const passwordHash = await bcrypt.hash(accessCode, 12);
+    // Generate a temporary password for first login/reset.
+    const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+    let tempPassword = '';
+    for (let i = 0; i < 10; i++) {
+      tempPassword += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    const passwordHash = await bcrypt.hash(tempPassword, 12);
 
     let user = client.user;
     if (!user) {
@@ -183,6 +290,7 @@ router.post('/:id/portal-access', requireAdmin, async (req: Request, res: Respon
         data: { 
           passwordHash, 
           role: 'CLIENT',
+          mustChangePassword: true,
           // If the user wasn't linked to the client yet, we might want to ensure they are
           // but the link is on the Client side (userId)
         },
@@ -201,6 +309,7 @@ router.post('/:id/portal-access', requireAdmin, async (req: Request, res: Respon
           email: client.email,
           name: client.name,
           passwordHash,
+          mustChangePassword: true,
           role: 'CLIENT',
         },
       });
@@ -210,7 +319,7 @@ router.post('/:id/portal-access', requireAdmin, async (req: Request, res: Respon
       });
     }
 
-    res.json({ accessCode, message: 'Portal access generated successfully' });
+    res.json({ tempPassword, message: 'Portal access generated successfully' });
   } catch (error) {
     next(error);
   }

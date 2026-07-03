@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,19 +11,25 @@ import { useAgencyStore, Proforma, InvoiceItem } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, parseCurrency } from "@/lib/utils";
 import { ClientSelector } from "@/components/ClientSelector";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
+import { Shield } from "lucide-react";
 
 const generateProformaId = () => `PRO-${Math.floor(Math.random() * 9000 + 1000)}`;
 
 export default function AddProformaPage() {
   const navigate = useNavigate();
-  const { clients, addProforma } = useAgencyStore();
+  const { clients, addProforma, settings, services, packages, fetchServices, fetchPackages } = useAgencyStore();
   const { toast } = useToast();
 
-  const proformaId = useState(generateProformaId)[0];
+  useEffect(() => {
+    fetchServices();
+    fetchPackages();
+  }, [fetchServices, fetchPackages]);
 
-  const { settings } = useAgencyStore();
+  const proformaId = useState(generateProformaId)[0];
   const [form, setForm] = useState<Partial<Proforma>>({
     client: "",
     clientEmail: "",
@@ -35,6 +41,8 @@ export default function AddProformaPage() {
     discount: 0,
     discountType: 'fixed',
     deposit: 0,
+    showSignature: true,
+    showStamp: true,
   });
 
   const [items, setItems] = useState<InvoiceItem[]>([
@@ -43,7 +51,7 @@ export default function AddProformaPage() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const setField = (field: keyof Proforma, value: string | number) =>
+  const setField = <K extends keyof Proforma>(field: K, value: Proforma[K]) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
   const updateItem = (index: number, field: keyof InvoiceItem, value: string | number) => {
@@ -73,8 +81,16 @@ export default function AddProformaPage() {
     if (!validate()) return;
     const totalStr = formatCurrency(total);
     try {
+      let finalStatus = form.status;
+      if ((form.deposit || 0) > 0 && (form.deposit || 0) < total) {
+        finalStatus = 'Partially Paid';
+      } else if ((form.deposit || 0) >= total && total > 0) {
+        finalStatus = 'Accepted'; // Proformas use 'Accepted' instead of 'Paid' usually, but let's allow Partially Paid mapping
+      }
+      
       await addProforma({ 
         ...form as Omit<Proforma, "id">, 
+        status: finalStatus as any,
         amount: totalStr, 
         items, 
         id: proformaId,
@@ -156,6 +172,7 @@ export default function AddProformaPage() {
                       <SelectItem value="Draft">Draft</SelectItem>
                       <SelectItem value="Sent">Sent</SelectItem>
                       <SelectItem value="Accepted">Accepted</SelectItem>
+                      <SelectItem value="Partially Paid">Partially Paid</SelectItem>
                       <SelectItem value="Expired">Expired</SelectItem>
                     </SelectContent>
                   </Select>
@@ -199,9 +216,37 @@ export default function AddProformaPage() {
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base font-semibold">Line Items</CardTitle>
-                <Button size="sm" variant="outline" onClick={addItem} className="gap-1.5 h-8">
-                  <Plus className="h-3.5 w-3.5" /> Add Item
-                </Button>
+                <div className="flex items-center gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" className="gap-1.5 h-8">
+                        <Plus className="h-3.5 w-3.5" /> Add from Inventory
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuLabel>Add Service</DropdownMenuLabel>
+                      {services.map(s => (
+                        <DropdownMenuItem key={s.id} onClick={() => {
+                          setItems(prev => [...prev, { description: s.name, quantity: 1, unitPrice: parseCurrency(s.basePrice) }]);
+                        }}>
+                          {s.name} ({s.basePrice})
+                        </DropdownMenuItem>
+                      ))}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>Add Package</DropdownMenuLabel>
+                      {packages.map(p => (
+                        <DropdownMenuItem key={p.id} onClick={() => {
+                          setItems(prev => [...prev, { description: p.name, quantity: 1, unitPrice: parseCurrency(p.price) }]);
+                        }}>
+                          {p.name} ({p.price})
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button size="sm" variant="outline" onClick={addItem} className="gap-1.5 h-8">
+                    <Plus className="h-3.5 w-3.5" /> Custom Item
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">

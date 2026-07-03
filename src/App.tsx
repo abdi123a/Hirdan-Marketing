@@ -12,6 +12,7 @@ import ClientLoginPage from "./pages/ClientLoginPage.tsx";
 import ClientPortalPage from "./pages/ClientPortalPage.tsx";
 import DashboardLayout from "./components/DashboardLayout.tsx";
 import { AgencyAppearanceManager } from "./components/AgencyAppearanceManager.tsx";
+import { GlobalUploadProgress } from "./components/GlobalUploadProgress.tsx";
 import DashboardOverview from "./pages/DashboardOverview.tsx";
 import ClientsPage from "./pages/ClientsPage.tsx";
 import AddClientPage from "./pages/AddClientPage.tsx";
@@ -51,31 +52,41 @@ import LeadsPage from "./pages/LeadsPage.tsx";
 import VerifyDocumentPage from "./pages/VerifyDocumentPage.tsx";
 import UsersPage from './pages/UsersPage.tsx';
 import AddUserPage from './pages/AddUserPage.tsx';
+import SocialMediaTasksPage from './pages/SocialMediaTasksPage.tsx';
+import SocialMediaPlannerPage from './pages/SocialMediaPlannerPage.tsx';
+import MonthlyReportStudioPage from "./pages/MonthlyReportStudioPage.tsx";
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api-client";
-import { Loader2 } from "lucide-react";
+import { useAgencyStore } from "@/lib/store";
+import { LoadingScreen } from "@/components/ui/LoadingScreen";
 
 const queryClient = new QueryClient();
 
 function AppRoutes() {
-  const [isVerifying, setIsVerifying] = useState(true);
-  const { user, isAuthenticated, logout, setToken } = useAuthStore();
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [showLoader, setShowLoader] = useState(true);
+  const { user, isAuthenticated, logout } = useAuthStore();
+  const { fetchSettings } = useAgencyStore();
 
   useEffect(() => {
-    const verifyAuth = async () => {
-      // If we seem to be authenticated, verify with the backend
+    const initializeApp = async () => {
+      // Run auth verify and settings fetch in parallel for better performance
       try {
-        const data = await apiFetch<{ user: any }>('/auth/me');
-        if (data.user) {
+        const [authData] = await Promise.all([
+          apiFetch<{ user: any }>('/auth/me'),
+          fetchSettings()
+        ]);
+
+        if (authData.user) {
           // Normalize role to lowercase for the store
           const normalizedUser = {
-            role: data.user.role.toLowerCase() as any,
-            email: data.user.email,
-            name: data.user.name,
-            ...(data.user.client ? {
-              company: data.user.client.company,
-              clientId: data.user.client.id,
+            role: authData.user.role.toLowerCase() as any,
+            email: authData.user.email,
+            name: authData.user.name,
+            ...(authData.user.client ? {
+              company: authData.user.client.company,
+              clientId: authData.user.client.id,
             } : {})
           };
           
@@ -86,22 +97,36 @@ function AppRoutes() {
         } else {
           logout();
         }
-      } catch (err) {
-        logout();
+      } catch (err: any) {
+        console.error("Initialization error:", err);
+        // We still fetch settings even if auth fails, as login pages need them
+        try { await fetchSettings(); } catch (sErr) { console.error("Settings fetch error:", sErr); }
+        
+        // Only logout if not authenticated or explicitly unauthorized. 
+        // apiFetch handles 401s by calling store.logout() internally.
+        if (!useAuthStore.getState().token) {
+          logout();
+        }
       } finally {
-        setIsVerifying(false);
+        const endTime = Date.now();
+        const elapsed = endTime - startTime;
+        const MIN_LOADING_TIME = 2000; // 2 seconds minimum to appreciate the loader
+        const remainingDelay = Math.max(0, MIN_LOADING_TIME - elapsed);
+
+        setTimeout(() => {
+          setIsInitializing(false);
+          // Small delay for the fade-out effect to feel premium
+          setTimeout(() => setShowLoader(false), 800);
+        }, remainingDelay);
       }
     };
 
-    verifyAuth();
-  }, []);
+    const startTime = Date.now();
+    initializeApp();
+  }, [fetchSettings, logout]);
 
-  if (isVerifying) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 text-primary animate-spin" />
-      </div>
-    );
+  if (showLoader) {
+    return <LoadingScreen fadeOut={!isInitializing} />;
   }
 
   return (
@@ -170,6 +195,9 @@ function AppRoutes() {
         <Route path="subscriptions/add" element={<AddSubscriptionPage />} />
         <Route path="subscriptions/edit/:id" element={<EditSubscriptionPage />} />
         <Route path="subscriptions/view/:id" element={<SubscriptionDetailsPage />} />
+        <Route path="social-media" element={<SocialMediaTasksPage />} />
+        <Route path="social-media/planner" element={<SocialMediaPlannerPage />} />
+        <Route path="reports/monthly" element={<MonthlyReportStudioPage />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="proforma" element={<ProformaPage />} />
         <Route path="proforma/add" element={<AddProformaPage />} />
@@ -198,6 +226,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AgencyAppearanceManager />
+        <GlobalUploadProgress />
         <AppRoutes />
       </BrowserRouter>
     </TooltipProvider>

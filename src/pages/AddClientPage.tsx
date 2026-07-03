@@ -48,13 +48,21 @@ export default function AddClientPage() {
 
   const handleSubmit = async () => {
     if (!validate()) return;
-    const initials = form.name!.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-    await addClient({ 
-      ...(form as any), 
-      initials 
-    });
-    toast({ title: "Client added!", description: `${form.name} has been added to your clients.` });
-    navigate("/dashboard/clients");
+    try {
+      const initials = form.name!.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+      await addClient({ 
+        ...(form as any), 
+        initials 
+      });
+      toast({ title: "Client added!", description: `${form.name} has been added to your clients.` });
+      navigate("/dashboard/clients");
+    } catch (error: any) {
+      toast({ 
+        title: "Error", 
+        description: error.message || "Failed to add client. Please try again.", 
+        variant: "destructive" 
+      });
+    }
   };
 
   return (

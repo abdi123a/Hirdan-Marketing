@@ -3,32 +3,145 @@ import { useAgencyStore } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-  ArrowLeft, Mail, Printer, Download, Share2, 
-  Settings, User, Clock, CreditCard, 
+import {
+  ArrowLeft, Mail, Printer, Download, Share2,
+  Settings, User, Clock, CreditCard,
   MapPin, Building2, ChevronRight, CheckCircle2,
   FileText, TrendingUp, Calendar, Zap, AlertTriangle, Package as PackageIcon, ShieldCheck,
   Activity
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, normalizeFeatureList } from "@/lib/utils";
+import { apiFetch } from "@/lib/api-client";
+import { Progress } from "@/components/ui/progress";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2, Sparkles, Plus, Image, Video, SwitchCamera, ListFilter, Brain, Wand2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { QRCodeSVG } from "qrcode.react";
+import { Copy, ExternalLink, ShieldCheck as VerifiedIcon } from "lucide-react";
 
 export default function SubscriptionDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { subscriptions, clients, packages, services } = useAgencyStore();
+  const { toast } = useToast();
+  const { subscriptions, clients, packages, services, getVerificationToken, settings } = useAgencyStore();
+  const [verificationToken, setVerificationToken] = useState("");
+
+  const [cycles, setCycles] = useState<any[]>([]);
+  const [loadingCycles, setLoadingCycles] = useState(true);
+  const [showGenerate, setShowGenerate] = useState(false);
+  const [generateForm, setGenerateForm] = useState({
+    cycleStart: "", cycleEnd: "", label: "",
+    useAi: true, prompt: "",
+  });
+  const [generating, setGenerating] = useState(false);
+
+  useEffect(() => {
+    if (id) {
+      getVerificationToken("subscription", id).then(setVerificationToken);
+    }
+  }, [id, getVerificationToken]);
+
+  useEffect(() => {
+    if (id) {
+      setLoadingCycles(true);
+      apiFetch<{ subscription: any }>(`/subscriptions/${id}`).then(res => {
+        if (res.subscription && res.subscription.cycles) {
+          setCycles(res.subscription.cycles);
+        }
+      }).catch(err => {
+        console.error("Failed to fetch subscription cycles:", err);
+      }).finally(() => {
+        setLoadingCycles(false);
+      });
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (generateForm.cycleStart) {
+      const d = new Date(generateForm.cycleStart);
+      const label = d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+      setGenerateForm(prev => ({ ...prev, label }));
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      setGenerateForm(prev => ({ ...prev, cycleEnd: end.toISOString().split("T")[0] }));
+    }
+  }, [generateForm.cycleStart]);
+
+  const handleGenerate = async () => {
+    try {
+      setGenerating(true);
+      const res = await apiFetch<{ count: number; cycle: any }>("/tasks/generate", {
+        method: "POST",
+        body: JSON.stringify({
+          subscriptionId: id,
+          cycleStart: generateForm.cycleStart,
+          cycleEnd: generateForm.cycleEnd,
+          label: generateForm.label,
+          useAi: generateForm.useAi,
+          ...(generateForm.useAi ? {
+            prompt: generateForm.prompt || undefined,
+          } : {}),
+        }),
+      });
+      setShowGenerate(false);
+      setGenerateForm({
+        cycleStart: "", cycleEnd: "", label: "",
+        useAi: true, prompt: "",
+      });
+      toast({
+        title: generateForm.useAi ? "AI tasks generated!" : "Tasks generated!",
+        description: `${res.count} deliverable tasks created for ${res.cycle.label}.`,
+      });
+
+      // refresh cycles
+      const refreshRes = await apiFetch<{ subscription: any }>(`/subscriptions/${id}`);
+      if (refreshRes.subscription?.cycles) {
+        setCycles(refreshRes.subscription.cycles);
+      }
+    } catch (err: any) {
+      toast({ title: "Generation failed", description: err.message || "Could not generate tasks", variant: "destructive" });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleDeleteCycle = async (cycle: any) => {
+    const confirmed = window.confirm(
+      `Delete ${cycle.label}? This will remove generated tasks and auto-generated planner posts for that month.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await apiFetch(`/tasks/cycles/${cycle.id}`, { method: "DELETE" });
+      toast({ title: "Cycle deleted", description: `${cycle.label} generated tasks were removed.` });
+      const refreshRes = await apiFetch<{ subscription: any }>(`/subscriptions/${id}`);
+      if (refreshRes.subscription?.cycles) {
+        setCycles(refreshRes.subscription.cycles);
+      }
+    } catch (err: any) {
+      toast({
+        title: "Delete failed",
+        description: err.message || "Could not delete this cycle",
+        variant: "destructive",
+      });
+    }
+  };
 
   const subscription = useMemo(() => subscriptions.find((s) => s.id === id), [subscriptions, id]);
   const client = useMemo(() => clients.find((c) => c.company === subscription?.client || c.name === subscription?.client), [clients, subscription]);
 
-  const linkedPackage = useMemo(() => 
-    packages.find(p => p.id === subscription?.packageId), 
+  const linkedPackage = useMemo(() =>
+    packages.find(p => p.id === subscription?.packageId),
     [packages, subscription]
   );
 
-  const linkedService = useMemo(() => 
-    services.find(s => s.id === subscription?.serviceId), 
+  const linkedService = useMemo(() =>
+    services.find(s => s.id === subscription?.serviceId),
     [services, subscription]
   );
 
@@ -61,7 +174,7 @@ export default function SubscriptionDetailsPage() {
               <Badge className={`${statusColor(subscription.status)} border-0 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider`} variant="outline">{subscription.status}</Badge>
             </div>
             <p className="text-muted-foreground font-medium flex items-center gap-2 mt-0.5">
-              Ref: <span className="text-foreground">{subscription.id}</span> · Next Renewal <span className="text-foreground">{subscription.renewal}</span>
+              Ref: <span className="text-foreground">{subscription.id}</span> · End Date <span className="text-foreground">{subscription.endDate}</span>
             </p>
           </div>
         </div>
@@ -94,9 +207,9 @@ export default function SubscriptionDetailsPage() {
                   <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{linkedPackage?.description || linkedService?.description}</p>
                 </div>
               </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="rounded-xl h-10 px-4 gap-2 text-xs font-bold border border-border/40 bg-background/50 backdrop-blur-sm group-hover:bg-primary group-hover:text-white transition-all shadow-sm"
                 onClick={() => navigate(linkedPackage ? `/dashboard/packages/view/${linkedPackage.id}` : `/dashboard/services/view/${linkedService?.id}`)}
               >
@@ -119,8 +232,8 @@ export default function SubscriptionDetailsPage() {
                 <div className="space-y-5">
                   {[
                     { icon: CreditCard, label: "Subscription Fee", value: `${formatCurrency(subscription.amount)} / ${subscription.billingCycle}` },
-                    { icon: Calendar, label: "Started Date", value: subscription.started },
-                    { icon: Clock, label: "Next Billing", value: subscription.renewal },
+                    { icon: Calendar, label: "Start Date", value: subscription.startDate },
+                    { icon: Clock, label: "End Date", value: subscription.endDate },
                   ].map((item, i) => (
                     <div key={i} className="flex items-start gap-4">
                       <div className="w-9 h-9 rounded-lg bg-muted/50 flex items-center justify-center shrink-0 border border-border/40 group-hover:border-primary/20 transition-colors">
@@ -136,8 +249,8 @@ export default function SubscriptionDetailsPage() {
                 <div className="space-y-5">
                   <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-4">Included Services</h4>
                   <div className="space-y-3">
-                    {subscription.features && subscription.features.length > 0 ? (
-                      subscription.features.map((feature, i) => (
+                    {normalizeFeatureList(subscription.features).length > 0 ? (
+                      normalizeFeatureList(subscription.features).map((feature, i) => (
                         <div key={i} className="flex items-center gap-2 text-sm text-foreground/80 font-medium">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                           {feature}
@@ -159,39 +272,60 @@ export default function SubscriptionDetailsPage() {
             </CardContent>
           </Card>
 
-          {/* Usage History (Mocked) */}
-          <Card className="border-border/50 shadow-sm overflow-hidden">
-            <CardHeader className="bg-muted/10 pb-3 border-b border-border/40">
+          {/* Cycle Progress Widget */}
+          <Card className="border-border/50 shadow-sm overflow-hidden border-t-2 border-t-amber-500/20">
+            <CardHeader className="bg-muted/10 pb-3 border-b border-border/40 flex flex-row items-center justify-between">
               <CardTitle className="text-lg font-display flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-emerald-500" /> Subscription Usage & History
+                <ListFilter className="h-4 w-4 text-amber-500" /> Billing Cycles & Deliverables
               </CardTitle>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-bold" onClick={() => setShowGenerate(true)}>
+                <Sparkles className="h-3.5 w-3.5" /> Generate Tasks
+              </Button>
             </CardHeader>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader className="bg-muted/30">
-                  <TableRow>
-                    <TableHead className="font-bold text-xs">Date</TableHead>
-                    <TableHead className="font-bold text-xs">Activity</TableHead>
-                    <TableHead className="text-right font-bold text-xs uppercase">Impact</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {[
-                    { date: "Mar 01, 2026", activity: "Monthly Renewal Finalized", impact: "Billing Successful" },
-                    { date: "Feb 01, 2026", activity: "Monthly Renewal Finalized", impact: "Billing Successful" },
-                    { date: "Jan 15, 2026", activity: "Plan Upgraded to Pro", impact: "Scope Increased" },
-                    { date: subscription.started, activity: "Subscription Successfully Initialized", impact: "New Client Onboarded" },
-                  ].map((act, i) => (
-                    <TableRow key={i} className="border-border/30">
-                      <TableCell className="text-xs font-medium text-muted-foreground">{act.date}</TableCell>
-                      <TableCell className="text-sm font-bold text-foreground">{act.activity}</TableCell>
-                      <TableCell className="text-right">
-                         <Badge variant="outline" className="text-[9px] font-bold uppercase bg-muted/50 border-0">{act.impact}</Badge>
-                      </TableCell>
-                    </TableRow>
+              {loadingCycles ? (
+                <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+              ) : cycles.length === 0 ? (
+                <div className="text-center py-12 px-4">
+                  <PackageIcon className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-sm font-medium text-muted-foreground">No tasks generated yet</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">Generate a cycle to auto-create deliverable tasks for this subscription.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-border/40">
+                  {cycles.map((cycle) => (
+                    <div key={cycle.id} className="p-5 hover:bg-muted/30 transition-colors">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <p className="font-bold text-foreground text-sm">{cycle.label}</p>
+                          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mt-0.5">
+                            {new Date(cycle.cycleStart).toLocaleDateString()} – {new Date(cycle.cycleEnd).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-display font-black text-primary">{cycle.progress || 0}%</p>
+                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">{cycle.completedTasks || 0} / {cycle.totalTasks || 0} Done</p>
+                        </div>
+                      </div>
+                      <Progress value={cycle.progress || 0} className="h-2 mb-2" />
+                      <div className="flex items-center justify-end gap-3">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-[10px] font-bold uppercase text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                          onClick={() => handleDeleteCycle(cycle)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1" />
+                          Delete Month
+                        </Button>
+                        <Button variant="link" size="sm" className="h-6 px-0 text-[10px] font-bold uppercase" onClick={() => navigate('/dashboard/social-media')}>
+                          View Tasks &rarr;
+                        </Button>
+                      </div>
+                    </div>
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -216,9 +350,9 @@ export default function SubscriptionDetailsPage() {
                     <p className="text-[11px] text-muted-foreground font-medium">{client.email}</p>
                   </div>
                 </div>
-                <Button 
-                  variant="outline" 
-                  className="w-full text-xs font-bold h-9 group" 
+                <Button
+                  variant="outline"
+                  className="w-full text-xs font-bold h-9 group"
                   onClick={() => navigate(`/dashboard/clients/view/${client.id}`)}
                 >
                   View Client Profile
@@ -230,7 +364,7 @@ export default function SubscriptionDetailsPage() {
 
           {/* Quick Actions / Alerts */}
           <Card className="border-border/50 shadow-sm">
-             <CardHeader className="p-4 bg-muted/10 border-b border-border/40">
+            <CardHeader className="p-4 bg-muted/10 border-b border-border/40">
               <CardTitle className="text-xs font-black uppercase tracking-widest text-muted-foreground">Subscription Intelligence</CardTitle>
             </CardHeader>
             <CardContent className="p-4 space-y-4">
@@ -241,7 +375,7 @@ export default function SubscriptionDetailsPage() {
                 </div>
                 <p className="text-[10px] text-muted-foreground leading-relaxed">All payments finalized. High usage activity recorded within the last 7 days.</p>
               </div>
-              
+
               <div className="p-4 bg-blue-500/5 rounded-xl border border-blue-500/10 space-y-1">
                 <div className="flex items-center gap-2 text-blue-600">
                   <TrendingUp className="w-4 h-4" />
@@ -251,8 +385,166 @@ export default function SubscriptionDetailsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Verification Card */}
+          <Card className="border-border/50 shadow-sm overflow-hidden border-t-2 border-t-emerald-500/20">
+            <CardHeader className="pb-3 border-b border-border/40 bg-muted/10">
+              <CardTitle className="text-sm font-display flex items-center gap-2">
+                <VerifiedIcon className="w-4 h-4 text-emerald-500" /> Digital Verification
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-5 flex flex-col items-center">
+              {verificationToken ? (
+                <>
+                  <div className="p-3 bg-white rounded-2xl shadow-sm border border-border/50 mb-4">
+                    <QRCodeSVG
+                      value={`${window.location.origin}/verify/${verificationToken}`}
+                      size={140}
+                      level="H"
+                      fgColor={settings.primaryColor || "#000000"}
+                      bgColor="transparent"
+                    />
+                  </div>
+                  <div className="w-full space-y-2">
+                    <Button
+                      variant="outline"
+                      className="w-full h-9 text-xs font-bold gap-2"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/verify/${verificationToken}`);
+                        toast({ title: "Link copied", description: "Verification URL copied to clipboard." });
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" /> Copy Link
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="w-full h-9 text-xs font-bold gap-2"
+                      onClick={() => window.open(`${window.location.origin}/verify/${verificationToken}`, "_blank")}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" /> View Public Page
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary opacity-20" />
+                  <p className="text-[10px] text-muted-foreground mt-2">Generating secure token...</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
+
+      {/* Generate Tasks Modal */}
+      <Dialog open={showGenerate} onOpenChange={setShowGenerate}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" /> Generate Cycle Tasks
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Auto-create deliverable tasks and content planner entries for this subscription.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-bold">Cycle Start</Label>
+                <Input
+                  type="date"
+                  value={generateForm.cycleStart}
+                  onChange={e => setGenerateForm(prev => ({ ...prev, cycleStart: e.target.value }))}
+                  className="mt-1.5"
+                />
+              </div>
+              <div>
+                <Label className="text-xs font-bold">Cycle End</Label>
+                <Input
+                  type="date"
+                  value={generateForm.cycleEnd}
+                  onChange={e => setGenerateForm(prev => ({ ...prev, cycleEnd: e.target.value }))}
+                  className="mt-1.5"
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs font-bold">Cycle Label</Label>
+              <Input
+                placeholder="e.g. March 2026"
+                value={generateForm.label}
+                onChange={e => setGenerateForm(prev => ({ ...prev, label: e.target.value }))}
+                className="mt-1.5"
+              />
+            </div>
+
+            {/* AI Toggle */}
+            <div
+              className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                generateForm.useAi
+                  ? "border-purple-400/60 bg-gradient-to-r from-purple-500/5 to-pink-500/5"
+                  : "border-border bg-muted/30"
+              }`}
+              onClick={() => setGenerateForm(prev => ({ ...prev, useAi: !prev.useAi }))}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${
+                    generateForm.useAi ? "bg-purple-500/15" : "bg-muted"
+                  }`}>
+                    <Brain className={`h-4.5 w-4.5 ${
+                      generateForm.useAi ? "text-purple-500" : "text-muted-foreground"
+                    }`} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">AI-Powered Planning</p>
+                    <p className="text-[10px] text-muted-foreground font-medium leading-tight mt-0.5">
+                      Generate creative titles, descriptions & smart scheduling
+                    </p>
+                  </div>
+                </div>
+                <div className={`w-10 h-5.5 rounded-full transition-colors flex items-center px-0.5 ${
+                  generateForm.useAi ? "bg-purple-500 justify-end" : "bg-muted-foreground/30 justify-start"
+                }`}>
+                  <div className="w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-all" />
+                </div>
+              </div>
+            </div>
+
+            {/* AI Options (shown when AI is on) */}
+            {generateForm.useAi && (
+              <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div>
+                  <Label className="text-xs font-bold flex items-center gap-1.5">
+                    <Wand2 className="h-3 w-3 text-purple-500" /> Instructions for AI
+                  </Label>
+                  <Textarea
+                    placeholder="e.g. Focus on our new summer collection, emphasize educational content about marketing, keep the tone informative..."
+                    value={generateForm.prompt}
+                    onChange={e => setGenerateForm(prev => ({ ...prev, prompt: e.target.value }))}
+                    className="mt-1.5 min-h-[80px] resize-none text-xs"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGenerate(false)}>Cancel</Button>
+            <Button
+              variant="hero"
+              onClick={handleGenerate}
+              disabled={generating || !generateForm.cycleStart || !generateForm.cycleEnd || !generateForm.label}
+              className="gap-2"
+            >
+              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {generating
+                ? (generateForm.useAi ? "AI Generating..." : "Generating...")
+                : (generateForm.useAi ? "Generate with AI" : "Generate Tasks")
+              }
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

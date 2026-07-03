@@ -33,7 +33,7 @@ ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 root@72.61.192.11 << 'EOF'
   
   cd /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
   npm install --production --legacy-peer-deps
-  ./node_modules/.bin/prisma generate
+  npx prisma generate
   
   chown -R hirdanmarketing-api:hirdanmarketing-api /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
   

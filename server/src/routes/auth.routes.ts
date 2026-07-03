@@ -3,12 +3,14 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 
 import { prisma } from '../lib/prisma.js';
 import { env } from '../config/env.js';
 import { AppError } from '../lib/errors.js';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { auditLog } from '../lib/audit.js';
 
 const router = Router();
 
@@ -22,16 +24,37 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  message: { error: true, message: 'Too many refresh attempts, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+function sha256Hex(input: string): string {
+  return crypto.createHash('sha256').update(input).digest('hex');
+}
+
+
 // ─── Validation Schemas ───────────────────────────────────────────
 
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  recaptchaToken: z.string().optional(),
 });
 
 const clientLoginSchema = z.object({
   email: z.string().email(),
-  accessCode: z.string().min(1),
+  password: z.string().min(1),
+  recaptchaToken: z.string().optional(),
+});
+
+const clientChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string().min(1),
 });
 
 // ─── Helper: Generate Tokens ─────────────────────────────────────
@@ -41,7 +64,11 @@ function generateAccessToken(payload: any) {
 }
 
 function generateRefreshToken(payload: any) {
-  return jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: env.JWT_REFRESH_EXPIRES_IN as any });
+  return jwt.sign(
+    { ...payload, jti: crypto.randomUUID() },
+    env.JWT_REFRESH_SECRET,
+    { expiresIn: env.JWT_REFRESH_EXPIRES_IN as any }
+  );
 }
 
 function getRefreshTokenExpiry(): Date {
@@ -62,9 +89,37 @@ function setRefreshTokenCookie(res: Response, token: string) {
   res.cookie('refreshToken', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax', // Protect against CSRF
+    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax', // Relax for subdomains
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    domain: env.COOKIE_DOMAIN, // Share across subdomains (e.g., '.hirdanmarketing.com')
+    path: '/',
   });
+}
+
+// ─── Helper: Verify reCAPTCHA ────────────────────────────────────
+
+async function verifyRecaptcha(token: string | undefined): Promise<void> {
+  const settings = await prisma.agencySettings.findFirst();
+  if (!settings?.enableRecaptcha) return;
+
+  if (!token) throw AppError.badRequest('reCAPTCHA validation required');
+  
+  if (!settings.recaptchaSecretKey) return;
+
+  const params = new URLSearchParams();
+  params.append('secret', settings.recaptchaSecretKey);
+  params.append('response', token);
+
+  const response = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString()
+  });
+
+  const data = await response.json() as any;
+  if (!data.success || data.score < 0.5) {
+    throw AppError.unauthorized('reCAPTCHA verification failed or score too low');
+  }
 }
 
 // ─── POST /api/auth/login ─────────────────────────────────────────
@@ -75,26 +130,40 @@ router.post(
   validate({ body: loginSchema }),
   async (req: Request, res: Response, next) => {
     try {
-      const { email, password } = req.body;
+      const { email, password, recaptchaToken } = req.body;
+      const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
 
-      const user = await prisma.user.findUnique({ where: { email } });
+      await verifyRecaptcha(recaptchaToken);
+
+      const user = await prisma.user.findUnique({ 
+        where: { email },
+        include: { client: true }
+      });
       if (!user) {
         throw AppError.unauthorized('Invalid email or password');
       }
 
+      // Prevent clients from using the admin login portal
+      if (user.role === 'CLIENT') {
+        throw AppError.unauthorized('This login is for agency staff only. Please use the Client Portal to log in.');
+      }
+
       const isValid = await bcrypt.compare(password, user.passwordHash);
       if (!isValid) {
+        auditLog({ action: 'auth.login', success: false, email, ip });
         throw AppError.unauthorized('Invalid email or password');
       }
 
+      auditLog({ action: 'auth.login', success: true, userId: user.id, email: user.email, role: user.role, ip });
       const tokenPayload = { userId: user.id, email: user.email, role: user.role };
       const accessToken = generateAccessToken(tokenPayload);
       const refreshToken = generateRefreshToken(tokenPayload);
 
       // Store refresh token in database
+      const refreshTokenHash = sha256Hex(refreshToken);
       await prisma.refreshToken.create({
         data: {
-          token: refreshToken,
+          token: refreshTokenHash,
           userId: user.id,
           expiresAt: getRefreshTokenExpiry(),
         },
@@ -110,6 +179,8 @@ router.post(
           email: user.email,
           name: user.name,
           role: user.role,
+          requiresPasswordChange: !!user.mustChangePassword,
+          mustChangePassword: !!user.mustChangePassword,
         },
       });
     } catch (error) {
@@ -126,7 +197,10 @@ router.post(
   validate({ body: clientLoginSchema }),
   async (req: Request, res: Response, next) => {
     try {
-      const { email, accessCode } = req.body;
+      const { email, password, recaptchaToken } = req.body;
+      const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
+
+      await verifyRecaptcha(recaptchaToken);
 
       // Find the specific client user by email
       const matchedUser = await prisma.user.findFirst({
@@ -138,27 +212,35 @@ router.post(
       }) as any;
 
       if (!matchedUser || !matchedUser.client) {
-        throw AppError.unauthorized('Invalid email or access code');
+        throw AppError.unauthorized('Invalid email or password');
       }
 
-      const isValid = await bcrypt.compare(accessCode.toUpperCase(), matchedUser.passwordHash);
+      if (matchedUser.client.status === 'PAUSED' || matchedUser.client.status === 'CHURNED') {
+        throw AppError.unauthorized('Your account is currently inactive. Please contact support.');
+      }
+
+      const isValid = await bcrypt.compare(password, matchedUser.passwordHash);
       if (!isValid) {
-        throw AppError.unauthorized('Invalid email or access code');
+        auditLog({ action: 'auth.login', success: false, email, ip });
+        throw AppError.unauthorized('Invalid email or password');
       }
 
+      auditLog({ action: 'auth.login', success: true, userId: matchedUser.id, email: matchedUser.email, role: matchedUser.role, ip });
       const tokenPayload = { 
         userId: matchedUser.id, 
         email: matchedUser.email, 
         role: matchedUser.role,
         clientId: matchedUser.client.id,
-        company: matchedUser.client.company
+        company: matchedUser.client.company,
+        mustChangePassword: !!matchedUser.mustChangePassword,
       };
       const accessToken = generateAccessToken(tokenPayload);
       const refreshToken = generateRefreshToken(tokenPayload);
 
+      const refreshTokenHash = sha256Hex(refreshToken);
       await prisma.refreshToken.create({
         data: {
-          token: refreshToken,
+          token: refreshTokenHash,
           userId: matchedUser.id,
           expiresAt: getRefreshTokenExpiry(),
         },
@@ -176,6 +258,8 @@ router.post(
           role: matchedUser.role,
           clientId: matchedUser.client.id,
           company: matchedUser.client.company,
+          requiresPasswordChange: !!matchedUser.mustChangePassword,
+          mustChangePassword: !!matchedUser.mustChangePassword,
         },
       });
     } catch (error) {
@@ -184,11 +268,82 @@ router.post(
   }
 );
 
+// ─── POST /api/auth/client-change-password ────────────────────────
+
+router.post(
+  '/client-change-password',
+  authenticate,
+  validate({ body: clientChangePasswordSchema }),
+  async (req: Request, res: Response, next) => {
+    try {
+      if (req.user!.role !== 'CLIENT') {
+        throw AppError.forbidden('Only client users can change password');
+      }
+
+      const { currentPassword, newPassword } = req.body;
+      const { confirmPassword } = req.body;
+      const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
+
+      if (newPassword !== confirmPassword) {
+        throw AppError.badRequest('New passwords do not match');
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: req.user!.userId },
+      });
+
+      if (!user) {
+        throw AppError.notFound('User not found');
+      }
+
+      const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!isCurrentPasswordValid) {
+        auditLog({ action: 'auth.password_change', success: false, userId: user.id, ip });
+        throw AppError.unauthorized('Current password is incorrect');
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          mustChangePassword: false,
+        },
+      });
+      auditLog({ action: 'auth.password_change', success: true, userId: user.id, ip });
+
+      const tokenPayload = {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        mustChangePassword: false,
+      };
+      const accessToken = generateAccessToken(tokenPayload);
+      const refreshToken = generateRefreshToken(tokenPayload);
+
+      const refreshTokenHash = sha256Hex(refreshToken);
+      await prisma.refreshToken.create({
+        data: {
+          token: refreshTokenHash,
+          userId: user.id,
+          expiresAt: getRefreshTokenExpiry(),
+        },
+      });
+
+      setRefreshTokenCookie(res, refreshToken);
+
+      res.json({ message: 'Password changed successfully', accessToken });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // ─── POST /api/auth/refresh ───────────────────────────────────────
 
-router.post('/refresh', async (req: Request, res: Response, next) => {
+router.post('/refresh', refreshLimiter, async (req: Request, res: Response, next) => {
   try {
-    const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
+    const refreshToken = req.cookies?.refreshToken;
     if (!refreshToken) {
       throw AppError.badRequest('Refresh token is required');
     }
@@ -197,8 +352,9 @@ router.post('/refresh', async (req: Request, res: Response, next) => {
     const decoded = jwt.verify(refreshToken, env.JWT_REFRESH_SECRET) as any;
 
     // Check if refresh token exists in database
+    const refreshTokenHash = sha256Hex(refreshToken);
     const storedToken = await prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
+      where: { token: refreshTokenHash },
     });
 
     if (!storedToken || storedToken.expiresAt < new Date()) {
@@ -208,20 +364,38 @@ router.post('/refresh', async (req: Request, res: Response, next) => {
     // Delete old refresh token (rotation)
     await prisma.refreshToken.delete({ where: { id: storedToken.id } });
 
+    // Fetch user to ensure they are still active
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      include: { client: true }
+    });
+
+    if (!user) {
+      throw AppError.unauthorized('User not found');
+    }
+
+    if (user.role === 'CLIENT' && user.client) {
+      if (user.client.status === 'PAUSED' || user.client.status === 'CHURNED') {
+        throw AppError.unauthorized('Your account is currently inactive. Please contact support.');
+      }
+    }
+
     // Generate new tokens
     const tokenPayload = { 
-      userId: decoded.userId, 
-      email: decoded.email, 
-      role: decoded.role,
-      clientId: decoded.clientId,
-      company: decoded.company
+      userId: user.id, 
+      email: user.email, 
+      role: user.role,
+      clientId: user.client?.id,
+      company: user.client?.company,
+      mustChangePassword: !!user.mustChangePassword,
     };
     const newAccessToken = generateAccessToken(tokenPayload);
     const newRefreshToken = generateRefreshToken(tokenPayload);
 
+    const newRefreshTokenHash = sha256Hex(newRefreshToken);
     await prisma.refreshToken.create({
       data: {
-        token: newRefreshToken,
+        token: newRefreshTokenHash,
         userId: decoded.userId,
         expiresAt: getRefreshTokenExpiry(),
       },
@@ -247,7 +421,13 @@ router.post('/logout', authenticate, async (req: Request, res: Response, next) =
       where: { userId: req.user!.userId },
     });
 
-    res.clearCookie('refreshToken');
+    res.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
+      domain: env.COOKIE_DOMAIN,
+      path: '/',
+    });
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     next(error);
@@ -265,6 +445,7 @@ router.get('/me', authenticate, async (req: Request, res: Response, next) => {
         email: true,
         name: true,
         role: true,
+        mustChangePassword: true,
         client: {
           select: {
             id: true,
@@ -279,7 +460,12 @@ router.get('/me', authenticate, async (req: Request, res: Response, next) => {
       throw AppError.notFound('User not found');
     }
 
-    res.json({ user });
+    res.json({
+      user: {
+        ...user,
+        requiresPasswordChange: !!user.mustChangePassword,
+      },
+    });
   } catch (error) {
     next(error);
   }

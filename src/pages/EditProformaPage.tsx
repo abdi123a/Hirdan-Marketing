@@ -9,14 +9,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Save, Plus, Trash2, FileText } from "lucide-react";
 import { useAgencyStore, Proforma, InvoiceItem } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, parseCurrency } from "@/lib/utils";
 import { ClientSelector } from "@/components/ClientSelector";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
+import { Shield } from "lucide-react";
 
 export default function EditProformaPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { clients, proformas, updateProforma } = useAgencyStore();
+  const { clients, proformas, updateProforma, services, packages, fetchServices, fetchPackages } = useAgencyStore();
   const { toast } = useToast();
+
+  useEffect(() => {
+    fetchServices();
+    fetchPackages();
+  }, [fetchServices, fetchPackages]);
 
   const [form, setForm] = useState<Partial<Proforma>>({});
   const [items, setItems] = useState<InvoiceItem[]>([]);
@@ -24,8 +32,8 @@ export default function EditProformaPage() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    if (isLoaded) return;
-    const prof = proformas.find((p) => p.id === id);
+    if (isLoaded || proformas.length === 0) return;
+    const prof = proformas.find((p) => p.id === id || p._dbId === id);
     if (prof) {
       setForm(prof);
       setItems(prof.items && prof.items.length > 0 ? prof.items : [{ description: "", quantity: 1, unitPrice: 0 }]);
@@ -36,7 +44,7 @@ export default function EditProformaPage() {
     }
   }, [id, proformas, navigate, toast, isLoaded]);
 
-  const setField = (field: keyof Proforma, value: string | number) =>
+  const setField = <K extends keyof Proforma>(field: K, value: Proforma[K]) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
   const updateItem = (index: number, field: keyof InvoiceItem, value: string | number) => {
@@ -66,7 +74,13 @@ export default function EditProformaPage() {
     if (!validate() || !id) return;
     const totalStr = formatCurrency(total);
     try {
-      await updateProforma(id, { ...form, amount: totalStr, items });
+      let finalStatus = form.status;
+      if ((form.deposit || 0) > 0 && (form.deposit || 0) < total) {
+        finalStatus = 'Partially Paid';
+      } else if ((form.deposit || 0) >= total && total > 0) {
+        finalStatus = 'Accepted';
+      }
+      await updateProforma(id, { ...form, status: finalStatus, amount: totalStr, items });
       toast({ title: "Proforma updated!", description: `Proforma ${id} has been updated.` });
       navigate(`/dashboard/proforma/view/${id}`);
     } catch (e) {
@@ -145,6 +159,7 @@ export default function EditProformaPage() {
                       <SelectItem value="Draft">Draft</SelectItem>
                       <SelectItem value="Sent">Sent</SelectItem>
                       <SelectItem value="Accepted">Accepted</SelectItem>
+                      <SelectItem value="Partially Paid">Partially Paid</SelectItem>
                       <SelectItem value="Expired">Expired</SelectItem>
                     </SelectContent>
                   </Select>
@@ -188,9 +203,37 @@ export default function EditProformaPage() {
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base font-semibold">Line Items</CardTitle>
-                <Button size="sm" variant="outline" onClick={addItem} className="gap-1.5 h-8">
-                  <Plus className="h-3.5 w-3.5" /> Add Item
-                </Button>
+                <div className="flex items-center gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline" className="gap-1.5 h-8">
+                        <Plus className="h-3.5 w-3.5" /> Add from Inventory
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuLabel>Add Service</DropdownMenuLabel>
+                      {services.map(s => (
+                        <DropdownMenuItem key={s.id} onClick={() => {
+                          setItems(prev => [...prev, { description: s.name, quantity: 1, unitPrice: parseCurrency(s.basePrice) }]);
+                        }}>
+                          {s.name} ({s.basePrice})
+                        </DropdownMenuItem>
+                      ))}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel>Add Package</DropdownMenuLabel>
+                      {packages.map(p => (
+                        <DropdownMenuItem key={p.id} onClick={() => {
+                          setItems(prev => [...prev, { description: p.name, quantity: 1, unitPrice: parseCurrency(p.price) }]);
+                        }}>
+                          {p.name} ({p.price})
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button size="sm" variant="outline" onClick={addItem} className="gap-1.5 h-8">
+                    <Plus className="h-3.5 w-3.5" /> Custom Item
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -310,6 +353,38 @@ export default function EditProformaPage() {
               <div className="flex justify-between text-sm text-foreground border-t border-border/40 pt-2">
                 <span className="font-bold text-foreground">Balance Due</span>
                 <span className="font-bold text-lg text-primary">{formatCurrency(balanceDue)}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-card border-border">
+            <CardHeader className="pb-3 px-5">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Shield className="h-4 w-4 text-primary" /> Document Seals
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-5 pb-5 space-y-4">
+              <div className="flex items-center justify-between group p-2 hover:bg-muted/50 rounded-lg transition-all">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-bold cursor-pointer" htmlFor="show-signature">Authorized Signature</Label>
+                  <p className="text-[10px] text-muted-foreground">Show signature at the bottom</p>
+                </div>
+                <Switch 
+                  id="show-signature" 
+                  checked={form.showSignature ?? true} 
+                  onCheckedChange={(val) => setField("showSignature", val)} 
+                />
+              </div>
+              <div className="flex items-center justify-between group p-2 hover:bg-muted/50 rounded-lg transition-all">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-bold cursor-pointer" htmlFor="show-stamp">Company Stamp</Label>
+                  <p className="text-[10px] text-muted-foreground">Show stamp on the document</p>
+                </div>
+                <Switch 
+                  id="show-stamp" 
+                  checked={form.showStamp ?? true} 
+                  onCheckedChange={(val) => setField("showStamp", val)} 
+                />
               </div>
             </CardContent>
           </Card>

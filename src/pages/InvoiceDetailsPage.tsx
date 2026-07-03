@@ -107,15 +107,18 @@ export default function InvoiceDetailsPage() {
 
   const statusColor = (s: string) =>
     s === 'Paid' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+      s === 'Partially Paid' ? "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" :
       s === 'Overdue' ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
         "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
 
   const statusAccent =
     invoice.status === "Paid"
       ? "text-emerald-600"
-      : invoice.status === "Overdue"
-        ? "text-red-600"
-        : "text-amber-600";
+      : invoice.status === "Partially Paid"
+        ? "text-teal-600"
+        : invoice.status === "Overdue"
+          ? "text-red-600"
+          : "text-amber-600";
 
   return (
     <div className="space-y-6 max-w-[1400px] animate-in fade-in duration-500 mx-auto">
@@ -158,7 +161,12 @@ export default function InvoiceDetailsPage() {
           <div className="flex flex-wrap items-center gap-2 justify-start lg:justify-end">
             <Button
               variant="outline"
-              onClick={() => setTimeout(() => window.print(), 50)}
+              onClick={() => {
+                // #region agent log
+                fetch('http://127.0.0.1:7891/ingest/c6d26856-ebcd-4639-9d6e-816efcb76a2c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1b217a'},body:JSON.stringify({sessionId:'1b217a',runId:'pre-fix',hypothesisId:'H7',location:'src/pages/InvoiceDetailsPage.tsx:166',message:'Print invoice initiated',data:{invoiceId:invoice.id,route:window.location.pathname},timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
+                setTimeout(() => window.print(), 50);
+              }}
               className="h-10 px-4 gap-2 rounded-xl"
             >
               <Printer className="h-4 w-4" /> Print / Save PDF

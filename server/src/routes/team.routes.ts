@@ -5,6 +5,7 @@ import { AppError } from '../lib/errors.js';
 
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
+import { parsePagination } from '../lib/pagination.js';
 
 const teamDtoSchema = z.object({
   name: z.string().min(1),
@@ -27,8 +28,11 @@ router.use(requireAdmin);
 
 router.get('/', async (_req: Request, res: Response, next) => {
   try {
+    const { take, skip } = parsePagination(_req.query, { maxTake: 200, defaultTake: 50 });
     const team = await prisma.teamMember.findMany({
       orderBy: { createdAt: 'desc' },
+      take,
+      skip,
       include: {
         _count: { select: { projects: true } },
       },

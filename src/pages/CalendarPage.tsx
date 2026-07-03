@@ -20,7 +20,7 @@ import {
 const typeColor = (t: string) =>
   t === "Deadline" ? "bg-red-100 text-red-700 border-red-200" :
   t === "Invoice" ? "bg-amber-100 text-amber-700 border-amber-200" :
-  t === "Renewal" ? "bg-blue-100 text-blue-700 border-blue-200" :
+  t === "Subscription End" ? "bg-blue-100 text-blue-700 border-blue-200" :
   "bg-primary/10 text-primary border-primary/20";
 
 const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -60,8 +60,8 @@ export default function CalendarPage() {
     });
 
     subscriptions.forEach(s => {
-      if (s.renewal && s.renewal !== 'N/A' && s.status === 'Active') {
-        allEvents.push({ id: `sub-${s.id}`, title: `Plan Renewal - ${s.plan}`, subtitle: s.client, date: s.renewal, type: "Renewal" });
+      if (s.endDate && s.endDate !== 'N/A' && s.status === 'Active') {
+        allEvents.push({ id: `sub-${s.id}`, title: `Subscription End - ${s.plan}`, subtitle: s.client, date: s.endDate, type: "Subscription End" });
       }
     });
 
@@ -125,7 +125,7 @@ export default function CalendarPage() {
               <FileText className="h-4 w-4" /> Invoice Date
             </DropdownMenuItem>
             <DropdownMenuItem className="gap-2 cursor-pointer" onClick={() => navigate("/dashboard/subscriptions/add")}>
-              <Layers className="h-4 w-4" /> Renewal Reminder
+              <Layers className="h-4 w-4" /> Subscription End Reminder
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

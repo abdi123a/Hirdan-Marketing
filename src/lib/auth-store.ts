@@ -27,6 +27,7 @@ export interface ClientUser {
   name: string;
   company: string;
   clientId: string;
+  requiresPasswordChange?: boolean;
 }
 
 export type AuthUser = AdminUser | ManagerUser | StaffUser | ClientUser;
@@ -36,13 +37,14 @@ interface AuthStore {
   isAuthenticated: boolean;
   token: string | null;
 
-  loginAdmin: (email: string, password: string) => Promise<boolean>;
-  loginClient: (email: string, accessCode: string) => Promise<boolean>;
+  loginAdmin: (email: string, password: string, recaptchaToken?: string) => Promise<{ success: boolean; message?: string }>;
+  loginClient: (email: string, password: string, recaptchaToken?: string) => Promise<boolean>;
   setToken: (accessToken: string) => void;
+  setClientPasswordChangeRequired: (required: boolean) => void;
   logout: () => void;
 }
 
-const API_URL = '/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export const useAuthStore = create<AuthStore>()(
   persist(
@@ -55,13 +57,25 @@ export const useAuthStore = create<AuthStore>()(
         set({ token: accessToken });
       },
 
-      loginAdmin: async (email: string, password: string) => {
+      setClientPasswordChangeRequired: (required: boolean) => {
+        set((state) => {
+          if (!state.user || state.user.role !== 'client') return state;
+          return {
+            user: {
+              ...state.user,
+              requiresPasswordChange: required,
+            },
+          };
+        });
+      },
+
+      loginAdmin: async (email: string, password: string, recaptchaToken?: string) => {
         try {
           const res = await fetch(`${API_URL}/auth/login`, {
             method: 'POST',
             credentials: 'include', // Needed for cookies
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password }),
+            body: JSON.stringify({ email, password, recaptchaToken }),
           });
           const data = await res.json();
           if (res.ok && data.accessToken) {
@@ -74,21 +88,22 @@ export const useAuthStore = create<AuthStore>()(
               isAuthenticated: true,
               token: data.accessToken,
             });
-            return true;
+            return { success: true };
           }
+          return { success: false, message: data.message };
         } catch (error) {
           console.error("Admin login failed:", error);
+          return { success: false, message: 'An unexpected error occurred. Please try again.' };
         }
-        return false;
       },
 
-      loginClient: async (email: string, accessCode: string) => {
+      loginClient: async (email: string, password: string, recaptchaToken?: string) => {
         try {
           const res = await fetch(`${API_URL}/auth/client-login`, {
             method: 'POST',
             credentials: 'include', // Needed for cookies
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, accessCode }),
+            body: JSON.stringify({ email, password, recaptchaToken }),
           });
           const data = await res.json();
           if (res.ok && data.accessToken) {
@@ -99,6 +114,7 @@ export const useAuthStore = create<AuthStore>()(
                 name: data.user.name,
                 company: data.user.company,
                 clientId: data.user.clientId,
+                requiresPasswordChange: !!data.user.requiresPasswordChange,
               },
               isAuthenticated: true,
               token: data.accessToken,

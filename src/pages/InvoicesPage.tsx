@@ -49,23 +49,48 @@ export default function InvoicesPage() {
   );
 
   const stats = useMemo(() => {
-    const getInvoiceTotalDue = (i: Invoice) => {
-      const rate = i.taxRate ?? settings.taxRate ?? 0;
+    const getInvoiceTotal = (i: Invoice) => {
+      let subtotal = 0;
       if (i.items?.length) {
-        const subtotal = sumItems(i.items);
-        return subtotal + (subtotal * rate) / 100;
+        subtotal = sumItems(i.items);
+      } else {
+        return parseAmountNumber(i.amount);
       }
-      // Fallback aligns with PremiumInvoice: when items are missing, treat `amount` as total due.
-      return parseAmountNumber(i.amount);
+      const rate = i.taxRate ?? settings.taxRate ?? 0;
+      const tax = (subtotal * rate) / 100;
+      const discountAmount = i.discountType === 'percentage'
+        ? (subtotal * (i.discount || 0) / 100)
+        : (i.discount || 0);
+      return subtotal + tax - discountAmount;
     };
 
-    const totalPaid = invoices.filter(i => i.status === 'Paid').reduce((sum, i) => sum + getInvoiceTotalDue(i), 0);
-    const totalPending = invoices.filter(i => i.status === 'Pending').reduce((sum, i) => sum + getInvoiceTotalDue(i), 0);
-    const totalOverdue = invoices.filter(i => i.status === 'Overdue').reduce((sum, i) => sum + getInvoiceTotalDue(i), 0);
+    const totalPaidVal = invoices.reduce((sum, i) => {
+      const total = getInvoiceTotal(i);
+      if (i.status === 'Paid') return sum + total;
+      if (i.status === 'Partially Paid') return sum + (i.deposit || 0);
+      return sum;
+    }, 0);
+
+    const totalPendingVal = invoices
+      .filter(i => i.status === 'Pending' || (i.status === 'Partially Paid' && !(new Date(i.dueDate) < new Date())))
+      .reduce((sum, i) => {
+        const total = getInvoiceTotal(i);
+        const paid = i.status === 'Partially Paid' ? (i.deposit || 0) : 0;
+        return sum + (total - paid);
+      }, 0);
+
+    const totalOverdueVal = invoices
+      .filter(i => i.status === 'Overdue' || (i.status === 'Partially Paid' && new Date(i.dueDate) < new Date()))
+      .reduce((sum, i) => {
+        const total = getInvoiceTotal(i);
+        const paid = i.status === 'Partially Paid' ? (i.deposit || 0) : 0;
+        return sum + (total - paid);
+      }, 0);
+
     return [
-      { label: "Paid", value: formatCurrency(totalPaid), count: invoices.filter(i => i.status === 'Paid').length, color: "text-emerald-600" },
-      { label: "Pending", value: formatCurrency(totalPending), count: invoices.filter(i => i.status === 'Pending').length, color: "text-amber-600" },
-      { label: "Overdue", value: formatCurrency(totalOverdue), count: invoices.filter(i => i.status === 'Overdue').length, color: "text-red-600" },
+      { label: "Paid", value: formatCurrency(totalPaidVal), count: invoices.filter(i => i.status === 'Paid' || i.status === 'Partially Paid').length, color: "text-emerald-600" },
+      { label: "Pending", value: formatCurrency(totalPendingVal), count: invoices.filter(i => i.status === 'Pending').length, color: "text-amber-600" },
+      { label: "Overdue", value: formatCurrency(totalOverdueVal), count: invoices.filter(i => i.status === 'Overdue').length, color: "text-red-600" },
     ];
   }, [invoices, settings.taxRate]);
 
@@ -78,21 +103,48 @@ export default function InvoicesPage() {
     setActiveInvoice(inv);
     setIsDownloading(true);
 
-    toast({ title: "Processing PDF", description: "Generating your high-quality invoice..." });
+    toast({ title: "Processing PDF", description: "Generating your invoice..." });
 
     // Small delay to ensure the hidden component renders
     setTimeout(async () => {
       if (!pdfRef.current) return;
 
       try {
-        const canvas = await html2canvas(pdfRef.current, {
-          scale: 2, // Higher quality
+        const element = pdfRef.current.querySelector('.print-content') as HTMLElement || pdfRef.current;
+        
+        // Wait for all images in the target to be fully loaded
+        const images = Array.from(element.querySelectorAll('img'));
+        await Promise.all(
+          images.map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise(resolve => {
+              img.onload = resolve;
+              img.onerror = resolve;
+            });
+          })
+        );
+
+        const captureScale = 3;
+        const jpegQuality = 0.95;
+        
+        const canvas = await html2canvas(element, {
+          scale: captureScale, 
           useCORS: true,
           logging: false,
           backgroundColor: "#ffffff",
+          width: 794,
+          height: element.scrollHeight,
+          onclone: (clonedDoc) => {
+            const el = clonedDoc.querySelector('.print-content') as HTMLElement;
+            if (el) {
+              el.style.width = '794px';
+              el.style.margin = '0';
+              el.style.padding = '0';
+            }
+          }
         });
 
-        const imgData = canvas.toDataURL("image/png");
+        const imgData = canvas.toDataURL("image/jpeg", jpegQuality);
         const pdf = new jsPDF({
           orientation: "portrait",
           unit: "mm",
@@ -100,10 +152,29 @@ export default function InvoicesPage() {
         });
 
         const imgProps = pdf.getImageProperties(imgData);
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        const pdfWidth = 210;
+        const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
+        const pageHeight = 297;
+        
+        let heightLeft = pdfHeightRatio;
+        let position = 0;
 
-        pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+        // If it's roughly one page, fill the full A4 to ensure footer is at the bottom
+        if (pdfHeightRatio <= 300) {
+          pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
+        } else {
+          pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
+          heightLeft -= pageHeight;
+
+          // Threshold of 10mm to avoid an empty final page from minor layout overflows
+          while (heightLeft > 10) {
+            position = heightLeft - pdfHeightRatio;
+            pdf.addPage();
+            pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
+            heightLeft -= pageHeight;
+          }
+        }
+
         pdf.save(`${inv.id}.pdf`);
 
         toast({ title: "PDF Downloaded", description: `${inv.id}.pdf has been saved.` });
@@ -118,7 +189,7 @@ export default function InvoicesPage() {
         setIsDownloading(false);
         setActiveInvoice(null);
       }
-    }, 500);
+    }, 1200);
   };
 
   return (
@@ -148,13 +219,13 @@ export default function InvoicesPage() {
 
       <Card className="shadow-card border-border">
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-lg font-semibold">All Invoices ({filtered.length})</CardTitle>
-            <div className="relative">
+            <div className="relative w-full sm:w-56 shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search invoices..."
-                className="pl-9 w-56 bg-muted border-0"
+                className="pl-9 w-full bg-muted border-0"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -169,7 +240,7 @@ export default function InvoicesPage() {
                 <TableHead>Client</TableHead>
                 <TableHead className="hidden sm:table-cell">Date</TableHead>
                 <TableHead className="hidden md:table-cell">Due Date</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="text-right">Balance Due</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
@@ -199,12 +270,19 @@ export default function InvoicesPage() {
                   <TableCell className="text-right font-semibold text-foreground">
                     {formatCurrency(
                       (() => {
-                        const rate = inv.taxRate ?? settings.taxRate ?? 0;
+                        let subtotal = 0;
                         if (inv.items?.length) {
-                          const subtotal = sumItems(inv.items);
-                          return subtotal + (subtotal * rate) / 100;
+                          subtotal = sumItems(inv.items);
+                        } else {
+                          return parseAmountNumber(inv.amount) - (inv.deposit || 0);
                         }
-                        return parseAmountNumber(inv.amount);
+                        const rate = inv.taxRate ?? settings.taxRate ?? 0;
+                        const tax = (subtotal * rate) / 100;
+                        const discountAmt = inv.discountType === 'percentage'
+                          ? (subtotal * (inv.discount || 0) / 100)
+                          : (inv.discount || 0);
+                        const total = subtotal + tax - discountAmt;
+                        return total - (inv.deposit || 0);
                       })()
                     )}
                   </TableCell>

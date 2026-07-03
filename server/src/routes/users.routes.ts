@@ -5,13 +5,21 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { AppError } from '../lib/errors.js';
+import { parsePagination } from '../lib/pagination.js';
 
 const router = Router();
+
+const passwordSchema = z.string()
+  .min(8, 'Password must be at least 8 characters')
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+  .regex(/[0-9]/, 'Password must contain at least one number')
+  .regex(/[\W_]/, 'Password must contain at least one special character');
 
 const userSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
-  password: z.string().min(6).optional(),
+  password: passwordSchema.optional(),
   role: z.enum(['ADMIN', 'MANAGER', 'STAFF', 'CLIENT']),
   teamMemberId: z.string().optional().nullable(),
   clientId: z.string().optional().nullable(),
@@ -23,6 +31,7 @@ router.use(requireAdmin);
 // ─── GET /api/users ───────────────────────────────────────────────
 router.get('/', async (_req: Request, res: Response, next) => {
   try {
+    const { take, skip } = parsePagination(_req.query, { maxTake: 100, defaultTake: 50 });
     const users = await prisma.user.findMany({
       include: {
         teamMember: {
@@ -40,6 +49,8 @@ router.get('/', async (_req: Request, res: Response, next) => {
         }
       },
       orderBy: { createdAt: 'desc' },
+      take,
+      skip,
     });
     res.json({ users });
   } catch (error) {
@@ -48,7 +59,7 @@ router.get('/', async (_req: Request, res: Response, next) => {
 });
 
 // ─── POST /api/users ──────────────────────────────────────────────
-router.post('/', validate({ body: userSchema.extend({ password: z.string().min(6) }) }), async (req: Request, res: Response, next) => {
+router.post('/', validate({ body: userSchema.extend({ password: passwordSchema }) }), async (req: Request, res: Response, next) => {
   try {
     const { name, email, password, role, teamMemberId, clientId } = req.body;
 
@@ -57,7 +68,7 @@ router.post('/', validate({ body: userSchema.extend({ password: z.string().min(6
       throw AppError.badRequest('Email already in use');
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 12);
 
     const user = await prisma.user.create({
       data: {
@@ -106,7 +117,7 @@ router.put('/:id', validate({ body: userSchema.partial() }), async (req: Request
     if (role !== undefined) data.role = role;
     
     if (password) {
-      data.passwordHash = await bcrypt.hash(password, 10);
+      data.passwordHash = await bcrypt.hash(password, 12);
     }
 
     if (teamMemberId !== undefined) {

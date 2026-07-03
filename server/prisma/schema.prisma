@@ -4,19 +4,23 @@ generator client {
 
 datasource db {
   provider = "mysql"
-  url      = "mysql://root:password@localhost:3306/agency_flow_pro"
+  url      = env("DATABASE_URL")
 }
 
 model User {
   id            String         @id @default(uuid())
   email         String         @unique
+  username      String?        @unique
   passwordHash  String         @map("password_hash")
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
   role          UserRole       @default(CLIENT)
   name          String
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @updatedAt @map("updated_at")
   client        Client?
   teamMember    TeamMember?
+  monthlyReports         MonthlyReport[]        @relation("MonthlyReportCreatedBy")
+  monthlyReportVersions  MonthlyReportVersion[] @relation("MonthlyReportVersionCreatedBy")
   refreshTokens RefreshToken[]
 
   @@map("users")
@@ -24,6 +28,7 @@ model User {
 
 model RefreshToken {
   id        String   @id @default(uuid())
+  // Stored as SHA-256 hex of the JWT refresh token (never store raw tokens)
   token     String   @unique @db.VarChar(512)
   userId    String   @map("user_id")
   expiresAt DateTime @map("expires_at")
@@ -52,11 +57,16 @@ model Client {
   initials      String?
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @updatedAt @map("updated_at")
-  user          User?          @relation(fields: [userId], references: [id])
-  invoices      Invoice[]
-  proformas     Proforma[]
-  projects      Project[]
-  subscriptions Subscription[]
+  user             User?                @relation(fields: [userId], references: [id])
+  invoices         Invoice[]
+  proformas        Proforma[]
+  projects         Project[]
+  subscriptions    Subscription[]
+  socialProfiles   ClientSocialProfile[]
+  documents        ClientDocument[]
+  deliverableTasks DeliverableTask[]
+  contentPosts     ContentPost[]
+  monthlyReports   MonthlyReport[]
 
   @@index([email])
   @@index([company])
@@ -117,8 +127,9 @@ model TeamMember {
   bio        String?             @db.Text
   createdAt  DateTime            @default(now()) @map("created_at")
   updatedAt  DateTime            @updatedAt @map("updated_at")
-  projects   ProjectTeamMember[]
-  user       User?               @relation(fields: [userId], references: [id])
+  projects      ProjectTeamMember[]
+  user          User?               @relation(fields: [userId], references: [id])
+  assignedTasks DeliverableTask[]
 
   @@map("team_members")
 }
@@ -140,6 +151,8 @@ model Invoice {
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   items              InvoiceItem[]
+  showSignature      Boolean             @default(true) @map("show_signature")
+  showStamp          Boolean             @default(true) @map("show_stamp")
   client             Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
   verificationTokens VerificationToken[]
 
@@ -176,6 +189,8 @@ model Proforma {
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   items              ProformaItem[]
+  showSignature      Boolean             @default(true) @map("show_signature")
+  showStamp          Boolean             @default(true) @map("show_stamp")
   client             Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
   verificationTokens VerificationToken[]
 
@@ -202,15 +217,18 @@ model Subscription {
   plan         String
   amount       Int
   billingCycle BillingCycle       @default(MONTHLY) @map("billing_cycle")
-  started      DateTime
-  renewal      DateTime?
+  startDate    DateTime           @default(now()) @map("start_date")
+  endDate      DateTime?          @map("end_date")
   status       SubscriptionStatus @default(ACTIVE)
   features     String?            @db.Text
   notes        String?            @db.Text
   createdAt    DateTime           @default(now()) @map("created_at")
   updatedAt    DateTime           @updatedAt @map("updated_at")
-  client       Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  package      Package?           @relation(fields: [packageId], references: [id])
+  client           Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  package          Package?           @relation(fields: [packageId], references: [id])
+  cycles           SubscriptionCycle[]
+  deliverableTasks DeliverableTask[]
+  verificationTokens VerificationToken[]
 
   @@index([clientId])
   @@index([packageId])
@@ -228,6 +246,7 @@ model Package {
   updatedAt       DateTime         @updatedAt @map("updated_at")
   packageServices PackageService[]
   subscriptions   Subscription[]
+  deliverables    PackageDeliverable[]
 
   @@map("packages")
 }
@@ -264,12 +283,20 @@ model VerificationToken {
   documentType String    @map("document_type")
   invoiceId    String?   @map("invoice_id")
   proformaId   String?   @map("proforma_id")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  invoice      Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  proforma     Proforma? @relation(fields: [proformaId], references: [id], onDelete: Cascade)
+  subscriptionId  String?         @map("subscription_id")
+  monthlyReportId String?         @map("monthly_report_id")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  expiresAt       DateTime        @default(dbgenerated("(DATE_ADD(NOW(), INTERVAL 365 DAY))")) @map("expires_at")
+  revokedAt       DateTime?       @map("revoked_at")
+  invoice         Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  proforma        Proforma?       @relation(fields: [proformaId], references: [id], onDelete: Cascade)
+  subscription    Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  monthlyReport   MonthlyReport?  @relation(fields: [monthlyReportId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
   @@index([proformaId])
+  @@index([subscriptionId])
+  @@index([monthlyReportId])
   @@map("verification_tokens")
 }
 
@@ -291,6 +318,12 @@ model AgencySettings {
   paymentMethods      String?  @map("payment_methods") @db.LongText
   socialLinks         String?  @map("social_links") @db.LongText
   notifications       String?  @db.LongText
+  signature           String?  @map("signature") @db.LongText
+  stamp               String?  @map("stamp") @db.LongText
+  enableRecaptcha     Boolean  @default(false) @map("enable_recaptcha")
+  recaptchaSiteKey    String?  @map("recaptcha_site_key")
+  recaptchaSecretKey  String?  @map("recaptcha_secret_key")
+  openAiApiKey        String?  @map("open_ai_api_key")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -342,6 +375,7 @@ enum MemberStatus {
 
 enum InvoiceStatus {
   PAID
+  PARTIALLY_PAID
   PENDING
   OVERDUE
 }
@@ -355,6 +389,7 @@ enum ProformaStatus {
   DRAFT
   SENT
   ACCEPTED
+  PARTIALLY_PAID
   EXPIRED
 }
 
@@ -380,4 +415,302 @@ enum PackageType {
 enum ServiceStatus {
   AVAILABLE
   UNAVAILABLE
+}
+
+// ─── Social Media Module Enums ────────────────────────────────────
+
+enum SocialPlatform {
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+  LINKEDIN
+  X
+  SNAPCHAT
+  YOUTUBE
+  PINTEREST
+  OTHER
+}
+
+enum DeliverableType {
+  POST
+  STORY
+  REEL
+  SHORT
+  VIDEO
+  REPORT
+  OTHER
+}
+
+enum TaskStatus {
+  PENDING
+  PLANNED
+  IN_PROGRESS
+  WAITING_APPROVAL
+  COMPLETED
+  CANCELLED
+}
+
+enum DocumentType {
+  CONTRACT
+  REPORT
+  ONBOARDING
+  BRAND_GUIDE
+  CONTENT_CALENDAR
+  OTHER
+}
+
+enum MonthlyReportStatus {
+  DRAFT
+  FINALIZED
+}
+
+// ─── Social Media Module Models ───────────────────────────────────
+
+/// Client's connected social media accounts
+model ClientSocialProfile {
+  id         String         @id @default(uuid())
+  clientId   String         @map("client_id")
+  platform   SocialPlatform
+  handle     String?
+  profileUrl String?        @map("profile_url")
+  notes      String?        @db.Text
+  isActive   Boolean        @default(true) @map("is_active")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, platform])
+  @@map("client_social_profiles")
+}
+
+/// Uploaded documents, contracts, and reports for a client
+model ClientDocument {
+  id            String       @id @default(uuid())
+  clientId      String       @map("client_id")
+  title         String
+  type          DocumentType @default(OTHER)
+  fileUrl       String       @map("file_url")
+  internalNotes String?      @map("internal_notes") @db.Text
+  clientNotes   String?      @map("client_notes") @db.Text
+  expiryDate    DateTime?    @map("expiry_date")
+  isSigned      Boolean      @default(false) @map("is_signed")
+  clientVisible Boolean      @default(true) @map("client_visible")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@map("client_documents")
+}
+
+/// Template deliverable definition on a package (e.g. "4x Instagram Reels per month")
+model PackageDeliverable {
+  id          String          @id @default(uuid())
+  packageId   String          @map("package_id")
+  name        String
+  type        DeliverableType
+  quantity    Int
+  description String?         @db.Text
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  package   Package              @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  platforms DeliverablePlatform[]
+
+  @@index([packageId])
+  @@map("package_deliverables")
+}
+
+/// Join table: which platforms a PackageDeliverable targets (avoids JSON storage)
+model DeliverablePlatform {
+  id             String         @id @default(uuid())
+  deliverableId  String         @map("deliverable_id")
+  platform       SocialPlatform
+
+  deliverable PackageDeliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+
+  @@unique([deliverableId, platform])
+  @@map("deliverable_platforms")
+}
+
+/// A real billing cycle for a subscription (e.g. Mar 1 – Mar 31, 2026)
+model SubscriptionCycle {
+  id             String   @id @default(uuid())
+  subscriptionId String   @map("subscription_id")
+  cycleStart     DateTime @map("cycle_start")
+  cycleEnd       DateTime @map("cycle_end")
+  label          String   // e.g. "March 2026"
+  tasksGenerated Boolean  @default(false) @map("tasks_generated")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  subscription     Subscription    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  deliverableTasks DeliverableTask[]
+
+  @@unique([subscriptionId, cycleStart])
+  @@index([subscriptionId])
+  @@map("subscription_cycles")
+}
+
+/// Actual content task for a specific cycle (generated from PackageDeliverable)
+model DeliverableTask {
+  id             String          @id @default(uuid())
+  clientId       String          @map("client_id")
+  subscriptionId String          @map("subscription_id")
+  cycleId        String          @map("cycle_id")
+  contentPostId  String?         @map("content_post_id")
+  title          String
+  type           DeliverableType
+  dueDate        DateTime?       @map("due_date")
+  status         TaskStatus      @default(PENDING)
+  teamMemberId   String?         @map("team_member_id")
+
+  // Separated notes: internal vs client-visible
+  internalNotes  String?         @map("internal_notes") @db.Text
+  clientNotes    String?         @map("client_notes") @db.Text
+
+  // Post tracking
+  mediaUrl       String?         @map("media_url")
+  postUrl        String?         @map("post_url")
+  postedAt       DateTime?       @map("posted_at")
+  proofUrl       String?         @map("proof_url")
+
+  clientVisible  Boolean         @default(true) @map("client_visible")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  client       Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  subscription Subscription      @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  cycle        SubscriptionCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  contentPost  ContentPost?      @relation(fields: [contentPostId], references: [id], onDelete: SetNull)
+  assignee     TeamMember?       @relation(fields: [teamMemberId], references: [id], onDelete: SetNull)
+  platforms    TaskPlatform[]
+
+  @@index([clientId])
+  @@index([subscriptionId])
+  @@index([cycleId])
+  @@index([contentPostId])
+  @@index([teamMemberId])
+  @@map("deliverable_tasks")
+}
+
+/// Join table: which platforms a task targets (avoids JSON storage)
+model TaskPlatform {
+  id       String         @id @default(uuid())
+  taskId   String         @map("task_id")
+  platform SocialPlatform
+
+  task DeliverableTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, platform])
+  @@map("task_platforms")
+}
+
+// ─── Monthly Content Planner ──────────────────────────────────────
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  FILMED
+  PUBLISHED
+  DELAYED
+}
+
+/// A single planned content post for a client's monthly social media calendar
+model ContentPost {
+  id            String         @id @default(uuid())
+  clientId      String         @map("client_id")
+  month         Int            // 1–12
+  year          Int
+  title         String
+  platform      SocialPlatform
+  status        PostStatus     @default(DRAFT)
+  shootingDate  DateTime?      @map("shooting_date")
+  publishDate   DateTime?      @map("publish_date")
+  notes         String?        @db.Text
+  attachmentUrl String?        @map("attachment_url")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  linkedTasks DeliverableTask[]
+
+  @@index([clientId])
+  @@index([clientId, month, year])
+  @@map("content_posts")
+}
+
+model MonthlyReport {
+  id            String              @id @default(uuid())
+  clientId      String              @map("client_id")
+  month         Int
+  year          Int
+  title         String
+  status        MonthlyReportStatus @default(DRAFT)
+  sourceText    String              @map("source_text") @db.LongText
+  dataQuality   String?             @map("data_quality") @db.LongText
+  themeSnapshot String?             @map("theme_snapshot") @db.LongText
+  createdById   String?             @map("created_by_id")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+
+  client    Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdBy User?                  @relation("MonthlyReportCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  sections  MonthlyReportSection[]
+  assets    MonthlyReportAsset[]
+  versions  MonthlyReportVersion[]
+  verificationTokens VerificationToken[]
+
+  @@unique([clientId, month, year])
+  @@index([createdById])
+  @@map("monthly_reports")
+}
+
+model MonthlyReportSection {
+  id        String   @id @default(uuid())
+  reportId  String   @map("report_id")
+  key       String
+  order     Int
+  content   Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  report MonthlyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, key])
+  @@index([reportId, order])
+  @@map("monthly_report_sections")
+}
+
+model MonthlyReportAsset {
+  id         String   @id @default(uuid())
+  reportId   String   @map("report_id")
+  sectionKey String   @map("section_key")
+  slotKey    String   @map("slot_key")
+  url        String   @db.LongText
+  caption    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  report MonthlyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, sectionKey, slotKey])
+  @@index([reportId])
+  @@map("monthly_report_assets")
+}
+
+model MonthlyReportVersion {
+  id           String   @id @default(uuid())
+  reportId     String   @map("report_id")
+  snapshotJson Json     @map("snapshot_json")
+  createdById  String?  @map("created_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  report    MonthlyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  createdBy User?         @relation("MonthlyReportVersionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([reportId, createdAt])
+  @@index([createdById])
+  @@map("monthly_report_versions")
 }

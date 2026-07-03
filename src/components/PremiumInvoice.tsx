@@ -2,8 +2,10 @@ import { QRCodeSVG } from "qrcode.react";
 import { useAgencyStore } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { deriveSubtotalFromTotal, parseAmountNumber, sumItems } from "@/lib/money";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
+import { ProtectedBrandingImage } from "./ProtectedBrandingImage";
+ 
 interface InvoiceItem {
   description: string;
   quantity: number;
@@ -28,6 +30,8 @@ interface PremiumInvoiceProps {
     paymentMethod?: string;
     amount?: string | number;
     status?: string;
+    showSignature?: boolean;
+    showStamp?: boolean;
   };
   settings: {
     agencyName: string;
@@ -40,11 +44,16 @@ interface PremiumInvoiceProps {
     currency: string;
     timezone: string;
     primaryColor?: string;
+    signature?: string;
+    stamp?: string;
   };
   showSignature?: boolean;
+  showStamp?: boolean;
 }
 
-export function PremiumInvoice({ type, data, settings, showSignature = true }: PremiumInvoiceProps) {
+export function PremiumInvoice({ type, data, settings, showSignature: propShowSignature, showStamp: propShowStamp }: PremiumInvoiceProps) {
+  const showSignature = propShowSignature ?? data.showSignature ?? true;
+  const showStamp = propShowStamp ?? data.showStamp ?? true;
   const { getVerificationToken } = useAgencyStore();
 
   const taxRate = data.taxRate ?? 0;
@@ -80,6 +89,9 @@ export function PremiumInvoice({ type, data, settings, showSignature = true }: P
   const documentType = type === 'Invoice' ? 'invoice' : 'proforma';
 
   const [verificationToken, setVerificationToken] = useState<string>('');
+  const phoneRowRef = useRef<HTMLDivElement | null>(null);
+  const phoneIconRef = useRef<SVGSVGElement | null>(null);
+  const phoneTextRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
     const fetchToken = async () => {
@@ -92,6 +104,27 @@ export function PremiumInvoice({ type, data, settings, showSignature = true }: P
   const verificationUrl = verificationToken
     ? `${window.location.origin}/verify/${verificationToken}`
     : '';
+
+  useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7891/ingest/c6d26856-ebcd-4639-9d6e-816efcb76a2c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1b217a'},body:JSON.stringify({sessionId:'1b217a',runId:'pre-fix',hypothesisId:'H6',location:'src/components/PremiumInvoice.tsx:107',message:'PremiumInvoice rendered',data:{docType:type,hasPhone:!!settings.phone,hasEmail:!!settings.adminEmail,hasWebsite:!!settings.website,userAgent:typeof navigator!=='undefined'?navigator.userAgent:'unknown'},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+  }, [type, settings.phone, settings.adminEmail, settings.website]);
+
+  useEffect(() => {
+    if (!settings.phone || !phoneRowRef.current || !phoneIconRef.current || !phoneTextRef.current) return;
+    const rowRect = phoneRowRef.current.getBoundingClientRect();
+    const iconRect = phoneIconRef.current.getBoundingClientRect();
+    const textRect = phoneTextRef.current.getBoundingClientRect();
+    const iconCenter = iconRect.top + iconRect.height / 2;
+    const textCenter = textRect.top + textRect.height / 2;
+    const textStyle = window.getComputedStyle(phoneTextRef.current);
+    const iconStyle = window.getComputedStyle(phoneIconRef.current);
+
+    // #region agent log
+    fetch('http://127.0.0.1:7891/ingest/c6d26856-ebcd-4639-9d6e-816efcb76a2c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1b217a'},body:JSON.stringify({sessionId:'1b217a',runId:'pre-fix',hypothesisId:'H1',location:'src/components/PremiumInvoice.tsx:110',message:'Footer phone row layout metrics',data:{docType:type,hasPhone:!!settings.phone,rowHeight:rowRect.height,iconHeight:iconRect.height,textHeight:textRect.height,iconCenterOffsetToTextCenter:Math.round((iconCenter-textCenter)*100)/100,rowAlignItems:window.getComputedStyle(phoneRowRef.current).alignItems,textLineHeight:textStyle.lineHeight,textFontSize:textStyle.fontSize,iconDisplay:iconStyle.display,iconVerticalAlign:iconStyle.verticalAlign},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+  }, [settings.phone, type]);
 
   // Brand Colors
   const primaryColor = settings.primaryColor || '#504188'; // Default Deep Purple
@@ -134,10 +167,10 @@ export function PremiumInvoice({ type, data, settings, showSignature = true }: P
         width: '140%',
       }}>
         {settings.logo ? (
-          <img
+          <ProtectedBrandingImage
             src={settings.logo}
             alt="watermark"
-            style={{ width: '100%', maxWidth: '900px', height: 'auto', filter: 'grayscale(100%)' }}
+            style={{ width: '100%', height: 'auto', filter: 'grayscale(100%)', opacity: 1 }}
           />
         ) : (
           <div style={{
@@ -163,13 +196,10 @@ export function PremiumInvoice({ type, data, settings, showSignature = true }: P
 
           <div style={{ flex: 1 }}>
             {settings.logo ? (
-              <img
+              <ProtectedBrandingImage
                 src={settings.logo}
                 alt={settings.agencyName}
-                style={{
-                  height: '72px', width: 'auto', objectFit: 'contain',
-                  maxWidth: '250px', marginBottom: '16px'
-                }}
+                style={{ height: '72px', width: 'auto', objectFit: 'contain', maxWidth: '250px', marginBottom: '16px' }}
               />
             ) : (
               <div style={{
@@ -318,7 +348,7 @@ export function PremiumInvoice({ type, data, settings, showSignature = true }: P
               </div>
 
               <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px dashed ${borderColor}`, fontSize: '10px', color: primaryColor, fontWeight: 800, textTransform: 'uppercase' }}>
-                Status: {data.status} • Reference: {data.id}
+                Status: {balanceDue <= 0 ? 'Full Paid' : (data.deposit ?? 0) > 0 ? 'Partially Paid' : data.status} • Reference: {data.id}
               </div>
             </div>
           </div>
@@ -364,21 +394,90 @@ export function PremiumInvoice({ type, data, settings, showSignature = true }: P
             </div>
 
 
-            {/* Signature Block - Text Removed */}
-            {showSignature && (
-              <div style={{ textAlign: 'right', paddingRight: '20px' }}>
+            {/* Signature & Stamp Block - Accurate Layering */}
+            {(showSignature || showStamp) && (
+              <div style={{ textAlign: 'right', paddingRight: '20px', minWidth: '220px' }}>
                 <div style={{
-                  width: '200px',
-                  height: '80px',
-                  borderBottom: `2px solid ${secondary}`,
-                  marginBottom: '12px',
+                  width: '220px',
+                  height: '110px', // slightly taller
+                  marginBottom: '8px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
+                  position: 'relative',
                 }}>
-                  {/* Space for manual signature and stamp */}
+                  {/* The Horizontal Line - Forced to the background */}
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '0',
+                    left: '0',
+                    right: '0',
+                    height: '2px',
+                    background: secondary,
+                    zIndex: 0,
+                    opacity: 0.6
+                  }} />
+
+                  {/* Signature - Anchored to the line, Layer 1 */}
+                  {showSignature && settings.signature && (
+                    <div style={{
+                      position: 'absolute',
+                      bottom: '4px',
+                      left: '0',
+                      right: '0',
+                      height: '80px',
+                      display: 'flex',
+                      alignItems: 'flex-end',
+                      justifyContent: 'center',
+                      zIndex: 10,
+                    }}>
+                      <ProtectedBrandingImage 
+                        src={settings.signature} 
+                        alt="Signature" 
+                        style={{ 
+                          maxHeight: '100%', 
+                          maxWidth: '100%', 
+                          objectFit: 'contain', 
+                          filter: 'contrast(1.1) brightness(0.95)' 
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Stamp - Anchored towards the top, Layer 2 (Absolute Priority) */}
+                  {showStamp && settings.stamp && (
+                    <div style={{
+                      position: 'absolute', 
+                      left: '50%',
+                      top: '0', 
+                      height: '110px', 
+                      width: '110px', 
+                      transform: 'translateX(-50%) rotate(-10deg)',
+                      zIndex: 999,
+                      pointerEvents: 'none'
+                    }}>
+                      <ProtectedBrandingImage 
+                        src={settings.stamp} 
+                        alt="Stamp" 
+                        style={{ 
+                          width: '100%', 
+                          height: '100%', 
+                          objectFit: 'contain', 
+                          opacity: 0.95,
+                          filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.15))'
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
-                <div style={{ fontSize: '10px', fontWeight: 800, color: textDark, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                <div style={{ 
+                  fontSize: '10px', 
+                  fontWeight: 900, 
+                  color: textDark, 
+                  textTransform: 'uppercase', 
+                  letterSpacing: '1.5px', 
+                  textAlign: 'center' 
+                }}>
                   Authorized Signature
                 </div>
               </div>
@@ -445,11 +544,11 @@ export function PremiumInvoice({ type, data, settings, showSignature = true }: P
 
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center', justifyContent: 'flex-end', opacity: 0.9 }}>
               {settings.phone && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <div ref={phoneRowRef} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <svg ref={phoneIconRef} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
                   </svg>
-                  <span style={{ fontSize: '11px', fontWeight: 600 }}>{settings.phone}</span>
+                  <span ref={phoneTextRef} style={{ fontSize: '11px', fontWeight: 600 }}>{settings.phone}</span>
                 </div>
               )}
               {settings.adminEmail && (

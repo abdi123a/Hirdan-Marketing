@@ -5,12 +5,13 @@ import { AppError } from '../lib/errors.js';
 
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
+import { parsePagination } from '../lib/pagination.js';
 
 const serviceDtoSchema = z.object({
   name: z.string().min(1),
   category: z.string().min(1),
   basePrice: z.number().int().nonnegative(),
-  description: z.string().min(1),
+  description: z.string(),
   status: z.enum(['AVAILABLE', 'UNAVAILABLE']).optional(),
 });
 
@@ -22,8 +23,11 @@ router.use(authenticate);
 
 router.get('/', async (_req: Request, res: Response, next) => {
   try {
+    const { take, skip } = parsePagination(_req.query, { maxTake: 200, defaultTake: 50 });
     const services = await prisma.service.findMany({
       orderBy: { createdAt: 'desc' },
+      take,
+      skip,
     });
     res.json({ services });
   } catch (error) {

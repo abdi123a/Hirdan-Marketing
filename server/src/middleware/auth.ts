@@ -9,6 +9,7 @@ export interface JwtPayload {
   role: 'ADMIN' | 'MANAGER' | 'STAFF' | 'CLIENT';
   clientId?: string;
   company?: string;
+  mustChangePassword?: boolean;
 }
 
 // Extend Express Request to include user
@@ -35,6 +36,20 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
 
     const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
     req.user = decoded;
+
+    const isClientForcedToChangePassword =
+      decoded.role === 'CLIENT' &&
+      decoded.mustChangePassword === true;
+    const isAllowedPathWhileForced =
+      req.originalUrl.startsWith('/api/auth/client-change-password') ||
+      req.originalUrl.startsWith('/api/auth/logout') ||
+      req.originalUrl.startsWith('/api/auth/refresh') ||
+      req.originalUrl.startsWith('/api/auth/me');
+
+    if (isClientForcedToChangePassword && !isAllowedPathWhileForced) {
+      throw AppError.forbidden('Password change required before accessing the portal');
+    }
+
     next();
   } catch (error) {
     if (error instanceof AppError) {

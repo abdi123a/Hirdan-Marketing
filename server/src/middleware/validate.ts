@@ -16,13 +16,13 @@ export function validate(schemas: ValidationSchemas) {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     try {
       if (schemas.body) {
-        req.body = await schemas.body.parseAsync(req.body);
+        req.body = await schemas.body.strict().parseAsync(req.body);
       }
       if (schemas.params) {
-        req.params = await schemas.params.parseAsync(req.params) as typeof req.params;
+        req.params = await schemas.params.strict().parseAsync(req.params) as typeof req.params;
       }
       if (schemas.query) {
-        req.query = await schemas.query.parseAsync(req.query) as typeof req.query;
+        req.query = await schemas.query.strict().parseAsync(req.query) as typeof req.query;
       }
       next();
     } catch (error) {

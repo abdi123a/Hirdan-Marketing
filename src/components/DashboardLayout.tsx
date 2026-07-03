@@ -1,8 +1,8 @@
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Outlet, useNavigate } from "react-router-dom";
-import { Bell, Search, LogOut, Menu } from "lucide-react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Bell, Search, LogOut } from "lucide-react";
+import { SidebarMobileTrigger } from "@/components/ui/sidebar";
 import hirdanLogo from "@/assets/hirdan-logo.png";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,70 +57,79 @@ export default function DashboardLayout() {
       <div className="min-h-screen flex w-full bg-background font-sans">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-16 flex items-center justify-between border-b border-border px-4 md:px-6 bg-card shrink-0 sticky top-0 z-10 backdrop-blur-md bg-card/80">
-            <div className="flex items-center gap-3">
-              {/* Mobile Sidebar Toggle & Logo */}
-              <div className="flex items-center gap-2 md:hidden">
-                <SidebarTrigger className="h-9 w-9">
-                  <Menu className="h-5 w-5 text-muted-foreground" />
-                </SidebarTrigger>
-                <div className="h-6 w-[1px] bg-border/60 mx-1" />
-                <img
-                  src={settings.logo || hirdanLogo}
-                  alt={settings.agencyName}
-                  className="h-8 w-auto object-contain"
-                />
-              </div>
+          <header className="shrink-0 sticky top-0 z-10 border-b border-border bg-card/80 backdrop-blur-md">
+            <div className="h-14 md:h-16 flex items-center justify-between gap-2 px-4 md:px-6">
+              <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+                {/* Mobile Sidebar Toggle & Logo */}
+                <div className="flex items-center gap-2 md:hidden shrink-0">
+                  <SidebarMobileTrigger />
+                  <div className="h-6 w-px bg-border/60 mx-0.5 shrink-0" />
+                  <img
+                    src={settings.logo || hirdanLogo}
+                    alt={settings.agencyName}
+                    className="h-11 w-auto max-w-[160px] object-contain"
+                  />
+                </div>
 
-              <form onSubmit={handleSearch} className="relative hidden md:block group">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
-                <Input
-                  placeholder="Search anything..."
-                  className="pl-9 w-72 bg-muted/50 border-border/50 focus:bg-card rounded-xl h-9 text-sm transition-all focus:w-80"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </form>
+                <form onSubmit={handleSearch} className="relative hidden md:block group max-w-md min-w-0">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <Input
+                    placeholder="Search anything..."
+                    className="pl-9 w-72 max-w-full bg-muted/50 border-border/50 focus:bg-card rounded-xl h-9 text-sm transition-all focus:w-80"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </form>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-xl hover:bg-muted transition-colors">
+                  <Bell className="h-[18px] w-[18px] text-muted-foreground" />
+                  <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-card" />
+                </Button>
+                <div className="w-px h-6 bg-border mx-1" />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="flex items-center gap-3 pl-1 hover:opacity-80 transition-opacity outline-none">
+                      <Avatar className="h-9 w-9 ring-2 ring-primary/10 hover:ring-primary/30 transition-all cursor-pointer">
+                        <AvatarFallback className="bg-primary/10 text-primary text-sm font-display font-bold">{adminName}</AvatarFallback>
+                      </Avatar>
+                      <div className="hidden md:block text-left">
+                        <p className="text-sm font-semibold text-foreground leading-none">{user?.email || 'Admin'}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Administrator</p>
+                      </div>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel className="font-normal">
+                      <div className="flex flex-col space-y-1">
+                        <p className="text-sm font-medium leading-none">{settings.agencyName}</p>
+                        <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => navigate('/dashboard/settings')} className="cursor-pointer">
+                      Settings
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-red-600 focus:text-red-600">
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Sign out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-xl hover:bg-muted transition-colors">
-                <Bell className="h-[18px] w-[18px] text-muted-foreground" />
-                <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-card" />
-              </Button>
-              <div className="w-px h-6 bg-border mx-1" />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-3 pl-1 hover:opacity-80 transition-opacity outline-none">
-                    <Avatar className="h-9 w-9 ring-2 ring-primary/10 hover:ring-primary/30 transition-all cursor-pointer">
-                      <AvatarFallback className="bg-primary/10 text-primary text-sm font-display font-bold">{adminName}</AvatarFallback>
-                    </Avatar>
-                    <div className="hidden md:block text-left">
-                      <p className="text-sm font-semibold text-foreground leading-none">{user?.email || 'Admin'}</p>
-                      <p className="text-xs text-muted-foreground mt-1">Administrator</p>
-                    </div>
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel className="font-normal">
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">{settings.agencyName}</p>
-                      <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => navigate('/dashboard/settings')} className="cursor-pointer">
-                    Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-red-600 focus:text-red-600">
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Sign out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            <form onSubmit={handleSearch} className="relative md:hidden px-4 pb-3 pt-0 border-t border-border/40 bg-card/90">
+              <Search className="absolute left-7 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search anything..."
+                className="pl-9 w-full bg-muted/50 border-border/50 focus:bg-card rounded-xl h-9 text-sm"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </form>
           </header>
-          <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8">
+          <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 min-w-0">
             <Outlet />
           </main>
         </div>

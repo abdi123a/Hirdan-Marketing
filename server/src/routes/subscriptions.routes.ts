@@ -5,6 +5,7 @@ import { AppError } from '../lib/errors.js';
 
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
+import { parsePagination } from '../lib/pagination.js';
 
 const subscriptionDtoSchema = z.object({
   clientId: z.string().uuid(),
@@ -12,8 +13,8 @@ const subscriptionDtoSchema = z.object({
   plan: z.string().min(1),
   amount: z.number().int().nonnegative(),
   billingCycle: z.enum(['MONTHLY', 'QUARTERLY', 'ANNUAL']).optional(),
-  started: z.string().or(z.date()),
-  renewal: z.string().or(z.date()).optional().nullable(),
+  startDate: z.string().or(z.date()),
+  endDate: z.string().or(z.date()).optional().nullable(),
   status: z.enum(['ACTIVE', 'PAUSED', 'CANCELLED', 'TRIAL']).optional(),
   features: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -32,12 +33,24 @@ router.get('/', async (req: Request, res: Response, next) => {
       where.clientId = client.id;
     }
 
+    const { take, skip } = parsePagination(req.query, { maxTake: 100, defaultTake: 50 });
     const subscriptions = await prisma.subscription.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      take,
+      skip,
       include: {
         client: { select: { id: true, name: true, company: true } },
-        package: { select: { id: true, name: true } },
+        package: {
+          select: {
+            id: true,
+            name: true,
+            deliverables: {
+              include: { platforms: { select: { platform: true } } },
+            },
+          },
+        },
+        _count: { select: { cycles: true, deliverableTasks: true } },
       },
     });
     res.json({ subscriptions });
@@ -50,17 +63,34 @@ router.get('/', async (req: Request, res: Response, next) => {
 
 router.get('/:id', async (req: Request, res: Response, next) => {
   try {
-    const subscription = await prisma.subscription.findUnique({
-      where: { id: req.params.id as string },
-      include: { client: true, package: true },
+    const where: any = { id: req.params.id as string };
+    if (req.user!.role === 'CLIENT') {
+      const client = await prisma.client.findUnique({ where: { userId: req.user!.userId } });
+      if (!client) throw AppError.forbidden('Client profile not found');
+      where.clientId = client.id;
+    }
+
+    const subscription = await prisma.subscription.findFirst({
+      where,
+      include: {
+        client: true,
+        package: {
+          include: {
+            deliverables: {
+              include: { platforms: { select: { platform: true } } },
+            },
+          },
+        },
+        cycles: {
+          orderBy: { cycleStart: 'desc' },
+          include: {
+            _count: { select: { deliverableTasks: true } },
+          },
+        },
+      },
     });
 
     if (!subscription) throw AppError.notFound('Subscription not found');
-
-    if (req.user!.role === 'CLIENT') {
-      const client = await prisma.client.findUnique({ where: { userId: req.user!.userId } });
-      if (!client || subscription.clientId !== client.id) throw AppError.forbidden('Access denied');
-    }
 
     res.json({ subscription });
   } catch (error) {

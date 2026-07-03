@@ -9,14 +9,16 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Eye, EyeOff, ArrowRight, Lock, Mail } from 'lucide-react';
 import hirdanLogo from '@/assets/hirdan-logo.png';
+import { GoogleReCaptchaProvider, useGoogleReCaptcha } from 'react-google-recaptcha-v3';
 
-export default function AdminLoginPage() {
+function AdminLoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { loginAdmin, isAuthenticated, user } = useAuthStore();
   const { settings } = useAgencyStore();
+  const { executeRecaptcha } = useGoogleReCaptcha();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -47,21 +49,41 @@ export default function AdminLoginPage() {
     // Brief delay for UX feel
     await new Promise((r) => setTimeout(r, 600));
 
-    const success = await loginAdmin(email, password);
+    let recaptchaToken: string | undefined;
+    if (settings.enableRecaptcha && executeRecaptcha) {
+      recaptchaToken = await executeRecaptcha('admin_login');
+    }
+
+    const result = await loginAdmin(email, password, recaptchaToken);
     setIsLoading(false);
 
-    if (success) {
+    if (result.success) {
       toast({
         title: 'Welcome back!',
         description: 'You have been logged in successfully.',
       });
       navigate(from, { replace: true });
     } else {
-      toast({
-        title: 'Login failed',
-        description: 'Invalid email or password. Please try again.',
-        variant: 'destructive',
-      });
+      // Check if it's a client login attempt
+      const isClientError = result.message?.toLowerCase().includes('client');
+      
+      if (isClientError) {
+        toast({
+          title: 'Incorrect Portal',
+          description: result.message || 'Please log in through the Client Portal.',
+          variant: 'destructive',
+        });
+        // Short delay to let the toast be seen
+        setTimeout(() => {
+          navigate('/client/login', { replace: true });
+        }, 1500);
+      } else {
+        toast({
+          title: 'Login failed',
+          description: result.message || 'Invalid email or password. Please try again.',
+          variant: 'destructive',
+        });
+      }
     }
   };
 
@@ -177,4 +199,18 @@ export default function AdminLoginPage() {
       </motion.div>
     </div>
   );
+}
+
+export default function AdminLoginPage() {
+  const { settings } = useAgencyStore();
+
+  if (settings.enableRecaptcha && settings.recaptchaSiteKey) {
+    return (
+      <GoogleReCaptchaProvider reCaptchaKey={settings.recaptchaSiteKey}>
+        <AdminLoginForm />
+      </GoogleReCaptchaProvider>
+    );
+  }
+
+  return <AdminLoginForm />;
 }

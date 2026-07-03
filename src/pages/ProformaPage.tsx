@@ -50,14 +50,21 @@ export default function ProformaPage() {
 
   const stats = useMemo(() => {
     const taxRate = settings.taxRate ?? 0;
-    const getTotalDue = (p: Proforma) => {
-      const subtotal = p.items?.length ? sumItems(p.items) : parseAmountNumber(p.amount);
-      return subtotal + (subtotal * taxRate) / 100;
+    const getProformaBalanceDue = (p: Proforma) => {
+      let subtotal = 0;
+      if (p.items?.length) {
+        subtotal = sumItems(p.items);
+      } else {
+        return parseAmountNumber(p.amount) - (p.deposit || 0);
+      }
+      const tax = (subtotal * taxRate) / 100;
+      const discount = p.discountType === 'percentage' ? (subtotal * (p.discount || 0) / 100) : (p.discount || 0);
+      return subtotal + tax - discount - (p.deposit || 0);
     };
 
-    const totalAccepted = proformas.filter(p => p.status === 'Accepted').reduce((sum, p) => sum + getTotalDue(p), 0);
-    const totalSent = proformas.filter(p => p.status === 'Sent').reduce((sum, p) => sum + getTotalDue(p), 0);
-    const totalDraft = proformas.filter(p => p.status === 'Draft').reduce((sum, p) => sum + getTotalDue(p), 0);
+    const totalAccepted = proformas.filter(p => p.status === 'Accepted').reduce((sum, p) => sum + getProformaBalanceDue(p), 0);
+    const totalSent = proformas.filter(p => p.status === 'Sent').reduce((sum, p) => sum + getProformaBalanceDue(p), 0);
+    const totalDraft = proformas.filter(p => p.status === 'Draft').reduce((sum, p) => sum + getProformaBalanceDue(p), 0);
     return [
       { label: "Accepted", value: formatCurrency(totalAccepted), count: proformas.filter(p => p.status === 'Accepted').length, color: "text-emerald-600" },
       { label: "Sent", value: formatCurrency(totalSent), count: proformas.filter(p => p.status === 'Sent').length, color: "text-blue-600" },
@@ -75,9 +82,16 @@ export default function ProformaPage() {
   };
 
   const getProformaTotalDue = (pro: Proforma) => {
+    let subtotal = 0;
+    if (pro.items?.length) {
+      subtotal = sumItems(pro.items);
+    } else {
+      return parseAmountNumber(pro.amount) - (pro.deposit || 0);
+    }
     const taxRate = settings.taxRate ?? 0;
-    const subtotal = pro.items?.length ? sumItems(pro.items) : parseAmountNumber(pro.amount);
-    return subtotal + (subtotal * taxRate) / 100;
+    const tax = (subtotal * taxRate) / 100;
+    const discount = pro.discountType === 'percentage' ? (subtotal * (pro.discount || 0) / 100) : (pro.discount || 0);
+    return subtotal + tax - discount - (pro.deposit || 0);
   };
 
   const getProformaSubtotal = (pro: Proforma) => {
@@ -104,6 +118,7 @@ export default function ProformaPage() {
           : [{ description: "Services rendered", quantity: 1, unitPrice: subtotal }],
         notes: pro.notes,
         taxRate,
+        createdAt: new Date().toISOString(),
       });
       await updateProforma(pro.id, { status: "Accepted" });
       toast({ title: "Converted to Invoice", description: `Proforma ${pro.id} has been converted to an invoice.` });
@@ -117,20 +132,47 @@ export default function ProformaPage() {
     setActiveProforma(pro);
     setIsDownloading(true);
 
-    toast({ title: "Processing PDF", description: "Generating your high-quality proforma..." });
+    toast({ title: "Processing PDF", description: "Generating your proforma..." });
 
+    // Small delay to ensure the hidden component renders
     setTimeout(async () => {
       if (!pdfRef.current) return;
 
       try {
-        const canvas = await html2canvas(pdfRef.current, {
-          scale: 2,
+        const element = pdfRef.current.querySelector('.print-content') as HTMLElement || pdfRef.current;
+
+        // Wait for all images in the target to be fully loaded
+        const images = Array.from(element.querySelectorAll('img'));
+        await Promise.all(
+          images.map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise(resolve => {
+              img.onload = resolve;
+              img.onerror = resolve;
+            });
+          })
+        );
+
+        const captureScale = 3;
+        const jpegQuality = 0.95;
+        const canvas = await html2canvas(element, {
+          scale: captureScale, 
           useCORS: true,
           logging: false,
           backgroundColor: "#ffffff",
+          width: 794,
+          height: element.scrollHeight,
+          onclone: (clonedDoc) => {
+            const el = clonedDoc.querySelector('.print-content') as HTMLElement;
+            if (el) {
+              el.style.width = '794px';
+              el.style.margin = '0';
+              el.style.padding = '0';
+            }
+          }
         });
 
-        const imgData = canvas.toDataURL("image/png");
+        const imgData = canvas.toDataURL("image/jpeg", jpegQuality);
         const pdf = new jsPDF({
           orientation: "portrait",
           unit: "mm",
@@ -138,10 +180,29 @@ export default function ProformaPage() {
         });
 
         const imgProps = pdf.getImageProperties(imgData);
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        const pdfWidth = 210;
+        const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
+        const pageHeight = 297;
+        
+        let heightLeft = pdfHeightRatio;
+        let position = 0;
 
-        pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+        // If it's roughly one page, fill the full A4 to ensure footer is at the bottom
+        if (pdfHeightRatio <= 300) {
+          pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
+        } else {
+          pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
+          heightLeft -= pageHeight;
+
+          // Threshold of 10mm to avoid an empty final page from minor layout overflows
+          while (heightLeft > 10) {
+            position = heightLeft - pdfHeightRatio;
+            pdf.addPage();
+            pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
+            heightLeft -= pageHeight;
+          }
+        }
+
         pdf.save(`${pro.id}.pdf`);
 
         toast({ title: "PDF Downloaded", description: `${pro.id}.pdf has been saved.` });
@@ -149,14 +210,14 @@ export default function ProformaPage() {
         console.error("PDF generation failed:", error);
         toast({
           title: "Download Failed",
-          description: "There was an error generating the PDF.",
+          description: "There was an error generating the PDF. Please try again.",
           variant: "destructive"
         });
       } finally {
         setIsDownloading(false);
         setActiveProforma(null);
       }
-    }, 500);
+    }, 1200);
   };
 
   return (
@@ -186,13 +247,13 @@ export default function ProformaPage() {
 
       <Card className="shadow-card border-border">
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-lg font-semibold">All Proformas ({filtered.length})</CardTitle>
-            <div className="relative">
+            <div className="relative w-full sm:w-56 shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search proformas..."
-                className="pl-9 w-56 bg-muted border-0"
+                className="pl-9 w-full bg-muted border-0"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -207,7 +268,7 @@ export default function ProformaPage() {
                 <TableHead>Client</TableHead>
                 <TableHead className="hidden sm:table-cell">Date</TableHead>
                 <TableHead className="hidden md:table-cell">Valid Until</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="text-right">Balance Due</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-10" />
               </TableRow>

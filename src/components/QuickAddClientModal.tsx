@@ -75,8 +75,8 @@ export function QuickAddClientModal({ open, onOpenChange, onSuccess }: QuickAddC
       setCompany("");
       setEmail("");
       setErrors({});
-    } catch (err) {
-      toast({ title: "Error", description: "Failed to add client.", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to add client.", variant: "destructive" });
     } finally {
       setLoading(false);
     }

@@ -5,6 +5,7 @@ import { AppError } from '../lib/errors.js';
 
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
+import { parsePagination } from '../lib/pagination.js';
 
 const projectDtoSchema = z.object({
   name: z.string().min(1),
@@ -32,9 +33,12 @@ router.get('/', async (req: Request, res: Response, next) => {
       where.clientId = client.id;
     }
 
+    const { take, skip } = parsePagination(req.query, { maxTake: 100, defaultTake: 50 });
     const projects = await prisma.project.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      take,
+      skip,
       include: {
         client: { select: { id: true, name: true, company: true } },
         teamMembers: { include: { teamMember: true } },
@@ -50,8 +54,15 @@ router.get('/', async (req: Request, res: Response, next) => {
 
 router.get('/:id', async (req: Request, res: Response, next) => {
   try {
-    const project = await prisma.project.findUnique({
-      where: { id: req.params.id as string },
+    const where: any = { id: req.params.id as string };
+    if (req.user!.role === 'CLIENT') {
+      const client = await prisma.client.findUnique({ where: { userId: req.user!.userId } });
+      if (!client) throw AppError.forbidden('Client profile not found');
+      where.clientId = client.id;
+    }
+
+    const project = await prisma.project.findFirst({
+      where,
       include: {
         client: true,
         teamMembers: { include: { teamMember: true } },
@@ -59,11 +70,6 @@ router.get('/:id', async (req: Request, res: Response, next) => {
     });
 
     if (!project) throw AppError.notFound('Project not found');
-
-    if (req.user!.role === 'CLIENT') {
-      const client = await prisma.client.findUnique({ where: { userId: req.user!.userId } });
-      if (!client || project.clientId !== client.id) throw AppError.forbidden('Access denied');
-    }
 
     res.json({ project });
   } catch (error) {

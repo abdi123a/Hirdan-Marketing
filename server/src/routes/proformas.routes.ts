@@ -5,6 +5,7 @@ import { AppError } from '../lib/errors.js';
 
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
+import { parsePagination } from '../lib/pagination.js';
 
 const proformaItemSchema = z.object({
   description: z.string().min(1),
@@ -16,7 +17,7 @@ const proformaDtoSchema = z.object({
   proformaNumber: z.string().min(1),
   clientId: z.string().uuid(),
   amount: z.number().int().nonnegative(),
-  status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'EXPIRED']).optional(),
+  status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'PARTIALLY_PAID', 'EXPIRED']).optional(),
   date: z.string().or(z.date()),
   dueDate: z.string().or(z.date()),
   notes: z.string().optional().nullable(),
@@ -24,6 +25,8 @@ const proformaDtoSchema = z.object({
   discount: z.number().optional().nullable(),
   discountType: z.enum(['PERCENTAGE', 'FIXED']).optional().nullable(),
   deposit: z.number().int().optional().nullable(),
+  showSignature: z.boolean().optional(),
+  showStamp: z.boolean().optional(),
   items: z.array(proformaItemSchema).optional(),
 });
 
@@ -40,9 +43,12 @@ router.get('/', async (req: Request, res: Response, next) => {
       where.clientId = client.id;
     }
 
+    const { take, skip } = parsePagination(req.query, { maxTake: 100, defaultTake: 50 });
     const proformas = await prisma.proforma.findMany({
       where,
       orderBy: { date: 'desc' },
+      take,
+      skip,
       include: {
         client: { select: { id: true, name: true, company: true, email: true } },
         items: true,

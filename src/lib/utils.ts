@@ -46,6 +46,16 @@ export function formatCurrency(amount: string | number) {
   }).format(numericAmount);
 }
 
+export function parseCurrency(amount: string | number): number {
+  if (typeof amount === 'number') return amount;
+  if (!amount) return 0;
+  // Remove currency symbols, commas, and anything that isn't a digit, dot, or minus sign
+  // Split on '/' in case of things like "$499/mo"
+  const clean = amount.split('/')[0].replace(/[^0-9.-]+/g, "");
+  const parsed = parseFloat(clean);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
 export function formatDate(date: string | Date | undefined | null) {
   if (!date || date === 'N/A') return 'N/A';
   
@@ -83,4 +93,33 @@ export function formatDateTime(date: string | Date | undefined | null) {
   } catch (e) {
     return String(date);
   }
+}
+
+/** Coerce subscription/package `features` from DB/API (JSON string, double-encoded JSON, or array) to string[]. */
+export function normalizeFeatureList(value: unknown): string[] {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value.map((x) => String(x));
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map((x) => String(x));
+      if (typeof parsed === "string") {
+        const inner = parsed.trim();
+        if (!inner) return [];
+        try {
+          const again = JSON.parse(inner);
+          if (Array.isArray(again)) return again.map((x) => String(x));
+        } catch {
+          /* treat inner as plain text */
+        }
+        return [inner];
+      }
+    } catch {
+      return [trimmed];
+    }
+    return [];
+  }
+  return [];
 }

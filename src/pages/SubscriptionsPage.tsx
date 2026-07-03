@@ -20,16 +20,16 @@ import { Input } from "@/components/ui/input";
 
 const planColor = (plan: string) =>
   plan === "Enterprise" ? "bg-violet-100 text-violet-700 border-violet-200" :
-  plan === "Business" ? "bg-blue-100 text-blue-700 border-blue-200" :
-  plan === "Pro" ? "bg-primary/10 text-primary border-primary/20" :
-  plan === "Starter" ? "bg-muted text-muted-foreground border-border" :
-  "bg-primary/5 text-primary border-primary/10"; // Default for custom plans
+    plan === "Business" ? "bg-blue-100 text-blue-700 border-blue-200" :
+      plan === "Pro" ? "bg-primary/10 text-primary border-primary/20" :
+        plan === "Starter" ? "bg-muted text-muted-foreground border-border" :
+          "bg-primary/5 text-primary border-primary/10"; // Default for custom plans
 
 const statusColor = (s: string) =>
   s === "Active" ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100" :
-  s === "Trial" ? "bg-blue-100 text-blue-700 hover:bg-blue-100" :
-  s === "Paused" ? "bg-amber-100 text-amber-700 hover:bg-amber-100" :
-  "bg-red-100 text-red-700 hover:bg-red-100";
+    s === "Trial" ? "bg-blue-100 text-blue-700 hover:bg-blue-100" :
+      s === "Paused" ? "bg-amber-100 text-amber-700 hover:bg-amber-100" :
+        "bg-red-100 text-red-700 hover:bg-red-100";
 
 export default function SubscriptionsPage() {
   const { subscriptions, deleteSubscription, updateSubscription, fetchSubscriptions } = useAgencyStore();
@@ -68,7 +68,7 @@ export default function SubscriptionsPage() {
 
   const handleCancel = async (id: string, client: string) => {
     try {
-      await updateSubscription(id, { status: "Cancelled", renewal: "N/A" });
+      await updateSubscription(id, { status: "Cancelled", endDate: "N/A" });
       toast({ title: "Subscription Cancelled", description: `${client}'s subscription has been cancelled.` });
     } catch (e) {
       toast({ title: "Error", description: "Failed to cancel subscription.", variant: "destructive" });
@@ -79,14 +79,14 @@ export default function SubscriptionsPage() {
     if (currentRenewal === "N/A") return;
     const date = new Date(currentRenewal);
     if (date.toString() === 'Invalid Date') return;
-    
+
     if (cycle === "Monthly") date.setMonth(date.getMonth() + 1);
     else if (cycle === "Quarterly") date.setMonth(date.getMonth() + 3);
     else if (cycle === "Annual") date.setFullYear(date.getFullYear() + 1);
-    
+
     const newRenewal = date.toISOString().split('T')[0];
     try {
-      await updateSubscription(id, { renewal: newRenewal, status: "Active" });
+      await updateSubscription(id, { endDate: newRenewal, status: "Active" });
       toast({ title: "Subscription Renewed", description: `${client}'s plan has been extended to ${newRenewal}.` });
     } catch (e) {
       toast({ title: "Error", description: "Failed to renew subscription.", variant: "destructive" });
@@ -119,11 +119,11 @@ export default function SubscriptionsPage() {
 
       <Card className="shadow-card border-border">
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-lg font-semibold">All Subscriptions ({filtered.length})</CardTitle>
-            <div className="relative">
+            <div className="relative w-full sm:w-48 shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search..." className="pl-9 w-48 bg-muted border-0" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Input placeholder="Search..." className="pl-9 w-full bg-muted border-0" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
           </div>
         </CardHeader>
@@ -135,8 +135,8 @@ export default function SubscriptionsPage() {
                 <TableHead>Plan</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead className="hidden sm:table-cell">Billing</TableHead>
-                <TableHead className="hidden md:table-cell">Started</TableHead>
-                <TableHead className="hidden lg:table-cell">Next Renewal</TableHead>
+                <TableHead className="hidden md:table-cell">Start Date</TableHead>
+                <TableHead className="hidden lg:table-cell">End Date</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
@@ -168,8 +168,8 @@ export default function SubscriptionsPage() {
                     <span className="text-xs text-muted-foreground font-normal">/{sub.billingCycle === "Monthly" ? "mo" : sub.billingCycle === "Quarterly" ? "qtr" : "yr"}</span>
                   </TableCell>
                   <TableCell className="hidden sm:table-cell text-muted-foreground text-sm">{sub.billingCycle}</TableCell>
-                  <TableCell className="hidden md:table-cell text-muted-foreground text-sm">{formatDate(sub.started)}</TableCell>
-                  <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">{formatDate(sub.renewal)}</TableCell>
+                  <TableCell className="hidden md:table-cell text-muted-foreground text-sm">{formatDate(sub.startDate)}</TableCell>
+                  <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">{formatDate(sub.endDate)}</TableCell>
                   <TableCell>
                     <Badge className={statusColor(sub.status)}>{sub.status}</Badge>
                   </TableCell>
@@ -189,7 +189,7 @@ export default function SubscriptionsPage() {
                         <DropdownMenuItem className="gap-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); navigate(`/dashboard/subscriptions/edit/${sub.id}`); }}>
                           <Edit className="h-4 w-4" /> Edit Plan
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="gap-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); handleRenew(sub.id, sub.renewal, sub.billingCycle, sub.client); }}>
+                        <DropdownMenuItem className="gap-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); handleRenew(sub.id, sub.endDate, sub.billingCycle, sub.client); }}>
                           <RefreshCw className="h-4 w-4" /> Renew
                         </DropdownMenuItem>
                         {sub.status !== "Cancelled" && (

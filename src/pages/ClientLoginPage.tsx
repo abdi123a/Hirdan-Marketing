@@ -9,15 +9,17 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowRight, Mail, KeyRound } from 'lucide-react';
 import hirdanLogo from '@/assets/hirdan-logo.png';
+import { GoogleReCaptchaProvider, useGoogleReCaptcha } from 'react-google-recaptcha-v3';
 
-export default function ClientLoginPage() {
+function ClientLoginForm() {
   const [email, setEmail] = useState('');
-  const [accessCode, setAccessCode] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { isAuthenticated, user, loginClient } = useAuthStore();
   const { clients, settings } = useAgencyStore();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { executeRecaptcha } = useGoogleReCaptcha();
 
   // Redirect if already logged in
   if (isAuthenticated) {
@@ -34,7 +36,12 @@ export default function ClientLoginPage() {
 
     await new Promise((r) => setTimeout(r, 600));
 
-    const success = await loginClient(email, accessCode);
+    let recaptchaToken: string | undefined;
+    if (settings.enableRecaptcha && executeRecaptcha) {
+      recaptchaToken = await executeRecaptcha('client_login');
+    }
+
+    const success = await loginClient(email, password, recaptchaToken);
     setIsLoading(false);
 
     if (success) {
@@ -46,7 +53,7 @@ export default function ClientLoginPage() {
     } else {
       toast({
         title: 'Login failed',
-        description: 'Invalid email or access code.',
+        description: 'Invalid email or password.',
         variant: 'destructive',
       });
     }
@@ -94,23 +101,22 @@ export default function ClientLoginPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="client-access-code" className="text-sm font-medium text-foreground">Access Code</Label>
+                <Label htmlFor="client-password" className="text-sm font-medium text-foreground">Password</Label>
                 <div className="relative">
                   <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    id="client-access-code"
-                    type="text"
-                    placeholder="e.g. A3B7K9"
-                    value={accessCode}
-                    onChange={(e) => setAccessCode(e.target.value.toUpperCase())}
-                    className="pl-10 h-12 rounded-xl bg-muted/50 border-border/50 focus:bg-card text-sm font-mono tracking-widest uppercase transition-all"
+                    id="client-password"
+                    type="password"
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="pl-10 h-12 rounded-xl bg-muted/50 border-border/50 focus:bg-card text-sm transition-all"
                     required
-                    maxLength={6}
-                    autoComplete="off"
+                    autoComplete="current-password"
                   />
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Your access code was provided by your account manager.
+                  Your initial password is provided by your account manager.
                 </p>
               </div>
 
@@ -162,4 +168,18 @@ export default function ClientLoginPage() {
       </motion.div>
     </div>
   );
+}
+
+export default function ClientLoginPage() {
+  const { settings } = useAgencyStore();
+
+  if (settings.enableRecaptcha && settings.recaptchaSiteKey) {
+    return (
+      <GoogleReCaptchaProvider reCaptchaKey={settings.recaptchaSiteKey}>
+        <ClientLoginForm />
+      </GoogleReCaptchaProvider>
+    );
+  }
+
+  return <ClientLoginForm />;
 }

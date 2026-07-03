@@ -11,28 +11,25 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const uploadsDir = path.join(__dirname, '../../public/uploads');
+import { PATHS } from '../lib/paths.js';
 
 // Configure multer storage
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-    cb(null, uploadsDir);
+  destination: (_req: any, _file: any, cb: any) => {
+    // All branding uploads go to the branding folder
+    // (files.routes.ts serves them via /:folder/:filename + auth)
+    cb(null, PATHS.BRANDING);
   },
-  filename: (_req, file, cb) => {
+  filename: (_req: any, file: any, cb: any) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
-const upload = multer({ 
+const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (_req, file, cb) => {
+  fileFilter: (_req: any, file: any, cb: any) => {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
@@ -42,6 +39,33 @@ const upload = multer({
 });
 
 const router = Router();
+
+// ─── GET /api/settings/public ───────────────────────────────────────────
+
+router.get('/public', async (req: Request, res: Response, next) => {
+  try {
+    const settings = await prisma.agencySettings.findFirst();
+
+    if (!settings) {
+      res.json({ settings: { enableRecaptcha: false } });
+      return;
+    }
+
+    res.json({
+      settings: {
+        agencyName: settings.agencyName,
+        logo: settings.logo,
+        whiteLogo: settings.whiteLogo,
+        favicon: settings.favicon,
+        primaryColor: settings.primaryColor,
+        enableRecaptcha: settings.enableRecaptcha,
+        recaptchaSiteKey: settings.recaptchaSiteKey,
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // ─── GET /api/settings ───────────────────────────────────────────
 // Public endpoint for guest users to see agency branding
@@ -92,12 +116,21 @@ router.get('/', async (req: Request, res: Response, next) => {
       res.json({
         settings: {
           agencyName: settings.agencyName,
+          adminEmail: settings.adminEmail,
+          phone: settings.phone,
+          website: settings.website,
+          address: settings.address,
           currency: settings.currency,
           timezone: settings.timezone,
           logo: settings.logo,
           whiteLogo: settings.whiteLogo,
           favicon: settings.favicon,
           primaryColor: settings.primaryColor,
+          signature: settings.signature,
+          stamp: settings.stamp,
+          enableRecaptcha: settings.enableRecaptcha,
+          recaptchaSiteKey: settings.recaptchaSiteKey,
+          recaptchaSecretKey: settings.recaptchaSecretKey,
           socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
         },
       });
@@ -126,7 +159,16 @@ const settingsDtoSchema = z.object({
   paymentMethods: z.any().optional(),   // JSON arrays stored as strings
   socialLinks: z.any().optional(),      // JSON objects stored as strings
   notifications: z.any().optional(),    // JSON objects stored as strings
-}).passthrough(); // Allowing passthrough for frontend component meta temporarily
+  signature: z.string().optional().nullable(),
+  stamp: z.string().optional().nullable(),
+  enableRecaptcha: z.boolean().optional(),
+  recaptchaSiteKey: z.string().optional().nullable(),
+  recaptchaSecretKey: z.string().optional().nullable(),
+  openAiApiKey: z.string().optional().nullable(),
+  id: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
 
 router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }), async (req: Request, res: Response, next) => {
   try {
@@ -145,15 +187,15 @@ router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }
       });
     }
 
-    const { 
-      paymentMethods, 
-      socialLinks, 
-      notifications, 
-      id, 
-      createdAt, 
-      updatedAt, 
+    const {
+      paymentMethods,
+      socialLinks,
+      notifications,
+      id,
+      createdAt,
+      updatedAt,
       taxRate,
-      ...rest 
+      ...rest
     } = req.body;
 
     const settings = await prisma.agencySettings.update({
@@ -188,7 +230,8 @@ router.post('/upload', authenticate, requireAdmin, upload.single('file'), async 
       throw AppError.badRequest('No file uploaded');
     }
 
-    const fileUrl = `/uploads/${req.file.filename}`;
+    // All branding assets are stored under /uploads/branding/
+    const fileUrl = `/uploads/branding/${req.file.filename}`;
     res.json({ url: fileUrl });
   } catch (error) {
     next(error);

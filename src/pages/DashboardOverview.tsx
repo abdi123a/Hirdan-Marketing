@@ -4,42 +4,19 @@ import {
   Users,
   Briefcase,
   TrendingUp,
-  Activity,
-  Clock,
-  Plus,
-  Building2,
-  UserPlus,
   CreditCard,
-  Layers,
   AlertCircle,
-  Calendar,
-  FileText,
-  Package,
-  Zap,
   CheckCircle2,
-  Hourglass,
-  ShieldCheck,
-  Server,
-  Database,
   RefreshCw,
-  Bell,
-  Mail,
   ChevronRight,
-  PieChart as PieChartIcon,
-  MoreVertical,
   Settings,
+  Target,
+  UserPlus,
   ArrowUpRight,
   TrendingDown,
-  Target,
-  Rocket,
-  Shield,
-  Zap as ZapIcon,
-  Crown,
-  Sparkles,
-  Loader2,
-  BarChart2,
-  HeartPulse,
-  Layout
+  Contact,
+  Activity,
+  Plus
 } from "lucide-react";
 import {
   BarChart,
@@ -49,11 +26,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
   Area,
   AreaChart
 } from "recharts";
@@ -63,10 +35,10 @@ import { useMemo, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { 
-  formatDistanceToNow, 
-  isAfter, 
-  isBefore, 
+import {
+  formatDistanceToNow,
+  isAfter,
+  isBefore,
   addDays,
   format,
   subWeeks,
@@ -84,7 +56,8 @@ import {
   isSameDay,
   isSameWeek,
   isSameMonth,
-  isSameYear
+  isSameYear,
+  subMonths
 } from "date-fns";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
@@ -92,7 +65,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 export default function DashboardOverview() {
-  const { clients, projects, invoices, subscriptions, team, proformas, fetchAllData } = useAgencyStore();
+  const { clients, projects, invoices, subscriptions, leads, fetchAllData } = useAgencyStore();
   const [isLoading, setIsLoading] = useState(true);
   const [trajectoryView, setTrajectoryView] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('monthly');
 
@@ -122,21 +95,36 @@ export default function DashboardOverview() {
     const currentYear = now.getFullYear();
 
     const activeClients = clients.filter(c => c.status === 'Active').length;
+    const newLeads = leads.filter(l => new Date(l.createdAt).getMonth() === currentMonth && new Date(l.createdAt).getFullYear() === currentYear).length;
+
     const monthlyRevenue = invoices
-      .filter(inv => inv.status === 'Paid' && new Date(inv.date).getMonth() === currentMonth && new Date(inv.date).getFullYear() === currentYear)
-      .reduce((sum, inv) => sum + parseCurrency(inv.amount), 0);
+      .filter(inv => (inv.status === 'Paid' || inv.status === 'Partially Paid') && new Date(inv.date).getMonth() === currentMonth && new Date(inv.date).getFullYear() === currentYear)
+      .reduce((sum, inv) => sum + (inv.status === 'Paid' ? parseCurrency(inv.amount) : (inv.deposit || 0)), 0);
+
     const lastMonthRevenue = invoices
-      .filter(inv => inv.status === 'Paid' && new Date(inv.date).getMonth() === (currentMonth - 1 + 12) % 12)
-      .reduce((sum, inv) => sum + parseCurrency(inv.amount), 0);
+      .filter(inv => (inv.status === 'Paid' || inv.status === 'Partially Paid') && new Date(inv.date).getMonth() === (currentMonth - 1 + 12) % 12)
+      .reduce((sum, inv) => sum + (inv.status === 'Paid' ? parseCurrency(inv.amount) : (inv.deposit || 0)), 0);
     const revenueDiff = monthlyRevenue - lastMonthRevenue;
     const revUp = revenueDiff >= 0;
 
     const outstandingAmount = invoices
       .filter(i => i.status !== 'Paid')
-      .reduce((sum, i) => sum + parseCurrency(i.amount), 0);
+      .reduce((sum, i) => {
+        let subtotal = 0;
+        if (i.items?.length) {
+          subtotal = i.items.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
+        } else {
+          return sum + (parseCurrency(i.amount) - (i.deposit || 0));
+        }
+        const rate = i.taxRate ?? 0;
+        const tax = (subtotal * rate) / 100;
+        const discountAmt = i.discountType === 'percentage'
+          ? (subtotal * (i.discount || 0) / 100)
+          : (i.discount || 0);
+        const total = subtotal + tax - discountAmt;
+        return sum + (total - (i.deposit || 0));
+      }, 0);
 
-    const activeProjectsCount = projects.filter(p => p.status === 'In Progress').length;
-    
     const mrr = subscriptions
       .filter(s => s.status === 'Active')
       .reduce((sum, s) => {
@@ -146,18 +134,14 @@ export default function DashboardOverview() {
         return sum + amt;
       }, 0);
 
-    const totalPossibleProjects = (team.length || 1) * 4;
-    const utilization = Math.min(Math.round((projects.filter(p => p.status === 'In Progress').length / totalPossibleProjects) * 100), 100);
-
     return [
-      { id: 'revenue', label: 'Revenue', value: formatCurrency(monthlyRevenue), growth: revUp ? '+14%' : '-2%', up: revUp, icon: Banknote, gradient: colorMap.gold, hoverBorder: 'hover:border-secondary', link: '/dashboard/invoices' },
-      { id: 'clients', label: 'Clients', value: activeClients.toString(), growth: '+3', up: true, icon: Users, gradient: colorMap.primary, hoverBorder: 'hover:border-primary', link: '/dashboard/clients' },
+      { id: 'revenue', label: 'Monthly Revenue', value: formatCurrency(monthlyRevenue), growth: revUp ? 'UP' : 'DOWN', up: revUp, icon: Banknote, gradient: colorMap.gold, hoverBorder: 'hover:border-secondary', link: '/dashboard/invoices' },
       { id: 'mrr', label: 'Active MRR', value: formatCurrency(mrr), icon: TrendingUp, gradient: colorMap.primary, hoverBorder: 'hover:border-primary', link: '/dashboard/subscriptions' },
-      { id: 'outstanding', label: 'Unpaid', value: formatCurrency(outstandingAmount), icon: CreditCard, gradient: colorMap.gold, hoverBorder: 'hover:border-secondary', link: '/dashboard/invoices' },
-      { id: 'projects', label: 'Projects', value: activeProjectsCount.toString(), icon: Briefcase, gradient: colorMap.primary, hoverBorder: 'hover:border-primary', link: '/dashboard/projects' },
-      { id: 'utilization', label: 'Team Load', value: `${utilization}%`, icon: Activity, gradient: colorMap.gold, hoverBorder: 'hover:border-secondary', link: '/dashboard/team' },
+      { id: 'outstanding', label: 'Outstanding Balance', value: formatCurrency(outstandingAmount), icon: CreditCard, gradient: colorMap.gold, hoverBorder: 'hover:border-secondary', link: '/dashboard/invoices' },
+      { id: 'clients', label: 'Active Clients', value: activeClients.toString(), icon: Users, gradient: colorMap.primary, hoverBorder: 'hover:border-primary', link: '/dashboard/clients' },
+      { id: 'leads', label: 'New Leads (This Month)', value: newLeads.toString(), icon: Contact, gradient: colorMap.primary, hoverBorder: 'hover:border-primary', link: '/dashboard/leads' },
     ];
-  }, [clients, invoices, projects, subscriptions, team]);
+  }, [clients, invoices, projects, subscriptions, leads]);
 
   const revenueTrend = useMemo(() => {
     const now = new Date();
@@ -192,7 +176,7 @@ export default function DashboardOverview() {
 
     return periods.map(period => {
       const label = format(period, formatStr);
-      
+
       const periodInvoices = invoices.filter(inv => {
         const d = new Date(inv.date);
         if (trajectoryView === 'daily') return isSameDay(d, period);
@@ -202,19 +186,38 @@ export default function DashboardOverview() {
       });
 
       const paid = periodInvoices
-        .filter(inv => inv.status === 'Paid')
-        .reduce((sum, inv) => sum + parseCurrency(inv.amount), 0);
+        .filter(inv => inv.status === 'Paid' || inv.status === 'Partially Paid')
+        .reduce((sum, inv) => sum + (inv.status === 'Paid' ? parseCurrency(inv.amount) : (inv.deposit || 0)), 0);
 
       const recurring = subscriptions
         .filter(s => {
-          const start = new Date(s.started);
+          const start = new Date(s.startDate);
+          const end = s.endDate && s.endDate !== 'N/A' ? new Date(s.endDate) : null;
           const status = s.status === 'Active';
           if (!status) return false;
-          
-          if (trajectoryView === 'daily') return isBefore(start, addDays(period, 1)) || isSameDay(start, period);
-          if (trajectoryView === 'weekly') return isBefore(start, endOfWeek(period)) || isSameWeek(start, period);
-          if (trajectoryView === 'monthly') return isBefore(start, endOfMonth(period)) || isSameMonth(start, period);
-          return isBefore(start, endOfYear(period)) || isSameYear(start, period);
+
+          let endOfPeriod;
+          let startOfPeriod;
+          if (trajectoryView === 'daily') {
+            startOfPeriod = period;
+            endOfPeriod = addDays(period, 1);
+          } else if (trajectoryView === 'weekly') {
+            startOfPeriod = startOfWeek(period);
+            endOfPeriod = endOfWeek(period);
+          } else if (trajectoryView === 'monthly') {
+            startOfPeriod = startOfMonth(period);
+            endOfPeriod = endOfMonth(period);
+          } else {
+            startOfPeriod = startOfYear(period);
+            endOfPeriod = endOfYear(period);
+          }
+
+          // Must have started before or during the period
+          const hasStarted = !isAfter(start, endOfPeriod);
+          // Must not have ended before the period started
+          const hasNotEnded = !end || !isBefore(end, startOfPeriod);
+
+          return hasStarted && hasNotEnded;
         })
         .reduce((sum, s) => {
           const amt = parseCurrency(s.amount);
@@ -235,35 +238,88 @@ export default function DashboardOverview() {
     });
   }, [invoices, subscriptions, trajectoryView]);
 
+  const activities = useMemo(() => {
+    const items: any[] = [];
+    invoices.slice(-10).forEach(i => {
+      if (i.status === 'Paid') items.push({ icon: CheckCircle2, colorType: 'secondary', action: 'Payment Received', subject: `${i.client} - ${i.amount}`, time: new Date(i.createdAt), link: `/dashboard/invoices/view/${i.id}` });
+    });
+    clients.slice(-5).forEach(c => items.push({ icon: UserPlus, colorType: 'primary', action: 'New Client Onboarded', subject: c.company || c.name, time: new Date(c.createdAt), link: `/dashboard/clients/view/${c.id}` }));
+    return items.sort((a, b) => b.time.getTime() - a.time.getTime()).slice(0, 6);
+  }, [clients, invoices]);
+
+  const receivables = useMemo(() => {
+    return invoices
+      .filter(inv => inv.status === 'Overdue' || inv.status === 'Pending')
+      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+      .slice(0, 5)
+      .map(inv => ({
+        id: inv.id,
+        client: inv.client,
+        amount: inv.amount,
+        status: inv.status,
+        dueDate: inv.dueDate,
+        link: `/dashboard/invoices/view/${inv.id}`
+      }));
+  }, [invoices]);
+
   const projectHealth = useMemo(() => {
     const total = projects.filter(p => p.status === 'In Progress').length;
-    if (total === 0) return { onTrack: 0, delayed: 0, atRisk: 0 };
+    if (total === 0) return { onTrack: 0, delayed: 0, atRisk: 0, total: 0 };
     const onTrack = projects.filter(p => p.status === 'In Progress' && p.progress >= 50).length;
     const delayed = projects.filter(p => p.status === 'In Progress' && p.progress < 30).length;
-    return { 
+    return {
+      total,
       onTrack: Math.round((onTrack / total) * 100),
       delayed: Math.round((delayed / total) * 100),
       atRisk: 100 - Math.round((onTrack / total) * 100) - Math.round((delayed / total) * 100)
     };
   }, [projects]);
 
-  const activities = useMemo(() => {
-    const items: any[] = [];
-    invoices.slice(-5).forEach(i => {
-      if (i.status === 'Paid') items.push({ icon: CheckCircle2, colorType: 'secondary', action: 'Payment', subject: `${i.client}`, time: new Date(i.createdAt), link: `/dashboard/invoices/view/${i.id}` });
-    });
-    clients.slice(-3).forEach(c => items.push({ icon: UserPlus, colorType: 'primary', action: 'New Client', subject: c.company || c.name, time: new Date(c.createdAt), link: `/dashboard/clients/view/${c.id}` }));
-    return items.sort((a, b) => b.time.getTime() - a.time.getTime()).slice(0, 8);
-  }, [clients, invoices]);
+  const quarterlyTarget = useMemo(() => {
+    const now = new Date();
+    const currentQStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
 
-  const alerts = useMemo(() => {
-    return invoices.filter(inv => inv.status === 'Overdue').slice(0, 5).map(inv => ({
-      id: inv.id,
-      title: 'Invoice Overdue',
-      desc: `${inv.client} · ${inv.amount}`,
-      link: `/dashboard/invoices/view/${inv.id}`
-    }));
+    let qRevenue = 0;
+    let lastQRevenue = 0;
+    const lastQStart = subMonths(currentQStart, 3);
+
+    invoices.forEach(inv => {
+      if (inv.status !== 'Paid' && inv.status !== 'Partially Paid') return;
+
+      const invDate = new Date(inv.date);
+      const amount = inv.status === 'Paid' ? parseCurrency(inv.amount) : (inv.deposit || 0);
+
+      if (invDate >= currentQStart) {
+        qRevenue += amount;
+      } else if (invDate >= lastQStart && invDate < currentQStart) {
+        lastQRevenue += amount;
+      }
+    });
+
+    const target = lastQRevenue > 0 ? lastQRevenue * 1.2 : (qRevenue > 0 ? Math.ceil(qRevenue / 10000) * 10000 + 20000 : 50000);
+    const progress = Math.min(Math.round((qRevenue / target) * 100), 100);
+
+    let trendText = "Consistent performance based on recent history.";
+    if (lastQRevenue > 0) {
+      const growth = Math.round(((qRevenue - lastQRevenue) / lastQRevenue) * 100);
+      if (growth > 0) trendText = `You are on track to exceed last quarter's performance by ${growth}%.`;
+      else if (growth < 0) trendText = `You are currently ${Math.abs(growth)}% behind last quarter's performance.`;
+    }
+
+    return {
+      current: qRevenue,
+      target: target,
+      progress: progress,
+      label: `Q${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`,
+      trendText
+    };
   }, [invoices]);
+
+  const recentLeads = useMemo(() => {
+    return leads
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 5);
+  }, [leads]);
 
   if (isLoading) {
     return (
@@ -275,18 +331,15 @@ export default function DashboardOverview() {
 
   return (
     <div className="space-y-8 pb-10">
-      {/* Header section with More Actions */}
+      {/* Header section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h2 className="text-2xl font-bold text-foreground tracking-tight">Dashboard Overview</h2>
-          <p className="text-sm text-muted-foreground mt-1">Track and manage your agency pulse and performance.</p>
+          <p className="text-sm text-muted-foreground mt-1">High-level financial and operational insights driving your agency.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link to="/dashboard/projects/add" className="flex items-center gap-2 px-4 py-2.5 bg-primary hover:opacity-90 text-primary-foreground rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-md shadow-primary/20">
-            <Plus className="w-4 h-4" /> New Project
-          </Link>
-          <Link to="/dashboard/invoices/add" className="flex items-center gap-2 px-4 py-2.5 bg-background border border-border hover:bg-muted text-foreground rounded-xl text-xs font-bold uppercase tracking-wider transition-all">
-            <CreditCard className="w-4 h-4 text-secondary" /> New Invoice
+          <Link to="/dashboard/invoices/add" className="flex items-center gap-2 px-4 py-2.5 bg-primary hover:opacity-90 text-primary-foreground rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-md shadow-primary/20">
+            <Plus className="w-4 h-4" /> New Invoice
           </Link>
           <Link to="/dashboard/clients/add" className="flex items-center gap-2 px-4 py-2.5 bg-background border border-border hover:bg-muted text-foreground rounded-xl text-xs font-bold uppercase tracking-wider transition-all">
             <UserPlus className="w-4 h-4 text-primary" /> Add Client
@@ -297,8 +350,8 @@ export default function DashboardOverview() {
         </div>
       </div>
 
-      {/* Row 1: Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+      {/* Row 1: KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
         {stats.map((stat) => (
           <Link key={stat.id} to={stat.link} className={`bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all group border-b-4 ${stat.hoverBorder}`}>
             <div className="flex items-start justify-between mb-4">
@@ -307,13 +360,13 @@ export default function DashboardOverview() {
               </div>
               {stat.growth && (
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${stat.up ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
-                  {stat.up ? "+" : "-"}{stat.growth}
+                  {stat.up ? "↑ " : "↓ "}{stat.growth}
                 </span>
               )}
             </div>
             <div>
-              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest leading-none">{stat.label}</p>
-              <h3 className="text-xl font-bold text-foreground mt-2 tracking-tight group-hover:text-primary transition-colors">{stat.value}</h3>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest leading-none mb-2">{stat.label}</p>
+              <h3 className="text-2xl font-black text-foreground tracking-tight group-hover:text-primary transition-colors">{stat.value}</h3>
             </div>
           </Link>
         ))}
@@ -321,14 +374,16 @@ export default function DashboardOverview() {
 
       {/* Main Grid */}
       <div className="grid grid-cols-12 gap-8">
-        
-        {/* Left Column */}
+
+        {/* Left Column (Main Charts & Growth) */}
         <div className="col-span-12 lg:col-span-8 space-y-8">
+
+          {/* Revenue Trajectory */}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-8">
               <div>
                 <h3 className="text-lg font-bold text-foreground">Revenue Trajectory</h3>
-                <p className="text-xs text-muted-foreground mt-1">Detailed monthly analysis using agency primary brand colors</p>
+                <p className="text-xs text-muted-foreground mt-1">Detailed analysis of Paid vs Recurring revenue</p>
               </div>
               <div className="flex flex-col sm:flex-row items-center gap-4">
                 <Tabs value={trajectoryView} onValueChange={(v: any) => setTrajectoryView(v)} className="w-full sm:w-[320px]">
@@ -366,7 +421,7 @@ export default function DashboardOverview() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} opacity={0.5} />
                   <XAxis dataKey="label" tick={{ fontSize: 10, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} dy={10} />
-                  <YAxis tick={{ fontSize: 10, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `$${v/1000}k` : `$${v}`} />
+                  <YAxis tick={{ fontSize: 10, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `$${v / 1000}k` : `$${v}`} />
                   <Tooltip
                     contentStyle={{ borderRadius: "12px", border: "1px solid hsl(var(--border))", boxShadow: "var(--shadow-card)", padding: '12px', background: 'hsl(var(--card))' }}
                     itemStyle={{ fontWeight: 700, fontSize: '12px' }}
@@ -380,15 +435,47 @@ export default function DashboardOverview() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+            {/* Leads & Growth Pipeline */}
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
               <div className="flex items-center justify-between mb-6">
-                <h4 className="text-md font-bold text-foreground font-display">Recent Activity</h4>
+                <h4 className="text-md font-bold text-foreground font-display">New Lead Pipeline</h4>
                 <Button variant="ghost" size="sm" asChild className="text-xs font-bold text-primary uppercase tracking-wider">
-                  <Link to="/dashboard/invoices">View All</Link>
+                  <Link to="/dashboard/leads">Manage Leads</Link>
                 </Button>
               </div>
               <div className="space-y-4">
-                {activities.map((act, i) => (
+                {recentLeads.length > 0 ? (
+                  recentLeads.map((lead) => (
+                    <Link key={lead.id} to={`/dashboard/leads`} className="flex flex-col gap-1 p-3 rounded-xl hover:bg-muted/30 transition-all border border-transparent hover:border-border text-left group">
+                      <div className="flex justify-between items-center w-full">
+                        <span className="text-sm font-bold text-foreground truncate">{lead.email}</span>
+                        <Badge variant="outline" className={`text-[9px] font-bold uppercase tracking-wider border-0 ${lead.status.toLowerCase() === 'new' ? 'bg-emerald-50 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>
+                          {lead.status}
+                        </Badge>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground flex items-center justify-between w-full font-semibold">
+                        Received {formatDate(lead.createdAt)}
+                        <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </span>
+                    </Link>
+                  ))
+                ) : (
+                  <div className="text-center py-6 text-muted-foreground text-sm flex flex-col items-center">
+                    <Contact className="w-8 h-8 opacity-20 mb-2" />
+                    <span>No recent leads</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Recent Activity */}
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-md font-bold text-foreground font-display">Recent Activity</h4>
+              </div>
+              <div className="space-y-4">
+                {activities.length > 0 ? activities.map((act, i) => (
                   <Link key={i} to={act.link} className="flex items-center gap-4 group p-2 rounded-xl hover:bg-muted/30 transition-all text-left">
                     <div className={`w-10 h-10 rounded-xl ${act.colorType === 'primary' ? 'bg-primary/10 text-primary' : 'bg-secondary/10 text-secondary'} flex items-center justify-center shrink-0`}>
                       <act.icon className="w-5 h-5" />
@@ -399,52 +486,70 @@ export default function DashboardOverview() {
                     </div>
                     <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-primary transition-colors" />
                   </Link>
-                ))}
+                )) : (
+                  <div className="text-center py-6 text-muted-foreground text-sm font-semibold">
+                    No recent activity yet.
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-secondary/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-500" />
-              <h4 className="text-md font-bold text-foreground mb-6">Efficiency Matrix</h4>
-              <div className="space-y-6">
-                {[
-                  { label: 'Collection Rate', value: '92%', progress: 92, color: 'bg-primary', icon: ArrowUpRight },
-                  { label: 'Team Capacity', value: '78%', progress: 78, color: 'bg-secondary', icon: TrendingDown },
-                  { label: 'Customer Retention', value: '95%', progress: 95, color: 'bg-primary', icon: ArrowUpRight },
-                ].map((m, i) => (
-                  <div key={i} className="space-y-2">
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
-                        {m.label} <m.icon className="h-3 w-3 opacity-50" />
-                      </span>
-                      <span className={m.color === 'bg-primary' ? 'text-primary' : 'text-secondary'}>{m.value}</span>
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div className={`h-full ${m.color} transition-all duration-1000`} style={{ width: `${m.progress}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
 
-        {/* Right Column */}
+        {/* Right Column (Receivables & Pulse) */}
         <div className="col-span-12 lg:col-span-4 space-y-8">
-          {/* NEW FEATURE: Project Delivery Pulse */}
+
+          {/* Receivables & Cash Flow */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 relative overflow-hidden group">
+            <div className="flex items-center gap-3 mb-6">
+              <AlertCircle className="w-5 h-5 text-destructive" />
+              <h4 className="text-md font-bold text-foreground">Receivables & Cash Flow</h4>
+            </div>
+
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase mb-4 tracking-wider">Top Outstanding Invoices</p>
+            {receivables.length === 0 ? (
+              <p className="text-sm text-emerald-600/70 py-6 text-center italic font-bold">All invoices paid. Outstanding pipeline clear!</p>
+            ) : (
+              <div className="space-y-3">
+                {receivables.map(inv => {
+                  const isOverdue = inv.status === 'Overdue';
+                  return (
+                    <Link key={inv.id} to={inv.link} className={`block p-4 rounded-xl border transition-all ${isOverdue ? 'bg-destructive/5 border-destructive/20 hover:border-destructive/40 hover:bg-destructive/10' : 'bg-muted/20 border-border hover:border-primary/30 hover:bg-primary/5'}`}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest ${isOverdue ? 'text-destructive flex items-center gap-1.5' : 'text-primary'}`}>
+                          {isOverdue && <span className="h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />}{inv.status}
+                        </span>
+                        <span className="text-sm font-black text-foreground">{inv.amount}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-bold text-foreground truncate">{inv.client}</p>
+                        <p className="text-[10px] text-muted-foreground font-semibold">Due {formatDate(inv.dueDate)}</p>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+
+            <div className="mt-4 pt-4 border-t border-dashed border-border/80">
+              <Button variant="outline" className="w-full text-xs font-bold uppercase tracking-wider gap-2 h-10 border-border group" asChild>
+                <Link to="/dashboard/invoices">
+                  View All Receivables <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+
+          {/* Project Delivery Pulse (Simplified) */}
           <div className="bg-white rounded-2xl border border-border p-6 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-full -mr-12 -mt-12" />
             <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <HeartPulse className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <h4 className="text-md font-bold text-foreground leading-none">Delivery Pulse</h4>
-                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mt-1">Real-time status</p>
-                </div>
+              <div className="flex flex-col">
+                <h4 className="text-md font-bold text-foreground leading-none">Ops Delivery Pulse</h4>
+                <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mt-1">Project Status Summary</p>
               </div>
-              <Badge className="bg-emerald-50 text-emerald-600 border-0 text-[10px] uppercase font-black px-2 py-0.5 tracking-wider">Stable</Badge>
+              <Badge className="bg-emerald-50 text-emerald-600 border-0 text-[10px] uppercase font-black px-2 py-0.5 tracking-wider">Live</Badge>
             </div>
 
             <div className="space-y-6">
@@ -454,24 +559,24 @@ export default function DashboardOverview() {
                     <span>On Track</span>
                     <span className="text-primary">{projectHealth.onTrack}%</span>
                   </div>
-                  <Progress value={projectHealth.onTrack} className="h-1.5 bg-muted" indicatorClassName="bg-primary" />
+                  <Progress value={projectHealth.onTrack} className="h-2 bg-muted" indicatorClassName="bg-primary" />
                 </div>
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex-1 space-y-1">
                   <div className="flex justify-between text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-                    <span>At Risk</span>
+                    <span>At Risk / Delayed</span>
                     <span className="text-secondary">{projectHealth.atRisk}%</span>
                   </div>
-                  <Progress value={projectHealth.atRisk} className="h-1.5 bg-muted" indicatorClassName="bg-secondary" />
+                  <Progress value={projectHealth.atRisk} className="h-2 bg-muted" indicatorClassName="bg-secondary" />
                 </div>
               </div>
-              
+
               <div className="pt-4 border-t border-dashed border-border">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-left">
-                    <p className="text-2xl font-black text-foreground">{(projects.filter(p => p.status === 'In Progress').length)}</p>
-                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Active Deliveries</p>
+                    <p className="text-3xl font-black text-foreground">{projectHealth.total}</p>
+                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest cursor-default">Active Projects</p>
                   </div>
                   <Button variant="outline" size="sm" asChild className="h-9 px-3 rounded-xl border-border hover:bg-primary/5 group">
                     <Link to="/dashboard/projects" className="flex items-center gap-2 text-xs font-bold text-foreground">
@@ -489,40 +594,18 @@ export default function DashboardOverview() {
                 <Target className="w-5 h-5 text-secondary" />
                 <h4 className="text-md font-bold text-foreground font-display">Revenue Target</h4>
               </div>
-              <span className="text-[10px] font-black text-muted-foreground uppercase">Q1 2026</span>
+              <span className="text-[10px] font-black text-muted-foreground uppercase">{quarterlyTarget.label}</span>
             </div>
             <div className="space-y-4">
               <div className="flex justify-between items-end mb-1">
-                <p className="text-3xl font-black text-foreground">84%</p>
-                <p className="text-xs font-bold text-muted-foreground mb-1">Target: $1.2M</p>
+                <p className="text-3xl font-black text-foreground">{quarterlyTarget.progress}%</p>
+                <p className="text-xs font-bold text-muted-foreground mb-1">Target: {formatCurrency(quarterlyTarget.target)}</p>
               </div>
-              <Progress value={84} className="h-3 bg-muted" indicatorClassName="bg-secondary" />
-              <p className="text-[11px] font-semibold text-muted-foreground leading-relaxed uppercase tracking-wider">You are on track to exceed last quarter's performance by 12%.</p>
+              <Progress value={quarterlyTarget.progress} className="h-3 bg-muted" indicatorClassName="bg-secondary" />
+              <p className="text-[11px] font-semibold text-muted-foreground leading-relaxed uppercase tracking-wider">{quarterlyTarget.trendText}</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center gap-3 mb-6">
-              <Bell className="w-5 h-5 text-destructive" />
-              <h4 className="text-md font-bold text-foreground">Action Items</h4>
-            </div>
-            {alerts.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center italic">No urgent items found.</p>
-            ) : (
-              <div className="space-y-4">
-                {alerts.map(alert => (
-                  <Link key={alert.id} to={alert.link} className="block p-4 rounded-xl bg-muted/20 border border-border hover:border-primary/20 hover:bg-primary/5 transition-all">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Priority</p>
-                      <div className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
-                    </div>
-                    <p className="text-sm font-bold text-foreground truncate">{alert.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{alert.desc}</p>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>

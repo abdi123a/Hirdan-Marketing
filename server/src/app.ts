@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import { env } from './config/env.js';
 import routes from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { AppError } from './lib/errors.js';
@@ -12,17 +13,67 @@ import { fileURLToPath } from 'url';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
+import { PATHS } from './lib/paths.js';
+import fileRoutes from './routes/files.routes.js';
+
+// ─── Storage Bootstrap ───────────────────────────────────────────
+
+function bootstrapStorage() {
+  const dirs = [
+    PATHS.UPLOADS_ROOT,
+    PATHS.DOCUMENTS,
+    PATHS.MEDIA,
+    PATHS.BRANDING,
+  ];
+
+  console.log('📂 [Storage] Bootstrapping directories...');
+  
+  dirs.forEach(dir => {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        console.log(`✅ Created: ${dir}`);
+      } else {
+        // Check write permissions
+        fs.accessSync(dir, fs.constants.W_OK);
+      }
+    } catch (error) {
+      console.error(`❌ Storage Error for ${dir}:`, error);
+      if (process.env.NODE_ENV === 'production') {
+        process.exit(1); // Fail fast in production
+      }
+    }
+  });
+  console.log('✅ [Storage] All directories verified and writable');
+}
+
+bootstrapStorage();
+
 const app = express();
+
+app.set("trust proxy", 1);
 
 // ─── Security & Global Middleware ─────────────────────────────────
 
-// Add security headers
-app.use(helmet());
+// Add security headers (configured to allow document previews and cross-origin resources)
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      "img-src": ["'self'", "data:", "https:", "blob:", "http://localhost:*", "http://127.0.0.1:*", env.FRONTEND_URL].filter(Boolean) as string[],
+      "frame-src": ["'self'", "data:", "blob:", "http://localhost:*", "http://127.0.0.1:*", env.FRONTEND_URL].filter(Boolean) as string[],
+      "frame-ancestors": ["'self'", "http://localhost:*", "http://127.0.0.1:*", env.FRONTEND_URL].filter(Boolean) as string[],
+      "script-src": ["'self'"],
+    },
+  },
+}));
 
 // Global API Rate Limiting
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: process.env.NODE_ENV === 'production' ? 100 : 20000,
+  max: process.env.NODE_ENV === 'production' ? 5000 : 20000,
   message: { error: true, message: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -33,8 +84,8 @@ app.use(cors({
   origin: (origin, callback) => {
     const allowedOrigins = process.env.NODE_ENV === 'production'
       ? [
-          process.env.FRONTEND_URL || 'https://app.hirdanmarketing.com',
-          process.env.LANDING_URL || 'https://hirdanmarketing.com',
+          env.FRONTEND_URL || 'https://app.hirdanmarketing.com',
+          env.LANDING_URL || 'https://hirdanmarketing.com',
         ].filter(Boolean)
       : [
           'http://localhost:8080',
@@ -55,17 +106,6 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-
-// ─── Static Files for Uploads ─────────────────────────────────────
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const uploadsDir = path.join(__dirname, '../public/uploads');
-
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // ─── Health Check ─────────────────────────────────────────────────
 
@@ -90,6 +130,11 @@ app.get('/api/health', async (_req, res) => {
 // ─── API Routes ───────────────────────────────────────────────────
 
 app.use('/api', routes);
+
+// Handle protected file access first
+app.use('/uploads', fileRoutes);
+
+// NOTE: do NOT publicly serve uploads. All access must go through authenticated routes.
 
 // ─── 404 Handler ──────────────────────────────────────────────────
 

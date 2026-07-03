@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,19 +6,26 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Save, Plus, Trash2, Receipt } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, Receipt, Shield } from "lucide-react";
 import { useAgencyStore, Invoice, InvoiceItem } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, parseCurrency } from "@/lib/utils";
 import { ClientSelector } from "@/components/ClientSelector";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 
 const generateInvoiceId = () => `INV-${Math.floor(Math.random() * 9000 + 1000)}`;
 
 export default function AddInvoicePage() {
   const navigate = useNavigate();
-  const { clients, addInvoice, settings } = useAgencyStore();
+  const { clients, addInvoice, settings, services, packages, fetchServices, fetchPackages } = useAgencyStore();
   const { toast } = useToast();
   const invoiceRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetchServices();
+    fetchPackages();
+  }, [fetchServices, fetchPackages]);
 
   const invoiceId = useState(generateInvoiceId)[0];
 
@@ -29,8 +36,10 @@ export default function AddInvoicePage() {
     status: "Pending",
     date: new Date().toISOString().split("T")[0],
     dueDate: new Date(Date.now() + 14 * 864e5).toISOString().split("T")[0],
-    taxRate: 0,
-    notes: "",
+    taxRate: settings.taxRate || 0,
+    notes: settings.defaultInvoiceNotes || "",
+    showSignature: true,
+    showStamp: true,
   });
 
   const [items, setItems] = useState<InvoiceItem[]>([
@@ -39,7 +48,7 @@ export default function AddInvoicePage() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const setField = (field: keyof Invoice, value: string | number) =>
+  const setField = <K extends keyof Invoice>(field: K, value: Invoice[K]) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
   const updateItem = (index: number, field: keyof InvoiceItem, value: string | number) => {
@@ -69,7 +78,14 @@ export default function AddInvoicePage() {
     if (!validate()) return;
     const totalStr = formatCurrency(total);
     try {
-      await addInvoice({ ...(form as Omit<Invoice, "id">), amount: totalStr, items, id: invoiceId });
+      let finalStatus = form.status;
+      if ((form.deposit || 0) > 0 && (form.deposit || 0) < total) {
+        finalStatus = 'Partially Paid';
+      } else if ((form.deposit || 0) >= total) {
+        finalStatus = 'Paid';
+      }
+
+      await addInvoice({ ...(form as Omit<Invoice, "id">), status: finalStatus as any, amount: totalStr, items, id: invoiceId });
       toast({ title: "Invoice created!", description: `Invoice ${invoiceId} has been saved.` });
       navigate(`/dashboard/invoices/view/${invoiceId}`);
     } catch (e) {
@@ -153,10 +169,11 @@ export default function AddInvoicePage() {
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label>Status</Label>
-                    <Select value={form.status} onValueChange={(v) => setField("status", v)}>
+                    <Select value={form.status} onValueChange={(v) => setField("status", v as any)}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Pending">Pending</SelectItem>
+                        <SelectItem value="Partially Paid">Partially Paid</SelectItem>
                         <SelectItem value="Paid">Paid</SelectItem>
                         <SelectItem value="Overdue">Overdue</SelectItem>
                       </SelectContent>
@@ -222,9 +239,37 @@ export default function AddInvoicePage() {
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base font-semibold">Line Items</CardTitle>
-                  <Button size="sm" variant="outline" onClick={addItem} className="gap-1.5 h-8">
-                    <Plus className="h-3.5 w-3.5" /> Add Item
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="outline" className="gap-1.5 h-8">
+                          <Plus className="h-3.5 w-3.5" /> Add from Inventory
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuLabel>Add Service</DropdownMenuLabel>
+                        {services.map(s => (
+                          <DropdownMenuItem key={s.id} onClick={() => {
+                            setItems(prev => [...prev, { description: s.name, quantity: 1, unitPrice: parseCurrency(s.basePrice) }]);
+                          }}>
+                            {s.name} ({s.basePrice})
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel>Add Package</DropdownMenuLabel>
+                        {packages.map(p => (
+                          <DropdownMenuItem key={p.id} onClick={() => {
+                            setItems(prev => [...prev, { description: p.name, quantity: 1, unitPrice: parseCurrency(p.price) }]);
+                          }}>
+                            {p.name} ({p.price})
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Button size="sm" variant="outline" onClick={addItem} className="gap-1.5 h-8">
+                      <Plus className="h-3.5 w-3.5" /> Custom Item
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -350,8 +395,40 @@ export default function AddInvoicePage() {
                   <span className="font-bold text-foreground">Balance Due</span>
                   <span className="font-bold text-lg text-primary">{formatCurrency(balanceDue)}</span>
                 </div>
-              </CardContent>
-            </Card>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-card border-border">
+            <CardHeader className="pb-3 px-5">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Shield className="h-4 w-4 text-primary" /> Document Seals
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-5 pb-5 space-y-4">
+              <div className="flex items-center justify-between group p-2 hover:bg-muted/50 rounded-lg transition-all">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-bold cursor-pointer" htmlFor="show-signature">Authorized Signature</Label>
+                  <p className="text-[10px] text-muted-foreground">Show signature at the bottom</p>
+                </div>
+                <Switch 
+                  id="show-signature" 
+                  checked={form.showSignature ?? true} 
+                  onCheckedChange={(val) => setField("showSignature", val)} 
+                />
+              </div>
+              <div className="flex items-center justify-between group p-2 hover:bg-muted/50 rounded-lg transition-all">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-bold cursor-pointer" htmlFor="show-stamp">Company Stamp</Label>
+                  <p className="text-[10px] text-muted-foreground">Show stamp on the document</p>
+                </div>
+                <Switch 
+                  id="show-stamp" 
+                  checked={form.showStamp ?? true} 
+                  onCheckedChange={(val) => setField("showStamp", val)} 
+                />
+              </div>
+            </CardContent>
+          </Card>
 
             <Card className="shadow-card border-border bg-muted/30">
               <CardContent className="p-5 space-y-3">

@@ -56,7 +56,7 @@ export default function AddUserPage() {
   // Check for email conflicts in the frontend
   useEffect(() => {
     if (!isEdit && form.email) {
-      const conflict = users.find(u => u.email.toLowerCase() === form.email.toLowerCase());
+      const conflict = users.find(u => (u.email || "").toLowerCase() === form.email.toLowerCase());
       setConflictUser(conflict || null);
     } else {
       setConflictUser(null);

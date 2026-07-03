@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Users, Briefcase, UserCircle,
   Receipt, CreditCard, CalendarDays, Settings, LogOut, PanelLeftClose, PanelLeft,
-  FileText, Package, Zap, Mail
+  FileText, Package, Zap, Mail, Share2, Presentation
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
@@ -31,6 +31,8 @@ const mainItems = [
   { title: "Proforma", url: "/dashboard/proforma", icon: FileText },
   { title: "Invoices", url: "/dashboard/invoices", icon: Receipt },
   { title: "Subscriptions", url: "/dashboard/subscriptions", icon: CreditCard },
+  { title: "Social Media", url: "/dashboard/social-media", icon: Share2 },
+  { title: "Monthly Reports", url: "/dashboard/reports/monthly", icon: Presentation },
   { title: "Packages", url: "/dashboard/packages", icon: Package },
   { title: "Services", url: "/dashboard/services", icon: Zap },
   { title: "Email List", url: "/dashboard/leads", icon: Mail },

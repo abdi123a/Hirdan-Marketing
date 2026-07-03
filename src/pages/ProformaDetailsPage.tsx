@@ -146,6 +146,7 @@ export default function ProformaDetailsPage() {
 
   const statusColor = (s: string) =>
     s === 'Accepted' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+      s === 'Partially Paid' ? "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" :
       s === 'Draft' ? "bg-zinc-100 text-zinc-700 dark:bg-zinc-900/30 dark:text-zinc-400" :
         s === 'Sent' ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
           "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
@@ -189,11 +190,13 @@ export default function ProformaDetailsPage() {
   const statusAccent =
     proforma.status === "Accepted"
       ? "text-emerald-600"
-      : proforma.status === "Sent"
-        ? "text-blue-600"
-        : proforma.status === "Expired"
-          ? "text-red-600"
-          : "text-foreground";
+      : proforma.status === "Partially Paid"
+        ? "text-teal-600"
+        : proforma.status === "Sent"
+          ? "text-blue-600"
+          : proforma.status === "Expired"
+            ? "text-red-600"
+            : "text-foreground";
 
   return (
     <div className="space-y-6 max-w-[1400px] animate-in fade-in duration-500 mx-auto">
@@ -247,7 +250,12 @@ export default function ProformaDetailsPage() {
             )}
             <Button
               variant="outline"
-              onClick={() => setTimeout(() => window.print(), 50)}
+              onClick={() => {
+                // #region agent log
+                fetch('http://127.0.0.1:7891/ingest/c6d26856-ebcd-4639-9d6e-816efcb76a2c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1b217a'},body:JSON.stringify({sessionId:'1b217a',runId:'pre-fix',hypothesisId:'H8',location:'src/pages/ProformaDetailsPage.tsx:255',message:'Print proforma initiated',data:{proformaId:proforma.id,route:window.location.pathname},timestamp:Date.now()})}).catch(()=>{});
+                // #endregion
+                setTimeout(() => window.print(), 50);
+              }}
               className="h-10 px-4 gap-2 rounded-xl"
             >
               <Printer className="h-4 w-4" /> Print / Save PDF

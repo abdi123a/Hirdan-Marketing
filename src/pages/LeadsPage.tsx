@@ -26,7 +26,7 @@ export default function LeadsPage() {
   }, [fetchLeads]);
 
   const filtered = (leads || []).filter((l) =>
-    l.email.toLowerCase().includes(search.toLowerCase())
+    (l.email || "").toLowerCase().includes(search.toLowerCase())
   );
 
   const handleDelete = async (id: string, email: string) => {
@@ -144,13 +144,13 @@ export default function LeadsPage() {
 
       <Card className="shadow-card border-border">
         <CardHeader className="pb-3 border-b border-border/50">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle className="text-lg font-semibold">Interested Users ({filtered.length})</CardTitle>
-            <div className="relative">
+            <div className="relative w-full sm:w-64 shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input 
                 placeholder="Search emails..." 
-                className="pl-9 w-64 bg-muted border-0 h-9" 
+                className="pl-9 w-full bg-muted border-0 h-9" 
                 value={search} 
                 onChange={(e) => setSearch(e.target.value)} 
               />
