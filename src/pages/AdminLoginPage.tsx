@@ -117,7 +117,7 @@ function AdminLoginForm() {
                   <Input
                     id="admin-email"
                     type="email"
-                    placeholder="admin@hirdan.com"
+                    placeholder="Enter your email address"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10 h-12 rounded-xl bg-muted/50 border-border/50 focus:bg-card text-sm transition-all"
