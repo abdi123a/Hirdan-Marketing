@@ -27,7 +27,7 @@ import { useToast } from "@/hooks/use-toast";
 export default function InvoiceDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { invoices, clients, settings, getVerificationToken } = useAgencyStore();
+  const { invoices, clients, settings, getVerificationToken, fetchInvoices, fetchClients } = useAgencyStore();
   const { toast } = useToast();
   const [verificationToken, setVerificationToken] = useState<string>("");
   const [loadingToken, setLoadingToken] = useState(false);
@@ -37,13 +37,13 @@ export default function InvoiceDetailsPage() {
   const client = useMemo(() => clients.find((c) => c.company === invoice?.client || c.name === invoice?.client), [clients, invoice]);
 
   useEffect(() => {
-    if (invoices.length > 0) {
+    Promise.all([
+      fetchInvoices(),
+      fetchClients()
+    ]).finally(() => {
       setIsInitialLoading(false);
-    } else {
-      const timer = setTimeout(() => setIsInitialLoading(false), 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [invoices.length]);
+    });
+  }, [fetchInvoices, fetchClients]);
 
   useEffect(() => {
     if (invoice?.id) {

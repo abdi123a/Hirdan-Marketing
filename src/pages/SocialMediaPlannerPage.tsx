@@ -48,10 +48,18 @@ const MONTHS = ["January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"];
 const DAYS_OF_WEEK = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
 
+const CONTENT_TYPE_CONFIG: Record<string, { label: string; emoji: string; description: string; accentClass: string }> = {
+  video:   { label: "Video",   emoji: "🎬", description: "Reels, TikToks, YT Shorts", accentClass: "border-[#4c3d94] bg-[#4c3d94]/8 text-[#4c3d94]" },
+  photo:   { label: "Photo",   emoji: "📷", description: "Single images & carousels", accentClass: "border-[#9b8fd4] bg-[#9b8fd4]/8 text-[#9b8fd4]" },
+  story:   { label: "Story",   emoji: "✨", description: "24-hour ephemeral content",  accentClass: "border-[#f5cf7e] bg-[#f5cf7e]/8 text-[#c89a2a]" },
+  graphic: { label: "Graphic", emoji: "🎨", description: "Designed posts & infographics", accentClass: "border-[#f6b317] bg-[#f6b317]/8 text-[#b07e0c]" },
+};
+
 const defaultForm = {
   title: "",
   platforms: ["INSTAGRAM"],
   status: "DRAFT",
+  contentType: "graphic",
   shootingDate: "",
   publishDate: "",
   notes: "",
@@ -67,6 +75,7 @@ interface ContentPost {
   title: string;
   platform: string;
   status: string;
+  contentType?: string;
   shootingDate: string | null;
   publishDate: string | null;
   notes: string | null;
@@ -79,6 +88,7 @@ interface GroupedPost {
   id: string;
   title: string;
   status: string;
+  contentType: string;
   shootingDate: string | null;
   publishDate: string | null;
   notes: string | null;
@@ -134,6 +144,34 @@ const getStatusStyle = (status: string, primaryColor: string, accentColor: strin
       return { color: "#475569", bg: "#f1f5f9", border: "#cbd5e1" };
   }
 };
+
+// ─── PDF Card Spec Constants ──────────────────────────────────────
+
+const CONTENT_TYPE_COLORS: Record<string, string> = {
+  video:   "#4c3d94",
+  graphic: "#f6b317",
+  photo:   "#9b8fd4",
+  story:   "#f5cf7e",
+};
+
+const PDF_STATUS_DOT_COLORS: Record<string, string> = {
+  DRAFT:     "#888780",
+  SCHEDULED: "#7F77DD",
+  FILMED:    "#5DCAA5",
+  PUBLISHED: "#EF9F27",
+  DELAYED:   "#E24B4A",
+};
+
+// Infer a content type from the post title (best-effort; defaults to "graphic").
+function inferContentType(title: string, platforms: string[]): string {
+  const t = title.toLowerCase();
+  if (/\bvideo\b|\breel\b|\btiktok\b|\bshort\b|\bfilm\b|\bfilmed\b|\brecord/.test(t)) return "video";
+  if (/\bstory\b|\bstories\b/.test(t)) return "story";
+  if (/\bphoto\b|\bpicture\b|\bimage\b|\bpic\b|\bshot\b/.test(t)) return "photo";
+  // Platform hint: TikTok → video by default
+  if (platforms.some(p => p === "TIKTOK" || p === "YOUTUBE")) return "video";
+  return "graphic";
+}
 
 function buildCalendarGrid(month: number, year: number) {
   const firstDay = new Date(year, month - 1, 1).getDay();
@@ -404,6 +442,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
           id: post.id,
           title: post.title,
           status: post.status,
+          contentType: post.contentType || inferContentType(post.title, [post.platform]),
           shootingDate: post.shootingDate,
           publishDate: post.publishDate,
           notes: post.notes,
@@ -467,6 +506,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
       title: group.title,
       platforms: group.platforms,
       status: group.status,
+      contentType: group.contentType || "graphic",
       shootingDate: group.shootingDate ? group.shootingDate.split("T")[0] : "",
       publishDate: group.publishDate ? group.publishDate.split("T")[0] : "",
       notes: group.notes || "",
@@ -501,6 +541,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
             title: form.title.trim(),
             platform,
             status: form.status,
+            contentType: form.contentType || "graphic",
             shootingDate: form.shootingDate,
             publishDate: form.publishDate,
             notes: form.notes || null,
@@ -534,6 +575,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
             title: form.title.trim(),
             platform,
             status: form.status,
+            contentType: form.contentType || "graphic",
             shootingDate: form.shootingDate,
             publishDate: form.publishDate,
             notes: form.notes || null,
@@ -843,29 +885,33 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                               const g = ev.group;
                               const isShoot = ev.type === "SHOOT";
                               const stStyle = getStatusStyle(g.status, settings.primaryColor || "#504188", "#f6b317");
-
-                              const cardClasses = isShoot
-                                ? "bg-[#E8EEF7] border-l-4 border-l-[#6B7FD4]"
-                                : "bg-[#FFF8E1] border-l-4 border-l-[#F5A623]";
-                              const badgeClasses = isShoot ? "bg-[#6B7FD4]" : "bg-[#F5A623]";
-                              const eventLabel = isShoot ? "Shooting" : "Publishing";
+                              const ct = g.contentType || inferContentType(g.title, g.platforms);
+                              const ctAccentColor = CONTENT_TYPE_COLORS[ct] || "#9b8fd4";
+                              const ctConfig = CONTENT_TYPE_CONFIG[ct];
+                              const statusColor = PDF_STATUS_DOT_COLORS[g.status] || PDF_STATUS_DOT_COLORS.DRAFT;
+                              const eventLabel = isShoot ? "Shooting" : (STATUS_CONFIG[g.status]?.label || g.status);
 
                               return (
                                 <div
                                   key={ev.id}
-                                  className={`flex flex-col gap-2 px-2.5 py-2.5 rounded-[12px] shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-black/5 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_8px_16px_rgba(0,0,0,0.12)] ${cardClasses}`}
-                                  title={`${g.title} (${g.platforms.join(", ")}) — Status: ${g.status}`}
+                                  className="flex flex-col gap-1.5 px-2.5 py-2 rounded-r-[10px] rounded-l-none shadow-[0_2px_6px_rgba(0,0,0,0.06)] border border-black/5 border-l-0 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_6px_14px_rgba(0,0,0,0.10)] bg-white dark:bg-card"
+                                  title={`${g.title} (${g.platforms.join(", ")}) — ${ctConfig?.label || ct} — Status: ${g.status}`}
                                   onClick={e => {
                                     e.stopPropagation();
                                     openEdit(g);
                                   }}
                                   style={{
-                                    borderLeftColor: stStyle.color,
-                                    borderLeftWidth: "4px"
+                                    borderLeft: `3px solid ${ctAccentColor}`,
                                   }}
                                 >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[7px] font-black uppercase tracking-[0.08em] text-white ${badgeClasses}`}>
+                                  {/* Top row: event label + status dot */}
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span 
+                                      className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[7px] font-black uppercase tracking-[0.08em] text-white"
+                                      style={{
+                                        backgroundColor: isShoot ? "#6B7FD4" : statusColor
+                                      }}
+                                    >
                                       {eventLabel}
                                     </span>
 
@@ -893,12 +939,10 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                                     </Select>
                                   </div>
 
-                                  <div className="text-[7px] font-bold text-slate-500 uppercase tracking-[0.04em] leading-tight">
-                                    {g.platforms.map((pl: string) => (PLATFORM_CONFIG[pl]?.label || pl).toUpperCase()).join(" • ")}
-                                  </div>
-
-                                  <div className="text-[10px] font-extrabold text-[#111827] leading-tight line-clamp-2">
-                                    {g.title}
+                                  {/* Post title with emoji in front */}
+                                  <div className="text-[9px] font-semibold text-[#111827] dark:text-foreground leading-tight line-clamp-2 flex items-center gap-1">
+                                    <span className="text-[10px] leading-none shrink-0">{ctConfig?.emoji || "🎨"}</span>
+                                    <span>{g.title}</span>
                                   </div>
                                 </div>
                               );
@@ -1315,21 +1359,21 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                           minHeight: "135px",
                           borderRight: di < 6 ? "1px solid #e2e8f0" : "none",
                           backgroundColor: day ? (isWeekend ? "#fafafa" : "#ffffff") : "#f1f5f9",
-                          padding: "16px 12px",
-                          position: "relative",
+                          padding: "12px 10px",
                           boxSizing: "border-box",
+                          display: "flex",
+                          flexDirection: "column",
                         }}
                       >
                         {day && (
                           <>
                             <div
                               style={{
-                                position: "absolute",
-                                top: "10px",
-                                right: "14px",
                                 fontSize: "18px",
                                 fontWeight: 900,
                                 color: "#94a3b8",
+                                textAlign: "right",
+                                marginBottom: "8px",
                                 lineHeight: 1,
                               }}
                             >
@@ -1338,89 +1382,149 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
 
                             <div
                               style={{
-                                marginTop: "24px",
                                 display: "flex",
                                 flexDirection: "column",
-                                gap: "8px",
+                                gap: "6px",
+                                flex: 1,
                               }}
                             >
-                              {eventsOnDay.map(ev => {
+                              {eventsOnDay.map((ev) => {
                                 const g = ev.group;
-                                const isShootDate = ev.type === "SHOOT";
-                                const shootingAccent = settings.primaryColor || "#504188"; // brand violet
-                                const publishingAccent = "#F6B317"; // yellow
-                                const accentColor = isShootDate ? shootingAccent : publishingAccent;
-                                const cardBackground = isShootDate ? hexToRgba(shootingAccent, 0.14) : hexToRgba(publishingAccent, 0.12);
-                                const label = isShootDate ? "SHOOTING" : "PUBLISHING";
+                                const contentType = g.contentType || inferContentType(g.title, g.platforms);
+                                const accentColor = CONTENT_TYPE_COLORS[contentType] || "#9b8fd4";
+                                const statusDotColor = PDF_STATUS_DOT_COLORS[g.status] || PDF_STATUS_DOT_COLORS.DRAFT;
+
+                                // Inline SVG platform icons (html2canvas-safe)
+                                const PlatformIconSvg = ({ platform }: { platform: string }) => {
+                                  const iconColor = "#64748b";
+                                  const size = 13;
+                                  // Simple brand-recognisable glyphs via path / text
+                                  if (platform === "INSTAGRAM") {
+                                    return (
+                                      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                                        <circle cx="12" cy="12" r="4"/>
+                                        <circle cx="17.5" cy="6.5" r="1" fill={iconColor} stroke="none"/>
+                                      </svg>
+                                    );
+                                  }
+                                  if (platform === "FACEBOOK") {
+                                    return (
+                                      <svg width={size} height={size} viewBox="0 0 24 24" fill={iconColor}>
+                                        <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+                                      </svg>
+                                    );
+                                  }
+                                  if (platform === "TIKTOK") {
+                                    return (
+                                      <svg width={size} height={size} viewBox="0 0 24 24" fill={iconColor}>
+                                        <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.98a8.14 8.14 0 0 0 4.77 1.53V7.07a4.85 4.85 0 0 1-1-.38z"/>
+                                      </svg>
+                                    );
+                                  }
+                                  if (platform === "LINKEDIN") {
+                                    return (
+                                      <svg width={size} height={size} viewBox="0 0 24 24" fill={iconColor}>
+                                        <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/>
+                                        <rect x="2" y="9" width="4" height="12"/>
+                                        <circle cx="4" cy="4" r="2"/>
+                                      </svg>
+                                    );
+                                  }
+                                  if (platform === "YOUTUBE") {
+                                    return (
+                                      <svg width={size} height={size} viewBox="0 0 24 24" fill={iconColor}>
+                                        <path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.95 1.96C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/>
+                                        <polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" fill="#fff"/>
+                                      </svg>
+                                    );
+                                  }
+                                  if (platform === "X") {
+                                    return (
+                                      <svg width={size} height={size} viewBox="0 0 24 24" fill={iconColor}>
+                                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                                      </svg>
+                                    );
+                                  }
+                                  // Fallback: a simple circle with first letter
+                                  const label = (PLATFORM_CONFIG[platform]?.label || platform).slice(0, 1).toUpperCase();
+                                  return (
+                                    <svg width={size} height={size} viewBox="0 0 24 24">
+                                      <circle cx="12" cy="12" r="11" fill="none" stroke={iconColor} strokeWidth="2"/>
+                                      <text x="12" y="16" textAnchor="middle" fontSize="11" fontWeight="700" fill={iconColor}>{label}</text>
+                                    </svg>
+                                  );
+                                };
 
                                 return (
                                   <div
                                     key={ev.id}
                                     style={{
-                                      backgroundColor: cardBackground,
+                                      backgroundColor: "#f8fafc",
                                       borderLeft: `4px solid ${accentColor}`,
-                                      borderRadius: "10px",
-                                      padding: "10px 12px",
-                                      border: `1px solid ${hexToRgba(accentColor, 0.22)}`,
-                                      boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                                      transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                                      borderTop: "0.5px solid #e2e8f0",
+                                      borderRight: "0.5px solid #e2e8f0",
+                                      borderBottom: "0.5px solid #e2e8f0",
+                                      borderRadius: "0 8px 8px 0",
+                                      padding: "8px 10px",
                                       display: "flex",
                                       flexDirection: "column",
-                                      gap: "6px",
+                                      gap: "4px",
                                       boxSizing: "border-box",
+                                      position: "relative",
                                     }}
                                   >
+                                    {/* Status dot — top right */}
+                                    <span
+                                      style={{
+                                        position: "absolute",
+                                        top: "8px",
+                                        right: "8px",
+                                        width: "6px",
+                                        height: "6px",
+                                        borderRadius: "50%",
+                                        backgroundColor: statusDotColor,
+                                        display: "inline-block",
+                                        flexShrink: 0,
+                                      }}
+                                    />
+
+                                    {/* Platform icons row */}
                                     <div
                                       style={{
-                                        display: "inline-flex",
+                                        display: "flex",
                                         alignItems: "center",
+                                        gap: "4px",
+                                        flexWrap: "wrap",
+                                        paddingRight: "14px", // avoid overlap with status dot
                                       }}
                                     >
-                                      <span
-                                        style={{
-                                          backgroundColor: accentColor,
-                                          color: "#ffffff",
-                                          borderRadius: "999px",
-                                          padding: "0 12px",
-                                          fontSize: "8px",
-                                          fontWeight: 800,
-                                          textTransform: "uppercase",
-                                          letterSpacing: "0.5px",
-                                          lineHeight: 1,
-                                          display: "inline-flex",
-                                          alignItems: "center",
-                                          justifyContent: "center",
-                                          height: "30px",
-                                          boxSizing: "border-box",
-                                          whiteSpace: "nowrap",
-                                        }}
-                                      >
-                                        {label}
-                                      </span>
+                                      {g.platforms.map((pl: string) => (
+                                        <span key={pl} style={{ display: "inline-flex", alignItems: "center", lineHeight: 0 }}>
+                                          <PlatformIconSvg platform={pl} />
+                                        </span>
+                                      ))}
                                     </div>
-                                    <div
-                                      style={{
-                                        fontSize: "8px",
-                                        fontWeight: 700,
-                                        color: "#6b7280",
-                                        lineHeight: 1.2,
-                                        textTransform: "uppercase",
-                                        letterSpacing: "0.2px",
-                                      }}
-                                    >
-                                      {g.platforms.map((pl: string) => (PLATFORM_CONFIG[pl]?.label || pl).toUpperCase()).join(" • ")}
-                                    </div>
-                                    <div
-                                      style={{
-                                        fontSize: "11px",
-                                        fontWeight: 700,
-                                        color: "#1f2937",
-                                        lineHeight: 1.25,
-                                        fontFamily: "'Inter', -apple-system, sans-serif",
-                                      }}
-                                    >
-                                      {g.title}
-                                    </div>
+
+                                     {/* Title — bottom, most prominent, with emoji in front */}
+                                     <div
+                                       style={{
+                                         fontSize: "11px",
+                                         fontWeight: 500,
+                                         color: "#1f2937",
+                                         lineHeight: 1.3,
+                                         marginTop: "auto",
+                                         fontFamily: "'Inter', -apple-system, sans-serif",
+                                         display: "flex",
+                                         alignItems: "center",
+                                         gap: "4px",
+                                       }}
+                                     >
+                                       <span style={{ fontSize: "12px", lineHeight: 1, flexShrink: 0 }}>
+                                         {CONTENT_TYPE_CONFIG[contentType]?.emoji || "🎨"}
+                                       </span>
+                                       <span>{g.title}</span>
+                                     </div>
                                   </div>
                                 );
                               })}
@@ -1547,6 +1651,44 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                 onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
                 className="mt-1.5"
               />
+            </div>
+
+            {/* ── Content Type Selector ── */}
+            <div>
+              <Label className="text-xs font-bold block mb-2">Content Type *</Label>
+              <div className="grid grid-cols-4 gap-2">
+                {Object.entries(CONTENT_TYPE_CONFIG).map(([key, cfg]) => {
+                  const isSelected = form.contentType === key;
+                  const dotColor = CONTENT_TYPE_COLORS[key];
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setForm(p => ({ ...p, contentType: key }))}
+                      className={`flex flex-col items-center gap-1 px-2 py-3 rounded-xl border-2 text-center transition-all duration-150 ${
+                        isSelected
+                          ? "border-current shadow-sm scale-[1.03]"
+                          : "border-border/60 hover:border-border bg-muted/20 hover:bg-muted/40"
+                      }`}
+                      style={isSelected ? { borderColor: dotColor, backgroundColor: `${dotColor}12` } : {}}
+                    >
+                      <span className="text-xl leading-none">{cfg.emoji}</span>
+                      <span
+                        className="text-[11px] font-bold leading-none"
+                        style={isSelected ? { color: dotColor } : { color: "var(--muted-foreground)" }}
+                      >
+                        {cfg.label}
+                      </span>
+                      <span
+                        className="text-[9px] leading-tight opacity-70"
+                        style={isSelected ? { color: dotColor } : { color: "var(--muted-foreground)" }}
+                      >
+                        {cfg.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="space-y-3">

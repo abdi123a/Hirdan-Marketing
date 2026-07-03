@@ -626,6 +626,7 @@ model ContentPost {
   title         String
   platform      SocialPlatform
   status        PostStatus     @default(DRAFT)
+  contentType   String?        @map("content_type")
   shootingDate  DateTime?      @map("shooting_date")
   publishDate   DateTime?      @map("publish_date")
   notes         String?        @db.Text

@@ -32,7 +32,7 @@ const generateInvoiceId = () => `INV-${Math.floor(Math.random() * 9000 + 1000)}`
 export default function ProformaDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { proformas, clients, settings, addInvoice, updateProforma, getVerificationToken } = useAgencyStore();
+  const { proformas, clients, settings, addInvoice, updateProforma, getVerificationToken, fetchProformas, fetchClients } = useAgencyStore();
   const { toast } = useToast();
   const [verificationToken, setVerificationToken] = useState<string>("");
   const [loadingToken, setLoadingToken] = useState(false);
@@ -41,20 +41,17 @@ export default function ProformaDetailsPage() {
   const [isConverting, setIsConverting] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
+  useEffect(() => {
+    Promise.all([
+      fetchProformas(),
+      fetchClients()
+    ]).finally(() => {
+      setIsInitialLoading(false);
+    });
+  }, [fetchProformas, fetchClients]);
+
   const proforma = useMemo(() => proformas.find((p) => p.id === id), [proformas, id]);
   const client = useMemo(() => clients.find((c) => c.company === proforma?.client || c.name === proforma?.client), [clients, proforma]);
-
-  useEffect(() => {
-    // We need both proformas and clients to be loaded for conversion to work reliably (needs clientId matching)
-    if (proformas.length > 0 && clients.length > 0) {
-      setIsInitialLoading(false);
-    } else {
-      // If none, maybe it's still fetching or really empty. 
-      // Set a timeout to stop loading if it's been empty for a bit.
-      const timer = setTimeout(() => setIsInitialLoading(false), 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [proformas.length]);
 
   useEffect(() => {
     if (proforma?.id) {

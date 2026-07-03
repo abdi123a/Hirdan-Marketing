@@ -21,13 +21,14 @@ const generateProformaId = () => `PRO-${Math.floor(Math.random() * 9000 + 1000)}
 
 export default function AddProformaPage() {
   const navigate = useNavigate();
-  const { clients, addProforma, settings, services, packages, fetchServices, fetchPackages } = useAgencyStore();
+  const { clients, addProforma, settings, services, packages, fetchServices, fetchPackages, fetchClients } = useAgencyStore();
   const { toast } = useToast();
 
   useEffect(() => {
     fetchServices();
     fetchPackages();
-  }, [fetchServices, fetchPackages]);
+    fetchClients();
+  }, [fetchServices, fetchPackages, fetchClients]);
 
   const proformaId = useState(generateProformaId)[0];
   const [form, setForm] = useState<Partial<Proforma>>({

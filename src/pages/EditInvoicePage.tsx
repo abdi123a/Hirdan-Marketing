@@ -6,44 +6,47 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Save, Plus, Trash2, Receipt } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, Receipt, Shield, Loader2 } from "lucide-react";
 import { useAgencyStore, Invoice, InvoiceItem } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, parseCurrency } from "@/lib/utils";
 import { ClientSelector } from "@/components/ClientSelector";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
-import { Shield } from "lucide-react";
 
 export default function EditInvoicePage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { invoices, clients, updateInvoice, settings, services, packages, fetchServices, fetchPackages } = useAgencyStore();
+  const { invoices, clients, updateInvoice, settings, services, packages, fetchServices, fetchPackages, fetchInvoices, fetchClients } = useAgencyStore();
   const { toast } = useToast();
   const initialized = useRef(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetchServices();
-    fetchPackages();
-  }, [fetchServices, fetchPackages]);
+    Promise.all([
+      fetchServices(),
+      fetchPackages(),
+      fetchInvoices(),
+      fetchClients()
+    ]).finally(() => {
+      setIsLoading(false);
+    });
+  }, [fetchServices, fetchPackages, fetchInvoices, fetchClients]);
 
   const [form, setForm] = useState<Partial<Invoice>>({});
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (initialized.current || invoices.length === 0) return;
+    if (isLoading || initialized.current) return;
 
     const invoice = invoices.find((i) => i.id === id || i._dbId === id);
     if (invoice) {
       setForm(invoice);
       setItems(invoice.items && invoice.items.length > 0 ? invoice.items : [{ description: "", quantity: 1, unitPrice: 0 }]);
       initialized.current = true;
-    } else {
-      toast({ title: "Invoice not found", variant: "destructive" });
-      navigate("/dashboard/invoices");
     }
-  }, [id, invoices, navigate, toast]);
+  }, [id, invoices, isLoading]);
 
   const setField = <K extends keyof Invoice>(field: K, value: Invoice[K]) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -101,7 +104,22 @@ export default function EditInvoicePage() {
     }
   };
 
-  if (!form.id) return null;
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px]">
+        <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+      </div>
+    );
+  }
+
+  if (!form.id) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+        <h2 className="text-2xl font-bold font-display text-foreground">Invoice not found</h2>
+        <Button onClick={() => navigate("/dashboard/invoices")}>Back to Invoices</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">

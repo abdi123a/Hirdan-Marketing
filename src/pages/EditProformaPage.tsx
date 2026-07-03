@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Save, Plus, Trash2, FileText } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, FileText, Loader2 } from "lucide-react";
 import { useAgencyStore, Proforma, InvoiceItem } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, parseCurrency } from "@/lib/utils";
@@ -18,13 +18,20 @@ import { Shield } from "lucide-react";
 export default function EditProformaPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { clients, proformas, updateProforma, services, packages, fetchServices, fetchPackages } = useAgencyStore();
+  const { clients, proformas, updateProforma, services, packages, fetchServices, fetchPackages, fetchProformas, fetchClients } = useAgencyStore();
   const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetchServices();
-    fetchPackages();
-  }, [fetchServices, fetchPackages]);
+    Promise.all([
+      fetchServices(),
+      fetchPackages(),
+      fetchProformas(),
+      fetchClients()
+    ]).finally(() => {
+      setIsLoading(false);
+    });
+  }, [fetchServices, fetchPackages, fetchProformas, fetchClients]);
 
   const [form, setForm] = useState<Partial<Proforma>>({});
   const [items, setItems] = useState<InvoiceItem[]>([]);
@@ -32,17 +39,14 @@ export default function EditProformaPage() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    if (isLoaded || proformas.length === 0) return;
+    if (isLoading || isLoaded) return;
     const prof = proformas.find((p) => p.id === id || p._dbId === id);
     if (prof) {
       setForm(prof);
       setItems(prof.items && prof.items.length > 0 ? prof.items : [{ description: "", quantity: 1, unitPrice: 0 }]);
       setIsLoaded(true);
-    } else if (proformas.length > 0) {
-      toast({ title: "Proforma not found", variant: "destructive" });
-      navigate("/dashboard/proforma");
     }
-  }, [id, proformas, navigate, toast, isLoaded]);
+  }, [id, proformas, isLoaded, isLoading]);
 
   const setField = <K extends keyof Proforma>(field: K, value: Proforma[K]) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -88,7 +92,22 @@ export default function EditProformaPage() {
     }
   };
 
-  if (!form.id) return null;
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px]">
+        <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+      </div>
+    );
+  }
+
+  if (!form.id) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+        <h2 className="text-2xl font-bold font-display text-foreground">Proforma not found</h2>
+        <Button onClick={() => navigate("/dashboard/proforma")}>Back to Proformas</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">

@@ -42,6 +42,7 @@ const createPostDto = z.object({
   title: z.string().min(1).max(200),
   platform: z.enum(PLATFORMS),
   status: z.enum(POST_STATUSES).optional(),
+  contentType: z.string().optional().nullable(),
   shootingDate: z.string().optional().nullable(),
   publishDate: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),

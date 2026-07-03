@@ -20,7 +20,7 @@ rsync -avz -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
    
 echo "🚀 Copying Backend compiled files to api.hirdanmarketing.com..."
 rsync -avz -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
-  server/dist/ server/package.json server/package-lock.json server/prisma/ \
+  server/dist server/package.json server/package-lock.json server/prisma \
   root@72.61.192.11:/home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
 
 echo "⚙️ Finalizing Server Setup..."
@@ -33,7 +33,8 @@ ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 root@72.61.192.11 << 'EOF'
   
   cd /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
   npm install --production --legacy-peer-deps
-  npx prisma generate
+  npx prisma@6.9.0 generate
+  npx prisma@6.9.0 db push --accept-data-loss
   
   chown -R hirdanmarketing-api:hirdanmarketing-api /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
   

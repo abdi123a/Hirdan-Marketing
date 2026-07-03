@@ -18,14 +18,15 @@ const generateInvoiceId = () => `INV-${Math.floor(Math.random() * 9000 + 1000)}`
 
 export default function AddInvoicePage() {
   const navigate = useNavigate();
-  const { clients, addInvoice, settings, services, packages, fetchServices, fetchPackages } = useAgencyStore();
+  const { clients, addInvoice, settings, services, packages, fetchServices, fetchPackages, fetchClients } = useAgencyStore();
   const { toast } = useToast();
   const invoiceRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchServices();
     fetchPackages();
-  }, [fetchServices, fetchPackages]);
+    fetchClients();
+  }, [fetchServices, fetchPackages, fetchClients]);
 
   const invoiceId = useState(generateInvoiceId)[0];
 
