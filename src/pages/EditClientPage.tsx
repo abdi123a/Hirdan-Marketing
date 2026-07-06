@@ -47,10 +47,18 @@ export default function EditClientPage() {
 
   const handleSubmit = async () => {
     if (!validate() || !id) return;
-    const initials = form.name!.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-    await updateClient(id, { ...form, initials });
-    toast({ title: "Client updated!", description: `${form.name} has been updated.` });
-    navigate("/dashboard/clients");
+    try {
+      const initials = form.name!.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+      await updateClient(id, { ...form, initials });
+      toast({ title: "Client updated!", description: `${form.name} has been updated.` });
+      navigate("/dashboard/clients");
+    } catch (error: any) {
+      toast({
+        title: "Failed to update client",
+        description: error.message || "An error occurred while saving. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   if (!form.id) return null;

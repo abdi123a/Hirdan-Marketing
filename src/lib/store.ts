@@ -105,7 +105,7 @@ export interface Subscription {
   billingCycle: 'Monthly' | 'Quarterly' | 'Annual';
   startDate: string;
   endDate: string;
-  status: 'Active' | 'Paused' | 'Cancelled' | 'Trial';
+  status: 'Active' | 'Paused' | 'Cancelled' | 'Trial' | 'Ended';
   features?: string[];
   notes?: string;
   createdAt: string;
@@ -216,6 +216,13 @@ export interface PaymentMethod {
   isActive: boolean;
 }
 
+export interface VersionEntry {
+  version: string;
+  description: string;
+  author: string;
+  date: string;
+}
+
 export interface AgencySettings {
   agencyName: string;
   adminEmail: string;
@@ -248,6 +255,8 @@ export interface AgencySettings {
     billingAlerts: boolean;
   };
   openAiApiKey: string;
+  appVersion: string;
+  versionHistory: VersionEntry[];
   updatedAt: string;
 }
 
@@ -376,6 +385,15 @@ const createDefaultSettings = (): AgencySettings => ({
     billingAlerts: true,
   },
   openAiApiKey: "",
+  appVersion: "1.0.0",
+  versionHistory: [
+    {
+      version: "1.0.0",
+      description: "Initial release",
+      author: "System",
+      date: new Date().toISOString(),
+    }
+  ],
   updatedAt: new Date().toISOString(),
 });
 
@@ -496,7 +514,17 @@ export const useAgencyStore = create<AgencyStore>()(
             billingCycle: s.billingCycle.charAt(0).toUpperCase() + s.billingCycle.slice(1).toLowerCase() as any,
             startDate: s.startDate ? s.startDate.split('T')[0] : '',
             endDate: s.endDate ? s.endDate.split('T')[0] : 'N/A',
-            status: s.status.charAt(0).toUpperCase() + s.status.slice(1).toLowerCase() as any,
+            status: (() => {
+              const baseStatus = s.status.charAt(0).toUpperCase() + s.status.slice(1).toLowerCase();
+              if ((baseStatus === 'Active' || baseStatus === 'Trial') && s.endDate) {
+                const endStr = s.endDate.split('T')[0];
+                const todayStr = new Date().toISOString().split('T')[0];
+                if (endStr < todayStr) {
+                  return 'Ended';
+                }
+              }
+              return baseStatus;
+            })() as any,
             features: normalizeFeatureList(s.features),
             packageId: s.packageId,
             createdAt: s.createdAt
@@ -729,7 +757,7 @@ export const useAgencyStore = create<AgencyStore>()(
 
       updateClient: async (id, client) => {
         try {
-          const { revenue, projects, ...clientData } = client as any;
+          const { id: _, createdAt, userId, revenue, projects, ...clientData } = client as any;
           const payload = { ...clientData };
           if (payload.status) payload.status = payload.status.toUpperCase();
           if (payload.type) payload.type = payload.type.toUpperCase();
@@ -1010,7 +1038,7 @@ export const useAgencyStore = create<AgencyStore>()(
               billingCycle: subscription.billingCycle.toUpperCase(),
               startDate: subscription.startDate ? new Date(subscription.startDate).toISOString() : new Date().toISOString(),
               endDate: subscription.endDate && subscription.endDate !== 'N/A' ? new Date(subscription.endDate).toISOString() : undefined,
-              status: subscription.status.toUpperCase(),
+              status: subscription.status === 'Ended' ? 'ACTIVE' : subscription.status.toUpperCase(),
               features: featuresJson,
               notes: subscription.notes,
             }),
@@ -1024,7 +1052,9 @@ export const useAgencyStore = create<AgencyStore>()(
       updateSubscription: async (id, subscription) => {
         try {
           const payload: any = {};
-          if (subscription.status) payload.status = subscription.status.toUpperCase();
+           if (subscription.status) {
+             payload.status = subscription.status === 'Ended' ? 'ACTIVE' : subscription.status.toUpperCase();
+           }
           if (subscription.billingCycle) payload.billingCycle = subscription.billingCycle.toUpperCase();
           if (subscription.plan) payload.plan = subscription.plan;
           if (subscription.amount !== undefined) {

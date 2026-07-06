@@ -29,7 +29,8 @@ const statusColor = (s: string) =>
   s === "Active" ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100" :
     s === "Trial" ? "bg-blue-100 text-blue-700 hover:bg-blue-100" :
       s === "Paused" ? "bg-amber-100 text-amber-700 hover:bg-amber-100" :
-        "bg-red-100 text-red-700 hover:bg-red-100";
+        s === "Ended" ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-100" :
+          "bg-red-100 text-red-700 hover:bg-red-100";
 
 export default function SubscriptionsPage() {
   const { subscriptions, deleteSubscription, updateSubscription, fetchSubscriptions } = useAgencyStore();

@@ -95,9 +95,19 @@ router.get('/summary', async (req: Request, res: Response, next): Promise<void> 
   try {
     const clientId = await getClientId(req);
 
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+
     // Find the client's active subscription with its package
     const subscription = await prisma.subscription.findFirst({
-      where: { clientId, status: 'ACTIVE' },
+      where: {
+        clientId,
+        status: 'ACTIVE',
+        OR: [
+          { endDate: null },
+          { endDate: { gte: todayStart } },
+        ],
+      },
       include: {
         package: { select: { id: true, name: true, description: true, price: true } },
       },

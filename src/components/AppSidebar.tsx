@@ -160,6 +160,15 @@ export function AppSidebar() {
           </SidebarMenu>
         </div>
         <SidebarSeparator />
+        {/* Version badge */}
+        {!collapsed && (
+          <div className="px-4 py-2">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-mono text-sidebar-foreground/30 bg-sidebar-accent/40 px-2 py-1 rounded-md">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+              v{settings.appVersion || '1.0.0'}
+            </span>
+          </div>
+        )}
         {!isMobile && (
           <div className={`flex ${collapsed ? "justify-center" : "justify-end px-3"} py-3`}>
             <button

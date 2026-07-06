@@ -344,6 +344,7 @@ export default function EditSubscriptionPage() {
                   <SelectItem value="Trial">Trial</SelectItem>
                   <SelectItem value="Paused">Paused</SelectItem>
                   <SelectItem value="Cancelled">Cancelled</SelectItem>
+                  <SelectItem value="Ended">Ended</SelectItem>
                 </SelectContent>
               </Select>
             </CardContent>

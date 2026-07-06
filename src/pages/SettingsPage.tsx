@@ -36,9 +36,16 @@ import {
   Briefcase,
   Loader2,
   Sparkles,
+  GitCommit,
+  Tag,
+  History,
+  ArrowUpCircle,
+  Terminal,
+  Package,
+  Calendar,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useAgencyStore, AgencySettings, PaymentMethod } from "@/lib/store";
+import { useAgencyStore, AgencySettings, PaymentMethod, VersionEntry } from "@/lib/store";
 import { ProtectedBrandingImage } from "@/components/ProtectedBrandingImage";
 import { Progress } from "@/components/ui/progress";
 
@@ -95,6 +102,11 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState<{ [key: string]: boolean }>({});
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
+
+  // Version control state
+  const [newVersionEntry, setNewVersionEntry] = useState<Omit<VersionEntry, 'date'>>({ version: '', description: '', author: '' });
+  const [bumpType, setBumpType] = useState<'major' | 'minor' | 'patch'>('patch');
+  const [showAddVersion, setShowAddVersion] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -267,6 +279,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="ai" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-purple-600 dark:text-purple-400 data-[state=active]:text-purple-700 dark:data-[state=active]:text-purple-300">
             <Sparkles className="h-4 w-4" /> AI
+          </TabsTrigger>
+          <TabsTrigger value="system" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
+            <Terminal className="h-4 w-4" /> System
           </TabsTrigger>
         </TabsList>
 
@@ -1027,6 +1042,217 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ─────────── SYSTEM / VERSION CONTROL ─────────── */}
+        <TabsContent value="system" className="mt-0 outline-none space-y-6">
+
+          {/* Current version banner */}
+          <Card className="shadow-card border-border overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-primary/10 to-transparent border-b pb-6">
+              <CardTitle className="font-display text-xl flex items-center gap-2">
+                <Package className="h-5 w-5 text-primary" /> System Version
+              </CardTitle>
+              <CardDescription>Manage the application version and track changes over time.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-8">
+              <div className="flex flex-col md:flex-row gap-8 items-start">
+                {/* Current version display */}
+                <div className="flex-1 space-y-4">
+                  <div className="inline-flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-2xl px-6 py-4">
+                    <Tag className="h-6 w-6 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">Current Version</p>
+                      <p className="text-3xl font-bold font-mono text-primary">v{formData.appVersion || '1.0.0'}</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Last updated: {formData.updatedAt ? new Date(formData.updatedAt).toLocaleString() : '—'}
+                  </p>
+                </div>
+
+                {/* Quick bump buttons */}
+                <div className="space-y-3 min-w-[220px]">
+                  <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Quick Bump</p>
+                  <div className="flex flex-col gap-2">
+                    {(['major', 'minor', 'patch'] as const).map((type) => {
+                      const parts = (formData.appVersion || '1.0.0').split('.').map(Number);
+                      let preview = '';
+                      if (type === 'major') preview = `${parts[0] + 1}.0.0`;
+                      else if (type === 'minor') preview = `${parts[0]}.${parts[1] + 1}.0`;
+                      else preview = `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
+                      return (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => setBumpType(type)}
+                          className={`flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-medium transition-all ${
+                            bumpType === type
+                              ? 'border-primary bg-primary/10 text-primary shadow-sm'
+                              : 'border-border bg-muted/20 text-muted-foreground hover:border-primary/40 hover:bg-muted/40'
+                          }`}
+                        >
+                          <span className="capitalize">{type}</span>
+                          <span className="font-mono text-xs">→ v{preview}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <Button
+                    onClick={() => setShowAddVersion(true)}
+                    className="w-full gap-2 bg-primary hover:bg-primary/90"
+                    size="sm"
+                  >
+                    <ArrowUpCircle className="h-4 w-4" /> Bump & Log Version
+                  </Button>
+                </div>
+              </div>
+
+              {/* Add version dialog inline */}
+              {showAddVersion && (
+                <div className="mt-6 p-6 border border-primary/30 bg-primary/5 rounded-2xl space-y-4 animate-in fade-in zoom-in duration-200">
+                  <p className="font-semibold flex items-center gap-2">
+                    <GitCommit className="h-4 w-4 text-primary" />
+                    Log New Version Entry
+                  </p>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Version (auto from bump)</Label>
+                      <div className="relative">
+                        <Input
+                          value={newVersionEntry.version || (() => {
+                            const parts = (formData.appVersion || '1.0.0').split('.').map(Number);
+                            if (bumpType === 'major') return `${parts[0] + 1}.0.0`;
+                            if (bumpType === 'minor') return `${parts[0]}.${parts[1] + 1}.0`;
+                            return `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
+                          })()}
+                          onChange={(e) => setNewVersionEntry(p => ({ ...p, version: e.target.value }))}
+                          placeholder="e.g. 1.2.0"
+                          className="h-10 font-mono"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Author</Label>
+                      <Input
+                        value={newVersionEntry.author}
+                        onChange={(e) => setNewVersionEntry(p => ({ ...p, author: e.target.value }))}
+                        placeholder="Your name"
+                        className="h-10"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">What changed?</Label>
+                    <Textarea
+                      value={newVersionEntry.description}
+                      onChange={(e) => setNewVersionEntry(p => ({ ...p, description: e.target.value }))}
+                      placeholder="Describe the changes in this version..."
+                      className="min-h-[80px] resize-none"
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="ghost" size="sm" onClick={() => { setShowAddVersion(false); setNewVersionEntry({ version: '', description: '', author: '' }); }}>
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-primary hover:bg-primary/90 gap-2"
+                      onClick={() => {
+                        const parts = (formData.appVersion || '1.0.0').split('.').map(Number);
+                        let bumped = '';
+                        if (bumpType === 'major') bumped = `${parts[0] + 1}.0.0`;
+                        else if (bumpType === 'minor') bumped = `${parts[0]}.${parts[1] + 1}.0`;
+                        else bumped = `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
+                        const resolvedVersion = newVersionEntry.version || bumped;
+                        const entry: VersionEntry = {
+                          version: resolvedVersion,
+                          description: newVersionEntry.description || 'No description provided.',
+                          author: newVersionEntry.author || 'Unknown',
+                          date: new Date().toISOString(),
+                        };
+                        setFormData(prev => ({
+                          ...prev,
+                          appVersion: resolvedVersion,
+                          versionHistory: [entry, ...(prev.versionHistory || [])],
+                        }));
+                        setShowAddVersion(false);
+                        setNewVersionEntry({ version: '', description: '', author: '' });
+                        toast({
+                          title: `Version bumped to v${resolvedVersion}`,
+                          description: 'Click "Save Changes" to persist this update.',
+                        });
+                      }}
+                    >
+                      <Check className="h-4 w-4" /> Confirm Bump
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Git-style version history */}
+          <Card className="shadow-card border-border overflow-hidden">
+            <CardHeader className="bg-muted/30 border-b pb-6">
+              <CardTitle className="font-display text-xl flex items-center gap-2">
+                <History className="h-5 w-5 text-primary" /> Version History
+              </CardTitle>
+              <CardDescription>A full log of all version changes made to this system.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-8">
+              {(formData.versionHistory || []).length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground">
+                  <History className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                  <p className="font-medium">No version history yet.</p>
+                  <p className="text-sm">Bump a version above to start tracking changes.</p>
+                </div>
+              ) : (
+                <div className="relative">
+                  {/* Timeline line */}
+                  <div className="absolute left-[22px] top-3 bottom-3 w-px bg-border" />
+                  <div className="space-y-6">
+                    {(formData.versionHistory || []).map((entry, idx) => (
+                      <div key={idx} className="flex gap-5 group">
+                        {/* Node */}
+                        <div className={`relative z-10 flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center border-2 transition-all ${
+                          idx === 0
+                            ? 'bg-primary border-primary text-white shadow-lg shadow-primary/30'
+                            : 'bg-background border-border text-muted-foreground group-hover:border-primary/50'
+                        }`}>
+                          <GitCommit className="h-4 w-4" />
+                        </div>
+                        {/* Content */}
+                        <div className={`flex-1 pb-2 rounded-2xl border px-5 py-4 transition-all ${
+                          idx === 0
+                            ? 'border-primary/30 bg-primary/5'
+                            : 'border-border bg-muted/20 group-hover:bg-muted/30'
+                        }`}>
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <span className={`font-mono font-bold text-sm ${
+                              idx === 0 ? 'text-primary' : 'text-foreground'
+                            }`}>v{entry.version}</span>
+                            {idx === 0 && (
+                              <span className="text-[10px] bg-primary text-white font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Latest</span>
+                            )}
+                            <span className="text-xs text-muted-foreground ml-auto flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {new Date(entry.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <p className="text-sm text-foreground/90 leading-relaxed">{entry.description}</p>
+                          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                            <User className="h-3 w-3" /> {entry.author}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
         </TabsContent>
       </Tabs>
     </div>
