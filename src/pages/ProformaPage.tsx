@@ -352,7 +352,7 @@ export default function ProformaPage() {
                 ...activeProforma,
                 clientEmail: activeProforma.clientEmail || clients.find(c => c.company === activeProforma.client || c.name === activeProforma.client)?.email,
                 clientAddress: clients.find(c => c.company === activeProforma.client || c.name === activeProforma.client)?.address,
-                taxRate: settings.taxRate,
+                taxRate: activeProforma.taxRate ?? settings.taxRate,
               }}
               settings={settings}
             />

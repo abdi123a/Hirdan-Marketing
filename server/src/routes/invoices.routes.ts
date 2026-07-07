@@ -28,7 +28,7 @@ router.get('/', async (req: Request, res: Response, next) => {
       skip,
       include: {
         client: { select: { id: true, name: true, company: true, email: true } },
-        items: true,
+        items: { orderBy: { position: 'asc' } },
       },
     });
     res.json({ invoices });
@@ -57,7 +57,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
       where,
       include: {
         client: true,
-        items: true,
+        items: { orderBy: { position: 'asc' } },
       },
     });
 
@@ -75,6 +75,7 @@ const invoiceItemSchema = z.object({
   description: z.string().min(1),
   quantity: z.number().int().positive(),
   unitPrice: z.number().int().nonnegative(),
+  position: z.number().int().optional(),
 });
 
 const invoiceDtoSchema = z.object({
@@ -92,6 +93,9 @@ const invoiceDtoSchema = z.object({
   paymentMethod: z.string().optional().nullable(),
   showSignature: z.boolean().optional(),
   showStamp: z.boolean().optional(),
+  deliveryNoteEnabled: z.boolean().optional(),
+  deliveryNoteTitle: z.string().optional().nullable(),
+  deliveryNoteContent: z.string().optional().nullable(),
   items: z.array(invoiceItemSchema).optional(),
 });
 
@@ -123,6 +127,12 @@ router.post('/', requireAdmin, validate({ body: invoiceDtoSchema }), async (req:
   try {
     const { items, ...invoiceData } = req.body;
     const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
+    const itemsWithPosition = items?.map((item: any, index: number) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      position: item.position !== undefined ? item.position : index,
+    }));
     const computedAmount = computeInvoiceTotal({
       items,
       taxRate: invoiceData.taxRate ?? null,
@@ -136,9 +146,9 @@ router.post('/', requireAdmin, validate({ body: invoiceDtoSchema }), async (req:
       data: {
         ...invoiceData,
         amount: computedAmount,
-        items: items ? { create: items } : undefined,
+        items: itemsWithPosition ? { create: itemsWithPosition } : undefined,
       },
-      include: { items: true },
+      include: { items: { orderBy: { position: 'asc' } } },
     });
     auditLog({ action: 'invoice.create', success: true, userId: req.user!.userId, invoiceId: invoice.id, clientId: invoice.clientId, ip });
     res.status(201).json({ invoice });
@@ -163,6 +173,12 @@ router.put('/:id', requireAdmin, validate({ body: invoiceDtoSchema.partial() }),
     if (!targetInvoice) throw AppError.notFound('Invoice not found');
 
     const { items, ...invoiceData } = req.body;
+    const itemsWithPosition = items?.map((item: any, index: number) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      position: item.position !== undefined ? item.position : index,
+    }));
 
     // If items are provided, delete existing and recreate
     if (items) {
@@ -188,9 +204,9 @@ router.put('/:id', requireAdmin, validate({ body: invoiceDtoSchema.partial() }),
       data: {
         ...invoiceData,
         ...(computedAmount !== undefined ? { amount: computedAmount } : {}),
-        items: items ? { create: items } : undefined,
+        items: itemsWithPosition ? { create: itemsWithPosition } : undefined,
       },
-      include: { items: true },
+      include: { items: { orderBy: { position: 'asc' } } },
     });
     res.json({ invoice });
   } catch (error) {

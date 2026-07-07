@@ -32,6 +32,9 @@ interface PremiumInvoiceProps {
     status?: string;
     showSignature?: boolean;
     showStamp?: boolean;
+    deliveryNoteEnabled?: boolean;
+    deliveryNoteTitle?: string;
+    deliveryNoteContent?: string;
   };
   settings: {
     agencyName: string;
@@ -304,6 +307,39 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
             ))}
           </tbody>
         </table>
+
+        {/* ───────────────── DELIVERY NOTE ───────────────── */}
+        {data.deliveryNoteEnabled && (data.deliveryNoteTitle || data.deliveryNoteContent) && (
+          <div style={{
+            marginBottom: '32px',
+            padding: '24px',
+            background: lightBg,
+            borderRadius: '16px',
+            border: `1px solid ${borderColor}`,
+            position: 'relative',
+            overflow: 'hidden'
+          }}>
+            {/* Background Accent Ornament */}
+            <div style={{ position: 'absolute', top: 0, right: 0, width: '80px', height: '80px', background: primaryColor, opacity: 0.03, borderRadius: '50%', transform: 'translate(20%, -20%)' }} />
+
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <div style={{ width: '16px', height: '2px', background: primaryColor }}></div>
+                {data.deliveryNoteTitle && (
+                  <div style={{ fontSize: '10px', fontWeight: 800, color: primaryColor, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    {data.deliveryNoteTitle}
+                  </div>
+                )}
+              </div>
+              {data.deliveryNoteContent && (
+                <div
+                  style={{ fontSize: '12px', color: secondary, lineHeight: 1.6, fontWeight: 500 }}
+                  dangerouslySetInnerHTML={{ __html: data.deliveryNoteContent }}
+                />
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ───────────────── TOTALS & NOTES & SIGNATURE ───────────────── */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', pageBreakInside: 'avoid', marginBottom: '40px' }}>

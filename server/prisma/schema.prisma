@@ -153,6 +153,9 @@ model Invoice {
   items              InvoiceItem[]
   showSignature      Boolean             @default(true) @map("show_signature")
   showStamp          Boolean             @default(true) @map("show_stamp")
+  deliveryNoteEnabled Boolean            @default(false) @map("delivery_note_enabled")
+  deliveryNoteTitle  String?             @map("delivery_note_title")
+  deliveryNoteContent String?            @db.Text @map("delivery_note_content")
   client             Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
   verificationTokens VerificationToken[]
 
@@ -167,6 +170,7 @@ model InvoiceItem {
   description String
   quantity    Int
   unitPrice   Int     @map("unit_price")
+  position    Int     @default(0)
   invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
@@ -191,6 +195,9 @@ model Proforma {
   items              ProformaItem[]
   showSignature      Boolean             @default(true) @map("show_signature")
   showStamp          Boolean             @default(true) @map("show_stamp")
+  deliveryNoteEnabled Boolean            @default(false) @map("delivery_note_enabled")
+  deliveryNoteTitle  String?             @map("delivery_note_title")
+  deliveryNoteContent String?            @db.Text @map("delivery_note_content")
   client             Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
   verificationTokens VerificationToken[]
 
@@ -204,6 +211,7 @@ model ProformaItem {
   description String
   quantity    Int
   unitPrice   Int      @map("unit_price")
+  position    Int      @default(0)
   proforma    Proforma @relation(fields: [proformaId], references: [id], onDelete: Cascade)
 
   @@index([proformaId])

@@ -116,6 +116,9 @@ export default function ProformaDetailsPage() {
         discount,
         discountType,
         deposit: proforma.deposit,
+        deliveryNoteEnabled: proforma.deliveryNoteEnabled,
+        deliveryNoteTitle: proforma.deliveryNoteTitle,
+        deliveryNoteContent: proforma.deliveryNoteContent,
         createdAt: new Date().toISOString(),
       };
 

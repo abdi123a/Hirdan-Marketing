@@ -44,6 +44,13 @@ export default function ClientDetailsPage() {
 
   const client = useMemo(() => clients.find((c) => c.id === id), [clients, id]);
 
+  // Auto-navigate back to clients list when client is deleted (no longer in store)
+  useEffect(() => {
+    if (clients.length > 0 && !client) {
+      navigate("/dashboard/clients", { replace: true });
+    }
+  }, [clients, client, navigate]);
+
   const clientProjects = useMemo(() => 
     projects.filter((p) => p.client === client?.company || p.client === client?.name), 
     [projects, client]
@@ -78,12 +85,8 @@ export default function ClientDetailsPage() {
   }
 
   if (!client) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-        <h2 className="text-2xl font-bold font-display">Client not found</h2>
-        <Button onClick={() => navigate("/dashboard/clients")}>Back to Clients</Button>
-      </div>
-    );
+    // Returning null while the redirect useEffect fires
+    return null;
   }
 
   const totalRevenue = clientInvoices.reduce((sum, inv) => {

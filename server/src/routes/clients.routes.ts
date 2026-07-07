@@ -70,8 +70,8 @@ router.get('/:id', requireAdmin, async (req: Request, res: Response, next) => {
       where: { id },
       include: {
         projects: true,
-        invoices: { include: { items: true } },
-        proformas: { include: { items: true } },
+        invoices: { include: { items: { orderBy: { position: 'asc' } } } },
+        proformas: { include: { items: { orderBy: { position: 'asc' } } } },
         subscriptions: { include: { package: true } },
         socialProfiles: { orderBy: { platform: 'asc' } },
         documents: { orderBy: { createdAt: 'desc' } },
@@ -225,7 +225,7 @@ router.get('/:id/invoices', requireAdmin, async (req: Request, res: Response, ne
     const { take, skip } = parsePagination(req.query, { maxTake: 200, defaultTake: 50 });
     const invoices = await prisma.invoice.findMany({
       where: { clientId: req.params.id as string },
-      include: { items: true },
+      include: { items: { orderBy: { position: 'asc' } } },
       orderBy: { date: 'desc' },
       take,
       skip,

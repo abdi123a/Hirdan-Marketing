@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Save, Plus, Trash2, FileText, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, FileText, Loader2, GripVertical } from "lucide-react";
 import { useAgencyStore, Proforma, InvoiceItem } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, parseCurrency } from "@/lib/utils";
@@ -14,6 +14,7 @@ import { ClientSelector } from "@/components/ClientSelector";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Shield } from "lucide-react";
+import { DeliveryNoteEditor } from "@/components/DeliveryNoteEditor";
 
 export default function EditProformaPage() {
   const { id } = useParams();
@@ -57,6 +58,42 @@ export default function EditProformaPage() {
 
   const addItem = () => setItems((prev) => [...prev, { description: "", quantity: 1, unitPrice: 0 }]);
   const removeItem = (index: number) => setItems((prev) => prev.filter((_, i) => i !== index));
+
+  const dragIndexRef = useRef<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleDragStart = useCallback((index: number, e: React.DragEvent) => {
+    dragIndexRef.current = index;
+    e.dataTransfer.effectAllowed = "move";
+  }, []);
+
+  const handleDragOver = useCallback((index: number, e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverIndex(index);
+  }, []);
+
+  const handleDrop = useCallback((dropIndex: number, e: React.DragEvent) => {
+    e.preventDefault();
+    const dragIndex = dragIndexRef.current;
+    if (dragIndex === null || dragIndex === dropIndex) {
+      setDragOverIndex(null);
+      return;
+    }
+    setItems((prev) => {
+      const next = [...prev];
+      const [removed] = next.splice(dragIndex, 1);
+      next.splice(dropIndex, 0, removed);
+      return next;
+    });
+    dragIndexRef.current = null;
+    setDragOverIndex(null);
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    dragIndexRef.current = null;
+    setDragOverIndex(null);
+  }, []);
 
   const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const tax = subtotal * ((form.taxRate ?? 0) / 100);
@@ -258,15 +295,34 @@ export default function EditProformaPage() {
             <CardContent className="space-y-3">
               {errors.items && <p className="text-xs text-destructive">{errors.items}</p>}
               <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1">
-                <span className="col-span-6">Description</span>
+                <span className="col-span-1" />
+                <span className="col-span-4">Description</span>
                 <span className="col-span-2 text-center">Qty</span>
                 <span className="col-span-2 text-right">Unit Price</span>
-                <span className="col-span-1 text-right">Total</span>
-                <span className="col-span-1" />
+                <span className="col-span-2 text-right">Total</span>
+                <span className="col-span-1 text-right" />
               </div>
               {items.map((item, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                  <div className="col-span-6">
+                <div
+                  key={i}
+                  className={`grid grid-cols-12 gap-2 items-center rounded-lg transition-all ${
+                    dragOverIndex === i ? "bg-primary/10 ring-2 ring-primary/40 scale-[1.01]" : ""
+                  }`}
+                  draggable
+                  onDragStart={(e) => handleDragStart(i, e)}
+                  onDragOver={(e) => handleDragOver(i, e)}
+                  onDrop={(e) => handleDrop(i, e)}
+                  onDragEnd={handleDragEnd}
+                >
+                  <div className="col-span-1 flex justify-center">
+                    <span
+                      className="cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground transition-colors touch-none"
+                      title="Drag to reorder"
+                    >
+                      <GripVertical className="h-4 w-4" />
+                    </span>
+                  </div>
+                  <div className="col-span-4">
                     <Input placeholder="Service description" value={item.description} onChange={(e) => updateItem(i, "description", e.target.value)} />
                   </div>
                   <div className="col-span-2">
@@ -275,7 +331,7 @@ export default function EditProformaPage() {
                   <div className="col-span-2">
                     <Input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(e) => updateItem(i, "unitPrice", parseFloat(e.target.value) || 0)} className="text-right" />
                   </div>
-                  <div className="col-span-1 text-right text-sm font-medium text-foreground">
+                  <div className="col-span-2 text-right text-sm font-medium text-foreground">
                     {formatCurrency(item.quantity * item.unitPrice)}
                   </div>
                   <div className="col-span-1 flex justify-end">
@@ -322,6 +378,15 @@ export default function EditProformaPage() {
               </div>
             </CardContent>
           </Card>
+
+          <DeliveryNoteEditor
+            enabled={form.deliveryNoteEnabled ?? false}
+            title={form.deliveryNoteTitle ?? "Delivery Terms"}
+            content={form.deliveryNoteContent ?? ""}
+            onEnabledChange={(v) => setField("deliveryNoteEnabled", v)}
+            onTitleChange={(v) => setField("deliveryNoteTitle", v)}
+            onContentChange={(v) => setField("deliveryNoteContent", v)}
+          />
 
           <Card className="shadow-card border-border text-foreground">
             <CardHeader className="pb-4">

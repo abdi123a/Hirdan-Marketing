@@ -68,6 +68,7 @@ export interface InvoiceItem {
   description: string;
   quantity: number;
   unitPrice: number;
+  position?: number;
 }
 
 export interface Invoice {
@@ -90,6 +91,9 @@ export interface Invoice {
   _dbId?: string;
   showSignature?: boolean;
   showStamp?: boolean;
+  deliveryNoteEnabled?: boolean;
+  deliveryNoteTitle?: string;
+  deliveryNoteContent?: string;
   createdAt: string;
 }
 
@@ -144,6 +148,9 @@ export interface Proforma {
   _dbId?: string;
   showSignature?: boolean;
   showStamp?: boolean;
+  deliveryNoteEnabled?: boolean;
+  deliveryNoteTitle?: string;
+  deliveryNoteContent?: string;
   createdAt: string;
 }
 
@@ -385,8 +392,14 @@ const createDefaultSettings = (): AgencySettings => ({
     billingAlerts: true,
   },
   openAiApiKey: "",
-  appVersion: "1.0.0",
+  appVersion: "1.1.0",
   versionHistory: [
+    {
+      version: "1.1.0",
+      description: "feat: replace arrow buttons with drag-handle reordering on invoice & proforma line items — supports drag-and-drop to any position instantly",
+      author: "System",
+      date: new Date().toISOString(),
+    },
     {
       version: "1.0.0",
       description: "Initial release",
@@ -494,6 +507,9 @@ export const useAgencyStore = create<AgencyStore>()(
             _dbId: i.id,
             showSignature: i.showSignature,
             showStamp: i.showStamp,
+            deliveryNoteEnabled: i.deliveryNoteEnabled,
+            deliveryNoteTitle: i.deliveryNoteTitle,
+            deliveryNoteContent: i.deliveryNoteContent,
             createdAt: i.createdAt
           }));
           set({ invoices: mapped });
@@ -560,6 +576,9 @@ export const useAgencyStore = create<AgencyStore>()(
             _dbId: p.id,
             showSignature: p.showSignature,
             showStamp: p.showStamp,
+            deliveryNoteEnabled: p.deliveryNoteEnabled,
+            deliveryNoteTitle: p.deliveryNoteTitle,
+            deliveryNoteContent: p.deliveryNoteContent,
             createdAt: p.createdAt
           }));
           set({ proformas: mapped });
@@ -927,10 +946,11 @@ export const useAgencyStore = create<AgencyStore>()(
             ? Math.round(Number(invoice.deposit) * 100)
             : undefined;
           // items unitPrice -> cents
-          const itemsForDB = (invoice.items || []).map(item => ({
+          const itemsForDB = (invoice.items || []).map((item, index) => ({
             description: item.description,
             quantity: item.quantity,
             unitPrice: Math.round(Number(item.unitPrice) * 100),
+            position: item.position !== undefined ? item.position : index,
           }));
           await apiFetch('/invoices', {
             method: 'POST',
@@ -949,6 +969,9 @@ export const useAgencyStore = create<AgencyStore>()(
               notes: invoice.notes,
               showSignature: invoice.showSignature,
               showStamp: invoice.showStamp,
+              deliveryNoteEnabled: invoice.deliveryNoteEnabled,
+              deliveryNoteTitle: invoice.deliveryNoteTitle,
+              deliveryNoteContent: invoice.deliveryNoteContent,
               items: itemsForDB,
             }),
           });
@@ -971,6 +994,9 @@ export const useAgencyStore = create<AgencyStore>()(
           if (invoice.notes !== undefined) payload.notes = invoice.notes;
           if (invoice.showSignature !== undefined) payload.showSignature = invoice.showSignature;
           if (invoice.showStamp !== undefined) payload.showStamp = invoice.showStamp;
+          if (invoice.deliveryNoteEnabled !== undefined) payload.deliveryNoteEnabled = invoice.deliveryNoteEnabled;
+          if (invoice.deliveryNoteTitle !== undefined) payload.deliveryNoteTitle = invoice.deliveryNoteTitle;
+          if (invoice.deliveryNoteContent !== undefined) payload.deliveryNoteContent = invoice.deliveryNoteContent;
           if (invoice.deposit != null) payload.deposit = Math.round(Number(invoice.deposit) * 100);
           if (invoice.clientId) payload.clientId = invoice.clientId;
           if (invoice.client && !payload.clientId) {
@@ -982,10 +1008,11 @@ export const useAgencyStore = create<AgencyStore>()(
             payload.amount = Math.round(parseFloat(String(invoice.amount).replace(/[^0-9.]/g, '')) * 100);
           }
           if (invoice.items) {
-            payload.items = invoice.items.map(item => ({
+            payload.items = invoice.items.map((item, index) => ({
               description: item.description,
               quantity: item.quantity,
               unitPrice: Math.round(Number(item.unitPrice) * 100),
+              position: item.position !== undefined ? item.position : index,
             }));
           }
           if (invoice.id && invoice.id.startsWith('INV-')) {
@@ -1102,10 +1129,11 @@ export const useAgencyStore = create<AgencyStore>()(
           const amountCents = proforma.amount
             ? Math.round(parseFloat(String(proforma.amount).replace(/[^0-9.]/g, '')) * 100)
             : 0;
-          const itemsForDB = (proforma.items || []).map(item => ({
+          const itemsForDB = (proforma.items || []).map((item, index) => ({
             description: item.description,
             quantity: item.quantity,
             unitPrice: Math.round(Number(item.unitPrice) * 100),
+            position: item.position !== undefined ? item.position : index,
           }));
           await apiFetch('/proformas', {
             method: 'POST',
@@ -1123,6 +1151,9 @@ export const useAgencyStore = create<AgencyStore>()(
               notes: proforma.notes,
               showSignature: proforma.showSignature,
               showStamp: proforma.showStamp,
+              deliveryNoteEnabled: proforma.deliveryNoteEnabled,
+              deliveryNoteTitle: proforma.deliveryNoteTitle,
+              deliveryNoteContent: proforma.deliveryNoteContent,
               items: itemsForDB,
             }),
           });
@@ -1145,6 +1176,9 @@ export const useAgencyStore = create<AgencyStore>()(
           if (proforma.notes !== undefined) payload.notes = proforma.notes;
           if (proforma.showSignature !== undefined) payload.showSignature = proforma.showSignature;
           if (proforma.showStamp !== undefined) payload.showStamp = proforma.showStamp;
+          if (proforma.deliveryNoteEnabled !== undefined) payload.deliveryNoteEnabled = proforma.deliveryNoteEnabled;
+          if (proforma.deliveryNoteTitle !== undefined) payload.deliveryNoteTitle = proforma.deliveryNoteTitle;
+          if (proforma.deliveryNoteContent !== undefined) payload.deliveryNoteContent = proforma.deliveryNoteContent;
           if (proforma.clientId) payload.clientId = proforma.clientId;
           if (proforma.client && !payload.clientId) {
             const clients = get().clients;
@@ -1155,10 +1189,11 @@ export const useAgencyStore = create<AgencyStore>()(
             payload.amount = Math.round(parseFloat(String(proforma.amount).replace(/[^0-9.]/g, '')) * 100);
           }
           if (proforma.items) {
-            payload.items = proforma.items.map(item => ({
+            payload.items = proforma.items.map((item, index) => ({
               description: item.description,
               quantity: item.quantity,
               unitPrice: Math.round(Number(item.unitPrice) * 100),
+              position: item.position !== undefined ? item.position : index,
             }));
           }
           if (proforma.id && proforma.id.startsWith('PRO-')) {

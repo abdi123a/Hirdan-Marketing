@@ -11,6 +11,7 @@ const proformaItemSchema = z.object({
   description: z.string().min(1),
   quantity: z.number().int().positive(),
   unitPrice: z.number().int().nonnegative(),
+  position: z.number().int().optional(),
 });
 
 const proformaDtoSchema = z.object({
@@ -27,6 +28,9 @@ const proformaDtoSchema = z.object({
   deposit: z.number().int().optional().nullable(),
   showSignature: z.boolean().optional(),
   showStamp: z.boolean().optional(),
+  deliveryNoteEnabled: z.boolean().optional(),
+  deliveryNoteTitle: z.string().optional().nullable(),
+  deliveryNoteContent: z.string().optional().nullable(),
   items: z.array(proformaItemSchema).optional(),
 });
 
@@ -51,7 +55,7 @@ router.get('/', async (req: Request, res: Response, next) => {
       skip,
       include: {
         client: { select: { id: true, name: true, company: true, email: true } },
-        items: true,
+        items: { orderBy: { position: 'asc' } },
       },
     });
     res.json({ proformas });
@@ -71,7 +75,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
           { proformaNumber: req.params.id as string }
         ]
       },
-      include: { client: true, items: true },
+      include: { client: true, items: { orderBy: { position: 'asc' } } },
     });
 
     if (!proforma) throw AppError.notFound('Proforma not found');
@@ -92,12 +96,18 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 router.post('/', requireAdmin, validate({ body: proformaDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const { items, ...proformaData } = req.body;
+    const itemsWithPosition = items?.map((item: any, index: number) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      position: item.position !== undefined ? item.position : index,
+    }));
     const proforma = await prisma.proforma.create({
       data: {
         ...proformaData,
-        items: items ? { create: items } : undefined,
+        items: itemsWithPosition ? { create: itemsWithPosition } : undefined,
       },
-      include: { items: true },
+      include: { items: { orderBy: { position: 'asc' } } },
     });
     res.status(201).json({ proforma });
   } catch (error) {
@@ -122,6 +132,12 @@ router.put('/:id', requireAdmin, validate({ body: proformaDtoSchema.partial() })
     if (!targetProforma) throw AppError.notFound('Proforma not found');
 
     const { items, ...proformaData } = req.body;
+    const itemsWithPosition = items?.map((item: any, index: number) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      position: item.position !== undefined ? item.position : index,
+    }));
     if (items) {
       await prisma.proformaItem.deleteMany({ where: { proformaId: targetProforma.id } });
     }
@@ -129,9 +145,9 @@ router.put('/:id', requireAdmin, validate({ body: proformaDtoSchema.partial() })
       where: { id: targetProforma.id },
       data: {
         ...proformaData,
-        items: items ? { create: items } : undefined,
+        items: itemsWithPosition ? { create: itemsWithPosition } : undefined,
       },
-      include: { items: true },
+      include: { items: { orderBy: { position: 'asc' } } },
     });
     res.json({ proforma });
   } catch (error) {
