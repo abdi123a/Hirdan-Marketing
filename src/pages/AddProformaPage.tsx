@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RichDescriptionEditor } from "@/components/RichDescriptionEditor";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Save, Plus, Trash2, Printer, FileDown, FileText, GripVertical } from "lucide-react";
@@ -113,7 +114,10 @@ export default function AddProformaPage() {
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.client?.trim()) e.client = "Please select a client";
-    if (items.some((i) => !i.description.trim())) e.items = "All line items must have a description";
+    if (items.some((i) => {
+      const text = (i.description || "").replace(/<[^>]*>?/gm, '').trim();
+      return !text;
+    })) e.items = "All line items must have a description";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
