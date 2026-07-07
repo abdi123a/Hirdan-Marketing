@@ -28,7 +28,6 @@ export function RichDescriptionEditor({
 }: RichDescriptionEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const initialised = useRef(false);
   const savedSelectionRef = useRef<Range | null>(null);
 
   const [toolbar, setToolbar] = useState<ToolbarState>({ visible: false, top: 0, left: 0 });
@@ -36,11 +35,13 @@ export function RichDescriptionEditor({
   const [italicActive, setItalicActive] = useState(false);
   const [underlineActive, setUnderlineActive] = useState(false);
 
-  // Seed the editor with initial HTML once on mount
+  const lastEmittedValue = useRef<string | null>(null);
+
+  // Sync the editor with external value changes (e.g. data loaded asynchronously)
   useEffect(() => {
-    if (editorRef.current && !initialised.current) {
+    if (editorRef.current && value !== lastEmittedValue.current) {
       editorRef.current.innerHTML = value || "";
-      initialised.current = true;
+      lastEmittedValue.current = value;
     }
   }, [value]);
 
@@ -99,14 +100,18 @@ export function RichDescriptionEditor({
     document.execCommand(command, false);
     updateFormatState();
     if (editorRef.current) {
-      onChange(editorRef.current.innerHTML);
+      const html = editorRef.current.innerHTML;
+      lastEmittedValue.current = html;
+      onChange(html);
     }
     setTimeout(handleSelectionChange, 0);
   };
 
   const handleInput = () => {
     if (editorRef.current) {
-      onChange(editorRef.current.innerHTML);
+      const html = editorRef.current.innerHTML;
+      lastEmittedValue.current = html;
+      onChange(html);
     }
   };
 
