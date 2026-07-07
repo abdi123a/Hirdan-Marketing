@@ -392,8 +392,14 @@ const createDefaultSettings = (): AgencySettings => ({
     billingAlerts: true,
   },
   openAiApiKey: "",
-  appVersion: "1.2.2",
+  appVersion: "1.3.1",
   versionHistory: [
+    {
+      version: "1.3.0",
+      description: "fix: update database schema to allow longer descriptions for invoice and proforma line items",
+      author: "System",
+      date: new Date().toISOString(),
+    },
     {
       version: "1.1.0",
       description: "feat: replace arrow buttons with drag-handle reordering on invoice & proforma line items — supports drag-and-drop to any position instantly",

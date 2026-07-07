@@ -167,7 +167,7 @@ model Invoice {
 model InvoiceItem {
   id          String  @id @default(uuid())
   invoiceId   String  @map("invoice_id")
-  description String
+  description String  @db.Text
   quantity    Int
   unitPrice   Int     @map("unit_price")
   position    Int     @default(0)
@@ -208,7 +208,7 @@ model Proforma {
 model ProformaItem {
   id          String   @id @default(uuid())
   proformaId  String   @map("proforma_id")
-  description String
+  description String   @db.Text
   quantity    Int
   unitPrice   Int      @map("unit_price")
   position    Int      @default(0)
