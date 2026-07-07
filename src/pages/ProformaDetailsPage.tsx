@@ -22,7 +22,7 @@ import {
 import { useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { PremiumInvoice } from "@/components/PremiumInvoice";
-import { formatDate, formatCurrency } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { parseAmountNumber, sumItems } from "@/lib/money";
 import { useState, useEffect } from "react";
 
@@ -87,27 +87,32 @@ export default function ProformaDetailsPage() {
       const subtotal = proforma.items?.length
         ? sumItems(proforma.items)
         : parseAmountNumber(proforma.amount);
-      
+
       const taxRate = proforma.taxRate ?? settings.taxRate ?? 0;
       const discount = proforma.discount ?? 0;
       const discountType = proforma.discountType || 'fixed';
 
-      const taxAmount = (subtotal * taxRate) / 100;
-      const discountAmount = discountType === 'percentage' 
-        ? (subtotal * discount / 100) 
+      // Match server calculation order: apply discount first, then tax on the discounted amount
+      const discountAmount = discountType === 'percentage'
+        ? subtotal * discount / 100
         : discount;
-      
-      const finalTotal = subtotal + taxAmount - discountAmount;
+      const discountedSubtotal = subtotal - discountAmount;
+      const taxAmount = discountedSubtotal * taxRate / 100;
+      const finalTotal = discountedSubtotal + taxAmount;
+
+      // Ensure dueDate always has a value (server requires it)
+      const dueDate = proforma.dueDate || new Date(Date.now() + 14 * 864e5).toISOString().split("T")[0];
 
       const newInvoice = {
         client: proforma.client,
         clientId: proforma.clientId,
         clientEmail: proforma.clientEmail || client?.email,
         clientAddress: client?.address,
-        amount: formatCurrency(finalTotal),
+        // Do not pass amount — let the server compute it from items to avoid mismatch errors
+        amount: undefined as unknown as string,
         status: 'Pending' as const,
         date: new Date().toISOString().split("T")[0],
-        dueDate: proforma.dueDate,
+        dueDate,
         items: proforma.items?.length
           ? proforma.items
           : [{ description: "Services rendered", quantity: 1, unitPrice: subtotal }],

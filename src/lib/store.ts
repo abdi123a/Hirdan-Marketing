@@ -392,8 +392,14 @@ const createDefaultSettings = (): AgencySettings => ({
     billingAlerts: true,
   },
   openAiApiKey: "",
-  appVersion: "1.2.3",
+  appVersion: "1.2.4",
   versionHistory: [
+    {
+      version: "1.2.4",
+      description: "fix: proforma-to-invoice conversion — correct tax/discount calculation order to match server, fix missing dueDate fallback, and omit pre-computed amount to prevent server mismatch errors",
+      author: "System",
+      date: new Date().toISOString(),
+    },
     {
       version: "1.2.3",
       description: "fix: update database schema to allow longer descriptions for invoice and proforma line items",
@@ -945,9 +951,11 @@ export const useAgencyStore = create<AgencyStore>()(
             clientId = matched.id;
           }
           // Convert money values to cents (DB stores in cents)
+          // Only compute amountCents when invoice.amount is explicitly provided;
+          // when omitted the server will compute from items (avoids mismatch errors).
           const amountCents = invoice.amount
             ? Math.round(parseFloat(String(invoice.amount).replace(/[^0-9.]/g, '')) * 100)
-            : 0;
+            : undefined;
           const depositCents = invoice.deposit != null
             ? Math.round(Number(invoice.deposit) * 100)
             : undefined;
@@ -963,7 +971,7 @@ export const useAgencyStore = create<AgencyStore>()(
             body: JSON.stringify({
               invoiceNumber: (invoice as any).id || invoice.id,
               clientId,
-              amount: amountCents,
+              ...(amountCents !== undefined ? { amount: amountCents } : {}),
               status: invoice.status.toUpperCase().replace(/\s+/g, '_'),
               date: invoice.date ? new Date(invoice.date).toISOString() : new Date().toISOString(),
               dueDate: invoice.dueDate ? new Date(invoice.dueDate).toISOString() : undefined,
@@ -1085,9 +1093,9 @@ export const useAgencyStore = create<AgencyStore>()(
       updateSubscription: async (id, subscription) => {
         try {
           const payload: any = {};
-           if (subscription.status) {
-             payload.status = subscription.status === 'Ended' ? 'ACTIVE' : subscription.status.toUpperCase();
-           }
+          if (subscription.status) {
+            payload.status = subscription.status === 'Ended' ? 'ACTIVE' : subscription.status.toUpperCase();
+          }
           if (subscription.billingCycle) payload.billingCycle = subscription.billingCycle.toUpperCase();
           if (subscription.plan) payload.plan = subscription.plan;
           if (subscription.amount !== undefined) {
