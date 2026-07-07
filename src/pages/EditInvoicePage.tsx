@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { RichDescriptionEditor } from "@/components/RichDescriptionEditor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Save, Plus, Trash2, Receipt, Shield, Loader2, GripVertical } from "lucide-react";
@@ -355,13 +355,12 @@ export default function EditInvoicePage() {
                     </span>
                   </div>
                   <div className="col-span-4">
-                    <Textarea 
-                      placeholder="Service description" 
-                      value={item.description} 
-                      onChange={(e) => updateItem(i, "description", e.target.value)} 
-                      className="min-h-[60px] resize-none text-sm"
-                    />
-                  </div>
+                     <RichDescriptionEditor
+                       value={item.description}
+                       onChange={(html) => updateItem(i, "description", html)}
+                       placeholder="Service description"
+                     />
+                   </div>
                   <div className="col-span-2 pt-1">
                     <Input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(i, "quantity", parseInt(e.target.value) || 1)} className="text-center" />
                   </div>

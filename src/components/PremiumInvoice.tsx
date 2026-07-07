@@ -292,9 +292,9 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
                   lineHeight: 1.6
-                }}>
-                  {item.description}
-                </td>
+                }}
+                  dangerouslySetInnerHTML={{ __html: item.description }}
+                />
                 <td style={{ padding: '16px', borderBottom: `1px solid ${borderColor}`, fontSize: '12px', color: secondary, textAlign: 'center', verticalAlign: 'top', fontWeight: 600 }}>
                   {item.quantity}
                 </td>
