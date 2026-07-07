@@ -305,7 +305,7 @@ export default function EditProformaPage() {
               {items.map((item, i) => (
                 <div
                   key={i}
-                  className={`grid grid-cols-12 gap-2 items-center rounded-lg transition-all ${
+                  className={`grid grid-cols-12 gap-2 items-start rounded-lg transition-all p-1 hover:bg-muted/40 ${
                     dragOverIndex === i ? "bg-primary/10 ring-2 ring-primary/40 scale-[1.01]" : ""
                   }`}
                   draggable
@@ -314,7 +314,7 @@ export default function EditProformaPage() {
                   onDrop={(e) => handleDrop(i, e)}
                   onDragEnd={handleDragEnd}
                 >
-                  <div className="col-span-1 flex justify-center">
+                  <div className="col-span-1 flex justify-center pt-2">
                     <span
                       className="cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground transition-colors touch-none"
                       title="Drag to reorder"
@@ -323,18 +323,23 @@ export default function EditProformaPage() {
                     </span>
                   </div>
                   <div className="col-span-4">
-                    <Input placeholder="Service description" value={item.description} onChange={(e) => updateItem(i, "description", e.target.value)} />
+                    <Textarea 
+                      placeholder="Service description" 
+                      value={item.description} 
+                      onChange={(e) => updateItem(i, "description", e.target.value)} 
+                      className="min-h-[60px] resize-none text-sm"
+                    />
                   </div>
-                  <div className="col-span-2">
+                  <div className="col-span-2 pt-1">
                     <Input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(i, "quantity", parseInt(e.target.value) || 1)} className="text-center" />
                   </div>
-                  <div className="col-span-2">
+                  <div className="col-span-2 pt-1">
                     <Input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(e) => updateItem(i, "unitPrice", parseFloat(e.target.value) || 0)} className="text-right" />
                   </div>
-                  <div className="col-span-2 text-right text-sm font-medium text-foreground">
+                  <div className="col-span-2 text-right text-sm font-medium text-foreground pt-2">
                     {formatCurrency(item.quantity * item.unitPrice)}
                   </div>
-                  <div className="col-span-1 flex justify-end">
+                  <div className="col-span-1 flex justify-end pt-1">
                     {items.length > 1 && (
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeItem(i)}>
                         <Trash2 className="h-3.5 w-3.5" />

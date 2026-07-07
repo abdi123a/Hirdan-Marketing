@@ -227,7 +227,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
 
             <div style={{ display: 'flex', gap: '24px', textAlign: 'right', justifyContent: 'flex-end' }}>
               <div>
-                <div style={{ fontSize: '9px', fontWeight: 800, color: secondary, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Invoice No.</div>
+                <div style={{ fontSize: '9px', fontWeight: 800, color: secondary, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>{type === 'Invoice' ? 'Invoice No.' : 'Proforma No.'}</div>
                 <div style={{ fontSize: '13px', fontWeight: 900, color: primaryColor }}>{data.id}</div>
               </div>
               <div>
@@ -286,11 +286,12 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
                   padding: '16px', 
                   borderBottom: `1px solid ${borderColor}`, 
                   fontSize: '12px', 
-                  color: textDark, 
-                  fontWeight: 700, 
+                  color: secondary, 
+                  fontWeight: 500, 
                   verticalAlign: 'top',
                   whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word'
+                  wordBreak: 'break-word',
+                  lineHeight: 1.6
                 }}>
                   {item.description}
                 </td>
@@ -384,7 +385,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
               </div>
 
               <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px dashed ${borderColor}`, fontSize: '10px', color: primaryColor, fontWeight: 800, textTransform: 'uppercase' }}>
-                Status: {balanceDue <= 0 ? 'Full Paid' : (data.deposit ?? 0) > 0 ? 'Partially Paid' : data.status} • Reference: {data.id}
+                Status: {data.status ?? (balanceDue <= 0 ? 'Full Paid' : (data.deposit ?? 0) > 0 ? 'Partially Paid' : 'Pending')} • {type === 'Invoice' ? 'Invoice' : 'Proforma'}: {data.id}
               </div>
             </div>
           </div>

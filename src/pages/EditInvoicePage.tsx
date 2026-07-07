@@ -337,7 +337,7 @@ export default function EditInvoicePage() {
               {items.map((item, i) => (
                 <div
                   key={i}
-                  className={`grid grid-cols-12 gap-2 items-center rounded-lg transition-all ${
+                  className={`grid grid-cols-12 gap-2 items-start rounded-lg transition-all p-1 hover:bg-muted/40 ${
                     dragOverIndex === i ? "bg-primary/10 ring-2 ring-primary/40 scale-[1.01]" : ""
                   }`}
                   draggable
@@ -346,7 +346,7 @@ export default function EditInvoicePage() {
                   onDrop={(e) => handleDrop(i, e)}
                   onDragEnd={handleDragEnd}
                 >
-                  <div className="col-span-1 flex justify-center">
+                  <div className="col-span-1 flex justify-center pt-2">
                     <span
                       className="cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground transition-colors touch-none"
                       title="Drag to reorder"
@@ -355,12 +355,17 @@ export default function EditInvoicePage() {
                     </span>
                   </div>
                   <div className="col-span-4">
-                    <Input placeholder="Service description" value={item.description} onChange={(e) => updateItem(i, "description", e.target.value)} />
+                    <Textarea 
+                      placeholder="Service description" 
+                      value={item.description} 
+                      onChange={(e) => updateItem(i, "description", e.target.value)} 
+                      className="min-h-[60px] resize-none text-sm"
+                    />
                   </div>
-                  <div className="col-span-2">
+                  <div className="col-span-2 pt-1">
                     <Input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(i, "quantity", parseInt(e.target.value) || 1)} className="text-center" />
                   </div>
-                  <div className="col-span-2">
+                  <div className="col-span-2 pt-1">
                     <Input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(e) => updateItem(i, "unitPrice", parseFloat(e.target.value) || 0)} className="text-right" />
                   </div>
                   <div className="col-span-2 text-right text-sm font-medium text-foreground">
