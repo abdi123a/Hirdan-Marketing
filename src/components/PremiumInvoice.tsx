@@ -556,7 +556,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
               }}>
                 <QRCodeSVG
                   value={verificationUrl}
-                  size={52}
+                  size={80}
                   level="H"
                   fgColor={primaryColor}
                   bgColor="transparent"

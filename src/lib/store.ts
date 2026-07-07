@@ -392,7 +392,7 @@ const createDefaultSettings = (): AgencySettings => ({
     billingAlerts: true,
   },
   openAiApiKey: "",
-  appVersion: "1.2.1",
+  appVersion: "1.2.2",
   versionHistory: [
     {
       version: "1.1.0",
