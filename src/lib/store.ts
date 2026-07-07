@@ -392,8 +392,14 @@ const createDefaultSettings = (): AgencySettings => ({
     billingAlerts: true,
   },
   openAiApiKey: "",
-  appVersion: "1.2.4",
+  appVersion: "1.2.6",
   versionHistory: [
+    {
+      version: "1.2.5",
+      description: "feat: map clientId for subscriptions to support client-specific lookups and clean up unused imports in SocialMediaPlannerPage",
+      author: "System",
+      date: new Date().toISOString(),
+    },
     {
       version: "1.2.4",
       description: "fix: proforma-to-invoice conversion — correct tax/discount calculation order to match server, fix missing dueDate fallback, and omit pre-computed amount to prevent server mismatch errors",
@@ -537,6 +543,7 @@ export const useAgencyStore = create<AgencyStore>()(
             id: s.id,
             client: s.client?.company || s.client?.name || 'Unknown',
             clientEmail: s.client?.email || '',
+            clientId: s.clientId || s.client?.id || '',
             plan: s.package?.name || s.plan || 'Custom',
             amount: formatCurrency((s.amount || 0) / 100),
             billingCycle: s.billingCycle.charAt(0).toUpperCase() + s.billingCycle.slice(1).toLowerCase() as any,
