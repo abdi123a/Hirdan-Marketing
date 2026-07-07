@@ -40,6 +40,8 @@ export function validate(schemas: ValidationSchemas) {
     } catch (error) {
       if (error instanceof ZodError) {
         const messages = error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ');
+        // Log validation failures so they appear in PM2 error log for debugging
+        console.error(`[Validate] 400 Validation failed on ${req.method} ${req.path}:`, messages);
         next(AppError.badRequest(`Validation failed: ${messages}`));
         return;
       }

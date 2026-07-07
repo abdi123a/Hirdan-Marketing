@@ -139,9 +139,10 @@ export default function ProformaDetailsPage() {
       navigate(`/dashboard/invoices/view/${invoiceId}`);
     } catch (error) {
       console.error("Conversion failed:", error);
+      const errMsg = error instanceof Error ? error.message : "Failed to convert proforma to invoice.";
       toast({
-        title: "Error",
-        description: "Failed to convert proforma to invoice. Please try again.",
+        title: "Conversion Error",
+        description: errMsg,
         variant: "destructive",
       });
     } finally {
