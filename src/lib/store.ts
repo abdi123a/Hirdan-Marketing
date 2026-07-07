@@ -392,8 +392,14 @@ const createDefaultSettings = (): AgencySettings => ({
     billingAlerts: true,
   },
   openAiApiKey: "",
-  appVersion: "1.2.7",
+  appVersion: "1.2.9",
   versionHistory: [
+    {
+      version: "1.2.8",
+      description: "fix: align proforma-to-invoice conversion in ProformaPage list view with ProformaDetailsPage and pass generated invoiceId",
+      author: "System",
+      date: new Date().toISOString(),
+    },
     {
       version: "1.2.5",
       description: "feat: map clientId for subscriptions to support client-specific lookups and clean up unused imports in SocialMediaPlannerPage",

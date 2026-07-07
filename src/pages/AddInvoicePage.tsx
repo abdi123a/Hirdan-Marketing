@@ -134,7 +134,9 @@ export default function AddInvoicePage() {
       toast({ title: "Invoice created!", description: `Invoice ${invoiceId} has been saved.` });
       navigate(`/dashboard/invoices/view/${invoiceId}`);
     } catch (e) {
-      toast({ title: "Error", description: "Failed to create invoice.", variant: "destructive" });
+      console.error("Failed to create invoice:", e);
+      const errMsg = e instanceof Error ? e.message : "Failed to create invoice.";
+      toast({ title: "Error", description: errMsg, variant: "destructive" });
     }
   };
 

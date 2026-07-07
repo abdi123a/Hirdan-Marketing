@@ -144,7 +144,9 @@ export default function AddProformaPage() {
       toast({ title: "Proforma created!", description: `Proforma ${proformaId} has been saved.` });
       navigate(`/dashboard/proforma/view/${proformaId}`);
     } catch (e) {
-      toast({ title: "Error", description: "Failed to create proforma.", variant: "destructive" });
+      console.error("Failed to create proforma:", e);
+      const errMsg = e instanceof Error ? e.message : "Failed to create proforma.";
+      toast({ title: "Error", description: errMsg, variant: "destructive" });
     }
   };
 

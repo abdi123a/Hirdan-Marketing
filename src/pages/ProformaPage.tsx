@@ -29,6 +29,8 @@ const statusColor = (s: string) =>
       s === "Draft" ? "bg-muted text-muted-foreground hover:bg-muted" :
         "bg-red-100 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400";
 
+const generateInvoiceId = () => `INV-${Math.floor(Math.random() * 9000 + 1000)}`;
+
 export default function ProformaPage() {
   const { proformas, clients, settings, deleteProforma, addInvoice, updateProforma, fetchProformas, fetchClients } = useAgencyStore();
   const [search, setSearch] = useState("");
@@ -100,31 +102,52 @@ export default function ProformaPage() {
 
   const handleConvert = async (pro: Proforma) => {
     const subtotal = getProformaSubtotal(pro);
-    const taxRate = settings.taxRate ?? 0;
-    const totalDue = subtotal + (subtotal * taxRate) / 100;
+    const taxRate = pro.taxRate ?? settings.taxRate ?? 0;
+    const discount = pro.discount ?? 0;
+    const discountType = pro.discountType || 'fixed';
+
     const client = clients.find((c) => c.company === pro.client || c.name === pro.client);
+    const clientId = pro.clientId || client?.id;
+
+    const dueDate = pro.dueDate || new Date(Date.now() + 14 * 864e5).toISOString().split("T")[0];
+    const invoiceId = generateInvoiceId();
 
     try {
       await addInvoice({
+        id: invoiceId,
         client: pro.client,
+        clientId,
         clientEmail: pro.clientEmail || client?.email,
         clientAddress: client?.address,
-        amount: formatCurrency(totalDue),
+        // Do not pass amount — let the server compute it from items to avoid mismatch errors
+        amount: undefined as unknown as string,
         status: "Pending",
         date: new Date().toISOString().split("T")[0],
-        dueDate: pro.dueDate,
+        dueDate,
         items: pro.items?.length
           ? pro.items
           : [{ description: "Services rendered", quantity: 1, unitPrice: subtotal }],
         notes: pro.notes,
         taxRate,
+        discount,
+        discountType,
+        deposit: pro.deposit,
+        deliveryNoteEnabled: pro.deliveryNoteEnabled,
+        deliveryNoteTitle: pro.deliveryNoteTitle,
+        deliveryNoteContent: pro.deliveryNoteContent,
         createdAt: new Date().toISOString(),
       });
       await updateProforma(pro.id, { status: "Accepted" });
       toast({ title: "Converted to Invoice", description: `Proforma ${pro.id} has been converted to an invoice.` });
       navigate("/dashboard/invoices");
     } catch (e) {
-      toast({ title: "Error", description: "Failed to convert proforma to invoice.", variant: "destructive" });
+      console.error("Conversion failed:", e);
+      const errMsg = e instanceof Error ? e.message : "Failed to convert proforma to invoice.";
+      toast({
+        title: "Conversion Error",
+        description: errMsg,
+        variant: "destructive",
+      });
     }
   };
 

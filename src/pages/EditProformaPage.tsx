@@ -129,7 +129,9 @@ export default function EditProformaPage() {
       toast({ title: "Proforma updated!", description: `Proforma ${id} has been updated.` });
       navigate(`/dashboard/proforma/view/${id}`);
     } catch (e) {
-      toast({ title: "Error", description: "Failed to update proforma.", variant: "destructive" });
+      console.error("Failed to update proforma:", e);
+      const errMsg = e instanceof Error ? e.message : "Failed to update proforma.";
+      toast({ title: "Error", description: errMsg, variant: "destructive" });
     }
   };
 
