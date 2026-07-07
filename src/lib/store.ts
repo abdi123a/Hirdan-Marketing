@@ -392,10 +392,10 @@ const createDefaultSettings = (): AgencySettings => ({
     billingAlerts: true,
   },
   openAiApiKey: "",
-  appVersion: "1.3.1",
+  appVersion: "1.2.3",
   versionHistory: [
     {
-      version: "1.3.0",
+      version: "1.2.3",
       description: "fix: update database schema to allow longer descriptions for invoice and proforma line items",
       author: "System",
       date: new Date().toISOString(),
