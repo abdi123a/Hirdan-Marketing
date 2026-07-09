@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { apiFetch, apiUpload } from './api-client';
@@ -463,7 +464,8 @@ const createDefaultSettings = (): AgencySettings => ({
   smtpUsername: "resend",
   smtpEncryption: "tls",
   smtpDriver: "smtp",
-  appVersion: "1.2.14",
+  mailEnabled: false,
+  appVersion: "1.2.17",
   versionHistory: [
     {
       version: "1.2.13",
@@ -780,6 +782,7 @@ export const useAgencyStore = create<AgencyStore>()(
               dateOfBirth: m.dateOfBirth || '',
               gender: m.gender || '',
               nationalId: m.nationalId || '',
+              nationalIdType: m.nationalIdType || '',
               nationality: m.nationality || '',
               homeAddress: m.homeAddress || '',
               emergencyContactName: m.emergencyContactName || '',
@@ -804,7 +807,7 @@ export const useAgencyStore = create<AgencyStore>()(
               currency: m.currency || 'USD',
             };
           });
-          set({ team: mapped });
+          set({ team: mapped as TeamMember[] });
         } catch (error) {
           console.error("Failed to fetch team:", error);
         }
@@ -1680,7 +1683,6 @@ export const useAgencyStore = create<AgencyStore>()(
           // Strip frontend-only fields that don't exist in the DB schema —
           // they are only stored in the Zustand store and must not be sent to
           // PUT /settings or they'll trigger Zod "unrecognized key" errors.
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { appVersion, versionHistory, ...dbSettings } = settings as typeof settings & { appVersion?: unknown; versionHistory?: unknown };
           await apiFetch('/settings', {
             method: 'PUT',
