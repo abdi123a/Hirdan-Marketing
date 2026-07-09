@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 
 import { PATHS } from '../lib/paths.js';
-import { sendEmail, maskApiKey } from '../lib/email.js';
+import { sendEmail, maskApiKey, generateEmailHtml } from '../lib/email.js';
 
 // Configure multer storage
 const storage = multer.diskStorage({
@@ -354,18 +354,24 @@ router.post('/email/test', authenticate, requireAdmin, async (req: Request, res:
     const testRecipient = to || settings?.adminEmail || req.user!.email;
     const agencyName = settings?.agencyName ?? 'Agency Flow Pro';
 
+    const emailHtml = await generateEmailHtml({
+      title: 'Email Delivery Test',
+      preheader: 'Your email integration is working correctly.',
+      contentHtml: `
+        <h2 style="color: #1e293b; font-size: 22px; font-weight: 700; margin-top: 0; margin-bottom: 16px;">Email Integration Successful! ✓</h2>
+        <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">This is a test message sent from your dashboard to confirm that your email delivery configuration is fully operational.</p>
+        <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">Your custom branding (including company logo, site color palette, and physical address details) has been automatically applied to this message template.</p>
+      `,
+      actionButton: {
+        label: 'Go to Settings',
+        url: `${process.env.FRONTEND_URL || 'https://app.hirdanmarketing.com'}/settings`
+      }
+    });
+
     const result = await sendEmail({
       to: testRecipient,
       subject: `✅ Test email from ${agencyName}`,
-      html: `
-        <div style="font-family: sans-serif; max-width: 520px; margin: 0 auto; padding: 32px;">
-          <h2 style="color: #1a1a2e;">Email delivery confirmed ✓</h2>
-          <p>This is a test message sent from <strong>${agencyName}</strong> via Resend.</p>
-          <p>If you received this, your email integration is working correctly.</p>
-          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
-          <p style="color: #6b7280; font-size: 13px;">Sent by Agency Flow Pro · Admin Settings</p>
-        </div>
-      `,
+      html: emailHtml,
     });
 
     if (!result.success) {
