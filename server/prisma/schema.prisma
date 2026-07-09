@@ -819,3 +819,87 @@ model MonthlyReportVersion {
   @@index([createdById])
   @@map("monthly_report_versions")
 }
+
+// ─── Accounts & Expenses Module ───────────────────────────────────
+
+enum AccountType {
+  BANK
+  MOBILE_WALLET
+  CASH
+}
+
+enum ExpenseCategory {
+  FOOD
+  TRANSPORT
+  SOFTWARE
+  OFFICE
+  MARKETING
+  RENT
+  UTILITIES
+  PAYROLL
+  EQUIPMENT
+  TRAVEL
+  COMMUNICATION
+  ENTERTAINMENT
+  TAXES
+  OTHER
+}
+
+/// Financial account (bank, mobile wallet, or cash)
+model Account {
+  id          String      @id @default(uuid())
+  name        String
+  type        AccountType
+  currency    String      @default("USD")
+  color       String?
+  icon        String?
+  notes       String?     @db.Text
+  isArchived  Boolean     @default(false) @map("is_archived")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  expenses          Expense[]
+  transfersFrom     AccountTransfer[] @relation("TransferFrom")
+  transfersTo       AccountTransfer[] @relation("TransferTo")
+
+  @@map("accounts")
+}
+
+/// A business expense entry
+model Expense {
+  id          String          @id @default(uuid())
+  accountId   String          @map("account_id")
+  amount      Int             // stored in smallest currency unit (cents)
+  category    ExpenseCategory @default(OTHER)
+  description String          @db.Text
+  date        DateTime
+  receiptUrl  String?         @map("receipt_url") @db.LongText
+  notes       String?         @db.Text
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([date])
+  @@index([category])
+  @@map("expenses")
+}
+
+/// Money transfer between two accounts
+model AccountTransfer {
+  id            String   @id @default(uuid())
+  fromAccountId String   @map("from_account_id")
+  toAccountId   String   @map("to_account_id")
+  amount        Int      // in cents
+  note          String?  @db.Text
+  date          DateTime
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  fromAccount Account @relation("TransferFrom", fields: [fromAccountId], references: [id], onDelete: Cascade)
+  toAccount   Account @relation("TransferTo", fields: [toAccountId], references: [id], onDelete: Cascade)
+
+  @@index([fromAccountId])
+  @@index([toAccountId])
+  @@map("account_transfers")
+}

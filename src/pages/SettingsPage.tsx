@@ -56,6 +56,12 @@ import {
   EyeOff,
   RotateCcw,
   Server,
+  Wallet,
+  ArrowLeftRight,
+  Building2,
+  Smartphone,
+  Banknote,
+  Edit2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyStore, AgencySettings, PaymentMethod, VersionEntry } from "@/lib/store";
@@ -126,6 +132,47 @@ export default function SettingsPage() {
   const [newVersionEntry, setNewVersionEntry] = useState<Omit<VersionEntry, 'date'>>({ version: '', description: '', author: '' });
   const [bumpType, setBumpType] = useState<'major' | 'minor' | 'patch'>('patch');
   const [showAddVersion, setShowAddVersion] = useState(false);
+
+  // Financial Accounts state
+  interface SettingsAccount {
+    id: string;
+    name: string;
+    type: 'BANK' | 'MOBILE_WALLET' | 'CASH';
+    currency: string;
+    color: string | null;
+    icon: string | null;
+    notes: string | null;
+    balance: number;
+  }
+
+  const [settingsAccounts, setSettingsAccounts] = useState<SettingsAccount[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [showAccountDialog, setShowAccountDialog] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<Partial<SettingsAccount> | null>(null);
+  const [showTransferDialog, setShowTransferDialog] = useState(false);
+  const [transferPayload, setTransferPayload] = useState({
+    fromAccountId: "",
+    toAccountId: "",
+    amount: "",
+    note: "",
+    date: new Date().toISOString().split("T")[0]
+  });
+
+  const fetchSettingsAccounts = async () => {
+    setLoadingAccounts(true);
+    try {
+      const res = await apiFetch<{ accounts: SettingsAccount[] }>("/accounts");
+      setSettingsAccounts(res.accounts);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingAccounts(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSettingsAccounts();
+  }, []);
 
   useEffect(() => {
     fetchSettings();
@@ -289,6 +336,9 @@ export default function SettingsPage() {
           <TabsTrigger value="billing" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
             <CreditCard className="h-3.5 w-3.5" /> Billing
           </TabsTrigger>
+          <TabsTrigger value="accounts" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
+            <Wallet className="h-3.5 w-3.5" /> Accounts
+          </TabsTrigger>
           <TabsTrigger value="payments" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
             <Settings className="h-3.5 w-3.5" /> Payments
           </TabsTrigger>
@@ -382,6 +432,13 @@ export default function SettingsPage() {
                 >
                   <CreditCard className="h-4 w-4 shrink-0" />
                   <span>Billing &amp; Tax</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="accounts"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Wallet className="h-4 w-4 shrink-0" />
+                  <span>Accounts</span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="payments"
@@ -1773,6 +1830,326 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
+        </TabsContent>
+
+        {/* ── Accounts Management Tab ── */}
+        <TabsContent value="accounts" className="mt-0 outline-none space-y-6">
+          <div className="flex justify-between items-center flex-wrap gap-2">
+            <div>
+              <h2 className="text-xl font-bold tracking-tight">Financial Accounts</h2>
+              <p className="text-sm text-muted-foreground">Configure your bank accounts, mobile wallets, and cash pools.</p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setTransferPayload({
+                    fromAccountId: "",
+                    toAccountId: "",
+                    amount: "",
+                    note: "",
+                    date: new Date().toISOString().split("T")[0]
+                  });
+                  setShowTransferDialog(true);
+                }}
+                className="gap-1.5"
+              >
+                <ArrowLeftRight className="h-4 w-4" /> Transfer Money
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditingAccount({ name: "", type: "BANK", currency: "USD", notes: "" });
+                  setShowAccountDialog(true);
+                }}
+                className="gap-1.5"
+              >
+                <Plus className="h-4 w-4" /> Add Account
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {loadingAccounts ? (
+              <div className="md:col-span-3 flex justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : settingsAccounts.length === 0 ? (
+              <Card className="md:col-span-3 border p-8 text-center">
+                <Wallet className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" />
+                <p className="font-semibold text-sm">No accounts found</p>
+                <p className="text-xs text-muted-foreground mt-1 mb-4">Create accounts to start tracking expenses.</p>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setEditingAccount({ name: "", type: "BANK", currency: "USD", notes: "" });
+                    setShowAccountDialog(true);
+                  }}
+                >
+                  Create Account
+                </Button>
+              </Card>
+            ) : (
+              settingsAccounts.map(acc => {
+                let AccIcon = Banknote;
+                if (acc.type === "BANK") AccIcon = Building2;
+                if (acc.type === "MOBILE_WALLET") AccIcon = Smartphone;
+
+                return (
+                  <Card key={acc.id} className="border shadow-sm overflow-hidden flex flex-col justify-between">
+                    <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                          <AccIcon className="h-4.5 w-4.5" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-sm font-bold truncate max-w-[140px]">{acc.name}</CardTitle>
+                          <span className="text-[10px] text-muted-foreground uppercase font-medium tracking-wide">
+                            {acc.type.replace("_", " ")}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => {
+                            setEditingAccount(acc);
+                            setShowAccountDialog(true);
+                          }}
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-red-600 hover:text-red-700"
+                          onClick={async () => {
+                            if (!window.confirm("Archive this account?")) return;
+                            try {
+                              await apiFetch(`/accounts/${acc.id}`, { method: "DELETE" });
+                              toast({ title: "Account archived successfully" });
+                              fetchSettingsAccounts();
+                            } catch {
+                              toast({ title: "Failed to archive account", variant: "destructive" });
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-0 pb-4">
+                      <p className="text-xs text-muted-foreground uppercase font-semibold">Running Balance</p>
+                      <p className={`text-2xl font-bold mt-1 ${acc.balance < 0 ? "text-red-500" : "text-emerald-600"}`}>
+                        {acc.balance < 0 ? "-" : ""}${Math.abs(acc.balance / 100).toFixed(2)}
+                      </p>
+                      {acc.notes && (
+                        <p className="text-xs text-muted-foreground mt-2 line-clamp-2 border-t pt-2">{acc.notes}</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+
+          {/* Add/Edit Account Dialog */}
+          {showAccountDialog && (
+            <Dialog open onOpenChange={() => setShowAccountDialog(false)}>
+              <DialogContent className="sm:max-w-[400px]">
+                <DialogHeader>
+                  <DialogTitle>{editingAccount?.id ? "Edit Account" : "Add Account"}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="accName">Account Name</Label>
+                    <Input
+                      id="accName"
+                      placeholder="E.g., Business Checking, PayPal, Cash..."
+                      value={editingAccount?.name || ""}
+                      onChange={e => setEditingAccount(p => ({ ...p, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="accType">Account Type</Label>
+                    <Select
+                      value={editingAccount?.type || "BANK"}
+                      onValueChange={val => setEditingAccount(p => ({ ...p, type: val as any }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="BANK">Bank Account</SelectItem>
+                        <SelectItem value="MOBILE_WALLET">Mobile Wallet</SelectItem>
+                        <SelectItem value="CASH">Cash Pool</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="accNotes">Notes / Description</Label>
+                    <Textarea
+                      id="accNotes"
+                      placeholder="Account number, bank name, or location..."
+                      value={editingAccount?.notes || ""}
+                      onChange={e => setEditingAccount(p => ({ ...p, notes: e.target.value }))}
+                      rows={2}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowAccountDialog(false)}>Cancel</Button>
+                  <Button
+                    onClick={async () => {
+                      if (!editingAccount?.name?.trim()) {
+                        toast({ title: "Account name is required", variant: "destructive" });
+                        return;
+                      }
+                      try {
+                        if (editingAccount.id) {
+                          await apiFetch(`/accounts/${editingAccount.id}`, {
+                            method: "PUT",
+                            body: JSON.stringify(editingAccount),
+                          });
+                          toast({ title: "Account updated successfully" });
+                        } else {
+                          await apiFetch("/accounts", {
+                            method: "POST",
+                            body: JSON.stringify(editingAccount),
+                          });
+                          toast({ title: "Account created successfully" });
+                        }
+                        setShowAccountDialog(false);
+                        fetchSettingsAccounts();
+                      } catch {
+                        toast({ title: "Failed to save account", variant: "destructive" });
+                      }
+                    }}
+                  >
+                    Save Account
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {/* Transfer Dialog */}
+          {showTransferDialog && (
+            <Dialog open onOpenChange={() => setShowTransferDialog(false)}>
+              <DialogContent className="sm:max-w-[400px]">
+                <DialogHeader>
+                  <DialogTitle>Transfer Money</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label>From Account</Label>
+                    <Select
+                      value={transferPayload.fromAccountId}
+                      onValueChange={val => setTransferPayload(p => ({ ...p, fromAccountId: val }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select source account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {settingsAccounts.map(acc => (
+                          <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>To Account</Label>
+                    <Select
+                      value={transferPayload.toAccountId}
+                      onValueChange={val => setTransferPayload(p => ({ ...p, toAccountId: val }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select destination account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {settingsAccounts.map(acc => (
+                          <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Amount</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold">$</span>
+                      <Input
+                        type="number"
+                        placeholder="0.00"
+                        value={transferPayload.amount}
+                        onChange={e => setTransferPayload(p => ({ ...p, amount: e.target.value }))}
+                        className="pl-7"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Date</Label>
+                    <Input
+                      type="date"
+                      value={transferPayload.date}
+                      onChange={e => setTransferPayload(p => ({ ...p, date: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Note / Purpose</Label>
+                    <Textarea
+                      placeholder="Reason for transfer..."
+                      value={transferPayload.note}
+                      onChange={e => setTransferPayload(p => ({ ...p, note: e.target.value }))}
+                      rows={2}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowTransferDialog(false)}>Cancel</Button>
+                  <Button
+                    onClick={async () => {
+                      const { fromAccountId, toAccountId, amount, note, date } = transferPayload;
+                      if (!fromAccountId || !toAccountId) {
+                        toast({ title: "Please select both accounts", variant: "destructive" });
+                        return;
+                      }
+                      if (fromAccountId === toAccountId) {
+                        toast({ title: "Source and destination accounts must be different", variant: "destructive" });
+                        return;
+                      }
+                      if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+                        toast({ title: "Please enter a valid amount", variant: "destructive" });
+                        return;
+                      }
+
+                      try {
+                        await apiFetch("/accounts/transfer", {
+                          method: "POST",
+                          body: JSON.stringify({
+                            fromAccountId,
+                            toAccountId,
+                            amount: parseFloat(amount),
+                            note,
+                            date: new Date(date).toISOString(),
+                          }),
+                        });
+                        toast({ title: "Transfer completed successfully!" });
+                        setShowTransferDialog(false);
+                        fetchSettingsAccounts();
+                      } catch {
+                        toast({ title: "Transfer failed", variant: "destructive" });
+                      }
+                    }}
+                  >
+                    Transfer
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
         </TabsContent>
         </div>{/* end content area */}
         </div>{/* end desktop layout wrapper */}

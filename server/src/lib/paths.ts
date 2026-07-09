@@ -18,6 +18,7 @@ export const PATHS = {
    * Root directory for all uploads
    */
   UPLOADS_ROOT,
+  UPLOADS: UPLOADS_ROOT, // alias for convenience
   
   /**
    * Internal folders within uploads
@@ -26,6 +27,7 @@ export const PATHS = {
   MEDIA: path.resolve(UPLOADS_ROOT, 'media'),
   BRANDING: path.resolve(UPLOADS_ROOT, 'branding'),
   EMPLOYEE_DOCS: path.resolve(UPLOADS_ROOT, 'employee-docs'),
+  RECEIPTS: path.resolve(UPLOADS_ROOT, 'receipts'),
 };
 
 /**

@@ -26,6 +26,8 @@ import fileRoutes from './files.routes.js';
 import contentPostsRoutes from './content-posts.routes.js';
 import reportsRoutes from './reports.routes.js';
 import financialRoutes from './financial.routes.js';
+import accountsRoutes from './accounts.routes.js';
+import expensesRoutes from './expenses.routes.js';
 
 const router = Router();
 
@@ -46,6 +48,8 @@ router.use('/leads', leadsRoutes);
 router.use('/users', usersRoutes);
 router.use('/ai', aiRoutes);
 router.use('/financial', financialRoutes);
+router.use('/accounts', accountsRoutes);
+router.use('/expenses', expensesRoutes);
 
 // Social Media Module — nested under existing resource paths
 router.use('/clients', socialProfilesRoutes);
