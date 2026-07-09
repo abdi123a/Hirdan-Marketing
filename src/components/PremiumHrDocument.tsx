@@ -2,6 +2,7 @@ import { useAgencyStore } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useRef, useEffect } from "react";
 import { ProtectedBrandingImage } from "./ProtectedBrandingImage";
+import { QRCodeSVG } from "qrcode.react";
 
 interface PremiumHrDocumentProps {
   docType: 'WORK_CERTIFICATE' | 'SALARY_CERTIFICATE' | 'PAYSLIP' | 'WARNING_CERTIFICATE' | 'INTERNSHIP_ACCEPTED_CERTIFICATE' | 'INTERNSHIP_LETTER';
@@ -52,6 +53,9 @@ interface PremiumHrDocumentProps {
     task2?: string;
     task3?: string;
 
+    // Employee gender
+    gender?: string;
+
     // Document status
     status?: string;
     showSignature?: boolean;
@@ -69,9 +73,10 @@ interface PremiumHrDocumentProps {
     signature?: string;
     stamp?: string;
   };
+  verificationToken?: string;
 }
 
-export function PremiumHrDocument({ docType, data, settings: rawSettings }: PremiumHrDocumentProps) {
+export function PremiumHrDocument({ docType, data, settings: rawSettings, verificationToken }: PremiumHrDocumentProps) {
   const settings = rawSettings || { agencyName: "", currency: "USD" };
   const showSignature = data.showSignature ?? true;
   const showStamp = data.showStamp ?? true;
@@ -190,10 +195,10 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings }: Prem
         </div>
       )}
 
-      <div style={{ padding: '40px 48px 0 48px', flex: 1, display: 'flex', flexDirection: 'column', zIndex: 1, position: 'relative' }}>
+      <div style={{ padding: '28px 48px 0 48px', flex: 1, display: 'flex', flexDirection: 'column', zIndex: 1, position: 'relative' }}>
 
         {/* ───────────────── HEADER ───────────────── */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
           <div>
             {settings.logo ? (
               <ProtectedBrandingImage
@@ -502,38 +507,27 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings }: Prem
 
           {/* 5. INTERNSHIP ACCEPTED CERTIFICATE */}
           {docType === 'INTERNSHIP_ACCEPTED_CERTIFICATE' && (
-            <div style={{ fontSize: '14px', lineHeight: 1.8, color: textDark, display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                <div style={{ width: '20px', height: '2px', background: primaryColor }}></div>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: primaryColor, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Internship Confirmation Letter
-                </div>
+            <div style={{ fontSize: '13px', lineHeight: 1.5, color: textDark, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ fontWeight: 700, marginBottom: '2px', fontSize: '14px', color: primaryColor }}>
+                Subject: Internship Confirmation for {data.gender?.toLowerCase() === 'female' ? 'Ms.' : 'Mr.'} {data.employeeName}
               </div>
 
-              <div style={{ marginBottom: '4px' }}>
-                <strong>Date:</strong> {formatDate(data.date)}
-              </div>
-
-              <div style={{ fontWeight: 700, marginBottom: '4px', fontSize: '15px', color: primaryColor }}>
-                Subject: Internship Confirmation for {data.employeeName}
-              </div>
-
-              <p style={{ marginBottom: '8px' }}>
+              <p style={{ marginBottom: '4px' }}>
                 Dear {data.coordinatorName || 'Internship Committee'},
               </p>
-              
-              <p style={{ marginBottom: '8px', textAlign: 'justify' }}>
-                We are pleased to inform you that <strong>{data.employeeName}</strong>, a student from your 
+
+              <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
+                We are pleased to inform you that <strong>{data.gender?.toLowerCase() === 'female' ? 'Ms.' : 'Mr.'} {data.employeeName}</strong>, a student from your 
                 institution pursuing a <strong>{data.degreeMajor || 'Bachelor of Science in IT'}</strong>, has been 
                 officially accepted for an internship position at <strong>{settings.agencyName}</strong>.
               </p>
 
-              <p style={{ marginBottom: '4px' }}>
+              <p style={{ marginBottom: '2px' }}>
                 The details of the internship placement are outlined below:
               </p>
 
-              <div style={{ background: lightBg, border: `1px solid ${borderColor}`, borderRadius: '12px', padding: '16px', marginBottom: '8px' }}>
-                <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ background: lightBg, border: `1px solid ${borderColor}`, borderRadius: '8px', padding: '10px 14px', marginBottom: '4px' }}>
+                <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   <li>• <strong>Position Title:</strong> {data.employeeTitle || 'Digital Marketing Intern'}</li>
                   <li>• <strong>Department:</strong> {data.employeeDepartment || 'Marketing'}</li>
                   <li>• <strong>Internship Duration:</strong> {data.internshipDuration || '3 Months'}</li>
@@ -544,23 +538,17 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings }: Prem
                 </ul>
               </div>
 
-              <p style={{ marginBottom: '4px' }}>
+              <p style={{ marginBottom: '2px' }}>
                 During this internship, the student will work under the direct supervision of <strong>{data.supervisorName || 'Supervisor Name'}</strong> ({data.supervisorTitle || 'Supervisor Title'}). Their primary responsibilities and learning objectives will include:
               </p>
 
-              <ol style={{ paddingLeft: '20px', margin: '0 0 8px 0', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <ol style={{ paddingLeft: '20px', margin: '0 0 4px 0', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <li>1. {data.task1 || 'Assisting in the development of client software applications'}</li>
                 <li>2. {data.task2 || 'Analyzing weekly website traffic data and creating reports'}</li>
                 <li>3. {data.task3 || 'Participating in team strategy and brainstorming meetings'}</li>
               </ol>
 
-              <p style={{ marginBottom: '8px', textAlign: 'justify' }}>
-                We ensure that the student will receive hands-on industry experience that aligns 
-                with your academic requirements. We will also cooperate with your department to 
-                provide any necessary performance evaluations or grading rubrics at the end of the term.
-              </p>
-
-              <p style={{ marginBottom: '16px', textAlign: 'justify' }}>
+              <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
                 If you require any additional information or specific academic paperwork filled out, 
                 please do not hesitate to reach out.
               </p>
@@ -569,31 +557,31 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings }: Prem
 
           {/* 6. INTERNSHIP LETTER (COMPLETION) */}
           {docType === 'INTERNSHIP_LETTER' && (
-            <div style={{ fontSize: '14px', lineHeight: 1.8, color: textDark, display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+            <div style={{ fontSize: '13px', lineHeight: 1.5, color: textDark, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                 <div style={{ width: '20px', height: '2px', background: primaryColor }}></div>
                 <div style={{ fontSize: '11px', fontWeight: 800, color: primaryColor, textTransform: 'uppercase', letterSpacing: '1px' }}>
                   Internship Completion Certificate
                 </div>
               </div>
 
-              <div style={{ textAlign: 'center', margin: '10px 0', padding: '5px 0' }}>
-                <div style={{ fontSize: '18px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: primaryColor, marginBottom: '4px' }}>
+              <div style={{ textAlign: 'center', margin: '4px 0', padding: '2px 0' }}>
+                <div style={{ fontSize: '16px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: primaryColor, marginBottom: '4px' }}>
                   TO WHOM IT MAY CONCERN
                 </div>
                 <div style={{ width: '80px', height: '3px', background: accentColor, margin: '0 auto' }}></div>
               </div>
 
-              <p style={{ marginBottom: '8px', textAlign: 'justify' }}>
+              <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
                 This is to officially certify that <strong>{data.employeeName}</strong>, a student from <strong>{data.institutionName || 'University of Technology'}</strong> pursuing a <strong>{data.degreeMajor || 'Bachelor of Science in IT'}</strong>, has successfully completed their internship program at <strong>{settings.agencyName}</strong>.
               </p>
 
-              <p style={{ marginBottom: '4px' }}>
+              <p style={{ marginBottom: '2px' }}>
                 The details of the internship placement are outlined below:
               </p>
 
-              <div style={{ background: lightBg, border: `1px solid ${borderColor}`, borderRadius: '12px', padding: '16px', marginBottom: '8px' }}>
-                <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ background: lightBg, border: `1px solid ${borderColor}`, borderRadius: '8px', padding: '10px 14px', marginBottom: '4px' }}>
+                <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
                   <li>• <strong>Position Title:</strong> {data.employeeTitle || 'Digital Marketing Intern'}</li>
                   <li>• <strong>Department:</strong> {data.employeeDepartment || 'Marketing'}</li>
                   <li>• <strong>Internship Duration:</strong> {data.internshipDuration || '3 Months'}</li>
@@ -602,21 +590,21 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings }: Prem
                 </ul>
               </div>
 
-              <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
+              <p style={{ marginBottom: '2px', textAlign: 'justify' }}>
                 During the course of the internship, <strong>{data.employeeName}</strong> demonstrated exceptional dedication, professional conduct, and technical proficiency. They were primarily involved in the following projects and responsibilities:
               </p>
 
-              <ol style={{ paddingLeft: '20px', margin: '0 0 8px 0', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <ol style={{ paddingLeft: '20px', margin: '0 0 4px 0', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <li>1. {data.task1 || 'Assisting in the development of client software applications'}</li>
                 <li>2. {data.task2 || 'Analyzing weekly website traffic data and creating reports'}</li>
                 <li>3. {data.task3 || 'Participating in team strategy and brainstorming meetings'}</li>
               </ol>
 
-              <p style={{ marginBottom: '8px', textAlign: 'justify' }}>
+              <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
                 Their contribution was highly valuable, and they successfully achieved all the learning objectives set out for this placement. We found them to be self-motivated, eager to learn, and a supportive team player.
               </p>
 
-              <p style={{ marginBottom: '16px', textAlign: 'justify' }}>
+              <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
                 We wish them all the success in their future academic and professional endeavors.
               </p>
             </div>
@@ -625,7 +613,7 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings }: Prem
         </div>
 
         {/* ───────────────── SIGNATURES & STAMP BLOCK ───────────────── */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', pageBreakInside: 'avoid', marginBottom: '40px', marginTop: '30px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', pageBreakInside: 'avoid', marginBottom: '20px', marginTop: '12px' }}>
           
           <div style={{ width: '40%' }}>
             {docType === 'WARNING_CERTIFICATE' && (
@@ -749,12 +737,33 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings }: Prem
         }}></div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ fontSize: '14px', fontWeight: 900, color: '#ffffff', marginBottom: '4px' }}>
-              {settings.agencyName}
-            </div>
-            <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>
-              Official HR Document • Confidential
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {verificationToken && (
+              <div style={{
+                padding: '6px',
+                background: '#ffffff',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+              }}>
+                <QRCodeSVG
+                  value={`${window.location.origin}/verify/${verificationToken}`}
+                  size={52}
+                  level="H"
+                  fgColor={primaryColor}
+                  bgColor="transparent"
+                />
+              </div>
+            )}
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 900, color: '#ffffff', marginBottom: '2px' }}>
+                {settings.agencyName}
+              </div>
+              <div style={{ fontSize: '8px', color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>
+                {verificationToken ? "Verified Secure Digital HR Document" : "Official HR Document"}
+              </div>
             </div>
           </div>
 

@@ -382,6 +382,7 @@ model VerificationToken {
   proformaId   String?   @map("proforma_id")
   subscriptionId  String?         @map("subscription_id")
   monthlyReportId String?         @map("monthly_report_id")
+  hrDocumentId    String?         @map("hr_document_id")
   createdAt       DateTime        @default(now()) @map("created_at")
   expiresAt       DateTime        @default(dbgenerated("(DATE_ADD(NOW(), INTERVAL 365 DAY))")) @map("expires_at")
   revokedAt       DateTime?       @map("revoked_at")
@@ -389,11 +390,13 @@ model VerificationToken {
   proforma        Proforma?       @relation(fields: [proformaId], references: [id], onDelete: Cascade)
   subscription    Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   monthlyReport   MonthlyReport?  @relation(fields: [monthlyReportId], references: [id], onDelete: Cascade)
+  hrDocument      HrDocument?     @relation(fields: [hrDocumentId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
   @@index([proformaId])
   @@index([subscriptionId])
   @@index([monthlyReportId])
+  @@index([hrDocumentId])
   @@map("verification_tokens")
 }
 
@@ -929,6 +932,7 @@ model HrDocument {
   
   employee      TeamMember         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   approvals     HrDocumentApproval[]
+  verificationTokens VerificationToken[]
 
   @@unique([docNumber, version])
   @@index([employeeId])

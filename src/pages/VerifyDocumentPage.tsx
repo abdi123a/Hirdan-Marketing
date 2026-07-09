@@ -11,12 +11,14 @@ import {
   Loader2,
   CircleDollarSign,
   UserRound,
+  Briefcase,
+  FileText,
 } from "lucide-react";
 
 export default function VerifyDocumentPage() {
   const { token } = useParams<{ token: string }>();
   const { verifyDocument, settings, fetchSettings } = useAgencyStore();
-  const [result, setResult] = useState<{ type: "invoice" | "proforma" | "subscription" | "monthly_report"; document: PublicVerificationDocument } | null>(null);
+  const [result, setResult] = useState<{ type: "invoice" | "proforma" | "subscription" | "monthly_report" | "hr_document"; document: PublicVerificationDocument } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,7 +28,7 @@ export default function VerifyDocumentPage() {
         await fetchSettings();
         if (token) {
           const res = await verifyDocument(token);
-          setResult(res);
+          setResult(res as any);
         }
       } catch (error) {
         console.error("Failed to load verification data:", error);
@@ -91,19 +93,33 @@ export default function VerifyDocumentPage() {
   const isProforma = type === "proforma";
   const isSubscription = type === "subscription";
   const isMonthlyReport = type === "monthly_report";
+  const isHrDocument = type === "hr_document";
+
+  const hrDocTypeLabel = (t: string) => {
+    const map: Record<string, string> = {
+      WORK_CERTIFICATE: "Employment Certificate",
+      SALARY_CERTIFICATE: "Salary Certificate",
+      PAYSLIP: "Salary Payslip",
+      WARNING_CERTIFICATE: "Disciplinary Warning",
+      INTERNSHIP_ACCEPTED_CERTIFICATE: "Internship Confirmation",
+      INTERNSHIP_LETTER: "Internship Completion Letter",
+    };
+    return map[t] || t.replace(/_/g, " ");
+  };
 
   const docLabel =
     isInvoice ? "Invoice" :
     isProforma ? "Proforma" :
     isSubscription ? "Subscription" :
+    isHrDocument ? (doc.docType ? hrDocTypeLabel(doc.docType) : "HR Document") :
     "Monthly Report";
 
   const statusPillClass =
-    doc.status === "Paid" || doc.status === "Accepted" || doc.status === "Active" || doc.status === "Finalized"
+    doc.status === "Paid" || doc.status === "Accepted" || doc.status === "Active" || doc.status === "Finalized" || doc.status === "Approved" || doc.status === "Final"
       ? "bg-[#22c55e]"
       : doc.status === "Partially Paid" || doc.status === "Draft"
         ? "bg-[#10b981]"
-        : doc.status === "Overdue" || doc.status === "Expired" || doc.status === "Cancelled"
+        : doc.status === "Overdue" || doc.status === "Expired" || doc.status === "Cancelled" || doc.status === "Rejected"
           ? "bg-[#ef4444]"
           : "bg-[#f59e0b]";
 
@@ -157,10 +173,21 @@ export default function VerifyDocumentPage() {
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_100%_0%,rgba(255,255,255,0.12),transparent)] pointer-events-none" />
           <div className="relative z-10 space-y-5">
             <div>
-              <p className="text-[10px] font-bold text-white/70 uppercase tracking-[0.2em] mb-2">{docLabel} {isMonthlyReport ? "title" : "number"}</p>
-              <p className="text-[28px] md:text-[34px] font-black text-white tracking-[-0.03em] leading-tight">
-                {isInvoice || isProforma ? doc.documentNumber : isSubscription ? doc.plan : doc.title}
+              <p className="text-[10px] font-bold text-white/70 uppercase tracking-[0.2em] mb-2">
+                {isHrDocument ? "Document Reference" : isMonthlyReport ? "Report title" : `${docLabel} number`}
               </p>
+              <p className="text-[28px] md:text-[34px] font-black text-white tracking-[-0.03em] leading-tight">
+                {isHrDocument
+                  ? doc.documentNumber
+                  : isInvoice || isProforma
+                    ? doc.documentNumber
+                    : isSubscription
+                      ? doc.plan
+                      : doc.title}
+              </p>
+              {isHrDocument && doc.docType && (
+                <p className="text-[13px] text-white/70 mt-1 font-medium">{hrDocTypeLabel(doc.docType)}</p>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-bold text-white/60 uppercase tracking-wider">{isSubscription ? "Plan" : "Document"} status</span>
@@ -174,18 +201,32 @@ export default function VerifyDocumentPage() {
         </div>
 
         <div className="p-6 md:p-8 space-y-4 bg-[#fafbfc]">
-          <DetailRow icon={<UserRound size={17} />} label="Recipient" value={doc.clientMask} accent={accent} />
-          {isMonthlyReport ? (
-            <DetailRow icon={<Calendar size={17} />} label="Period" value={`${doc.month}/${doc.year}`} accent={accent} />
-          ) : isSubscription ? (
+          {/* HR Document specific rows */}
+          {isHrDocument ? (
             <>
-              <DetailRow icon={<Calendar size={17} />} label="Start date" value={formatDate(doc.startDate || '')} accent={accent} />
-              <DetailRow icon={<Calendar size={17} />} label="Valid until" value={formatDate(doc.endDate || '')} accent={accent} />
+              <DetailRow icon={<UserRound size={17} />} label="Employee Full Name" value={doc.employeeName || "—"} accent={accent} />
+              <DetailRow icon={<Briefcase size={17} />} label="Position / Role" value={doc.employeePosition || "—"} accent={accent} />
+              <DetailRow icon={<Calendar size={17} />} label="Date Created" value={doc.dateCreated ? formatDate(doc.dateCreated) : (doc.date ? formatDate(doc.date) : "—")} accent={accent} />
+              <DetailRow icon={<Building2 size={17} />} label="Issued by" value={settings.agencyName || "—"} accent={accent} />
             </>
           ) : (
-            <DetailRow icon={<Calendar size={17} />} label="Issue date" value={formatDate(doc.date || '')} accent={accent} />
+            <>
+              {doc.clientMask && (
+                <DetailRow icon={<UserRound size={17} />} label="Recipient" value={doc.clientMask} accent={accent} />
+              )}
+              {isMonthlyReport ? (
+                <DetailRow icon={<Calendar size={17} />} label="Period" value={`${doc.month}/${doc.year}`} accent={accent} />
+              ) : isSubscription ? (
+                <>
+                  <DetailRow icon={<Calendar size={17} />} label="Start date" value={formatDate(doc.startDate || '')} accent={accent} />
+                  <DetailRow icon={<Calendar size={17} />} label="Valid until" value={formatDate(doc.endDate || '')} accent={accent} />
+                </>
+              ) : (
+                <DetailRow icon={<Calendar size={17} />} label="Issue date" value={formatDate(doc.date || '')} accent={accent} />
+              )}
+              <DetailRow icon={<Building2 size={17} />} label="Issued by" value={settings.agencyName || "—"} accent={accent} />
+            </>
           )}
-          <DetailRow icon={<Building2 size={17} />} label="Issued by" value={settings.agencyName || "—"} accent={accent} />
         </div>
 
         {(isInvoice || isProforma || isSubscription) && (
@@ -211,6 +252,31 @@ export default function VerifyDocumentPage() {
               <p className="text-[26px] md:text-[32px] font-black tracking-tight tabular-nums m-0 sm:text-right" style={{ color: secondary }}>
                 {doc.amountFormatted}
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* HR Document authenticity footer */}
+        {isHrDocument && (
+          <div className="px-6 md:px-8 pb-8 md:pb-9 pt-0 bg-[#fafbfc]">
+            <div
+              className="rounded-2xl px-6 py-5 flex items-center gap-4"
+              style={{
+                background: `linear-gradient(135deg, ${accent} 0%, ${accentDark} 100%)`,
+                boxShadow: "0 12px 32px -12px rgba(15, 23, 42, 0.25)",
+              }}
+            >
+              <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+                <FileText size={20} className="text-white" strokeWidth={2} />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/75 mb-0.5">
+                  Digitally Verified HR Document
+                </p>
+                <p className="text-xs text-white/80 m-0">
+                  This document was officially generated and signed by {settings.agencyName}. Any alterations to the printed copy void this verification.
+                </p>
+              </div>
             </div>
           </div>
         )}

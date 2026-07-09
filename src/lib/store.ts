@@ -171,13 +171,18 @@ export interface PublicVerificationDocument {
   date?: string;
   status: string;
   amountFormatted?: string;
-  clientMask: string;
+  clientMask?: string;
   plan?: string;
   startDate?: string;
   endDate?: string;
   title?: string;
   month?: number;
   year?: number;
+  // HR fields
+  employeeName?: string;
+  employeePosition?: string;
+  dateCreated?: string;
+  docType?: string;
 }
 
 export interface Proforma {
@@ -467,8 +472,8 @@ interface AgencyStore {
   deleteUser: (id: string) => Promise<void>;
 
   updateSettings: (settings: Partial<AgencySettings>) => Promise<void>;
-  getVerificationToken: (documentType: 'invoice' | 'proforma' | 'subscription' | 'monthly_report', documentId: string) => Promise<string>;
-  verifyDocument: (token: string) => Promise<{ type: 'invoice' | 'proforma' | 'subscription' | 'monthly_report'; document: PublicVerificationDocument } | null>;
+  getVerificationToken: (documentType: 'invoice' | 'proforma' | 'subscription' | 'monthly_report' | 'hr_document', documentId: string) => Promise<string>;
+  verifyDocument: (token: string) => Promise<{ type: 'invoice' | 'proforma' | 'subscription' | 'monthly_report' | 'hr_document'; document: PublicVerificationDocument } | null>;
 
   fetchClients: () => Promise<void>;
   fetchProjects: () => Promise<void>;
@@ -527,7 +532,7 @@ const createDefaultSettings = (): AgencySettings => ({
   smtpEncryption: "tls",
   smtpDriver: "smtp",
   mailEnabled: false,
-  appVersion: "1.6.0",
+  appVersion: "1.7.0",
   versionHistory: [
     {
       version: "1.6.0",
@@ -1879,6 +1884,9 @@ export const useAgencyStore = create<AgencyStore>()(
           } else if (documentType === 'monthly_report') {
             // Document ID is already the UUID for reports in the current UI flow
             dbId = documentId;
+          } else if (documentType === 'hr_document') {
+            const doc = get().hrDocuments.find(d => d.id === documentId);
+            if (doc) dbId = doc.id;
           }
 
           const res = await apiFetch<{ token: string }>('/verify', {
@@ -1896,7 +1904,7 @@ export const useAgencyStore = create<AgencyStore>()(
         try {
           const res = await apiFetch<{
             verified: boolean;
-            type: 'invoice' | 'proforma' | 'subscription' | 'monthly_report';
+            type: 'invoice' | 'proforma' | 'subscription' | 'monthly_report' | 'hr_document';
             document: any;
           }>(`/verify/${token}`);
           if (res.verified && res.document) {
@@ -1915,6 +1923,11 @@ export const useAgencyStore = create<AgencyStore>()(
               title: d.title,
               month: d.month,
               year: d.year,
+              // HR fields
+              employeeName: d.employeeName,
+              employeePosition: d.employeePosition,
+              dateCreated: d.dateCreated,
+              docType: d.docType,
             };
             return { type: res.type, document: mappedDoc };
           }

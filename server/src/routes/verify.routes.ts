@@ -35,7 +35,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next) => {
     const { documentType, documentId } = req.body;
     const user = req.user as any;
 
-    if (!['invoice', 'proforma', 'subscription', 'monthly_report'].includes(documentType)) {
+    if (!['invoice', 'proforma', 'subscription', 'monthly_report', 'hr_document'].includes(documentType)) {
       throw AppError.badRequest('Invalid document type');
     }
 
@@ -96,7 +96,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next) => {
           throw AppError.forbidden('You do not have permission to verify this proforma');
         }
       }
-    } else {
+    } else if (documentType === 'monthly_report') {
       dbDoc = await prisma.monthlyReport.findUnique({ where: { id: documentId } });
       if (!dbDoc) throw AppError.notFound('Monthly report not found');
 
@@ -109,6 +109,18 @@ router.post('/', authenticate, async (req: Request, res: Response, next) => {
         if (dbDoc.clientId !== clientId) {
           throw AppError.forbidden('You do not have permission to verify this report');
         }
+      }
+    } else {
+      dbDoc = await prisma.hrDocument.findUnique({ where: { id: documentId } });
+      if (!dbDoc) throw AppError.notFound('HR document not found');
+
+      if (user.role === 'STAFF') {
+        const emp = await prisma.teamMember.findUnique({ where: { id: dbDoc.employeeId } });
+        if (!emp || emp.userId !== user.userId) {
+          throw AppError.forbidden('You do not have permission to verify this HR document');
+        }
+      } else if (user.role === 'CLIENT') {
+        throw AppError.forbidden('You do not have permission to verify this HR document');
       }
     }
 
@@ -123,6 +135,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next) => {
         proformaId: documentType === 'proforma' ? realDocumentId : undefined,
         subscriptionId: documentType === 'subscription' ? realDocumentId : undefined,
         monthlyReportId: documentType === 'monthly_report' ? realDocumentId : undefined,
+        hrDocumentId: documentType === 'hr_document' ? realDocumentId : undefined,
       }
     });
 
@@ -146,6 +159,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next) => {
         proformaId: documentType === 'proforma' ? realDocumentId : undefined,
         subscriptionId: documentType === 'subscription' ? realDocumentId : undefined,
         monthlyReportId: documentType === 'monthly_report' ? realDocumentId : undefined,
+        hrDocumentId: documentType === 'hr_document' ? realDocumentId : undefined,
         expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year
       }
     });
@@ -201,6 +215,21 @@ router.get('/:token', verifyLimiter, async (req: Request, res: Response, next) =
             client: { select: { name: true, company: true } },
           },
         },
+        hrDocument: {
+          select: {
+            docNumber: true,
+            docType: true,
+            status: true,
+            generatedAt: true,
+            content: true,
+            employee: {
+              select: {
+                name: true,
+                role: true,
+              }
+            }
+          }
+        }
       },
     });
 
@@ -215,14 +244,14 @@ router.get('/:token', verifyLimiter, async (req: Request, res: Response, next) =
       throw AppError.notFound('Verification token not found or invalid');
     }
 
-    const raw = (record as any).invoice || (record as any).proforma || (record as any).subscription || (record as any).monthlyReport;
+    const raw = (record as any).invoice || (record as any).proforma || (record as any).subscription || (record as any).monthlyReport || (record as any).hrDocument;
     const type = record.documentType;
 
     if (!raw) {
       throw AppError.notFound('Associated document not found');
     }
 
-    const clientMask = maskClientDisplayName(raw.client?.company, raw.client?.name);
+    const clientMask = type === 'hr_document' ? '—' : maskClientDisplayName(raw.client?.company, raw.client?.name);
 
     // Public payload only — no full client name, line items, or pricing breakdown
     let documentDetails: any = {};
@@ -254,6 +283,17 @@ router.get('/:token', verifyLimiter, async (req: Request, res: Response, next) =
         month: raw.month,
         year: raw.year,
         status: raw.status,
+      };
+    } else if (type === 'hr_document') {
+      const content = raw.content as any;
+      documentDetails = {
+        number: raw.docNumber,
+        docType: raw.docType,
+        status: raw.status,
+        date: content?.date || raw.generatedAt,
+        employeeName: content?.employeeName || raw.employee?.name || 'N/A',
+        employeePosition: content?.employeeTitle || raw.employee?.role || 'N/A',
+        dateCreated: raw.generatedAt,
       };
     }
 

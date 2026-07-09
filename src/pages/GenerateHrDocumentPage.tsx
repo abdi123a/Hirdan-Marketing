@@ -31,7 +31,7 @@ export default function GenerateHrDocumentPage() {
   const { user } = useAuthStore();
   const { 
     team, fetchTeam, fetchHrDocumentById, createHrDocument, uploadHrDocumentPdf,
-    approveHrDocument, rejectHrDocument, sendHrDocumentEmail, settings: rawSettings 
+    approveHrDocument, rejectHrDocument, sendHrDocumentEmail, getVerificationToken, settings: rawSettings 
   } = useAgencyStore();
   const settings = rawSettings || { agencyName: "", currency: "USD" };
 
@@ -42,6 +42,7 @@ export default function GenerateHrDocumentPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
   const [docType, setDocType] = useState<DocType>(initialType);
   const [searchEmployeeQuery, setSearchEmployeeQuery] = useState<string>("");
+  const [verificationToken, setVerificationToken] = useState<string>("");
 
   // Document Fields State
   const [docFields, setDocFields] = useState<any>({
@@ -150,6 +151,13 @@ export default function GenerateHrDocumentPage() {
           fillOriginals(currentEmp);
         }
 
+        try {
+          const token = await getVerificationToken("hr_document", activeId);
+          setVerificationToken(token);
+        } catch (tokenErr) {
+          console.error("Failed to load verification token on mount:", tokenErr);
+        }
+
         setStep(2); // Jump straight to preview
       } catch (err) {
         toast({
@@ -190,6 +198,7 @@ export default function GenerateHrDocumentPage() {
       employeeContractType: emp.employmentType || "Full-Time",
       employeeStatus: emp.status || "ACTIVE",
       employeeEndDate: emp.archivedAt ? new Date(emp.archivedAt).toISOString().split('T')[0] : "",
+      gender: emp.gender || "",
       
       basicSalary: basic,
       housingAllowance: housing,
@@ -363,6 +372,16 @@ export default function GenerateHrDocumentPage() {
       const docRes = await createHrDocument(payload);
       const generatedDocId = docRes.id;
       const docNumber = docRes.docNumber;
+
+      // 1.5. Fetch verification token for the newly created document
+      try {
+        const token = await getVerificationToken("hr_document", generatedDocId);
+        setVerificationToken(token);
+        // Wait briefly for React state update and QR code rendering in the DOM
+        await new Promise(resolve => setTimeout(resolve, 350));
+      } catch (tokenErr) {
+        console.error("Failed to fetch token for new document:", tokenErr);
+      }
 
       // 2. Generate PDF using html2canvas & jsPDF
       const element = printRef.current?.querySelector('.print-content') as HTMLElement || printRef.current;
@@ -632,6 +651,7 @@ export default function GenerateHrDocumentPage() {
                     docType={docType}
                     data={docFields}
                     settings={settings}
+                    verificationToken={verificationToken}
                   />
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAgencyStore } from "@/lib/store";
 import { useAuthStore } from "@/lib/auth-store";
@@ -16,7 +16,7 @@ import { toast } from "@/hooks/use-toast";
 import { 
   Plus, FileText, Landmark, FileSpreadsheet, ShieldAlert,
   Download, RefreshCw, Eye, CheckCircle2, XCircle, Search, Mail, Loader2,
-  GraduationCap, Award
+  GraduationCap, Award, Send, RotateCcw, X, AtSign, Users, Paperclip
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import {
@@ -34,6 +34,58 @@ const getDocTypeLabel = (docType: string) => {
   if (docType === 'INTERNSHIP_LETTER') return 'Internship Completion Letter';
   return docType.replace('_', ' ');
 };
+
+// ── CC Tag Input Helper ───────────────────────────────────────────
+function CcTagInput({ tags, onAdd, onRemove }: { tags: string[]; onAdd: (v: string) => void; onRemove: (v: string) => void }) {
+  const [inputVal, setInputVal] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const commit = () => {
+    const trimmed = inputVal.trim().toLowerCase();
+    if (trimmed && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed) && !tags.includes(trimmed)) {
+      onAdd(trimmed);
+    }
+    setInputVal("");
+  };
+
+  const handleKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === "," || e.key === " ") {
+      e.preventDefault();
+      commit();
+    } else if (e.key === "Backspace" && !inputVal && tags.length > 0) {
+      onRemove(tags[tags.length - 1]);
+    }
+  };
+
+  return (
+    <div
+      className="flex flex-wrap gap-1.5 min-h-[40px] w-full rounded-xl border border-border bg-background px-3 py-2 text-sm cursor-text focus-within:ring-2 focus-within:ring-ring/50 focus-within:border-primary transition-all"
+      onClick={() => inputRef.current?.focus()}
+    >
+      {tags.map((tag) => (
+        <span
+          key={tag}
+          className="inline-flex items-center gap-1 bg-primary/10 text-primary rounded-full px-2.5 py-0.5 text-[11px] font-semibold leading-none"
+        >
+          {tag}
+          <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(tag); }} className="hover:text-destructive transition-colors ml-0.5">
+            <X className="h-3 w-3" />
+          </button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        type="email"
+        value={inputVal}
+        onChange={(e) => setInputVal(e.target.value)}
+        onKeyDown={handleKey}
+        onBlur={commit}
+        placeholder={tags.length === 0 ? "Add CC recipients… press Enter or comma" : ""}
+        className="flex-1 min-w-[160px] bg-transparent outline-none text-xs placeholder:text-muted-foreground"
+      />
+    </div>
+  );
+}
 
 export default function HrDocumentsPage() {
   const navigate = useNavigate();
@@ -56,9 +108,11 @@ export default function HrDocumentsPage() {
 
   // Email modal states
   const [emailDocId, setEmailDocId] = useState<string | null>(null);
+  const [emailDocRef, setEmailDocRef] = useState<any>(null);
   const [isEmailModalOpen, setIsEmailModalOpen] = useState<boolean>(false);
   const [emailTo, setEmailTo] = useState<string>("");
-  const [emailCc, setEmailCc] = useState<string>("");
+  const [emailToError, setEmailToError] = useState<string>("");
+  const [ccTags, setCcTags] = useState<string[]>([]);
   const [emailSubject, setEmailSubject] = useState<string>("");
   const [emailBody, setEmailBody] = useState<string>("");
   const [isSendingEmail, setIsSendingEmail] = useState<boolean>(false);
@@ -70,7 +124,7 @@ export default function HrDocumentsPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      await fetchHrDocuments(activeTab === 'approvals');
+      await fetchHrDocuments({ pendingApproval: activeTab === 'approvals' });
     } catch (err) {}
     setLoading(false);
   };
@@ -139,32 +193,50 @@ export default function HrDocumentsPage() {
     }
   };
 
+  const buildDefaultBody = (doc: any) =>
+    `Hi ${doc.employee?.name || 'there'},\n\n` +
+    `Please find attached your official ${getDocTypeLabel(doc.docType).toLowerCase()} (${doc.docNumber}) issued on ${formatDate(doc.generatedAt)}.\n\n` +
+    `If you have any questions, please do not hesitate to contact the HR department.\n\n` +
+    `Best regards,\nHR Department\n${settings.agencyName}`;
+
   const handleOpenEmailModal = (doc: any) => {
+    const body = buildDefaultBody(doc);
     setEmailDocId(doc.id);
+    setEmailDocRef(doc);
     setEmailTo(doc.employee?.email || "");
-    setEmailCc("");
-    setEmailSubject(`${getDocTypeLabel(doc.docType)}: ${doc.docNumber}`);
-    setEmailBody(
-      `Hi ${doc.employee?.name || 'there'},\n\n` +
-      `Please find attached your official ${getDocTypeLabel(doc.docType).toLowerCase()} (${doc.docNumber}) issued on ${formatDate(doc.generatedAt)}.\n\n` +
-      `Best regards,\nHR Department\n${settings.agencyName}`
-    );
+    setEmailToError("");
+    setCcTags([]);
+    setEmailSubject(`${getDocTypeLabel(doc.docType)} – ${doc.docNumber}`);
+    setEmailBody(body);
     setIsEmailModalOpen(true);
+  };
+
+  const handleResetEmailBody = () => {
+    if (emailDocRef) setEmailBody(buildDefaultBody(emailDocRef));
   };
 
   const handleSendEmail = async () => {
     if (!emailDocId) return;
+
+    // Validate To field
+    const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+    if (!emailTo.trim() || !emailRegex.test(emailTo.trim())) {
+      setEmailToError("Please enter a valid email address.");
+      return;
+    }
+    setEmailToError("");
+
     setIsSendingEmail(true);
     try {
       await sendHrDocumentEmail(emailDocId, {
-        to: emailTo,
-        cc: emailCc || undefined,
+        to: emailTo.trim(),
+        cc: ccTags.length > 0 ? ccTags.join(",") : undefined,
         subject: emailSubject,
         body: emailBody,
       });
       toast({
-        title: "Success",
-        description: "HR document emailed to employee.",
+        title: "✅ Email Sent",
+        description: `HR document successfully delivered to ${emailTo.trim()}.`,
       });
       setIsEmailModalOpen(false);
     } catch (err: any) {
@@ -597,7 +669,7 @@ export default function HrDocumentsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsApproveModalOpen(false)} disabled={actionLoading}>Cancel</Button>
-            <Button onClick={handleApprove} variant="hero" disabled={actionLoading} className="gap-1">
+            <Button onClick={handleConfirmApprove} variant="hero" disabled={actionLoading} className="gap-1">
               {actionLoading && <Loader2 className="h-3 w-3 animate-spin" />} Approve & Sign
             </Button>
           </DialogFooter>
@@ -625,63 +697,120 @@ export default function HrDocumentsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsRejectModalOpen(false)} disabled={actionLoading}>Cancel</Button>
-            <Button onClick={handleReject} variant="destructive" disabled={actionLoading} className="gap-1">
+            <Button onClick={handleConfirmReject} variant="destructive" disabled={actionLoading} className="gap-1">
               {actionLoading && <Loader2 className="h-3 w-3 animate-spin" />} Reject Draft
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Email Modal */}
+      {/* ── Premium Email Modal ── */}
       <Dialog open={isEmailModalOpen} onOpenChange={setIsEmailModalOpen}>
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle>Send Document via Email</DialogTitle>
-            <DialogDescription>
-              Deliver the approved HR document directly to the employee. The PDF will be attached automatically.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="email-to">Employee Email</Label>
+        <DialogContent className="sm:max-w-[540px] p-0 overflow-hidden gap-0">
+          {/* Gradient header */}
+          <div className="bg-gradient-to-br from-violet-600 via-primary to-indigo-600 px-6 pt-6 pb-5 text-white">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                <Send className="h-4 w-4 text-white" />
+              </div>
+              <div>
+                <DialogTitle className="text-white text-base font-bold m-0 p-0">Send Document via Email</DialogTitle>
+                <p className="text-white/70 text-[11px] mt-0.5">Deliver the HR document directly to the employee's inbox</p>
+              </div>
+            </div>
+            {/* Attachment badge */}
+            {emailDocRef && (
+              <div className="mt-3 flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2">
+                <Paperclip className="h-3.5 w-3.5 text-white/80 shrink-0" />
+                <span className="text-white/90 text-[11px] font-mono font-semibold">{emailDocRef.docNumber}.pdf</span>
+                <Badge className="ml-auto text-[9px] bg-white/20 text-white border-0 rounded-full px-2 py-0.5">PDF Attached</Badge>
+              </div>
+            )}
+          </div>
+
+          <div className="p-6 space-y-4">
+            {/* To field */}
+            <div className="space-y-1.5">
+              <Label htmlFor="email-to" className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <AtSign className="h-3 w-3" /> To *
+              </Label>
               <Input
                 id="email-to"
+                type="email"
                 placeholder="employee@company.com"
                 value={emailTo}
-                onChange={(e) => setEmailTo(e.target.value)}
+                onChange={(e) => { setEmailTo(e.target.value); setEmailToError(""); }}
+                className={`h-10 rounded-xl text-sm ${emailToError ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
+              />
+              {emailToError && <p className="text-[11px] text-destructive font-medium">{emailToError}</p>}
+            </div>
+
+            {/* CC tag input */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Users className="h-3 w-3" /> CC
+                <span className="font-normal text-muted-foreground/60 normal-case tracking-normal">— press Enter, comma or Space to add</span>
+              </Label>
+              <CcTagInput
+                tags={ccTags}
+                onAdd={(v) => setCcTags(prev => [...prev, v])}
+                onRemove={(v) => setCcTags(prev => prev.filter(t => t !== v))}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="email-cc">CC (comma-separated)</Label>
-              <Input
-                id="email-cc"
-                placeholder="hr@company.com, management@company.com"
-                value={emailCc}
-                onChange={(e) => setEmailCc(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email-subject">Subject</Label>
+
+            {/* Subject */}
+            <div className="space-y-1.5">
+              <Label htmlFor="email-subject" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Subject</Label>
               <Input
                 id="email-subject"
                 value={emailSubject}
                 onChange={(e) => setEmailSubject(e.target.value)}
+                className="h-10 rounded-xl text-sm"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="email-body">Message</Label>
+
+            {/* Message body */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="email-body" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Message</Label>
+                <button
+                  type="button"
+                  onClick={handleResetEmailBody}
+                  className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                  title="Reset to default message"
+                >
+                  <RotateCcw className="h-3 w-3" /> Reset to default
+                </button>
+              </div>
               <Textarea
                 id="email-body"
                 value={emailBody}
                 onChange={(e) => setEmailBody(e.target.value)}
-                className="min-h-[140px] text-xs leading-relaxed"
+                className="min-h-[150px] text-xs leading-relaxed rounded-xl resize-none"
+                placeholder="Write your custom message here..."
               />
+              <p className="text-[10px] text-muted-foreground text-right">{emailBody.length} characters</p>
+            </div>
+
+            {/* Info note */}
+            <div className="flex items-start gap-2 rounded-xl bg-primary/5 border border-primary/10 px-3 py-2.5">
+              <Mail className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                This email will be sent using the agency's branded HTML template. The document PDF will be automatically attached.
+              </p>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEmailModalOpen(false)} disabled={isSendingEmail}>Cancel</Button>
-            <Button onClick={handleSendEmail} variant="hero" disabled={isSendingEmail} className="gap-1">
-              {isSendingEmail && <Loader2 className="h-3 w-3 animate-spin" />} Send Email
+
+          <DialogFooter className="px-6 pb-5 pt-0 gap-2">
+            <Button variant="outline" onClick={() => setIsEmailModalOpen(false)} disabled={isSendingEmail} className="rounded-xl">
+              Cancel
+            </Button>
+            <Button onClick={handleSendEmail} variant="hero" disabled={isSendingEmail} className="gap-2 rounded-xl min-w-[120px]">
+              {isSendingEmail ? (
+                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Sending…</>
+              ) : (
+                <><Send className="h-3.5 w-3.5" /> Send Email</>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
