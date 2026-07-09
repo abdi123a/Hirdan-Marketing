@@ -78,8 +78,8 @@ jobs:
             echo "⚙️ Generating Database Client on server..."
             ./node_modules/.bin/prisma generate
 
-            echo "🗄️ Applying pending DB migrations..."
-            ./node_modules/.bin/prisma migrate deploy
+            echo "🗄️ Pushing database schema..."
+            ./node_modules/.bin/prisma db push --accept-data-loss
             
             echo "🧹 Pruning dev dependencies..."
             npm prune --production --legacy-peer-deps
