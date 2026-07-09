@@ -1301,19 +1301,7 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                {/* Driver */}
-                <div className="space-y-2">
-                  <Label htmlFor="smtpDriver" className="text-sm font-semibold text-foreground/80">
-                    Driver
-                  </Label>
-                  <Input
-                    id="smtpDriver"
-                    value={formData.smtpDriver}
-                    onChange={handleInputChange}
-                    placeholder="smtp"
-                    className="h-11 focus-visible:ring-blue-500"
-                  />
-                </div>
+
 
                 {/* Port */}
                 <div className="space-y-2">

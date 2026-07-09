@@ -167,7 +167,7 @@ const settingsDtoSchema = z.object({
   recaptchaSecretKey: z.string().optional().nullable(),
   openAiApiKey: z.string().optional().nullable(),
   resendApiKey: z.string().optional().nullable(),
-  emailFrom: z.string().email().optional().nullable(),
+  emailFrom: z.preprocess((val) => val === '' ? null : val, z.string().email().optional().nullable()),
   mailerName: z.string().optional().nullable(),
   smtpHost: z.string().optional().nullable(),
   smtpPort: z.number().optional().nullable(),
@@ -275,7 +275,7 @@ router.get('/email', authenticate, requireAdmin, async (req: Request, res: Respo
 
 const emailSettingsSchema = z.object({
   resendApiKey: z.string().min(1).startsWith('re_', 'API key must start with re_'),
-  emailFrom: z.string().email('Must be a valid email address').optional(),
+  emailFrom: z.preprocess((val) => val === '' ? undefined : val, z.string().email('Must be a valid email address').optional()),
 });
 
 router.post('/email', authenticate, requireAdmin, validate({ body: emailSettingsSchema }), async (req: Request, res: Response, next) => {

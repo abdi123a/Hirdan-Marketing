@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { prisma } from './prisma.js';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -20,29 +21,34 @@ export interface SendEmailResult {
 /**
  * Send a transactional email via Resend.
  *
- * Credentials are read from process.env at call-time (not import-time) so that
- * runtime updates via the admin settings panel take effect immediately without
- * needing a server restart.
+ * Credentials are read dynamically from DB so that runtime updates via
+ * the admin settings panel take effect immediately.
  */
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM;
+  const settings = await prisma.agencySettings.findFirst({
+    select: { resendApiKey: true, emailFrom: true, mailerName: true }
+  });
+
+  const apiKey = settings?.resendApiKey || process.env.RESEND_API_KEY;
+  const emailFrom = settings?.emailFrom || process.env.EMAIL_FROM;
+  const mailerName = settings?.mailerName || process.env.MAILER_NAME;
 
   if (!apiKey) {
     console.warn('[email] RESEND_API_KEY is not configured — skipping send.');
     return { success: false, error: 'RESEND_API_KEY not configured' };
   }
 
-  if (!from) {
+  if (!emailFrom) {
     console.warn('[email] EMAIL_FROM is not configured — skipping send.');
     return { success: false, error: 'EMAIL_FROM not configured' };
   }
 
   try {
     const resend = new Resend(apiKey);
+    const fromAddress = mailerName ? `${mailerName} <${emailFrom}>` : emailFrom;
 
     const result = await resend.emails.send({
-      from,
+      from: fromAddress,
       to: options.to,
       subject: options.subject,
       html: options.html,
