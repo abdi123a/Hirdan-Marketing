@@ -47,7 +47,7 @@ jobs:
           echo "📁 Copying Backend compiled files to api.hirdanmarketing.com..."
           # Copy compiled build folder, package configuration, and prisma setup
           rsync -avz -e "ssh -p ${{ secrets.SSH_PORT || 22 }} -o StrictHostKeyChecking=no -o BatchMode=yes -i ~/.ssh/id_ed25519" \
-            server/dist/ server/package.json server/package-lock.json server/prisma/ \
+            server/dist server/package.json server/package-lock.json server/prisma \
             root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
 
       # Step 4: Run server commands (dependencies install & restart service)
