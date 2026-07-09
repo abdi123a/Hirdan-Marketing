@@ -191,6 +191,10 @@ const settingsDtoSchema = z.object({
   id: z.string().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
+  // Frontend-only fields — declared here so .strip() removes them silently
+  // instead of throwing "Unrecognized key(s)" ZodError
+  appVersion: z.string().optional(),
+  versionHistory: z.array(z.any()).optional(),
 });
 
 router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }), async (req: Request, res: Response, next) => {

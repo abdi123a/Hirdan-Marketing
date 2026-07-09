@@ -1677,9 +1677,14 @@ export const useAgencyStore = create<AgencyStore>()(
 
       updateSettings: async (settings) => {
         try {
+          // Strip frontend-only fields that don't exist in the DB schema —
+          // they are only stored in the Zustand store and must not be sent to
+          // PUT /settings or they'll trigger Zod "unrecognized key" errors.
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { appVersion, versionHistory, ...dbSettings } = settings as typeof settings & { appVersion?: unknown; versionHistory?: unknown };
           await apiFetch('/settings', {
             method: 'PUT',
-            body: JSON.stringify(settings),
+            body: JSON.stringify(dbSettings),
           });
           await get().fetchSettings();
         } catch (error) {
