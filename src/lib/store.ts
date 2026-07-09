@@ -463,9 +463,14 @@ const createDefaultSettings = (): AgencySettings => ({
   smtpUsername: "resend",
   smtpEncryption: "tls",
   smtpDriver: "smtp",
-  mailEnabled: false,
-  appVersion: "1.2.12",
+  appVersion: "1.2.14",
   versionHistory: [
+    {
+      version: "1.2.13",
+      description: "fix: update mail config to support custom recipient test email and remove restrictive API key requirements for saving SMTP settings",
+      author: "Antigravity",
+      date: new Date().toISOString(),
+    },
     {
       version: "1.2.10",
       description: "refactor: reorganize settings page layout into a premium sidebar structure with grouped sections and mobile optimization",

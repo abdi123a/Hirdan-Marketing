@@ -25,6 +25,7 @@ import portalSocialRoutes from './portal-social.routes.js';
 import fileRoutes from './files.routes.js';
 import contentPostsRoutes from './content-posts.routes.js';
 import reportsRoutes from './reports.routes.js';
+import financialRoutes from './financial.routes.js';
 
 const router = Router();
 
@@ -44,6 +45,7 @@ router.use('/verify', verifyRoutes);
 router.use('/leads', leadsRoutes);
 router.use('/users', usersRoutes);
 router.use('/ai', aiRoutes);
+router.use('/financial', financialRoutes);
 
 // Social Media Module — nested under existing resource paths
 router.use('/clients', socialProfilesRoutes);

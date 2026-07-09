@@ -166,11 +166,24 @@ const settingsDtoSchema = z.object({
   recaptchaSiteKey: z.string().optional().nullable(),
   recaptchaSecretKey: z.string().optional().nullable(),
   openAiApiKey: z.string().optional().nullable(),
-  resendApiKey: z.string().optional().nullable(),
-  emailFrom: z.preprocess((val) => val === '' ? null : val, z.string().email().optional().nullable()),
+  // Allow empty string (stored as null) — actual re_ check is done in /settings/email
+  resendApiKey: z.preprocess((val) => val === '' ? null : val, z.string().optional().nullable()),
+  // Coerce empty string → null, validate email format only when non-null
+  emailFrom: z.preprocess(
+    (val) => (val === '' || val === undefined) ? null : val,
+    z.string().email('Must be a valid email address').optional().nullable()
+  ),
   mailerName: z.string().optional().nullable(),
   smtpHost: z.string().optional().nullable(),
-  smtpPort: z.number().optional().nullable(),
+  // Coerce string → number → null so HTML number inputs don't cause type errors
+  smtpPort: z.preprocess(
+    (val) => {
+      if (val === null || val === undefined || val === '') return null;
+      const n = Number(val);
+      return isNaN(n) ? null : n;
+    },
+    z.number().int().positive().optional().nullable()
+  ),
   smtpUsername: z.string().optional().nullable(),
   smtpEncryption: z.string().optional().nullable(),
   smtpDriver: z.string().optional().nullable(),
@@ -314,7 +327,7 @@ router.post('/email', authenticate, requireAdmin, validate({ body: emailSettings
 });
 
 // ─── POST /api/settings/email/test ───────────────────────────────
-// Sends a test email to the admin's address so they can confirm delivery.
+// Sends a test email to the specified or admin's address so they can confirm delivery.
 
 router.post('/email/test', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
   try {
@@ -332,11 +345,13 @@ router.post('/email/test', authenticate, requireAdmin, async (req: Request, res:
       throw AppError.badRequest('Resend API key is not configured. Save it in Email Settings first.');
     }
 
-    const adminEmail = settings?.adminEmail ?? req.user!.email;
+    // Accept custom recipient from body, fallback to settings adminEmail or request user's email
+    const { to } = req.body;
+    const testRecipient = to || settings?.adminEmail || req.user!.email;
     const agencyName = settings?.agencyName ?? 'Agency Flow Pro';
 
     const result = await sendEmail({
-      to: adminEmail,
+      to: testRecipient,
       subject: `✅ Test email from ${agencyName}`,
       html: `
         <div style="font-family: sans-serif; max-width: 520px; margin: 0 auto; padding: 32px;">
@@ -353,7 +368,7 @@ router.post('/email/test', authenticate, requireAdmin, async (req: Request, res:
       throw AppError.badRequest(result.error ?? 'Test email failed to send. Check your API key and sender address.');
     }
 
-    res.json({ success: true, sentTo: adminEmail, emailId: result.id });
+    res.json({ success: true, sentTo: testRecipient, emailId: result.id });
   } catch (error) {
     next(error);
   }

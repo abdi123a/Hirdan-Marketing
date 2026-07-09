@@ -8,6 +8,14 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { 
   Globe, 
   User, 
@@ -111,6 +119,8 @@ export default function SettingsPage() {
   const [showSmtpPassword, setShowSmtpPassword] = useState(false);
   const [isTestingEmail, setIsTestingEmail] = useState(false);
   const [emailStatus, setEmailStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [showTestEmailDialog, setShowTestEmailDialog] = useState(false);
+  const [testEmailTarget, setTestEmailTarget] = useState('');
 
   // Version control state
   const [newVersionEntry, setNewVersionEntry] = useState<Omit<VersionEntry, 'date'>>({ version: '', description: '', author: '' });
@@ -155,7 +165,7 @@ export default function SettingsPage() {
     const { id, value, type } = e.target as HTMLInputElement;
     setFormData(prev => ({ 
       ...prev, 
-      [id]: type === 'number' ? parseFloat(value) || 0 : value 
+      [id]: type === 'number' ? (value === '' ? null : parseFloat(value)) : value 
     }));
   };
 
@@ -1205,28 +1215,99 @@ export default function SettingsPage() {
         {/* ─────────── MAIL CONFIG ─────────── */}
         <TabsContent value="email" className="mt-0 outline-none space-y-5">
 
+          {/* Test Email Dialog */}
+          <Dialog open={showTestEmailDialog} onOpenChange={setShowTestEmailDialog}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <SendHorizontal className="h-5 w-5 text-blue-500" />
+                  Send Test Email
+                </DialogTitle>
+                <DialogDescription>
+                  Enter the email address you want to receive the test email. We'll send a delivery confirmation to that inbox.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <Label htmlFor="test-email-input" className="text-sm font-semibold">
+                  Recipient Email
+                </Label>
+                <Input
+                  id="test-email-input"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={testEmailTarget}
+                  onChange={(e) => setTestEmailTarget(e.target.value)}
+                  className="h-11 focus-visible:ring-blue-500"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && testEmailTarget) {
+                      e.preventDefault();
+                      document.getElementById('send-test-email-confirm')?.click();
+                    }
+                  }}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  The test email will be sent from your configured sender address.
+                </p>
+              </div>
+              <DialogFooter className="gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowTestEmailDialog(false)}
+                  disabled={isTestingEmail}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  id="send-test-email-confirm"
+                  disabled={isTestingEmail || !testEmailTarget}
+                  className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={async () => {
+                    setIsTestingEmail(true);
+                    setEmailStatus('idle');
+                    try {
+                      await apiFetch('/settings/email/test', {
+                        method: 'POST',
+                        body: JSON.stringify({ to: testEmailTarget }),
+                      });
+                      setEmailStatus('success');
+                      setShowTestEmailDialog(false);
+                      toast({
+                        title: 'Test email sent!',
+                        description: `Delivery confirmation sent to ${testEmailTarget}. Check your inbox.`,
+                      });
+                    } catch (err: any) {
+                      setEmailStatus('error');
+                      toast({
+                        title: 'Test failed',
+                        description: err?.message ?? 'Check your API key and sender address.',
+                        variant: 'destructive',
+                      });
+                    } finally {
+                      setIsTestingEmail(false);
+                    }
+                  }}
+                >
+                  {isTestingEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
+                  {isTestingEmail ? 'Sending…' : 'Send Test Email'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           {/* Test + status bar */}
           <div className="flex items-center justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/30">
             <button
               id="test-email-btn"
               disabled={isTestingEmail || !formData.mailEnabled}
-              onClick={async () => {
-                setIsTestingEmail(true);
+              onClick={() => {
+                setTestEmailTarget(formData.adminEmail || '');
                 setEmailStatus('idle');
-                try {
-                  await apiFetch('/settings/email/test', { method: 'POST', body: JSON.stringify({}) });
-                  setEmailStatus('success');
-                  toast({ title: 'Test email sent!', description: 'Check your admin inbox and Resend dashboard.' });
-                } catch {
-                  setEmailStatus('error');
-                  toast({ title: 'Test failed', description: 'Check your API key and sender address.', variant: 'destructive' });
-                } finally {
-                  setIsTestingEmail(false);
-                }
+                setShowTestEmailDialog(true);
               }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border bg-background text-sm font-medium text-foreground hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
-              {isTestingEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
+              <SendHorizontal className="h-4 w-4" />
               Test your email integration
             </button>
             <div className={`text-xs font-medium px-3 py-1.5 rounded-full transition-all ${
@@ -1433,25 +1514,28 @@ export default function SettingsPage() {
                   id="save-mail-config-btn"
                   disabled={isSaving}
                   onClick={async () => {
-                    if (!formData.resendApiKey?.startsWith('re_')) {
-                      toast({ title: 'Invalid API key', description: 'Resend API keys must start with re_', variant: 'destructive' });
-                      return;
-                    }
                     setIsSaving(true);
                     try {
                       // Save all SMTP fields via the standard settings endpoint
                       await updateSettings(formData);
-                      // Also sync the key into process.env via the dedicated email endpoint
-                      await apiFetch('/settings/email', {
-                        method: 'POST',
-                        body: JSON.stringify({
-                          resendApiKey: formData.resendApiKey,
-                          emailFrom: formData.emailFrom || undefined,
-                        }),
-                      });
+                      // If a valid Resend API key is provided, also sync it into process.env
+                      // via the dedicated email endpoint so it takes effect immediately
+                      if (formData.resendApiKey?.startsWith('re_')) {
+                        await apiFetch('/settings/email', {
+                          method: 'POST',
+                          body: JSON.stringify({
+                            resendApiKey: formData.resendApiKey,
+                            emailFrom: formData.emailFrom || undefined,
+                          }),
+                        });
+                      }
                       toast({ title: 'Mail config saved', description: 'Your email settings have been updated.' });
-                    } catch {
-                      toast({ title: 'Save failed', description: 'Please check your settings and try again.', variant: 'destructive' });
+                    } catch (err: any) {
+                      toast({
+                        title: 'Save failed',
+                        description: err?.message ?? 'Please check your settings and try again.',
+                        variant: 'destructive',
+                      });
                     } finally {
                       setIsSaving(false);
                     }

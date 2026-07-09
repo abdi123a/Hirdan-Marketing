@@ -56,6 +56,7 @@ import AddUserPage from './pages/AddUserPage.tsx';
 import SocialMediaTasksPage from './pages/SocialMediaTasksPage.tsx';
 import SocialMediaPlannerPage from './pages/SocialMediaPlannerPage.tsx';
 import MonthlyReportStudioPage from "./pages/MonthlyReportStudioPage.tsx";
+import FinancialReportPage from "./pages/FinancialReportPage.tsx";
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api-client";
@@ -199,6 +200,7 @@ function AppRoutes() {
         <Route path="social-media" element={<SocialMediaTasksPage />} />
         <Route path="social-media/planner" element={<SocialMediaPlannerPage />} />
         <Route path="reports/monthly" element={<MonthlyReportStudioPage />} />
+        <Route path="reports/financial" element={<FinancialReportPage />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="proforma" element={<ProformaPage />} />
         <Route path="proforma/add" element={<AddProformaPage />} />
