@@ -44,6 +44,10 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().optional(),
   LANDING_URL: z.string().optional(),
   COOKIE_DOMAIN: z.string().optional(),
+  // ─── Email (Resend) — optional; can be set via admin settings panel ───
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().email().optional(),
+  APP_URL: z.string().url().optional(),
 }).refine((v) => isNonRootMysqlUrl(v.DATABASE_URL, v.NODE_ENV), {
   message: 'DATABASE_URL must not use the root MySQL user',
   path: ['DATABASE_URL'],

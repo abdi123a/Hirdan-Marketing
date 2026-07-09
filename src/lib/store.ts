@@ -55,13 +55,62 @@ export interface TeamMember {
   phone?: string;
   role: string;
   department?: string;
-  status: 'Active' | 'Offline' | 'Away';
+  status: 'Draft' | 'Pending Documents' | 'Active' | 'On Leave' | 'Terminated';
   avatar?: string;
+  photoUrl?: string;
   projects: number;
   hourlyRate?: string;
   startDate?: string;
   bio?: string;
   createdAt: string;
+  archivedAt?: string;
+
+  // Personal Info (Step 1)
+  dateOfBirth?: string;
+  gender?: string;
+  nationalId?: string;
+  nationalIdType?: string;
+  nationality?: string;
+  homeAddress?: string;
+  emergencyContactName?: string;
+  emergencyContactRelation?: string;
+  emergencyContactPhone?: string;
+
+  // Employment Info (Step 2)
+  employmentType?: string;
+  managerId?: string;
+  workLocation?: string;
+
+  // Payroll Info (Step 4)
+  isHourlyMode?: boolean;
+  basicSalary?: string;
+  housingAllowance?: string;
+  transportAllowance?: string;
+  otherAllowances?: string;
+  bankName?: string;
+  accountNumber?: string;
+  taxId?: string;
+  paymentMethod?: string;
+  currency?: string;
+}
+
+export interface EmployeeFile {
+  id: string;
+  employeeId: string;
+  category: 'ID_DOC' | 'CONTRACT' | 'CV' | 'CERTIFICATE' | 'OTHER';
+  label: string;
+  fileUrl: string;
+  uploadedAt: string;
+  uploadedBy?: string;
+}
+
+export interface EmployeeActivity {
+  id: string;
+  employeeId: string;
+  actionType: 'CREATED' | 'EDITED' | 'STATUS_CHANGED' | 'FILE_UPLOADED' | 'FILE_DELETED' | 'REACTIVATED' | 'ARCHIVED';
+  performedBy?: string;
+  notes?: string;
+  timestamp: string;
 }
 
 export interface InvoiceItem {
@@ -262,6 +311,15 @@ export interface AgencySettings {
     billingAlerts: boolean;
   };
   openAiApiKey: string;
+  resendApiKey: string;
+  emailFrom: string;
+  mailerName: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUsername: string;
+  smtpEncryption: string;
+  smtpDriver: string;
+  mailEnabled: boolean;
   appVersion: string;
   versionHistory: VersionEntry[];
   updatedAt: string;
@@ -309,9 +367,14 @@ interface AgencyStore {
   updateProject: (id: string, project: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
 
-  addTeamMember: (member: Omit<TeamMember, 'id'>) => Promise<void>;
+  addTeamMember: (member: Omit<TeamMember, 'id'>) => Promise<TeamMember>;
   updateTeamMember: (id: string, member: Partial<TeamMember>) => Promise<void>;
   deleteTeamMember: (id: string) => Promise<void>;
+  fetchEmployeeFiles: (employeeId: string) => Promise<EmployeeFile[]>;
+  uploadEmployeeFile: (employeeId: string, file: File, category: string, label: string) => Promise<EmployeeFile>;
+  deleteEmployeeFile: (employeeId: string, fileId: string) => Promise<void>;
+  fetchEmployeeActivity: (employeeId: string) => Promise<EmployeeActivity[]>;
+  provisionEmployeeAccess: (employeeId: string, payload: { password?: string; role?: string }) => Promise<any>;
 
   addInvoice: (invoice: Omit<Invoice, 'id'> & { id?: string }) => Promise<void>;
   updateInvoice: (id: string, invoice: Partial<Invoice>) => Promise<void>;
@@ -392,8 +455,23 @@ const createDefaultSettings = (): AgencySettings => ({
     billingAlerts: true,
   },
   openAiApiKey: "",
-  appVersion: "1.2.9",
+  resendApiKey: "",
+  emailFrom: "",
+  mailerName: "",
+  smtpHost: "smtp.resend.com",
+  smtpPort: 587,
+  smtpUsername: "resend",
+  smtpEncryption: "tls",
+  smtpDriver: "smtp",
+  mailEnabled: false,
+  appVersion: "1.2.11",
   versionHistory: [
+    {
+      version: "1.2.10",
+      description: "refactor: reorganize settings page layout into a premium sidebar structure with grouped sections and mobile optimization",
+      author: "Antigravity",
+      date: new Date().toISOString(),
+    },
     {
       version: "1.2.8",
       description: "fix: align proforma-to-invoice conversion in ProformaPage list view with ProformaDetailsPage and pass generated invoiceId",
@@ -666,20 +744,61 @@ export const useAgencyStore = create<AgencyStore>()(
       fetchTeam: async () => {
         try {
           const res = await apiFetch<{ team: any[] }>('/team');
-          const mapped = res.team.map(m => ({
-            id: m.id,
-            name: m.name,
-            email: m.email,
-            phone: m.phone || '',
-            role: m.role || 'Member',
-            department: m.department,
-            status: m.status.charAt(0).toUpperCase() + m.status.slice(1).toLowerCase() as any,
-            projects: m._count?.projects || 0,
-            hourlyRate: m.hourlyRate ? formatCurrency(m.hourlyRate / 100) : '',
-            startDate: m.startDate ? m.startDate.split('T')[0] : m.createdAt.split('T')[0],
-            bio: m.bio,
-            createdAt: m.createdAt
-          }));
+          const mapped = res.team.map(m => {
+            const mapBackendStatus = (status: string) => {
+              if (status === 'PENDING_DOCUMENTS') return 'Pending Documents';
+              if (status === 'DRAFT') return 'Draft';
+              if (status === 'ON_LEAVE') return 'On Leave';
+              if (status === 'TERMINATED') return 'Terminated';
+              return 'Active';
+            };
+
+            return {
+              id: m.id,
+              userId: m.userId,
+              name: m.name,
+              email: m.email,
+              phone: m.phone || '',
+              role: m.role || 'Member',
+              department: m.department || '',
+              status: mapBackendStatus(m.status),
+              avatar: m.avatar,
+              photoUrl: m.photoUrl || '',
+              projects: m._count?.projects || 0,
+              hourlyRate: m.hourlyRate ? formatCurrency(m.hourlyRate / 100) : '',
+              startDate: m.startDate ? m.startDate.split('T')[0] : m.createdAt.split('T')[0],
+              bio: m.bio || '',
+              createdAt: m.createdAt,
+              archivedAt: m.archivedAt ? m.archivedAt.split('T')[0] : undefined,
+
+              // Personal
+              dateOfBirth: m.dateOfBirth || '',
+              gender: m.gender || '',
+              nationalId: m.nationalId || '',
+              nationality: m.nationality || '',
+              homeAddress: m.homeAddress || '',
+              emergencyContactName: m.emergencyContactName || '',
+              emergencyContactRelation: m.emergencyContactRelation || '',
+              emergencyContactPhone: m.emergencyContactPhone || '',
+
+              // Employment
+              employmentType: m.employmentType || '',
+              managerId: m.managerId || '',
+              workLocation: m.workLocation || '',
+
+              // Payroll
+              isHourlyMode: !!m.isHourlyMode,
+              basicSalary: m.basicSalary ? formatCurrency(m.basicSalary / 100) : '',
+              housingAllowance: m.housingAllowance ? formatCurrency(m.housingAllowance / 100) : '',
+              transportAllowance: m.transportAllowance ? formatCurrency(m.transportAllowance / 100) : '',
+              otherAllowances: m.otherAllowances || '',
+              bankName: m.bankName || '',
+              accountNumber: m.accountNumber || '',
+              taxId: m.taxId || '',
+              paymentMethod: m.paymentMethod || '',
+              currency: m.currency || 'USD',
+            };
+          });
           set({ team: mapped });
         } catch (error) {
           console.error("Failed to fetch team:", error);
@@ -903,21 +1022,50 @@ export const useAgencyStore = create<AgencyStore>()(
 
       addTeamMember: async (member) => {
         try {
-          // Convert hourlyRate string (e.g. "85" or "$85") to cents Int
-          const hourlyRateCents = member.hourlyRate
-            ? Math.round(parseFloat(String(member.hourlyRate).replace(/[^0-9.]/g, '')) * 100)
-            : undefined;
+          const cleanCurrencyToCents = (val: any) => {
+            if (val === undefined || val === null || val === '') return undefined;
+            const num = parseFloat(String(val).replace(/[^0-9.]/g, ''));
+            return isNaN(num) ? undefined : Math.round(num * 100);
+          };
+
+          const mapFrontendStatus = (status?: string) => {
+            if (!status) return 'DRAFT';
+            if (status === 'Pending Documents') return 'PENDING_DOCUMENTS';
+            if (status === 'Draft') return 'DRAFT';
+            if (status === 'On Leave') return 'ON_LEAVE';
+            if (status === 'Terminated') return 'TERMINATED';
+            return 'ACTIVE';
+          };
+
+          const isValidDate = (val: any) => {
+            if (!val) return false;
+            const d = new Date(val);
+            return d instanceof Date && !isNaN(d.getTime());
+          };
+
+          const hourlyRateCents = cleanCurrencyToCents(member.hourlyRate);
+          const basicSalaryCents = cleanCurrencyToCents(member.basicSalary);
+          const housingAllowanceCents = cleanCurrencyToCents(member.housingAllowance);
+          const transportAllowanceCents = cleanCurrencyToCents(member.transportAllowance);
+
           const { projects, ...memberData } = member as any;
-          await apiFetch('/team', {
+          // Strip empty string foreign keys that would fail DB constraints
+          if (memberData.managerId === '' || memberData.managerId === undefined) delete memberData.managerId;
+
+          const res = await apiFetch<{ member: any }>('/team', {
             method: 'POST',
             body: JSON.stringify({
               ...memberData,
               hourlyRate: hourlyRateCents,
-              status: member.status.toUpperCase(),
-              startDate: member.startDate ? new Date(member.startDate).toISOString() : undefined,
+              basicSalary: basicSalaryCents,
+              housingAllowance: housingAllowanceCents,
+              transportAllowance: transportAllowanceCents,
+              status: mapFrontendStatus(member.status),
+              startDate: isValidDate(member.startDate) ? new Date(member.startDate).toISOString() : undefined,
             }),
           });
           await get().fetchTeam();
+          return res.member;
         } catch (error) {
           console.error("Failed to add team member:", error);
           throw error;
@@ -925,15 +1073,44 @@ export const useAgencyStore = create<AgencyStore>()(
       },
       updateTeamMember: async (id, member) => {
         try {
+          const cleanCurrencyToCents = (val: any) => {
+            if (val === undefined || val === null || val === '') return undefined;
+            const num = parseFloat(String(val).replace(/[^0-9.]/g, ''));
+            return isNaN(num) ? undefined : Math.round(num * 100);
+          };
+
+          const mapFrontendStatus = (status?: string) => {
+            if (!status) return undefined;
+            if (status === 'Pending Documents') return 'PENDING_DOCUMENTS';
+            if (status === 'Draft') return 'DRAFT';
+            if (status === 'On Leave') return 'ON_LEAVE';
+            if (status === 'Terminated') return 'TERMINATED';
+            return 'ACTIVE';
+          };
+
+          const isValidDate = (val: any) => {
+            if (!val) return false;
+            const d = new Date(val);
+            return d instanceof Date && !isNaN(d.getTime());
+          };
+
           const { projects, ...memberData } = member as any;
           const payload: any = { ...memberData };
-          if (payload.status) payload.status = payload.status.toUpperCase();
-          if (payload.startDate) payload.startDate = new Date(payload.startDate).toISOString();
-          if (payload.hourlyRate !== undefined) {
-            payload.hourlyRate = payload.hourlyRate
-              ? Math.round(parseFloat(String(payload.hourlyRate).replace(/[^0-9.]/g, '')) * 100)
-              : undefined;
+          
+          if (payload.status) payload.status = mapFrontendStatus(payload.status);
+          
+          if (payload.startDate !== undefined) {
+            payload.startDate = isValidDate(payload.startDate) ? new Date(payload.startDate).toISOString() : null;
           }
+
+          // Strip empty string foreign keys — empty string "" fails DB FK constraints
+          if (payload.managerId === '' || payload.managerId === undefined) payload.managerId = null;
+          
+          if (payload.hourlyRate !== undefined) payload.hourlyRate = cleanCurrencyToCents(payload.hourlyRate);
+          if (payload.basicSalary !== undefined) payload.basicSalary = cleanCurrencyToCents(payload.basicSalary);
+          if (payload.housingAllowance !== undefined) payload.housingAllowance = cleanCurrencyToCents(payload.housingAllowance);
+          if (payload.transportAllowance !== undefined) payload.transportAllowance = cleanCurrencyToCents(payload.transportAllowance);
+
           await apiFetch(`/team/${id}`, {
             method: 'PUT',
             body: JSON.stringify(payload),
@@ -950,6 +1127,68 @@ export const useAgencyStore = create<AgencyStore>()(
           await get().fetchTeam();
         } catch (error) {
           console.error("Failed to delete team member:", error);
+          throw error;
+        }
+      },
+      fetchEmployeeFiles: async (employeeId) => {
+        try {
+          const res = await apiFetch<{ files: EmployeeFile[] }>(`/team/${employeeId}/files`);
+          return res.files;
+        } catch (error) {
+          console.error("Failed to fetch employee files:", error);
+          return [];
+        }
+      },
+      uploadEmployeeFile: async (employeeId, file, category, label) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('category', category);
+        formData.append('label', label);
+
+        set({ isGlobalUploading: true, globalUploadProgress: 0 });
+        try {
+          const res = await apiUpload<{ file: EmployeeFile }>(
+            `/team/${employeeId}/files`,
+            formData,
+            (progress) => {
+              set({ globalUploadProgress: progress });
+            }
+          );
+          return res.file;
+        } finally {
+          setTimeout(() => {
+            set({ isGlobalUploading: false, globalUploadProgress: 0 });
+          }, 1000);
+        }
+      },
+      deleteEmployeeFile: async (employeeId, fileId) => {
+        try {
+          await apiFetch(`/team/${employeeId}/files/${fileId}`, { method: 'DELETE' });
+        } catch (error) {
+          console.error("Failed to delete employee file:", error);
+          throw error;
+        }
+      },
+      fetchEmployeeActivity: async (employeeId) => {
+        try {
+          const res = await apiFetch<{ activities: EmployeeActivity[] }>(`/team/${employeeId}/activity`);
+          return res.activities;
+        } catch (error) {
+          console.error("Failed to fetch employee activity:", error);
+          return [];
+        }
+      },
+      provisionEmployeeAccess: async (employeeId, payload) => {
+        try {
+          const res = await apiFetch<any>(`/team/${employeeId}/provision-access`, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          });
+          // Refresh team data to pick up the user linkage
+          await get().fetchTeam();
+          return res;
+        } catch (error) {
+          console.error("Failed to provision system access:", error);
           throw error;
         }
       },

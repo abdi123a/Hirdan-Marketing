@@ -16,7 +16,7 @@ export function validate(schemas: ValidationSchemas) {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     try {
       if (schemas.body) {
-        req.body = await schemas.body.strict().parseAsync(req.body);
+        req.body = await schemas.body.strip().parseAsync(req.body);
       }
       if (schemas.params) {
         const parsedParams = await schemas.params.strict().parseAsync(req.params);

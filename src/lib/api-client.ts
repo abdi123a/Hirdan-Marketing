@@ -175,6 +175,24 @@ export async function downloadProtectedFile(url: string, filename: string) {
   }
 }
 
+/**
+ * Opens a protected file in a new tab by fetching it as a Blob with auth headers.
+ */
+export async function viewProtectedFile(url: string) {
+  try {
+    const endpoint = url.startsWith('/api') ? url.substring(4) : url;
+    const blob = await apiFetchBlob(endpoint);
+    const blobUrl = URL.createObjectURL(blob);
+    const newWindow = window.open(blobUrl, '_blank');
+    if (!newWindow) {
+      throw new Error('Popup blocked. Please allow popups for this site.');
+    }
+  } catch (err) {
+    console.error("Secure preview failed:", err);
+    throw err;
+  }
+}
+
 export function apiUpload<T>(
   endpoint: string, 
   formData: FormData, 

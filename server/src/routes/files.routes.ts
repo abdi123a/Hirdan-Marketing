@@ -35,7 +35,7 @@ router.get('/:folder/:filename', authenticate, (req: Request, res: Response, nex
     const filename = req.params.filename as string;
 
     // Only sensitive folders here
-    const secureFolders = ['documents', 'media'];
+    const secureFolders = ['documents', 'media', 'employee-docs'];
     if (!secureFolders.includes(folder)) {
       throw AppError.forbidden('Access restricted');
     }
@@ -45,6 +45,9 @@ router.get('/:folder/:filename', authenticate, (req: Request, res: Response, nex
 
     const user = req.user as any;
     if (user?.role === 'CLIENT') {
+      if (folder === 'employee-docs') {
+        throw AppError.forbidden('Access denied');
+      }
       const clientId =
         user.clientId ||
         (await prisma.client.findUnique({ where: { userId: user.userId } }))?.id;
@@ -73,9 +76,26 @@ router.get('/:folder/:filename', authenticate, (req: Request, res: Response, nex
         });
         if (!record) throw AppError.forbidden('Access denied');
       }
+    }
 
-      // Branding assets (logo, favicon, etc.) are intentionally public-facing.
-      // Clients can view them — they appear in the portal and invoice previews.
+    if (user?.role === 'STAFF') {
+      if (folder === 'employee-docs') {
+        // Staff can only access their own documents
+        const fileRecord = await prisma.employeeFile.findFirst({
+          where: {
+            fileUrl: { endsWith: `/uploads/employee-docs/${safeFilename}` },
+          },
+          include: {
+            employee: true,
+          },
+        });
+        if (!fileRecord) {
+          throw AppError.notFound('Document not found');
+        }
+        if (fileRecord.employee.userId !== user.userId) {
+          throw AppError.forbidden('Access denied');
+        }
+      }
     }
 
     // Debugging: can be removed in production

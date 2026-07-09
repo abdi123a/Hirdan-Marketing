@@ -19,7 +19,8 @@ import AddClientPage from "./pages/AddClientPage.tsx";
 import ProjectsPage from "./pages/ProjectsPage.tsx";
 import AddProjectPage from "./pages/AddProjectPage.tsx";
 import TeamPage from "./pages/TeamPage.tsx";
-import AddTeamMemberPage from "./pages/AddTeamMemberPage.tsx";
+import AddEmployeePage from "./pages/AddEmployeePage.tsx";
+import EmployeeProfilePage from "./pages/EmployeeProfilePage.tsx";
 import InvoicesPage from "./pages/InvoicesPage.tsx";
 import AddInvoicePage from "./pages/AddInvoicePage.tsx";
 import SubscriptionsPage from "./pages/SubscriptionsPage.tsx";
@@ -28,7 +29,7 @@ import CalendarPage from "./pages/CalendarPage.tsx";
 import SettingsPage from "./pages/SettingsPage.tsx";
 import EditClientPage from "./pages/EditClientPage.tsx";
 import EditProjectPage from "./pages/EditProjectPage.tsx";
-import EditTeamMemberPage from "./pages/EditTeamMemberPage.tsx";
+// EditTeamMemberPage replaced by AddEmployeePage in edit mode
 import EditInvoicePage from "./pages/EditInvoicePage.tsx";
 import EditSubscriptionPage from "./pages/EditSubscriptionPage.tsx";
 import ProformaPage from "./pages/ProformaPage.tsx";
@@ -42,7 +43,7 @@ import AddServicePage from "./pages/AddServicePage.tsx";
 import EditServicePage from "./pages/EditServicePage.tsx";
 import ClientDetailsPage from "./pages/ClientDetailsPage.tsx";
 import ProjectDetailsPage from "./pages/ProjectDetailsPage.tsx";
-import TeamMemberDetailsPage from "./pages/TeamMemberDetailsPage.tsx";
+// TeamMemberDetailsPage replaced by EmployeeProfilePage
 import InvoiceDetailsPage from "./pages/InvoiceDetailsPage.tsx";
 import ProformaDetailsPage from "./pages/ProformaDetailsPage.tsx";
 import SubscriptionDetailsPage from "./pages/SubscriptionDetailsPage.tsx";
@@ -184,9 +185,9 @@ function AppRoutes() {
         <Route path="projects/edit/:id" element={<EditProjectPage />} />
         <Route path="projects/view/:id" element={<ProjectDetailsPage />} />
         <Route path="team" element={<TeamPage />} />
-        <Route path="team/add" element={<AddTeamMemberPage />} />
-        <Route path="team/edit/:id" element={<EditTeamMemberPage />} />
-        <Route path="team/view/:id" element={<TeamMemberDetailsPage />} />
+        <Route path="team/add" element={<AddEmployeePage />} />
+        <Route path="team/edit/:id" element={<AddEmployeePage />} />
+        <Route path="team/view/:id" element={<EmployeeProfilePage />} />
         <Route path="invoices" element={<InvoicesPage />} />
         <Route path="invoices/add" element={<AddInvoicePage />} />
         <Route path="invoices/edit/:id" element={<EditInvoicePage />} />

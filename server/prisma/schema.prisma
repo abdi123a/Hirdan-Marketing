@@ -120,18 +120,103 @@ model TeamMember {
   phone      String?
   role       String
   department String?
-  status     MemberStatus        @default(ACTIVE)
+  status     MemberStatus        @default(DRAFT)
   avatar     String?
+  photoUrl   String?             @map("photo_url") @db.LongText
   hourlyRate Int?                @map("hourly_rate")
   startDate  DateTime?           @map("start_date")
   bio        String?             @db.Text
   createdAt  DateTime            @default(now()) @map("created_at")
   updatedAt  DateTime            @updatedAt @map("updated_at")
+  archivedAt DateTime?           @map("archived_at")
+
+  // Personal Info (Step 1)
+  dateOfBirth              String?  @map("date_of_birth")
+  gender                   String?
+  nationalId               String?  @map("national_id")
+  nationalIdType           String?  @map("national_id_type")
+  nationality              String?
+  homeAddress              String?  @map("home_address") @db.Text
+  emergencyContactName     String?  @map("emergency_contact_name")
+  emergencyContactRelation String?  @map("emergency_contact_relation")
+  emergencyContactPhone    String?  @map("emergency_contact_phone")
+
+  // Employment Info (Step 2)
+  employmentType String?  @map("employment_type")
+  managerId      String?  @map("manager_id")
+  workLocation   String?  @map("work_location")
+
+  // Payroll Info (Step 4)
+  isHourlyMode       Boolean  @default(false) @map("is_hourly_mode")
+  basicSalary        Int?     @map("basic_salary")
+  housingAllowance   Int?     @map("housing_allowance")
+  transportAllowance Int?     @map("transport_allowance")
+  otherAllowances    String?  @map("other_allowances") @db.Text
+  bankName           String?  @map("bank_name")
+  accountNumber      String?  @map("account_number")
+  taxId              String?  @map("tax_id")
+  paymentMethod      String?  @map("payment_method")
+  currency           String?  @default("USD")
+
   projects      ProjectTeamMember[]
   user          User?               @relation(fields: [userId], references: [id])
   assignedTasks DeliverableTask[]
+  manager       TeamMember?         @relation("ManagerReports", fields: [managerId], references: [id])
+  reports       TeamMember[]        @relation("ManagerReports")
+  files         EmployeeFile[]
+  activities    EmployeeActivity[]
 
+  @@index([managerId])
   @@map("team_members")
+}
+
+// ─── Employee Files ───────────────────────────────────────────────
+
+model EmployeeFile {
+  id          String           @id @default(uuid())
+  employeeId  String           @map("employee_id")
+  category    EmployeeFileCategory
+  label       String?
+  fileUrl     String           @map("file_url") @db.LongText
+  uploadedAt  DateTime         @default(now()) @map("uploaded_at")
+  uploadedBy  String?          @map("uploaded_by")
+  employee    TeamMember       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("employee_files")
+}
+
+enum EmployeeFileCategory {
+  ID_DOC
+  CONTRACT
+  CV
+  CERTIFICATE
+  OTHER
+}
+
+// ─── Employee Activity Log ────────────────────────────────────────
+
+model EmployeeActivity {
+  id          String             @id @default(uuid())
+  employeeId  String             @map("employee_id")
+  actionType  EmployeeActionType
+  performedBy String?            @map("performed_by")
+  notes       String?            @db.Text
+  timestamp   DateTime           @default(now())
+  employee    TeamMember         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("employee_activity")
+}
+
+enum EmployeeActionType {
+  CREATED
+  EDITED
+  STATUS_CHANGED
+  FILE_UPLOADED
+  FILE_DELETED
+  REACTIVATED
+  ARCHIVED
 }
 
 model Invoice {
@@ -332,6 +417,15 @@ model AgencySettings {
   recaptchaSiteKey    String?  @map("recaptcha_site_key")
   recaptchaSecretKey  String?  @map("recaptcha_secret_key")
   openAiApiKey        String?  @map("open_ai_api_key")
+  resendApiKey        String?  @map("resend_api_key")
+  emailFrom           String?  @map("email_from")
+  mailerName          String?  @map("mailer_name")
+  smtpHost            String?  @map("smtp_host")
+  smtpPort            Int?     @map("smtp_port")
+  smtpUsername        String?  @map("smtp_username")
+  smtpEncryption      String?  @map("smtp_encryption")
+  smtpDriver          String?  @map("smtp_driver")
+  mailEnabled         Boolean  @default(false) @map("mail_enabled")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -376,9 +470,11 @@ enum Priority {
 }
 
 enum MemberStatus {
+  DRAFT
+  PENDING_DOCUMENTS
   ACTIVE
-  OFFLINE
-  AWAY
+  ON_LEAVE
+  TERMINATED
 }
 
 enum InvoiceStatus {

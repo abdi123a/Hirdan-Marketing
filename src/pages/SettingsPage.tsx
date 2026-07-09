@@ -43,11 +43,17 @@ import {
   Terminal,
   Package,
   Calendar,
+  SendHorizontal,
+  Eye,
+  EyeOff,
+  RotateCcw,
+  Server,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyStore, AgencySettings, PaymentMethod, VersionEntry } from "@/lib/store";
 import { ProtectedBrandingImage } from "@/components/ProtectedBrandingImage";
 import { Progress } from "@/components/ui/progress";
+import { apiFetch } from "@/lib/api-client";
 
 // Comprehensive Timezones list with countries
 const timezones = [
@@ -102,6 +108,9 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState<{ [key: string]: boolean }>({});
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
+  const [showSmtpPassword, setShowSmtpPassword] = useState(false);
+  const [isTestingEmail, setIsTestingEmail] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   // Version control state
   const [newVersionEntry, setNewVersionEntry] = useState<Omit<VersionEntry, 'date'>>({ version: '', description: '', author: '' });
@@ -236,54 +245,203 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="animate-in fade-in duration-500 max-w-[1400px]">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-display font-bold text-foreground">Settings</h1>
-          <p className="text-muted-foreground mt-1 text-lg">Manage your agency portal and branding</p>
+          <p className="text-muted-foreground mt-1">Manage your agency portal and branding preferences</p>
         </div>
-        <Button 
-          onClick={handleSave} 
+        <Button
+          onClick={handleSave}
           disabled={isSaving}
-          className="bg-primary hover:bg-primary/90 text-white px-8 h-11 transition-all active:scale-95 shadow-lg shadow-primary/20"
+          className="bg-primary hover:bg-primary/90 text-white px-8 h-11 transition-all active:scale-95 shadow-lg shadow-primary/20 shrink-0"
         >
           {isSaving ? "Saving..." : "Save Changes"}
         </Button>
       </div>
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="bg-muted/50 p-1 mb-6 flex overflow-x-auto whitespace-nowrap scrollbar-none justify-start md:justify-center border border-border/50 rounded-xl">
-          <TabsTrigger value="general" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
-            <User className="h-4 w-4" /> General
+        {/* ── Mobile: horizontal scrollable tab bar ── */}
+        <TabsList className="lg:hidden bg-muted/50 p-1 mb-6 flex overflow-x-auto whitespace-nowrap scrollbar-none justify-start border border-border/50 rounded-xl w-full">
+          <TabsTrigger value="general" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
+            <User className="h-3.5 w-3.5" /> General
           </TabsTrigger>
-          <TabsTrigger value="branding" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
-            <Palette className="h-4 w-4" /> Branding
+          <TabsTrigger value="branding" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
+            <Palette className="h-3.5 w-3.5" /> Branding
           </TabsTrigger>
-          <TabsTrigger value="localization" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
-            <Globe className="h-4 w-4" /> Localization
+          <TabsTrigger value="social" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
+            <Link className="h-3.5 w-3.5" /> Social
           </TabsTrigger>
-          <TabsTrigger value="billing" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
-            <CreditCard className="h-4 w-4" /> Billing
+          <TabsTrigger value="localization" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
+            <Globe className="h-3.5 w-3.5" /> Localization
           </TabsTrigger>
-          <TabsTrigger value="payments" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
-            <Settings className="h-4 w-4" /> Payments
+          <TabsTrigger value="billing" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
+            <CreditCard className="h-3.5 w-3.5" /> Billing
           </TabsTrigger>
-          <TabsTrigger value="social" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
-            <Link className="h-4 w-4" /> Social
+          <TabsTrigger value="payments" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
+            <Settings className="h-3.5 w-3.5" /> Payments
           </TabsTrigger>
-          <TabsTrigger value="notifications" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
-            <Bell className="h-4 w-4" /> Notifications
+          <TabsTrigger value="notifications" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
+            <Bell className="h-3.5 w-3.5" /> Alerts
           </TabsTrigger>
-          <TabsTrigger value="security" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
-            <Shield className="h-4 w-4" /> Security
+          <TabsTrigger value="email" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0 text-blue-600 dark:text-blue-400">
+            <Mail className="h-3.5 w-3.5" /> Mail
           </TabsTrigger>
-          <TabsTrigger value="ai" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-purple-600 dark:text-purple-400 data-[state=active]:text-purple-700 dark:data-[state=active]:text-purple-300">
-            <Sparkles className="h-4 w-4" /> AI
+          <TabsTrigger value="ai" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0 text-purple-600 dark:text-purple-400">
+            <Sparkles className="h-3.5 w-3.5" /> AI
           </TabsTrigger>
-          <TabsTrigger value="system" className="gap-2 px-6 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all">
-            <Terminal className="h-4 w-4" /> System
+          <TabsTrigger value="security" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
+            <Shield className="h-3.5 w-3.5" /> Security
+          </TabsTrigger>
+          <TabsTrigger value="system" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
+            <Terminal className="h-3.5 w-3.5" /> System
           </TabsTrigger>
         </TabsList>
+
+        {/* ── Desktop: sidebar + content flex wrapper ── */}
+        <div className="lg:flex lg:gap-8 lg:items-start">
+
+        {/* ── Desktop sidebar (hidden on mobile) ── */}
+        <div className="hidden lg:block lg:w-[260px] lg:shrink-0">
+          <div className="sticky top-20 space-y-3">
+            {/* Agency Info Card */}
+            <div className="rounded-2xl border border-border bg-card p-4 mb-4 shadow-sm">
+              <div className="flex items-center gap-3 mb-3">
+                <div
+                  className="h-10 w-10 rounded-xl flex items-center justify-center text-white font-bold text-base shadow-md"
+                  style={{ backgroundColor: formData.primaryColor || '#3b82f6' }}
+                >
+                  {formData.agencyName?.charAt(0)?.toUpperCase() || 'A'}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-bold text-sm text-foreground truncate">{formData.agencyName || 'Your Agency'}</p>
+                  <p className="text-xs text-muted-foreground truncate">{formData.adminEmail || 'admin@example.com'}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>v{formData.appVersion || '1.0.0'} — Active</span>
+              </div>
+            </div>
+
+            {/* ─ Group 1: Account & Branding ─ */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60 px-3 mb-1.5">Account &amp; Branding</p>
+              <TabsList className="flex flex-col w-full bg-transparent p-0 gap-0.5 h-auto">
+                <TabsTrigger
+                  value="general"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <User className="h-4 w-4 shrink-0" />
+                  <span>General</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="branding"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Palette className="h-4 w-4 shrink-0" />
+                  <span>Identity &amp; Branding</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="social"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Link className="h-4 w-4 shrink-0" />
+                  <span>Social Links</span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            <div className="h-px bg-border/50 mx-3" />
+
+            {/* ─ Group 2: Finance & Localization ─ */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60 px-3 mb-1.5">Finance &amp; Localization</p>
+              <TabsList className="flex flex-col w-full bg-transparent p-0 gap-0.5 h-auto">
+                <TabsTrigger
+                  value="localization"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Globe className="h-4 w-4 shrink-0" />
+                  <span>Localization</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="billing"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <CreditCard className="h-4 w-4 shrink-0" />
+                  <span>Billing &amp; Tax</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="payments"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Settings className="h-4 w-4 shrink-0" />
+                  <span>Payment Gateways</span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            <div className="h-px bg-border/50 mx-3" />
+
+            {/* ─ Group 3: Integrations ─ */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60 px-3 mb-1.5">Integrations</p>
+              <TabsList className="flex flex-col w-full bg-transparent p-0 gap-0.5 h-auto">
+                <TabsTrigger
+                  value="notifications"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Bell className="h-4 w-4 shrink-0" />
+                  <span>Notifications</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="email"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-blue-500/10 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400 data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Mail className="h-4 w-4 shrink-0" />
+                  <span>Mail Config</span>
+                  <span className="ml-auto text-[9px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-full uppercase tracking-wider">SMTP</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="ai"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-purple-500/10 data-[state=active]:text-purple-600 dark:data-[state=active]:text-purple-400 data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Sparkles className="h-4 w-4 shrink-0" />
+                  <span>AI Settings</span>
+                  <span className="ml-auto text-[9px] font-bold bg-purple-500/10 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Beta</span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            <div className="h-px bg-border/50 mx-3" />
+
+            {/* ─ Group 4: Security & System ─ */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60 px-3 mb-1.5">Security &amp; System</p>
+              <TabsList className="flex flex-col w-full bg-transparent p-0 gap-0.5 h-auto">
+                <TabsTrigger
+                  value="security"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Shield className="h-4 w-4 shrink-0" />
+                  <span>Security</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="system"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Terminal className="h-4 w-4 shrink-0" />
+                  <span>System &amp; Versioning</span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          </div>{/* end sticky sidebar */}
+        </div>{/* end desktop sidebar */}
+
+        {/* ── Tab content area (visible on all screen sizes) ── */}
+        <div className="lg:flex-1 lg:min-w-0">
 
         <TabsContent value="general" className="mt-0 outline-none space-y-6">
           <Card className="shadow-card border-border overflow-hidden">
@@ -1044,6 +1202,284 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
+        {/* ─────────── MAIL CONFIG ─────────── */}
+        <TabsContent value="email" className="mt-0 outline-none space-y-5">
+
+          {/* Test + status bar */}
+          <div className="flex items-center justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/30">
+            <button
+              id="test-email-btn"
+              disabled={isTestingEmail || !formData.mailEnabled}
+              onClick={async () => {
+                setIsTestingEmail(true);
+                setEmailStatus('idle');
+                try {
+                  await apiFetch('/settings/email/test', { method: 'POST', body: JSON.stringify({}) });
+                  setEmailStatus('success');
+                  toast({ title: 'Test email sent!', description: 'Check your admin inbox and Resend dashboard.' });
+                } catch {
+                  setEmailStatus('error');
+                  toast({ title: 'Test failed', description: 'Check your API key and sender address.', variant: 'destructive' });
+                } finally {
+                  setIsTestingEmail(false);
+                }
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border bg-background text-sm font-medium text-foreground hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              {isTestingEmail ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
+              Test your email integration
+            </button>
+            <div className={`text-xs font-medium px-3 py-1.5 rounded-full transition-all ${
+              emailStatus === 'success' ? 'bg-green-500/10 text-green-600 border border-green-500/20' :
+              emailStatus === 'error'   ? 'bg-red-500/10 text-red-600 border border-red-500/20' :
+              'opacity-0'
+            }`}>
+              {emailStatus === 'success' ? '✓ Delivered' : emailStatus === 'error' ? '✗ Failed' : ''}
+            </div>
+          </div>
+
+          {/* Config card */}
+          <Card className="shadow-card border-border overflow-hidden">
+            <CardHeader className="bg-muted/30 border-b pb-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="font-display text-xl flex items-center gap-2">
+                    <Server className="h-5 w-5 text-blue-500" />
+                    Mail Configuration
+                  </CardTitle>
+                  <CardDescription className="mt-1">SMTP settings for sending transactional emails via Resend.</CardDescription>
+                </div>
+                {/* Status toggle */}
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-semibold text-muted-foreground">Mail Configuration Status</span>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="mailEnabled"
+                      checked={formData.mailEnabled}
+                      onCheckedChange={(val) => setFormData(p => ({ ...p, mailEnabled: val }))}
+                      className="data-[state=checked]:bg-blue-500"
+                    />
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                      formData.mailEnabled ? 'bg-blue-500 text-white' : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {formData.mailEnabled ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-8">
+              <div className="grid md:grid-cols-2 gap-x-10 gap-y-7">
+
+                {/* Mailer Name */}
+                <div className="space-y-2">
+                  <Label htmlFor="mailerName" className="text-sm font-semibold text-foreground/80">
+                    Mailer Name
+                  </Label>
+                  <Input
+                    id="mailerName"
+                    value={formData.mailerName}
+                    onChange={handleInputChange}
+                    placeholder="e.g. Hirdan Marketing"
+                    className="h-11 focus-visible:ring-blue-500"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Shown as the sender name in email clients.</p>
+                </div>
+
+                {/* Host */}
+                <div className="space-y-2">
+                  <Label htmlFor="smtpHost" className="text-sm font-semibold text-foreground/80">
+                    Host
+                  </Label>
+                  <Input
+                    id="smtpHost"
+                    value={formData.smtpHost}
+                    onChange={handleInputChange}
+                    placeholder="smtp.resend.com"
+                    className="h-11 focus-visible:ring-blue-500"
+                  />
+                </div>
+
+                {/* Driver */}
+                <div className="space-y-2">
+                  <Label htmlFor="smtpDriver" className="text-sm font-semibold text-foreground/80">
+                    Driver
+                  </Label>
+                  <Input
+                    id="smtpDriver"
+                    value={formData.smtpDriver}
+                    onChange={handleInputChange}
+                    placeholder="smtp"
+                    className="h-11 focus-visible:ring-blue-500"
+                  />
+                </div>
+
+                {/* Port */}
+                <div className="space-y-2">
+                  <Label htmlFor="smtpPort" className="text-sm font-semibold text-foreground/80">
+                    Port
+                  </Label>
+                  <Input
+                    id="smtpPort"
+                    type="number"
+                    value={formData.smtpPort}
+                    onChange={handleInputChange}
+                    placeholder="587"
+                    className="h-11 focus-visible:ring-blue-500"
+                  />
+                </div>
+
+                {/* Username */}
+                <div className="space-y-2">
+                  <Label htmlFor="smtpUsername" className="text-sm font-semibold text-foreground/80">
+                    Username
+                  </Label>
+                  <Input
+                    id="smtpUsername"
+                    value={formData.smtpUsername}
+                    onChange={handleInputChange}
+                    placeholder="resend"
+                    className="h-11 focus-visible:ring-blue-500"
+                  />
+                  <p className="text-[11px] text-muted-foreground">For Resend SMTP, username is always <code className="font-mono bg-muted px-1 rounded">resend</code>.</p>
+                </div>
+
+                {/* Email Id */}
+                <div className="space-y-2">
+                  <Label htmlFor="emailFrom" className="text-sm font-semibold text-foreground/80">
+                    Email Id <span className="text-[10px] text-muted-foreground font-normal">(From address)</span>
+                  </Label>
+                  <Input
+                    id="emailFrom"
+                    type="email"
+                    value={formData.emailFrom}
+                    onChange={handleInputChange}
+                    placeholder="noreply@yourdomain.com"
+                    className="h-11 focus-visible:ring-blue-500"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Must use a verified domain in your Resend account.</p>
+                </div>
+
+                {/* Encryption */}
+                <div className="space-y-2">
+                  <Label htmlFor="smtpEncryption" className="text-sm font-semibold text-foreground/80">
+                    Encryption
+                  </Label>
+                  <Input
+                    id="smtpEncryption"
+                    value={formData.smtpEncryption}
+                    onChange={handleInputChange}
+                    placeholder="tls"
+                    className="h-11 focus-visible:ring-blue-500"
+                  />
+                </div>
+
+                {/* Password / API Key */}
+                <div className="space-y-2">
+                  <Label htmlFor="resendApiKey" className="text-sm font-semibold text-foreground/80">
+                    Password <span className="text-[10px] text-muted-foreground font-normal">(Resend API Key)</span>
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="resendApiKey"
+                      type={showSmtpPassword ? 'text' : 'password'}
+                      value={formData.resendApiKey}
+                      onChange={handleInputChange}
+                      placeholder="re_xxxxxxxxxxxxxxxxxxxx"
+                      className="h-11 pr-10 focus-visible:ring-blue-500 font-mono"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowSmtpPassword(p => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showSmtpPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Your Resend API key — stored securely and never exposed to clients.{' '}
+                    <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Get a key ↗</a>
+                  </p>
+                </div>
+
+              </div>
+
+              {/* Resend SMTP quick-ref */}
+              <div className="mt-8 p-4 rounded-2xl bg-blue-500/5 border border-blue-500/20 flex gap-3">
+                <div className="mt-0.5 shrink-0 w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                  <Mail className="h-4 w-4 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">Resend SMTP quick reference</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    Host: <code className="font-mono bg-muted px-1 rounded">smtp.resend.com</code> · Port: <code className="font-mono bg-muted px-1 rounded">587</code> · 
+                    Username: <code className="font-mono bg-muted px-1 rounded">resend</code> · Encryption: <code className="font-mono bg-muted px-1 rounded">tls</code> · 
+                    Password: your API key starting with <code className="font-mono bg-muted px-1 rounded">re_</code>
+                  </p>
+                </div>
+              </div>
+
+              {/* Footer actions */}
+              <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-border">
+                <Button
+                  variant="outline"
+                  className="gap-2 h-10 px-6"
+                  onClick={() => setFormData(p => ({
+                    ...p,
+                    mailerName: '',
+                    smtpHost: 'smtp.resend.com',
+                    smtpPort: 587,
+                    smtpUsername: 'resend',
+                    smtpEncryption: 'tls',
+                    smtpDriver: 'smtp',
+                    emailFrom: '',
+                    resendApiKey: '',
+                    mailEnabled: false,
+                  }))}
+                >
+                  <RotateCcw className="h-4 w-4" /> Reset
+                </Button>
+                <Button
+                  id="save-mail-config-btn"
+                  disabled={isSaving}
+                  onClick={async () => {
+                    if (!formData.resendApiKey?.startsWith('re_')) {
+                      toast({ title: 'Invalid API key', description: 'Resend API keys must start with re_', variant: 'destructive' });
+                      return;
+                    }
+                    setIsSaving(true);
+                    try {
+                      // Save all SMTP fields via the standard settings endpoint
+                      await updateSettings(formData);
+                      // Also sync the key into process.env via the dedicated email endpoint
+                      await apiFetch('/settings/email', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          resendApiKey: formData.resendApiKey,
+                          emailFrom: formData.emailFrom || undefined,
+                        }),
+                      });
+                      toast({ title: 'Mail config saved', description: 'Your email settings have been updated.' });
+                    } catch {
+                      toast({ title: 'Save failed', description: 'Please check your settings and try again.', variant: 'destructive' });
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  className="gap-2 h-10 px-8 bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20"
+                >
+                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  Save
+                </Button>
+              </div>
+
+            </CardContent>
+          </Card>
+
+        </TabsContent>
+
         {/* ─────────── SYSTEM / VERSION CONTROL ─────────── */}
         <TabsContent value="system" className="mt-0 outline-none space-y-6">
 
@@ -1254,6 +1690,8 @@ export default function SettingsPage() {
           </Card>
 
         </TabsContent>
+        </div>{/* end content area */}
+        </div>{/* end desktop layout wrapper */}
       </Tabs>
     </div>
   );

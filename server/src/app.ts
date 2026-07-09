@@ -24,6 +24,7 @@ function bootstrapStorage() {
     PATHS.DOCUMENTS,
     PATHS.MEDIA,
     PATHS.BRANDING,
+    PATHS.EMPLOYEE_DOCS,
   ];
 
   console.log('📂 [Storage] Bootstrapping directories...');

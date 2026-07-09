@@ -2,10 +2,34 @@ import { env } from './config/env.js';
 import app from './app.js';
 import { prisma } from './lib/prisma.js';
 
-const server = app.listen(env.PORT, () => {
+// ─── Load email credentials from DB into process.env ─────────────
+// Runs once after boot so that the sendEmail() utility works immediately
+// even when keys are stored in the database rather than the .env file.
+
+async function syncEmailEnvFromDb() {
+  try {
+    const settings = await prisma.agencySettings.findFirst({
+      select: { resendApiKey: true, emailFrom: true },
+    });
+    if (settings?.resendApiKey && !process.env.RESEND_API_KEY) {
+      process.env.RESEND_API_KEY = settings.resendApiKey;
+      console.log('📧 RESEND_API_KEY loaded from database');
+    }
+    if (settings?.emailFrom && !process.env.EMAIL_FROM) {
+      process.env.EMAIL_FROM = settings.emailFrom;
+    }
+  } catch {
+    // Non-fatal — email just won't work until configured via settings panel
+    console.warn('⚠️  Could not load email settings from database on startup');
+  }
+}
+
+const server = app.listen(env.PORT, async () => {
   console.log(`\n🚀 Server running on port ${env.PORT}`);
   console.log(`📍 Health check: http://localhost:${env.PORT}/api/health`);
   console.log(`🔧 Environment: ${env.NODE_ENV}\n`);
+
+  await syncEmailEnvFromDb();
 });
 
 // ─── Graceful Shutdown ────────────────────────────────────────────
