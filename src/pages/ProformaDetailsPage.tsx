@@ -534,6 +534,7 @@ export default function ProformaDetailsPage() {
               </div>
             </CardContent>
           </Card>
+        </div>
       </div>
 
       <Dialog open={isEmailModalOpen} onOpenChange={setIsEmailModalOpen}>
