@@ -19,12 +19,25 @@ import {
   Trash2,
   Loader2
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { PremiumInvoice } from "@/components/PremiumInvoice";
 import { formatDate } from "@/lib/utils";
 import { parseAmountNumber, sumItems } from "@/lib/money";
-import { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { apiFetch } from "@/lib/api-client";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 
 const generateInvoiceId = () => `INV-${Math.floor(Math.random() * 9000 + 1000)}`;
 
@@ -36,6 +49,13 @@ export default function ProformaDetailsPage() {
   const { toast } = useToast();
   const [verificationToken, setVerificationToken] = useState<string>("");
   const [loadingToken, setLoadingToken] = useState(false);
+  const printRef = useRef<HTMLDivElement>(null);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const [emailTo, setEmailTo] = useState("");
+  const [emailCc, setEmailCc] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
 
 
   const [isConverting, setIsConverting] = useState(false);
@@ -181,16 +201,127 @@ export default function ProformaDetailsPage() {
   };
 
   const handleSendToClient = () => {
-    if (!verificationUrl) return;
-    const email = proforma.clientEmail || client?.email;
-    if (!email) {
-      toast({ title: "Missing email", description: "Client email is not available for this proforma." });
+    const email = proforma.clientEmail || client?.email || "";
+    setEmailTo(email);
+    setEmailCc("");
+    setEmailSubject(`Proforma ${proforma.id} from ${settings.agencyName || "Hirdan Marketing"}`);
+    setEmailBody(
+      `Hi ${proforma.client},\n\n` +
+      `Please find attached proforma ${proforma.id} for your review.\n\n` +
+      `You can also view and verify the document online at:\n${verificationUrl}\n\n` +
+      `Best regards,\n${settings.agencyName || "Hirdan Marketing"}`
+    );
+    setIsEmailModalOpen(true);
+  };
+
+  const handleConfirmSendEmail = async () => {
+    if (!emailTo) {
+      toast({ title: "Recipient Email Required", description: "Please enter a recipient email address.", variant: "destructive" });
       return;
     }
+    setIsSendingEmail(true);
+    toast({ title: "Generating PDF", description: "Rendering and converting your proforma document..." });
 
-    const subject = `Proforma ${proforma.id}`;
-    const body = `Hi ${proforma.client},\n\nHere is your proforma: ${verificationUrl}\n\nBest regards,\n${settings.agencyName}`;
-    window.location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    try {
+      const element = printRef.current?.querySelector('.print-content') as HTMLElement || printRef.current;
+      if (!element) throw new Error("Document element not found");
+
+      // Wait for images
+      const images = Array.from(element.querySelectorAll('img'));
+      await Promise.all(
+        images.map(img => {
+          if (img.complete) return Promise.resolve();
+          return new Promise(resolve => {
+            img.onload = resolve;
+            img.onerror = resolve;
+          });
+        })
+      );
+
+      const captureScale = 3;
+      const jpegQuality = 0.95;
+      const canvas = await html2canvas(element, {
+        scale: captureScale, 
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+        width: 794,
+        height: element.scrollHeight,
+        onclone: (clonedDoc) => {
+          const el = clonedDoc.querySelector('.print-content') as HTMLElement;
+          if (el) {
+            el.style.width = '794px';
+            el.style.margin = '0';
+            el.style.padding = '0';
+          }
+        }
+      });
+
+      const imgData = canvas.toDataURL("image/jpeg", jpegQuality);
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = 210;
+      const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
+      const pageHeight = 297;
+      
+      let heightLeft = pdfHeightRatio;
+      let position = 0;
+
+      if (pdfHeightRatio <= 300) {
+        pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
+      } else {
+        pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
+        heightLeft -= pageHeight;
+
+        while (heightLeft > 10) {
+          position = heightLeft - pdfHeightRatio;
+          pdf.addPage();
+          pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
+          heightLeft -= pageHeight;
+        }
+      }
+
+      // Convert to base64
+      const pdfDataUri = pdf.output('datauristring');
+      const base64Data = pdfDataUri.split(',')[1] || pdfDataUri;
+
+      toast({ title: "Sending Email", description: "Delivering email with PDF attachment..." });
+
+      // Call API
+      const dbId = proforma._dbId || proforma.id;
+      const response = await apiFetch(`/proformas/${dbId}/send-email`, {
+        method: "POST",
+        body: JSON.stringify({
+          to: emailTo,
+          cc: emailCc,
+          subject: emailSubject,
+          body: emailBody,
+          pdfBase64: base64Data,
+          filename: `Proforma_${proforma.id}.pdf`,
+        }),
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || "Failed to send email");
+      }
+
+      toast({ title: "Email Sent", description: `Successfully sent email to ${emailTo}.` });
+      setIsEmailModalOpen(false);
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: "Send Failed",
+        description: err?.message || "There was an error generating or sending the email.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSendingEmail(false);
+    }
   };
 
   const statusAccent =
@@ -295,7 +426,7 @@ export default function ProformaDetailsPage() {
 
       <div className="grid lg:grid-cols-4 gap-8">
         {/* Main Document Section */}
-        <div className="lg:col-span-3">
+        <div className="lg:col-span-3" ref={printRef}>
           <PremiumInvoice
             type="Proforma"
             data={{
@@ -403,8 +534,73 @@ export default function ProformaDetailsPage() {
               </div>
             </CardContent>
           </Card>
-        </div>
       </div>
+
+      <Dialog open={isEmailModalOpen} onOpenChange={setIsEmailModalOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Send Proforma via Email</DialogTitle>
+            <DialogDescription>
+              Confirm recipient details and email content. The proforma PDF will be attached automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="email-to">Client Email</Label>
+              <Input
+                id="email-to"
+                placeholder="client@example.com"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email-cc">CC (comma-separated)</Label>
+              <Input
+                id="email-cc"
+                placeholder="info@yourcompany.com, team@yourcompany.com"
+                value={emailCc}
+                onChange={(e) => setEmailCc(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email-subject">Subject</Label>
+              <Input
+                id="email-subject"
+                placeholder="Email subject"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email-body">Message</Label>
+              <Textarea
+                id="email-body"
+                rows={6}
+                placeholder="Email message..."
+                className="resize-none"
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEmailModalOpen(false)} disabled={isSendingEmail}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmSendEmail} disabled={isSendingEmail}>
+              {isSendingEmail ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                "Send Email"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

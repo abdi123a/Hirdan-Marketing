@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { sendEmail, generateEmailHtml } from '../lib/email.js';
 import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
 import { parsePagination } from '../lib/pagination.js';
@@ -230,6 +231,65 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) =>
 
     await prisma.invoice.delete({ where: { id: targetInvoice.id } });
     res.json({ message: 'Invoice deleted' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const targetInvoice = await prisma.invoice.findFirst({
+      where: {
+        OR: [
+          { id: req.params.id as string },
+          { invoiceNumber: req.params.id as string }
+        ]
+      }
+    });
+    if (!targetInvoice) throw AppError.notFound('Invoice not found');
+
+    const { to, cc, subject, body, pdfBase64, filename } = req.body;
+    if (!to || !subject || !body || !pdfBase64) {
+      throw AppError.badRequest('Missing required fields: to, subject, body, and pdfBase64 are required.');
+    }
+
+    // Process PDF attachment
+    const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    // Generate styled branding HTML
+    const emailHtml = await generateEmailHtml({
+      title: subject,
+      preheader: subject,
+      contentHtml: `
+        <p style="margin: 0 0 16px; color: #475569; line-height: 1.6; white-space: pre-line;">${body}</p>
+      `,
+    });
+
+    // cc can be comma separated, let's split it into an array
+    const ccList = typeof cc === 'string'
+      ? cc.split(',').map((email: string) => email.trim()).filter(Boolean)
+      : cc;
+
+    const result = await sendEmail({
+      to,
+      cc: ccList && ccList.length > 0 ? ccList : undefined,
+      subject,
+      html: emailHtml,
+      attachments: [
+        {
+          content: buffer,
+          filename: filename || `Invoice_${targetInvoice.invoiceNumber || targetInvoice.id}.pdf`,
+          contentType: 'application/pdf',
+        }
+      ]
+    });
+
+    if (!result.success) {
+      throw AppError.badRequest(result.error ?? 'Failed to send email.');
+    }
+
+    res.json({ success: true, message: 'Email sent successfully', emailId: result.id });
   } catch (error) {
     next(error);
   }

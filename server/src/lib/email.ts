@@ -3,11 +3,20 @@ import { prisma } from './prisma.js';
 
 // ─── Types ────────────────────────────────────────────────────────
 
+export interface Attachment {
+  content?: string | Buffer;
+  filename: string;
+  path?: string;
+  contentType?: string;
+}
+
 export interface SendEmailOptions {
   to: string | string[];
+  cc?: string | string[];
   subject: string;
   html: string;
   replyTo?: string;
+  attachments?: Attachment[];
 }
 
 export interface SendEmailResult {
@@ -52,7 +61,9 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
       to: options.to,
       subject: options.subject,
       html: options.html,
+      ...(options.cc ? { cc: options.cc } : {}),
       ...(options.replyTo ? { reply_to: options.replyTo } : {}),
+      ...(options.attachments ? { attachments: options.attachments } : {}),
     });
 
     if (result.error) {
