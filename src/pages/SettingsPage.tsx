@@ -1516,10 +1516,22 @@ export default function SettingsPage() {
                   onClick={async () => {
                     setIsSaving(true);
                     try {
-                      // Save all SMTP fields via the standard settings endpoint
-                      await updateSettings(formData);
+                      const mailConfigPayload = {
+                        mailerName: formData.mailerName || '',
+                        smtpHost: formData.smtpHost || '',
+                        smtpPort: formData.smtpPort ? Number(formData.smtpPort) : null,
+                        smtpUsername: formData.smtpUsername || '',
+                        smtpEncryption: formData.smtpEncryption || '',
+                        resendApiKey: formData.resendApiKey || '',
+                        emailFrom: formData.emailFrom || '',
+                        mailEnabled: formData.mailEnabled,
+                      };
+
+                      // Save only mail-related fields via the standard settings endpoint.
+                      await updateSettings(mailConfigPayload);
+
                       // If a valid Resend API key is provided, also sync it into process.env
-                      // via the dedicated email endpoint so it takes effect immediately
+                      // via the dedicated email endpoint so it takes effect immediately.
                       if (formData.resendApiKey?.startsWith('re_')) {
                         await apiFetch('/settings/email', {
                           method: 'POST',
