@@ -58,6 +58,8 @@ import SocialMediaPlannerPage from './pages/SocialMediaPlannerPage.tsx';
 import MonthlyReportStudioPage from "./pages/MonthlyReportStudioPage.tsx";
 import FinancialReportPage from "./pages/FinancialReportPage.tsx";
 import ExpensesPage from "./pages/ExpensesPage.tsx";
+import HrDocumentsPage from "@/pages/HrDocumentsPage.tsx";
+import GenerateHrDocumentPage from "@/pages/GenerateHrDocumentPage.tsx";
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api-client";
@@ -190,6 +192,18 @@ function AppRoutes() {
         <Route path="team/add" element={<AddEmployeePage />} />
         <Route path="team/edit/:id" element={<AddEmployeePage />} />
         <Route path="team/view/:id" element={<EmployeeProfilePage />} />
+        
+        {/* HR Document Generator */}
+        <Route path="hr" element={
+          <ProtectedRoute allowedRoles={["admin", "manager"]}>
+            <HrDocumentsPage />
+          </ProtectedRoute>
+        } />
+        <Route path="hr/generate" element={
+          <ProtectedRoute allowedRoles={["admin", "manager"]}>
+            <GenerateHrDocumentPage />
+          </ProtectedRoute>
+        } />
         <Route path="invoices" element={<InvoicesPage />} />
         <Route path="invoices/add" element={<AddInvoicePage />} />
         <Route path="invoices/edit/:id" element={<EditInvoicePage />} />

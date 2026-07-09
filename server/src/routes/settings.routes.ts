@@ -129,6 +129,7 @@ router.get('/', async (req: Request, res: Response, next) => {
           primaryColor: settings.primaryColor,
           signature: settings.signature,
           stamp: settings.stamp,
+          hrFallbackApproverId: (settings as any).hrFallbackApproverId,
           enableRecaptcha: settings.enableRecaptcha,
           recaptchaSiteKey: settings.recaptchaSiteKey,
           recaptchaSecretKey: settings.recaptchaSecretKey,
@@ -162,6 +163,7 @@ const settingsDtoSchema = z.object({
   notifications: z.any().optional(),    // JSON objects stored as strings
   signature: z.string().optional().nullable(),
   stamp: z.string().optional().nullable(),
+  hrFallbackApproverId: z.string().optional().nullable(),
   enableRecaptcha: z.boolean().optional(),
   recaptchaSiteKey: z.string().optional().nullable(),
   recaptchaSecretKey: z.string().optional().nullable(),

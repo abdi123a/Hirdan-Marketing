@@ -28,10 +28,12 @@ import reportsRoutes from './reports.routes.js';
 import financialRoutes from './financial.routes.js';
 import accountsRoutes from './accounts.routes.js';
 import expensesRoutes from './expenses.routes.js';
+import hrRoutes from './hr.routes.js';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
+router.use('/hr/documents', hrRoutes);
 router.use('/clients', clientsRoutes);
 router.use('/projects', projectsRoutes);
 router.use('/team', teamRoutes);

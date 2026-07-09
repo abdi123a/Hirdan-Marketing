@@ -12,7 +12,8 @@ import {
   ArrowLeft, Mail, Phone, Calendar, Briefcase, 
   Settings, User, Clock, MapPin, Trash2,
   Building2, ChevronRight, FileText, DollarSign,
-  ShieldAlert, Landmark, File, Eye, Plus, ArrowUpRight, CheckCircle2, RotateCcw, Shield, Lock
+  ShieldAlert, Landmark, File, Eye, Plus, ArrowUpRight, CheckCircle2, RotateCcw, Shield, Lock,
+  Download, RefreshCw
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -30,7 +31,8 @@ export default function EmployeeProfilePage() {
     uploadEmployeeFile,
     deleteEmployeeFile,
     fetchEmployeeActivity,
-    provisionEmployeeAccess
+    provisionEmployeeAccess,
+    fetchHrDocumentsForEmployee
   } = useAgencyStore();
   const { toast } = useToast();
 
@@ -38,8 +40,10 @@ export default function EmployeeProfilePage() {
   
   // Loaded async data
   const [files, setFiles] = useState<EmployeeFile[]>([]);
+  const [hrDocs, setHrDocs] = useState<any[]>([]);
   const [activity, setActivity] = useState<EmployeeActivity[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [isLoadingHrDocs, setIsLoadingHrDocs] = useState(false);
   const [isLoadingActivity, setIsLoadingActivity] = useState(false);
   const [previewFileUrl, setPreviewFileUrl] = useState<string | null>(null);
   const [previewFileLabel, setPreviewFileLabel] = useState<string>("");
@@ -54,7 +58,36 @@ export default function EmployeeProfilePage() {
     [projects, member]
   );
 
-  // Load files and activities
+  const allDocuments = useMemo(() => {
+    const list = [
+      ...files.map(f => ({
+        id: f.id,
+        name: f.label || 'Unnamed Upload',
+        type: `Upload (${f.category})`,
+        date: new Date(f.uploadedAt),
+        by: f.uploadedBy || 'System',
+        url: f.fileUrl,
+        isUpload: true,
+        status: 'FINAL',
+        rawDoc: f
+      })),
+      ...hrDocs.map(d => ({
+        id: d.id,
+        name: d.docNumber,
+        type: `Generated (${d.docType.replace('_', ' ')})`,
+        date: new Date(d.generatedAt),
+        by: d.generatedBy?.name || 'HR',
+        url: d.pdfUrl,
+        isUpload: false,
+        status: d.status,
+        rawDoc: d
+      }))
+    ];
+    
+    return list.sort((a, b) => b.date.getTime() - a.date.getTime());
+  }, [files, hrDocs]);
+
+  // Load files, HR docs and activities
   useEffect(() => {
     if (id) {
       setIsLoadingFiles(true);
@@ -63,13 +96,19 @@ export default function EmployeeProfilePage() {
         setIsLoadingFiles(false);
       });
 
+      setIsLoadingHrDocs(true);
+      fetchHrDocumentsForEmployee(id).then((res) => {
+        setHrDocs(res);
+        setIsLoadingHrDocs(false);
+      });
+
       setIsLoadingActivity(true);
       fetchEmployeeActivity(id).then((res) => {
         setActivity(res);
         setIsLoadingActivity(false);
       });
     }
-  }, [id, fetchEmployeeFiles, fetchEmployeeActivity]);
+  }, [id, fetchEmployeeFiles, fetchHrDocumentsForEmployee, fetchEmployeeActivity]);
 
   if (!member) {
     return (
@@ -494,12 +533,12 @@ export default function EmployeeProfilePage() {
           {/* TAB 2: DOCUMENTS */}
           {activeTab === "documents" && (
             <div className="space-y-6">
-              {/* Employee Personal Files */}
+              {/* Unified Employee Documents List */}
               <Card className="border-border/50 shadow-sm">
                 <CardHeader className="pb-3 flex flex-row items-center justify-between">
                   <div>
-                    <CardTitle className="text-base font-semibold">Employee Uploaded Files</CardTitle>
-                    <CardDescription>Legal and employment verification files</CardDescription>
+                    <CardTitle className="text-base font-semibold">Employee Documents & Issued Certificates</CardTitle>
+                    <CardDescription>Legal uploads, employment contracts, and auto-generated HR certificates.</CardDescription>
                   </div>
                   {!isArchived && (
                     <label className="h-9 px-3 border border-border bg-card hover:bg-muted text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-sm">
@@ -509,42 +548,106 @@ export default function EmployeeProfilePage() {
                   )}
                 </CardHeader>
                 <CardContent className="p-0 border-t border-border/40">
-                  {isLoadingFiles ? (
+                  {isLoadingFiles || isLoadingHrDocs ? (
                     <div className="p-12 text-center text-xs text-muted-foreground animate-pulse">Loading documents...</div>
-                  ) : files.length === 0 ? (
-                    <div className="p-12 text-center text-xs text-muted-foreground italic">No documents uploaded.</div>
+                  ) : allDocuments.length === 0 ? (
+                    <div className="p-12 text-center text-xs text-muted-foreground italic">No files or generated certificates found.</div>
                   ) : (
                     <Table>
                       <TableHeader className="bg-muted/10">
                         <TableRow>
-                          <TableHead className="font-bold text-xs">File Name</TableHead>
-                          <TableHead className="font-bold text-xs">Category</TableHead>
-                          <TableHead className="font-bold text-xs">Uploaded By</TableHead>
+                          <TableHead className="font-bold text-xs">Document Name</TableHead>
+                          <TableHead className="font-bold text-xs">Source / Type</TableHead>
+                          <TableHead className="font-bold text-xs">By</TableHead>
+                          <TableHead className="font-bold text-xs">Date</TableHead>
+                          <TableHead className="font-bold text-xs">Status</TableHead>
                           <TableHead className="text-right font-bold text-xs">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {files.map((file) => (
-                          <TableRow key={file.id}>
-                            <TableCell className="font-bold text-sm text-foreground/90">
+                        {allDocuments.map((doc) => (
+                          <TableRow key={doc.id}>
+                            <TableCell className="font-bold text-sm text-foreground/90 font-mono">
                               <div className="flex items-center gap-2 min-w-0 max-w-[220px]">
                                 <File className="h-4 w-4 text-primary shrink-0" />
-                                <span className="truncate">{file.label}</span>
+                                <span className="truncate font-sans font-semibold">{doc.name}</span>
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline" className="text-[9px] font-bold uppercase tracking-tight bg-muted/40 border-0">{file.category}</Badge>
+                              <Badge variant="outline" className="text-[9px] font-bold uppercase tracking-tight bg-muted/40 border-0">
+                                {doc.type}
+                              </Badge>
                             </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{file.uploadedBy || 'System'}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{doc.by}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{formatDate(doc.date.toISOString())}</TableCell>
+                            <TableCell>
+                              {!doc.isUpload && (
+                                <Badge 
+                                  variant="outline" 
+                                  className={`text-[8px] font-black uppercase border-0 px-2 py-0.5 rounded-full ${
+                                    doc.status === 'APPROVED' || doc.status === 'FINAL' 
+                                      ? 'bg-emerald-500/10 text-emerald-600'
+                                      : doc.status === 'PENDING_APPROVAL'
+                                        ? 'bg-amber-500/10 text-amber-600'
+                                        : doc.status === 'REJECTED'
+                                          ? 'bg-red-500/10 text-red-600'
+                                          : 'bg-muted/40 text-muted-foreground'
+                                  }`}
+                                >
+                                  {doc.status}
+                                </Badge>
+                              )}
+                            </TableCell>
                             <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <Button variant="ghost" size="icon" onClick={() => { setPreviewFileUrl(file.fileUrl); setPreviewFileLabel(file.label || 'Document'); }} className="h-8 w-8 rounded-lg hover:bg-primary/5 hover:text-primary">
-                                  <Eye className="h-3.5 w-3.5" />
-                                </Button>
-                                {!isArchived && (
-                                  <Button variant="ghost" size="icon" onClick={() => handleFileDelete(file.id)} className="h-8 w-8 rounded-lg hover:bg-destructive/10 text-destructive">
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
+                              <div className="flex items-center justify-end gap-1.5">
+                                {doc.isUpload ? (
+                                  <>
+                                    <Button variant="ghost" size="icon" onClick={() => { setPreviewFileUrl(doc.url); setPreviewFileLabel(doc.name); }} className="h-8 w-8 rounded-lg hover:bg-primary/5 hover:text-primary">
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </Button>
+                                    {!isArchived && (
+                                      <Button variant="ghost" size="icon" onClick={() => handleFileDelete(doc.id)} className="h-8 w-8 rounded-lg hover:bg-destructive/10 text-destructive">
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    {/* Download PDF */}
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 rounded-lg hover:bg-emerald-500/10 text-emerald-600 disabled:opacity-35"
+                                      title="Download PDF"
+                                      disabled={!doc.url || (doc.status !== 'APPROVED' && doc.status !== 'FINAL')}
+                                      onClick={() => doc.url && window.open(`${import.meta.env.VITE_API_URL || ''}${doc.url}`, '_blank')}
+                                    >
+                                      <Download className="h-3.5 w-3.5" />
+                                    </Button>
+
+                                    {/* Re-edit / View Details */}
+                                    {(user?.role === 'admin' || user?.role === 'manager') && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 rounded-lg hover:bg-primary/5 hover:text-primary"
+                                        title="Generate New Version"
+                                        onClick={() => navigate(`/dashboard/hr/generate?editId=${doc.id}`)}
+                                      >
+                                        <RefreshCw className="h-3.5 w-3.5" />
+                                      </Button>
+                                    )}
+
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 rounded-lg hover:bg-primary/5 hover:text-primary"
+                                      title="View Details"
+                                      onClick={() => navigate(`/dashboard/hr/generate?viewId=${doc.id}`)}
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </>
                                 )}
                               </div>
                             </TableCell>
@@ -553,23 +656,6 @@ export default function EmployeeProfilePage() {
                       </TableBody>
                     </Table>
                   )}
-                </CardContent>
-              </Card>
-
-              {/* Sub-section Placeholder: HR-Generated Documents */}
-              <Card className="border-border/50 shadow-sm border-dashed border-2 bg-muted/5">
-                <CardHeader>
-                  <CardTitle className="text-base font-semibold text-muted-foreground flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-muted-foreground/60" /> HR Generated Documents (Module Coming Soon)
-                  </CardTitle>
-                  <CardDescription>Generated certificates, payslips, and warning letters will appear here once the HR Document Generator is activated.</CardDescription>
-                </CardHeader>
-                <CardContent className="py-6 flex justify-center">
-                  <div className="text-center space-y-1.5 p-4 max-w-sm">
-                    <ShieldAlert className="h-8 w-8 text-muted-foreground/40 mx-auto" />
-                    <h5 className="font-semibold text-xs text-muted-foreground/80 uppercase">HR Generator Plug-In</h5>
-                    <p className="text-xs text-muted-foreground/60 leading-relaxed">This section is ready to receive auto-generated documents without database schema redesign.</p>
-                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -585,10 +671,17 @@ export default function EmployeeProfilePage() {
                     <CardTitle className="text-base font-semibold">Compensation Structure</CardTitle>
                     <CardDescription>Salary breakdown and allowances (View-Only)</CardDescription>
                   </div>
-                  {/* Placeholder: Generate Payslip */}
-                  <Button disabled variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-semibold rounded-lg opacity-70">
-                    <ArrowUpRight className="h-3.5 w-3.5" /> Generate Payslip
-                  </Button>
+                  {/* Generate Payslip */}
+                  {(user?.role === 'admin' || user?.role === 'manager') && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="h-8 gap-1.5 text-xs font-semibold rounded-lg"
+                      onClick={() => navigate(`/dashboard/hr/generate?type=PAYSLIP&employeeId=${member.id}`)}
+                    >
+                      <ArrowUpRight className="h-3.5 w-3.5" /> Generate Payslip
+                    </Button>
+                  )}
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {member.isHourlyMode ? (

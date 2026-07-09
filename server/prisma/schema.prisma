@@ -22,6 +22,9 @@ model User {
   monthlyReports         MonthlyReport[]        @relation("MonthlyReportCreatedBy")
   monthlyReportVersions  MonthlyReportVersion[] @relation("MonthlyReportVersionCreatedBy")
   refreshTokens RefreshToken[]
+  hrDocumentsGenerated   HrDocument[]           @relation("HrDocumentGeneratedBy")
+  hrDocumentsApproved    HrDocument[]           @relation("HrDocumentApprovedBy")
+  hrDocumentApprovals    HrDocumentApproval[]   @relation("HrDocumentApprovals")
 
   @@map("users")
 }
@@ -165,6 +168,7 @@ model TeamMember {
   reports       TeamMember[]        @relation("ManagerReports")
   files         EmployeeFile[]
   activities    EmployeeActivity[]
+  hrDocuments   HrDocument[]
 
   @@index([managerId])
   @@map("team_members")
@@ -426,6 +430,7 @@ model AgencySettings {
   smtpEncryption      String?  @map("smtp_encryption")
   smtpDriver          String?  @map("smtp_driver")
   mailEnabled         Boolean  @default(false) @map("mail_enabled")
+  hrFallbackApproverId String?  @map("hr_fallback_approver_id")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -902,4 +907,65 @@ model AccountTransfer {
   @@index([fromAccountId])
   @@index([toAccountId])
   @@map("account_transfers")
+}
+
+// ─── HR Document Generator Module ─────────────────────────────────
+
+model HrDocument {
+  id            String             @id @default(uuid())
+  employeeId    String             @map("employee_id")
+  docType       HrDocumentType     @map("doc_type")
+  docNumber     String             @map("doc_number")
+  status        HrDocumentStatus   @default(DRAFT)
+  generatedById String?            @map("generated_by_id")
+  generatedBy   User?              @relation("HrDocumentGeneratedBy", fields: [generatedById], references: [id], onDelete: SetNull)
+  generatedAt   DateTime           @default(now()) @map("generated_at")
+  approvedById  String?            @map("approved_by_id")
+  approvedBy    User?              @relation("HrDocumentApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt    DateTime?          @map("approved_at")
+  version       Int                @default(1)
+  pdfUrl        String?            @map("pdf_url") @db.LongText
+  content       Json?              // Store the form fields (JSON stringified/parsed)
+  
+  employee      TeamMember         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  approvals     HrDocumentApproval[]
+
+  @@unique([docNumber, version])
+  @@index([employeeId])
+  @@index([generatedById])
+  @@index([approvedById])
+  @@map("hr_documents")
+}
+
+model HrDocumentApproval {
+  id            String     @id @default(uuid())
+  hrDocumentId  String     @map("hr_document_id")
+  approverId    String     @map("approver_id")
+  decision      String     // 'APPROVED' or 'REJECTED'
+  comment       String?    @db.Text
+  decidedAt     DateTime   @default(now()) @map("decided_at")
+
+  hrDocument    HrDocument @relation(fields: [hrDocumentId], references: [id], onDelete: Cascade)
+  approver      User       @relation("HrDocumentApprovals", fields: [approverId], references: [id], onDelete: Cascade)
+
+  @@index([hrDocumentId])
+  @@index([approverId])
+  @@map("hr_document_approvals")
+}
+
+enum HrDocumentType {
+  WORK_CERTIFICATE
+  SALARY_CERTIFICATE
+  PAYSLIP
+  WARNING_CERTIFICATE
+  INTERNSHIP_ACCEPTED_CERTIFICATE
+  INTERNSHIP_LETTER
+}
+
+enum HrDocumentStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  FINAL
 }

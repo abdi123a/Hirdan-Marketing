@@ -280,6 +280,57 @@ export interface VersionEntry {
   date: string;
 }
 
+export interface HrDocument {
+  id: string;
+  employeeId: string;
+  docType: 'WORK_CERTIFICATE' | 'SALARY_CERTIFICATE' | 'PAYSLIP' | 'WARNING_CERTIFICATE' | 'INTERNSHIP_ACCEPTED_CERTIFICATE' | 'INTERNSHIP_LETTER';
+  docNumber: string;
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'FINAL';
+  generatedById?: string;
+  generatedBy?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  generatedAt: string;
+  approvedById?: string;
+  approvedBy?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  approvedAt?: string;
+  version: number;
+  pdfUrl?: string;
+  content?: any;
+  employee: {
+    id: string;
+    name: string;
+    email: string;
+    department?: string;
+    role?: string;
+    manager?: {
+      id: string;
+      name: string;
+      userId?: string;
+    }
+  };
+  approvals?: HrDocumentApproval[];
+}
+
+export interface HrDocumentApproval {
+  id: string;
+  hrDocumentId: string;
+  approverId: string;
+  decision: 'APPROVED' | 'REJECTED';
+  comment?: string;
+  decidedAt: string;
+  approver?: {
+    id: string;
+    name: string;
+  };
+}
+
 export interface AgencySettings {
   agencyName: string;
   adminEmail: string;
@@ -293,6 +344,7 @@ export interface AgencySettings {
   favicon: string;
   signature: string;
   stamp: string;
+  hrFallbackApproverId?: string | null;
   primaryColor: string;
   taxRate: number;
   defaultInvoiceNotes: string;
@@ -376,6 +428,16 @@ interface AgencyStore {
   deleteEmployeeFile: (employeeId: string, fileId: string) => Promise<void>;
   fetchEmployeeActivity: (employeeId: string) => Promise<EmployeeActivity[]>;
   provisionEmployeeAccess: (employeeId: string, payload: { password?: string; role?: string }) => Promise<any>;
+
+  hrDocuments: HrDocument[];
+  fetchHrDocuments: (params?: { pendingApproval?: boolean; employeeId?: string }) => Promise<HrDocument[]>;
+  fetchHrDocumentsForEmployee: (employeeId: string) => Promise<HrDocument[]>;
+  fetchHrDocumentById: (id: string) => Promise<HrDocument>;
+  createHrDocument: (payload: { employeeId: string; docType: string; docNumber?: string; content: any; status?: string }) => Promise<HrDocument>;
+  uploadHrDocumentPdf: (id: string, pdfBase64: string) => Promise<HrDocument>;
+  approveHrDocument: (id: string, comment?: string) => Promise<HrDocument>;
+  rejectHrDocument: (id: string, comment: string) => Promise<HrDocument>;
+  sendHrDocumentEmail: (id: string, payload: { to: string; cc?: string; subject: string; body: string; pdfBase64?: string; filename?: string }) => Promise<any>;
 
   addInvoice: (invoice: Omit<Invoice, 'id'> & { id?: string }) => Promise<void>;
   updateInvoice: (id: string, invoice: Partial<Invoice>) => Promise<void>;
@@ -465,8 +527,20 @@ const createDefaultSettings = (): AgencySettings => ({
   smtpEncryption: "tls",
   smtpDriver: "smtp",
   mailEnabled: false,
-  appVersion: "1.5.0",
+  appVersion: "1.6.0",
   versionHistory: [
+    {
+      version: "1.6.0",
+      description: "feat: add HR Document Generator with Internship Accepted Certificate and Internship Letter templates, and support custom routing & schema updates",
+      author: "Antigravity",
+      date: new Date().toISOString(),
+    },
+    {
+      version: "1.5.0",
+      description: "feat: add quick expenses, receipt scan, and financial accounts management",
+      author: "Antigravity",
+      date: new Date().toISOString(),
+    },
     {
       version: "1.2.13",
       description: "fix: update mail config to support custom recipient test email and remove restrictive API key requirements for saving SMTP settings",
@@ -535,6 +609,7 @@ export const useAgencyStore = create<AgencyStore>()(
       taskAnalytics: null,
       globalUploadProgress: 0,
       isGlobalUploading: false,
+      hrDocuments: [],
       settings: createDefaultSettings(),
 
       fetchClients: async () => {
@@ -1197,6 +1272,99 @@ export const useAgencyStore = create<AgencyStore>()(
           return res;
         } catch (error) {
           console.error("Failed to provision system access:", error);
+          throw error;
+        }
+      },
+
+      fetchHrDocuments: async (params) => {
+        try {
+          const query = new URLSearchParams();
+          if (params?.pendingApproval) query.append('pendingApproval', 'true');
+          if (params?.employeeId) query.append('employeeId', params.employeeId);
+          
+          const res = await apiFetch<{ documents: HrDocument[] }>(`/hr/documents?${query.toString()}`);
+          set({ hrDocuments: res.documents });
+          return res.documents;
+        } catch (error) {
+          console.error("Failed to fetch HR documents:", error);
+          return [];
+        }
+      },
+      fetchHrDocumentsForEmployee: async (employeeId) => {
+        try {
+          const res = await apiFetch<{ documents: HrDocument[] }>(`/hr/documents/employee/${employeeId}`);
+          return res.documents;
+        } catch (error) {
+          console.error("Failed to fetch HR documents for employee:", error);
+          return [];
+        }
+      },
+      fetchHrDocumentById: async (id) => {
+        try {
+          const res = await apiFetch<{ document: HrDocument }>(`/hr/documents/${id}`);
+          return res.document;
+        } catch (error) {
+          console.error("Failed to fetch HR document by ID:", error);
+          throw error;
+        }
+      },
+      createHrDocument: async (payload) => {
+        try {
+          const res = await apiFetch<{ document: HrDocument }>(`/hr/documents`, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          });
+          return res.document;
+        } catch (error) {
+          console.error("Failed to create HR document:", error);
+          throw error;
+        }
+      },
+      uploadHrDocumentPdf: async (id, pdfBase64) => {
+        try {
+          const res = await apiFetch<{ document: HrDocument }>(`/hr/documents/${id}/pdf`, {
+            method: 'POST',
+            body: JSON.stringify({ pdfBase64 }),
+          });
+          return res.document;
+        } catch (error) {
+          console.error("Failed to upload HR document PDF:", error);
+          throw error;
+        }
+      },
+      approveHrDocument: async (id, comment) => {
+        try {
+          const res = await apiFetch<{ document: HrDocument }>(`/hr/documents/${id}/approve`, {
+            method: 'POST',
+            body: JSON.stringify({ comment }),
+          });
+          return res.document;
+        } catch (error) {
+          console.error("Failed to approve HR document:", error);
+          throw error;
+        }
+      },
+      rejectHrDocument: async (id, comment) => {
+        try {
+          const res = await apiFetch<{ document: HrDocument }>(`/hr/documents/${id}/reject`, {
+            method: 'POST',
+            body: JSON.stringify({ comment }),
+          });
+          return res.document;
+        } catch (error) {
+          console.error("Failed to reject HR document:", error);
+          throw error;
+        }
+      },
+      sendHrDocumentEmail: async (id, payload) => {
+        try {
+          const res = await apiFetch<any>(`/hr/documents/${id}/send-email`, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          });
+          return res;
+        } catch (error) {
+          console.error("Failed to send HR document email:", error);
           throw error;
         }
       },

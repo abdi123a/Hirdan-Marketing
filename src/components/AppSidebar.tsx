@@ -1,7 +1,8 @@
 import {
   LayoutDashboard, Users, Briefcase, UserCircle,
   Receipt, CreditCard, CalendarDays, Settings, LogOut, PanelLeftClose, PanelLeft,
-  FileText, Package, Zap, Mail, Share2, Presentation, BarChart3, Wallet
+  FileText, Package, Zap, Mail, Share2, Presentation, BarChart3, Wallet,
+  FolderHeart
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
@@ -28,6 +29,7 @@ const mainItems = [
   { title: "Clients", url: "/dashboard/clients", icon: Users },
   { title: "Projects", url: "/dashboard/projects", icon: Briefcase },
   { title: "Team", url: "/dashboard/team", icon: UserCircle },
+  { title: "HR Documents", url: "/dashboard/hr", icon: FolderHeart },
   { title: "Proforma", url: "/dashboard/proforma", icon: FileText },
   { title: "Invoices", url: "/dashboard/invoices", icon: Receipt },
   { title: "Subscriptions", url: "/dashboard/subscriptions", icon: CreditCard },
@@ -53,6 +55,13 @@ export function AppSidebar() {
     navigate('/login', { replace: true });
   };
 
+  const allowedItems = mainItems.filter(item => {
+    if (item.url === "/dashboard/hr") {
+      return user?.role === 'admin' || user?.role === 'manager';
+    }
+    return true;
+  });
+
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       {/* Logo */}
@@ -77,7 +86,7 @@ export function AppSidebar() {
           )}
           <SidebarGroupContent>
             <SidebarMenu className={collapsed ? "items-center gap-1.5" : "gap-0.5"}>
-              {mainItems.map((item) => (
+              {allowedItems.map((item) => (
                 <SidebarMenuItem key={item.title} className={collapsed ? "flex justify-center" : ""}>
                   <SidebarMenuButton asChild tooltip={item.title}>
                     <NavLink

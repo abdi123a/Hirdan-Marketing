@@ -89,11 +89,27 @@ router.get('/:folder/:filename', authenticate, (req: Request, res: Response, nex
             employee: true,
           },
         });
-        if (!fileRecord) {
-          throw AppError.notFound('Document not found');
-        }
-        if (fileRecord.employee.userId !== user.userId) {
-          throw AppError.forbidden('Access denied');
+        
+        if (fileRecord) {
+          if (fileRecord.employee.userId !== user.userId) {
+            throw AppError.forbidden('Access denied');
+          }
+        } else {
+          // Check generated HR documents
+          const hrDocRecord = await prisma.hrDocument.findFirst({
+            where: {
+              pdfUrl: { endsWith: `/uploads/employee-docs/${safeFilename}` },
+            },
+            include: {
+              employee: true,
+            },
+          });
+          if (!hrDocRecord) {
+            throw AppError.notFound('Document not found');
+          }
+          if (hrDocRecord.employee.userId !== user.userId) {
+            throw AppError.forbidden('Access denied');
+          }
         }
       }
     }
