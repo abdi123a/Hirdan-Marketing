@@ -72,12 +72,17 @@ jobs:
             # Finish backend setup
             cd /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
             
-            echo "📦 Installing Production Backend dependencies..."
-            npm install --production --legacy-peer-deps
+            echo "📦 Installing all Backend dependencies (incl. dev for Prisma CLI)..."
+            npm install --legacy-peer-deps
             
             echo "⚙️ Generating Database Client on server..."
-            # Run using the locally installed prisma version (v6)
             ./node_modules/.bin/prisma generate
+
+            echo "🗄️ Applying pending DB migrations..."
+            ./node_modules/.bin/prisma migrate deploy
+            
+            echo "🧹 Pruning dev dependencies..."
+            npm prune --production --legacy-peer-deps
             
             # Fix ownership permissions for the backend site
             chown -R hirdanmarketing-api:hirdanmarketing-api /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
