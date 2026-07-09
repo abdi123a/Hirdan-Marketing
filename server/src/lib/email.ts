@@ -119,13 +119,13 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
 
   // Address block formatting
   const addressHtml = address 
-    ? `<p class="footer-text" style="color: #64748b; font-size: 13px; line-height: 1.5; margin: 4px 0;">${address.replace(/\n/g, '<br>')}</p>` 
+    ? `<p class="footer-text" style="color: #cbd5e1; font-size: 13px; line-height: 1.5; margin: 4px 0;">${address.replace(/\n/g, '<br>')}</p>` 
     : '';
 
   // Contact details formatting
   const contactInfo = [phone, adminEmail].filter(Boolean).join(' &bull; ');
   const contactHtml = contactInfo
-    ? `<p class="footer-text" style="color: #64748b; font-size: 13px; line-height: 1.5; margin: 4px 0;">${contactInfo}</p>`
+    ? `<p class="footer-text" style="color: #cbd5e1; font-size: 13px; line-height: 1.5; margin: 4px 0;">${contactInfo}</p>`
     : '';
 
   // Social Links rendering
@@ -138,10 +138,10 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
         .filter(p => socials[p])
         .map(p => {
           const label = p.charAt(0).toUpperCase() + p.slice(1);
-          return `<a href="${socials[p]}" class="footer-link" target="_blank" style="color: ${primaryColor}; text-decoration: none; font-weight: 500; margin: 0 8px; font-size: 13px;">${label}</a>`;
+          return `<a href="${socials[p]}" class="footer-link" target="_blank" style="color: #ffffff; text-decoration: none; font-weight: 500; margin: 0 8px; font-size: 13px;">${label}</a>`;
         });
       if (links.length > 0) {
-        socialHtml = `<div class="social-icons" style="margin-bottom: 16px;">${links.join(' &bull; ')}</div>`;
+        socialHtml = `<div class="social-icons" style="margin-bottom: 16px; color: #cbd5e1;">${links.join(' &bull; ')}</div>`;
       }
     } catch (e) {
       // Ignore JSON parse errors
@@ -198,6 +198,14 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
   ${preheaderHtml}
   <div class="wrapper" style="background-color: #f6f9fc; padding: 40px 20px;">
     <div class="container" style="background-color: #ffffff; border-radius: 12px; border: 1px solid #e8ebf0; box-shadow: 0 4px 12px rgba(80, 66, 137, 0.03); max-width: 580px; margin: 0 auto; overflow: hidden;">
+      <!-- Top Branding Color Bar -->
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%; height: 6px; border-collapse: collapse; overflow: hidden;">
+        <tr>
+          <td width="70%" bgcolor="${primaryColor}" style="background-color: ${primaryColor}; height: 6px; padding: 0; line-height: 1px; font-size: 1px;">&nbsp;</td>
+          <td width="30%" bgcolor="#f6b317" style="background-color: #f6b317; height: 6px; padding: 0; line-height: 1px; font-size: 1px;">&nbsp;</td>
+        </tr>
+      </table>
+
       <div class="header" style="background-color: #ffffff; border-bottom: 1px solid #f0f2f5; padding: 32px 40px; text-align: center;">
         ${logoHtml}
       </div>
@@ -205,16 +213,31 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
         ${options.contentHtml}
         ${actionButtonHtml}
       </div>
-      <div class="footer" style="background-color: #fafbfc; border-top: 1px solid #f0f2f5; padding: 32px 40px; text-align: center;">
+      
+      <!-- Premium Dark True Footer -->
+      <div class="footer" style="background-color: ${primaryColor}; color: #ffffff; padding: 40px 40px 32px 40px; text-align: center; position: relative;">
+        <!-- Floating Accent Line -->
+        <table align="center" cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto 24px auto; width: 70%; height: 4px; border-collapse: collapse;">
+          <tr>
+            <td bgcolor="#f6b317" style="background-color: #f6b317; height: 4px; border-radius: 4px; line-height: 1px; font-size: 1px;">&nbsp;</td>
+          </tr>
+        </table>
+
         ${socialHtml}
-        <p class="footer-text" style="color: #64748b; font-size: 13px; line-height: 1.5; margin: 4px 0;"><strong>${agencyName}</strong></p>
+        <p class="footer-text" style="color: #ffffff; font-size: 14px; font-weight: 800; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 1px;"><strong>${agencyName}</strong></p>
         ${addressHtml}
         ${contactHtml}
-        <div class="footer-links" style="margin-top: 16px;">
-          <a href="https://${website}" class="footer-link" target="_blank" style="color: ${primaryColor}; text-decoration: none; font-weight: 500; margin: 0 8px; font-size: 13px;">Website</a>
-          <a href="https://app.${website}" class="footer-link" target="_blank" style="color: ${primaryColor}; text-decoration: none; font-weight: 500; margin: 0 8px; font-size: 13px;">Client Portal</a>
+        
+        <p class="footer-text" style="font-size: 11px; color: #cbd5e1; margin: 12px 0; font-style: italic; font-weight: 500;">
+          Empowering your brand's future through strategic digital growth
+        </p>
+
+        <div class="footer-links" style="margin-top: 16px; color: #ffffff;">
+          <a href="https://${website}" class="footer-link" target="_blank" style="color: #f6b317; text-decoration: none; font-weight: 600; margin: 0 8px; font-size: 13px;">Website</a>
+          &bull;
+          <a href="https://app.${website}" class="footer-link" target="_blank" style="color: #f6b317; text-decoration: none; font-weight: 600; margin: 0 8px; font-size: 13px;">Client Portal</a>
         </div>
-        <p class="footer-text" style="margin-top: 24px; font-size: 11px; color: #94a3b8; line-height: 1.5; margin: 4px 0;">
+        <p class="footer-text" style="margin-top: 24px; font-size: 10px; color: #cbd5e1; opacity: 0.6; line-height: 1.5; margin: 4px 0;">
           This is an automated transactional message. Please do not reply directly to this email.
         </p>
       </div>
