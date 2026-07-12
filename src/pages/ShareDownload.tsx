@@ -281,17 +281,7 @@ export default function ShareDownload() {
                       })}</span>
                     </div>
 
-                    {/* Optional Note */}
-                    {file.message && (
-                      <div className="w-full text-left p-4 bg-slate-950/40 border-l-2 border-secondary/80 rounded-r-2xl rounded-l-md relative shadow-inner">
-                        <span className="block text-[8px] uppercase font-bold tracking-widest text-secondary mb-1">
-                          Message from sender
-                        </span>
-                        <p className="text-xs text-slate-300 leading-relaxed italic">
-                          "{file.message}"
-                        </p>
-                      </div>
-                    )}
+
 
                     {/* Download Trigger */}
                     <Button 

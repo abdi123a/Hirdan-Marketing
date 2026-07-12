@@ -156,6 +156,7 @@ export default function FileTransfer() {
   const [successTransferId, setSuccessTransferId] = useState<string | null>(null);
   const [successClientName, setSuccessClientName] = useState<string | null>(null);
   const [successClientEmail, setSuccessClientEmail] = useState<string | null>(null);
+  const [successUploadMessage, setSuccessUploadMessage] = useState<string | null>(null);
   const [isEmailSent, setIsEmailSent] = useState(false);
 
   // Access Logs dialog state
@@ -332,12 +333,13 @@ export default function FileTransfer() {
           const selectedClient = clients.find((c) => c.id === selectedClientId);
 
           // Generate local frontend URL using window.location.origin or custom short link domain to match environment ports
-          const linkDomain = import.meta.env.VITE_SHORT_LINK_DOMAIN || window.location.origin;
+          const linkDomain = import.meta.env.VITE_SHORT_LINK_DOMAIN || (import.meta.env.PROD ? "https://hirdan.cc" : window.location.origin);
           const shareUrl = `${linkDomain.replace(/\/$/, "")}/f/${data.shareId}`;
 
           setSuccessShareUrl(shareUrl);
           setSuccessFileName(file.name);
           setSuccessTransferId(data.id);
+          setSuccessUploadMessage(message || null);
           setIsEmailSent(false);
 
           if (selectedClient?.email) {
@@ -386,7 +388,7 @@ export default function FileTransfer() {
   });
 
   const handleCopyLink = (shareId: string) => {
-    const linkDomain = import.meta.env.VITE_SHORT_LINK_DOMAIN || window.location.origin;
+    const linkDomain = import.meta.env.VITE_SHORT_LINK_DOMAIN || (import.meta.env.PROD ? "https://hirdan.cc" : window.location.origin);
     const shareUrl = `${linkDomain.replace(/\/$/, "")}/f/${shareId}`;
     navigator.clipboard.writeText(shareUrl).then(() => {
       setCopiedId(shareId);
@@ -399,8 +401,49 @@ export default function FileTransfer() {
     setEmailDialogTransfer(transfer);
     setRecipientEmail(transfer.client?.email || "");
     setRecipientName(transfer.client?.name || "");
-    setCustomMessage("");
-    if (richTextRef.current) richTextRef.current.innerHTML = "";
+    setCustomMessage(transfer.message || "");
+    setTimeout(() => {
+      if (richTextRef.current) {
+        richTextRef.current.innerHTML = transfer.message || "";
+      }
+    }, 100);
+    setEmailDialogOpen(true);
+  };
+
+  const handleEmailFromSuccessWindow = () => {
+    if (!successTransferId) return;
+    
+    // Close success dialog
+    setSuccessDialogOpen(false);
+    
+    // Open email dialog pre-filled with the upload details
+    setEmailDialogTransfer({
+      id: successTransferId,
+      fileName: successFileName,
+      expiresAt: new Date().toISOString(),
+      shareId: "",
+      fileSize: 0,
+      mimeType: "",
+      downloads: 0,
+      client: successClientEmail ? {
+        id: "",
+        name: successClientName || "",
+        email: successClientEmail,
+      } : null,
+      message: successUploadMessage,
+    } as any);
+
+    setRecipientEmail(successClientEmail || "");
+    setRecipientName(successClientName || "");
+    setCustomMessage(successUploadMessage || "");
+
+    // Prefill the rich text editor with the upload message
+    setTimeout(() => {
+      if (richTextRef.current) {
+        richTextRef.current.innerHTML = successUploadMessage || "";
+      }
+    }, 100);
+
     setEmailDialogOpen(true);
   };
 
@@ -1030,39 +1073,10 @@ export default function FileTransfer() {
             {successClientEmail && (
               <div className="pt-2">
                 <Button
-                  onClick={async () => {
-                    if (successTransferId && successClientEmail) {
-                      try {
-                        await sendEmailMutation.mutateAsync({
-                          transferId: successTransferId,
-                          email: successClientEmail,
-                          name: successClientName || "",
-                        });
-                        setIsEmailSent(true);
-                        toast.success("Email sent to client!");
-                      } catch (e) {
-                        toast.error("Failed to send email.");
-                      }
-                    }
-                  }}
-                  disabled={sendEmailMutation.isPending || isEmailSent}
-                  className={`w-full h-11 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-                    isEmailSent 
-                      ? "bg-emerald-500 hover:bg-emerald-600 text-white" 
-                      : "bg-primary hover:bg-primary/95 text-white"
-                  }`}
+                  onClick={handleEmailFromSuccessWindow}
+                  className="w-full h-11 rounded-xl text-xs font-bold uppercase tracking-wider bg-primary hover:bg-primary/95 text-white flex items-center justify-center gap-1.5"
                 >
-                  {sendEmailMutation.isPending ? (
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : isEmailSent ? (
-                    <>
-                      Email Sent <Check className="h-4 w-4" />
-                    </>
-                  ) : (
-                    <>
-                      Send Email to {successClientName || "Client"} <Send className="h-3.5 w-3.5" />
-                    </>
-                  )}
+                  Send Email to {successClientName || "Client"} <Send className="h-3.5 w-3.5" />
                 </Button>
               </div>
             )}

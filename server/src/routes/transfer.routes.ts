@@ -198,7 +198,8 @@ router.post(
         },
       });
 
-      const linkBaseUrl = env.SHORT_LINK_DOMAIN || env.FRONTEND_URL || "http://localhost:5173";
+      const defaultDomain = env.NODE_ENV === "production" ? "https://hirdan.cc" : env.FRONTEND_URL || "http://localhost:5173";
+      const linkBaseUrl = env.SHORT_LINK_DOMAIN || defaultDomain;
       const shareUrl = `${linkBaseUrl.replace(/\/$/, "")}/f/${record.shareId}`;
 
       res.status(201).json({
@@ -385,7 +386,8 @@ router.post(
 
       const { recipientEmail, recipientName, customMessage } = parsed.data;
 
-      const linkBaseUrl = env.SHORT_LINK_DOMAIN || env.FRONTEND_URL || "http://localhost:5173";
+      const defaultDomain = env.NODE_ENV === "production" ? "https://hirdan.cc" : env.FRONTEND_URL || "http://localhost:5173";
+      const linkBaseUrl = env.SHORT_LINK_DOMAIN || defaultDomain;
       const shareUrl = `${linkBaseUrl.replace(/\/$/, "")}/f/${record.shareId}`;
 
       // Escape dynamic content before embedding in HTML to prevent injection
@@ -400,20 +402,16 @@ router.post(
         title: "New File Transfer Shared With You",
         contentHtml: `
           ${
-            // Custom message first
+            // Custom message takes priority. If not present, fallback to upload message.
             safeCustomMessage ? `
             <div style="margin-bottom: 24px; padding: 20px 24px; background: linear-gradient(135deg, #fef9f0 0%, #fff8ed 100%); border-radius: 12px; border-left: 4px solid #f59e0b; border: 1px solid #fde68a;">
               <p style="margin: 0 0 8px 0; font-size: 11px; color: #92400e; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;">📬 Message from your agency</p>
               <div style="font-size: 15px; color: #1e293b; line-height: 1.7; margin: 0;">${safeCustomMessage}</div>
-            </div>` : ""
-          }
-          ${
-            // File upload message second (above File Details)
-            safeUploadMessage ? `
+            </div>` : (safeUploadMessage ? `
             <div style="margin-bottom: 24px; padding: 20px 24px; background: linear-gradient(135deg, #fef9f0 0%, #fff8ed 100%); border-radius: 12px; border-left: 4px solid #f59e0b; border: 1px solid #fde68a;">
               <p style="margin: 0 0 8px 0; font-size: 11px; color: #92400e; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;">📬 Message from your agency</p>
               <div style="font-size: 15px; color: #1e293b; line-height: 1.7; margin: 0;">${safeUploadMessage}</div>
-            </div>` : ""
+            </div>` : "")
           }
           <div style="margin-bottom: 24px; padding: 20px; background-color: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
             <p style="margin: 0 0 8px 0; font-size: 13px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em;">File Details</p>
