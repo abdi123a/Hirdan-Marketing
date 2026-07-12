@@ -153,6 +153,10 @@ export default function FileTransfer() {
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [successShareUrl, setSuccessShareUrl] = useState("");
   const [successFileName, setSuccessFileName] = useState("");
+  const [successTransferId, setSuccessTransferId] = useState<string | null>(null);
+  const [successClientName, setSuccessClientName] = useState<string | null>(null);
+  const [successClientEmail, setSuccessClientEmail] = useState<string | null>(null);
+  const [isEmailSent, setIsEmailSent] = useState(false);
 
   // Access Logs dialog state
   const [logsDialogOpen, setLogsDialogOpen] = useState(false);
@@ -331,22 +335,23 @@ export default function FileTransfer() {
           const linkDomain = import.meta.env.VITE_SHORT_LINK_DOMAIN || window.location.origin;
           const shareUrl = `${linkDomain.replace(/\/$/, "")}/f/${data.shareId}`;
 
+          setSuccessShareUrl(shareUrl);
+          setSuccessFileName(file.name);
+          setSuccessTransferId(data.id);
+          setIsEmailSent(false);
+
           if (selectedClient?.email) {
-            await sendEmailMutation.mutateAsync({
-              transferId: data.id,
-              email: selectedClient.email,
-              name: selectedClient.name,
-            });
+            setSuccessClientName(selectedClient.name);
+            setSuccessClientEmail(selectedClient.email);
           } else {
-            // Store details and open success dialog showing generated link
-            setSuccessShareUrl(shareUrl);
-            setSuccessFileName(file.name);
-            setSuccessDialogOpen(true);
-            
-            // Auto copy generated link to clipboard
-            await navigator.clipboard.writeText(shareUrl);
-            toast.success("Upload complete! Link copied.");
+            setSuccessClientName(null);
+            setSuccessClientEmail(null);
           }
+
+          // Auto copy generated link to clipboard
+          await navigator.clipboard.writeText(shareUrl);
+          toast.success("Upload complete! Link copied.");
+          setSuccessDialogOpen(true);
 
           queryClient.invalidateQueries({ queryKey: ["transfers"] });
           setMessage("");
@@ -631,7 +636,7 @@ export default function FileTransfer() {
                 {selectedClientId !== "none" && (
                   <p className="text-[10px] text-primary flex items-center gap-1.5 px-1 font-medium">
                     <Mail className="h-3.5 w-3.5" />
-                    Autosends email notification on successful upload.
+                    Send button will appear in the success window after upload.
                   </p>
                 )}
               </div>
@@ -1021,6 +1026,46 @@ export default function FileTransfer() {
                 </Button>
               </div>
             </div>
+
+            {successClientEmail && (
+              <div className="pt-2">
+                <Button
+                  onClick={async () => {
+                    if (successTransferId && successClientEmail) {
+                      try {
+                        await sendEmailMutation.mutateAsync({
+                          transferId: successTransferId,
+                          email: successClientEmail,
+                          name: successClientName || "",
+                        });
+                        setIsEmailSent(true);
+                        toast.success("Email sent to client!");
+                      } catch (e) {
+                        toast.error("Failed to send email.");
+                      }
+                    }
+                  }}
+                  disabled={sendEmailMutation.isPending || isEmailSent}
+                  className={`w-full h-11 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                    isEmailSent 
+                      ? "bg-emerald-500 hover:bg-emerald-600 text-white" 
+                      : "bg-primary hover:bg-primary/95 text-white"
+                  }`}
+                >
+                  {sendEmailMutation.isPending ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : isEmailSent ? (
+                    <>
+                      Email Sent <Check className="h-4 w-4" />
+                    </>
+                  ) : (
+                    <>
+                      Send Email to {successClientName || "Client"} <Send className="h-3.5 w-3.5" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
 
             <DialogFooter className="pt-2">
               <Button 
