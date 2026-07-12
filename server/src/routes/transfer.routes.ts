@@ -3,6 +3,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import { ZipArchive } from "archiver";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
 import { prisma } from "../lib/prisma.js";
@@ -77,6 +78,30 @@ function sanitizeRichText(html: string): string {
   return cleanClosing.trim();
 }
 
+/** Generates a unique, short alphanumeric share ID. */
+async function generateUniqueShareId(): Promise<string> {
+  const length = 8;
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let attempts = 0;
+  while (attempts < 10) {
+    const bytes = crypto.randomBytes(length);
+    let shareId = "";
+    for (let i = 0; i < length; i++) {
+      shareId += chars[bytes[i] % chars.length];
+    }
+    // Check if it already exists in the DB
+    const exists = await prisma.sharedFile.findUnique({
+      where: { shareId },
+    });
+    if (!exists) {
+      return shareId;
+    }
+    attempts++;
+  }
+  // Fallback to substring of UUID if we keep colliding
+  return crypto.randomUUID().substring(0, length);
+}
+
 const router = Router();
 
 // ---- Storage config ----------------------------------------------------
@@ -104,7 +129,10 @@ const BLOCKED_EXTENSIONS = new Set([
 
 const upload = multer({
   storage,
-  limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2 GB cap
+  limits: {
+    fileSize: 2 * 1024 * 1024 * 1024, // 2 GB cap per individual file
+    files: 300,                         // max 300 files per upload
+  },
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (BLOCKED_EXTENSIONS.has(ext)) {
@@ -113,6 +141,21 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+/** Zip an array of files into a single archive, resolves with the final byte count. */
+function zipFiles(files: Express.Multer.File[], zipPath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(zipPath);
+    const archive = new ZipArchive({ zlib: { level: 6 } }) as any;
+    archive.on("error", (err: Error) => reject(err));
+    output.on("close", () => resolve(archive.pointer()));
+    archive.pipe(output);
+    for (const f of files) {
+      archive.file(f.path, { name: f.originalname });
+    }
+    archive.finalize();
+  });
+}
 
 /** Dedicated rate limiter for the upload endpoint (30 uploads / hour per IP). */
 const uploadLimiter = rateLimit({
@@ -151,19 +194,18 @@ router.post(
   authenticate,
   requireRole("ADMIN", "MANAGER", "STAFF"),
   uploadLimiter,
-  upload.single("file"),
+  upload.array("file", 300),
   async (req: Request, res: Response, next: NextFunction): Promise<any> => {
+    const uploadedFiles = (req.files as Express.Multer.File[]) ?? [];
     try {
-      if (!req.file) {
+      if (uploadedFiles.length === 0) {
         return next(AppError.badRequest("No file provided."));
       }
 
       const parsed = uploadBodySchema.safeParse(req.body);
       if (!parsed.success) {
-        try {
-          fs.unlinkSync(req.file.path); // clean up orphaned upload
-        } catch (err) {
-          // ignore
+        for (const f of uploadedFiles) {
+          try { fs.unlinkSync(f.path); } catch {}
         }
         return next(AppError.badRequest("Validation failed"));
       }
@@ -184,13 +226,43 @@ router.post(
         expiresAt.setDate(expiresAt.getDate() + days);
       }
 
+      let storedFileName: string;
+      let originalFileName: string;
+      let fileSize: number;
+      let mimeType: string;
+
+      if (uploadedFiles.length === 1) {
+        // Single file — store directly
+        const f = uploadedFiles[0];
+        storedFileName = f.filename;
+        originalFileName = f.originalname;
+        fileSize = f.size;
+        mimeType = f.mimetype;
+      } else {
+        // Multiple files — zip them
+        const zipName = `${crypto.randomUUID()}.zip`;
+        const zipPath = path.join(UPLOAD_DIR, zipName);
+        const zipSize = await zipFiles(uploadedFiles, zipPath);
+        // Remove individual temp files
+        for (const f of uploadedFiles) {
+          try { fs.unlinkSync(f.path); } catch {}
+        }
+        storedFileName = zipName;
+        originalFileName = `files-${uploadedFiles.length}.zip`;
+        fileSize = zipSize;
+        mimeType = "application/zip";
+      }
+
+      const shareId = await generateUniqueShareId();
+
       const record = await prisma.sharedFile.create({
         data: {
-          fileName: req.file.originalname,
-          storedName: req.file.filename,
-          filePath: req.file.filename, // stored relative to UPLOAD_DIR
-          fileSize: req.file.size,
-          mimeType: req.file.mimetype,
+          shareId,
+          fileName: originalFileName,
+          storedName: storedFileName,
+          filePath: storedFileName, // stored relative to UPLOAD_DIR
+          fileSize,
+          mimeType,
           clientId: clientId || null,
           uploadedById: req.user!.userId as string,
           message: message || null,
@@ -207,9 +279,14 @@ router.post(
         shareId: record.shareId,
         shareUrl,
         fileName: record.fileName,
+        fileCount: uploadedFiles.length,
         expiresAt: record.expiresAt,
       });
     } catch (err) {
+      // Clean up any uploaded files on error
+      for (const f of uploadedFiles) {
+        try { fs.unlinkSync(f.path); } catch {}
+      }
       console.error("Transfer upload failed:", err);
       next(err);
     }

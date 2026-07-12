@@ -149,7 +149,7 @@ export default function FileTransfer() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLabel, setPreviewLabel] = useState("");
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   // Post-upload share popup state
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
@@ -255,7 +255,8 @@ export default function FileTransfer() {
   });
 
   const uploadFile = useCallback(
-    async (file: File) => {
+    async (files: File[]) => {
+      if (!files.length) return;
       setUploadProgress(0);
       setUploadSpeed("0 B/s");
       setTimeRemaining("Calculating...");
@@ -264,7 +265,9 @@ export default function FileTransfer() {
       
       try {
         const formData = new FormData();
-        formData.append("file", file);
+        for (const f of files) {
+          formData.append("file", f);
+        }
         
         if (expiryType === "preset") {
           formData.append("expiryValue", String(expiryPreset));
@@ -332,15 +335,15 @@ export default function FileTransfer() {
           xhr.withCredentials = true;
           xhr.send(formData);
         }).then(async (data: any) => {
-          setSelectedFile(null);
+          setSelectedFiles([]);
           const selectedClient = clients.find((c) => c.id === selectedClientId);
 
-          // Generate local frontend URL using window.location.origin or custom short link domain to match environment ports
+          // Generate local frontend URL
           const linkDomain = import.meta.env.VITE_SHORT_LINK_DOMAIN || (import.meta.env.PROD ? "https://hirdan.cc" : window.location.origin);
           const shareUrl = `${linkDomain.replace(/\/$/, "")}/f/${data.shareId}`;
 
           setSuccessShareUrl(shareUrl);
-          setSuccessFileName(file.name);
+          setSuccessFileName(data.fileName || (files.length === 1 ? files[0].name : `${files.length} files`));
           setSuccessTransferId(data.id);
           setSuccessUploadMessage(message || null);
           setIsEmailSent(false);
@@ -372,13 +375,16 @@ export default function FileTransfer() {
         setTimeRemaining(null);
       }
     },
-    [expiryType, expiryPreset, customExpiryValue, customExpiryUnit, message, selectedClientId, clients, sendEmailMutation, queryClient]
+    [expiryType, expiryPreset, customExpiryValue, customExpiryUnit, message, selectedClientId, clients, queryClient]
   );
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
-      if (acceptedFiles[0]) {
-        setSelectedFile(acceptedFiles[0]);
+      if (acceptedFiles.length > 0) {
+        setSelectedFiles(prev => {
+          const combined = [...prev, ...acceptedFiles];
+          return combined.slice(0, 300); // cap at 300
+        });
       }
     },
     []
@@ -386,7 +392,8 @@ export default function FileTransfer() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    multiple: false,
+    multiple: true,
+    maxFiles: 300,
     maxSize: 2 * 1024 * 1024 * 1024,
   });
 
@@ -564,29 +571,38 @@ export default function FileTransfer() {
                       </div>
                     </div>
                   </div>
-                ) : selectedFile ? (
-                  <div className="space-y-3 py-2 animate-fade-in">
-                    <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-emerald-100 dark:bg-emerald-950/30">
-                      <File className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs font-bold text-slate-100 truncate max-w-[200px] mx-auto" title={selectedFile.name}>
-                        {selectedFile.name}
+                ) : selectedFiles.length > 0 ? (
+                  <div className="space-y-2 py-1" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between px-1 mb-2">
+                      <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">
+                        {selectedFiles.length} file{selectedFiles.length > 1 ? "s" : ""} selected
+                        {" · "}{formatBytes(selectedFiles.reduce((acc, f) => acc + f.size, 0))}
                       </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {formatBytes(selectedFile.size)}
-                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setSelectedFiles([]); }}
+                        className="text-[9px] text-rose-500 hover:text-rose-600 font-bold uppercase tracking-wide"
+                      >
+                        Clear All
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedFile(null);
-                      }}
-                      className="text-[10px] text-rose-500 hover:text-rose-600 font-bold underline transition-colors"
-                    >
-                      Remove File
-                    </button>
+                    <div className="max-h-[130px] overflow-y-auto space-y-1 pr-1">
+                      {selectedFiles.map((f, idx) => (
+                        <div key={idx} className="flex items-center gap-2 bg-muted/50 rounded-lg px-2.5 py-1.5">
+                          <File className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                          <span className="flex-1 text-[10px] truncate text-foreground" title={f.name}>{f.name}</span>
+                          <span className="text-[9px] text-muted-foreground shrink-0">{formatBytes(f.size)}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setSelectedFiles(prev => prev.filter((_, i) => i !== idx)); }}
+                            className="text-rose-400 hover:text-rose-600 ml-1 shrink-0"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-muted-foreground text-center pt-1">Click to add more files</p>
                   </div>
                 ) : (
                   <div className="space-y-3 py-2">
@@ -595,14 +611,14 @@ export default function FileTransfer() {
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs font-semibold text-foreground">
-                        Drag & drop a file here
+                        Drag & drop files here
                       </p>
                       <p className="text-[10px] text-muted-foreground">
-                        or click to browse from device
+                        or click to browse — up to 300 files
                       </p>
                     </div>
                     <span className="inline-block text-[9px] bg-muted px-2.5 py-1 rounded-md text-muted-foreground font-medium">
-                      Max Size: 2 GB
+                      Max 2 GB per file
                     </span>
                   </div>
                 )}
@@ -730,11 +746,11 @@ export default function FileTransfer() {
               <div className="pt-2">
                 <Button
                   onClick={() => {
-                    if (selectedFile) {
-                      uploadFile(selectedFile);
+                    if (selectedFiles.length > 0) {
+                      uploadFile(selectedFiles);
                     }
                   }}
-                  disabled={!selectedFile || uploadProgress !== null}
+                  disabled={selectedFiles.length === 0 || uploadProgress !== null}
                   className="w-full h-11 rounded-xl text-xs font-bold uppercase tracking-wider bg-primary hover:bg-primary/95 text-white flex items-center justify-center gap-1.5"
                 >
                   {uploadProgress !== null ? (
@@ -743,11 +759,11 @@ export default function FileTransfer() {
                     </>
                   ) : selectedClientId !== "none" ? (
                     <>
-                      Upload & Share with Client <Send className="h-3.5 w-3.5" />
+                      Upload{selectedFiles.length > 1 ? ` ${selectedFiles.length} Files` : ""} & Share with Client <Send className="h-3.5 w-3.5" />
                     </>
                   ) : (
                     <>
-                      Upload & Generate Link <UploadCloud className="h-3.5 w-3.5" />
+                      Upload{selectedFiles.length > 1 ? ` ${selectedFiles.length} Files` : ""} & Generate Link <UploadCloud className="h-3.5 w-3.5" />
                     </>
                   )}
                 </Button>
