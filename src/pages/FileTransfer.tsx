@@ -149,6 +149,8 @@ export default function FileTransfer() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLabel, setPreviewLabel] = useState("");
 
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
   // Post-upload share popup state
   const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [successShareUrl, setSuccessShareUrl] = useState("");
@@ -330,6 +332,7 @@ export default function FileTransfer() {
           xhr.withCredentials = true;
           xhr.send(formData);
         }).then(async (data: any) => {
+          setSelectedFile(null);
           const selectedClient = clients.find((c) => c.id === selectedClientId);
 
           // Generate local frontend URL using window.location.origin or custom short link domain to match environment ports
@@ -375,10 +378,10 @@ export default function FileTransfer() {
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
       if (acceptedFiles[0]) {
-        uploadFile(acceptedFiles[0]);
+        setSelectedFile(acceptedFiles[0]);
       }
     },
-    [uploadFile]
+    []
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -561,6 +564,30 @@ export default function FileTransfer() {
                       </div>
                     </div>
                   </div>
+                ) : selectedFile ? (
+                  <div className="space-y-3 py-2 animate-fade-in">
+                    <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-emerald-100 dark:bg-emerald-950/30">
+                      <File className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-slate-100 truncate max-w-[200px] mx-auto" title={selectedFile.name}>
+                        {selectedFile.name}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {formatBytes(selectedFile.size)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedFile(null);
+                      }}
+                      className="text-[10px] text-rose-500 hover:text-rose-600 font-bold underline transition-colors"
+                    >
+                      Remove File
+                    </button>
+                  </div>
                 ) : (
                   <div className="space-y-3 py-2">
                     <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-muted group-hover:scale-105 transition-transform duration-300">
@@ -697,6 +724,33 @@ export default function FileTransfer() {
                   maxHeight="160px"
                   placeholder="Tell your client what this file is..."
                 />
+              </div>
+
+              {/* Action Button */}
+              <div className="pt-2">
+                <Button
+                  onClick={() => {
+                    if (selectedFile) {
+                      uploadFile(selectedFile);
+                    }
+                  }}
+                  disabled={!selectedFile || uploadProgress !== null}
+                  className="w-full h-11 rounded-xl text-xs font-bold uppercase tracking-wider bg-primary hover:bg-primary/95 text-white flex items-center justify-center gap-1.5"
+                >
+                  {uploadProgress !== null ? (
+                    <>
+                      Uploading... {uploadProgress}%
+                    </>
+                  ) : selectedClientId !== "none" ? (
+                    <>
+                      Upload & Share with Client <Send className="h-3.5 w-3.5" />
+                    </>
+                  ) : (
+                    <>
+                      Upload & Generate Link <UploadCloud className="h-3.5 w-3.5" />
+                    </>
+                  )}
+                </Button>
               </div>
 
             </CardContent>
