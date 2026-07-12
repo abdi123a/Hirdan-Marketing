@@ -44,6 +44,7 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().optional(),
   LANDING_URL: z.string().optional(),
   COOKIE_DOMAIN: z.string().optional(),
+  SHORT_LINK_DOMAIN: z.string().optional(),
   // ─── Email (Resend) — optional; can be set via admin settings panel ───
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().email().optional(),

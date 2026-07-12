@@ -144,6 +144,7 @@ function AppRoutes() {
       <Route path="/client/login" element={<ClientLoginPage />} />
       <Route path="/verify/:token" element={<VerifyDocumentPage />} />
       <Route path="/share/:shareId" element={<ShareDownload />} />
+      <Route path="/f/:shareId" element={<ShareDownload />} />
 
       {/* Client portal (protected - client role) */}
       <Route

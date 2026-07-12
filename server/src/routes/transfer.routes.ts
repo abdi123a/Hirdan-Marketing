@@ -10,6 +10,7 @@ import { authenticate, requireRole } from "../middleware/auth.js";
 import { PATHS } from "../lib/paths.js";
 import { sendEmail, generateEmailHtml } from "../lib/email.js";
 import { AppError } from "../lib/errors.js";
+import { env } from "../config/env.js";
 
 // ---- Helpers --------------------------------------------------------
 
@@ -29,6 +30,42 @@ function escapeHtml(str: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+/**
+ * Sanitizes rich-text HTML from the frontend to only allow safe inline
+ * formatting tags (b, strong, i, em, u, s, ul, ol, li, br, p).
+ * Strips all attributes except those on safe tags, and removes script/style/etc.
+ */
+function sanitizeRichText(html: string): string {
+  // Remove all dangerous tags entirely (script, style, iframe, object, etc.)
+  const stripped = html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+    .replace(/<object[\s\S]*?>/gi, "")
+    .replace(/<embed[\s\S]*?>/gi, "")
+    .replace(/<form[\s\S]*?<\/form>/gi, "")
+    .replace(/<input[\s\S]*?>/gi, "")
+    .replace(/<link[\s\S]*?>/gi, "")
+    .replace(/<meta[\s\S]*?>/gi, "");
+
+  // Strip all HTML attributes from all remaining tags (keeps only tag structure)
+  // Then only allow our safe whitelist of tags.
+  const noAttribs = stripped.replace(/<(\w+)[^>]*?(\/?)>/g, (_match: string, tag: string, selfClose: string) => {
+    const safeTags = new Set(["b","strong","i","em","u","s","strike","ul","ol","li","br","p","span"]);
+    if (safeTags.has(tag.toLowerCase())) return `<${tag.toLowerCase()}${selfClose}>`;
+    return ""; // strip unknown/unsafe opening tags
+  });
+
+  // Also strip closing tags not in our whitelist
+  const cleanClosing = noAttribs.replace(/<\/(\w+)>/g, (_match: string, tag: string) => {
+    const safeTags = new Set(["b","strong","i","em","u","s","strike","ul","ol","li","p","span"]);
+    if (safeTags.has(tag.toLowerCase())) return `</${tag.toLowerCase()}>`;
+    return "";
+  });
+
+  return cleanClosing.trim();
 }
 
 const router = Router();
@@ -152,8 +189,8 @@ router.post(
         },
       });
 
-      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-      const shareUrl = `${frontendUrl.replace(/\/$/, "")}/share/${record.shareId}`;
+      const linkBaseUrl = env.SHORT_LINK_DOMAIN || env.FRONTEND_URL || "http://localhost:5173";
+      const shareUrl = `${linkBaseUrl.replace(/\/$/, "")}/f/${record.shareId}`;
 
       res.status(201).json({
         id: record.id,
@@ -310,6 +347,7 @@ router.get("/:shareId/download", async (req: Request, res: Response, next: NextF
 const sendEmailSchema = z.object({
   recipientEmail: z.string().email(),
   recipientName: z.string().optional(),
+  customMessage: z.string().max(5000).optional(),
 });
 
 router.post(
@@ -336,26 +374,37 @@ router.post(
         return next(AppError.badRequest("Invalid recipient email structure."));
       }
 
-      const { recipientEmail, recipientName } = parsed.data;
+      const { recipientEmail, recipientName, customMessage } = parsed.data;
 
-      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-      const shareUrl = `${frontendUrl.replace(/\/$/, "")}/share/${record.shareId}`;
+      const linkBaseUrl = env.SHORT_LINK_DOMAIN || env.FRONTEND_URL || "http://localhost:5173";
+      const shareUrl = `${linkBaseUrl.replace(/\/$/, "")}/f/${record.shareId}`;
 
       // Escape dynamic content before embedding in HTML to prevent injection
       const safeFileName = escapeHtml(record.fileName);
-      const safeMessage = record.message ? escapeHtml(record.message) : null;
+      const safeUploadMessage = record.message ? escapeHtml(record.message) : null;
       const safeShareUrl = encodeURI(shareUrl); // encode the URL to be safe in an href
+
+      // Sanitize the rich-text custom message from the dialog (keeps safe formatting)
+      const safeCustomMessage = customMessage ? sanitizeRichText(customMessage) : null;
 
       const emailHtml = await generateEmailHtml({
         title: "New File Transfer Shared With You",
         contentHtml: `
+          ${
+            // Custom message first — client sees it before anything else
+            safeCustomMessage ? `
+            <div style="margin-bottom: 28px; padding: 20px 24px; background: linear-gradient(135deg, #fef9f0 0%, #fff8ed 100%); border-radius: 12px; border-left: 4px solid #f59e0b; border: 1px solid #fde68a;">
+              <p style="margin: 0 0 8px 0; font-size: 11px; color: #92400e; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;">📬 Message from your agency</p>
+              <div style="font-size: 15px; color: #1e293b; line-height: 1.7; margin: 0;">${safeCustomMessage}</div>
+            </div>` : ""
+          }
           <div style="margin-bottom: 24px; padding: 20px; background-color: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
             <p style="margin: 0 0 8px 0; font-size: 13px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em;">File Details</p>
             <p style="margin: 0 0 6px 0; font-size: 16px; font-weight: bold; color: #0f172a;">${safeFileName}</p>
             <p style="margin: 0 0 12px 0; font-size: 14px; color: #475569; font-family: monospace;">Size: ${formatBytes(record.fileSize)}</p>
             <p style="margin: 0; font-size: 13px; color: #64748b;">Available until: ${new Date(record.expiresAt).toLocaleDateString()}</p>
           </div>
-          ${safeMessage ? `<p style="margin-bottom: 24px; font-style: italic; color: #475569; border-left: 3px solid #e2e8f0; padding-left: 12px;">"${safeMessage}"</p>` : ""}
+          ${safeUploadMessage ? `<p style="margin-bottom: 24px; font-style: italic; color: #475569; border-left: 3px solid #e2e8f0; padding-left: 12px;">"${safeUploadMessage}"</p>` : ""}
           <div style="text-align: center; margin: 32px 0;">
             <a href="${safeShareUrl}" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #d97706, #f59e0b); color: #000; font-weight: bold; text-decoration: none; border-radius: 8px; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);">Download Shared File</a>
           </div>

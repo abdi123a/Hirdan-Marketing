@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDropzone } from "react-dropzone";
 import { 
@@ -14,7 +14,6 @@ import { useAuthStore } from "@/lib/auth-store";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { QRCodeSVG } from "qrcode.react";
@@ -43,6 +42,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import FilePreviewModal from "@/components/FilePreviewModal";
+import RichTextEditor from "@/components/RichTextEditor";
 
 interface TransferItem {
   id: string;
@@ -140,6 +140,9 @@ export default function FileTransfer() {
   const [emailDialogTransfer, setEmailDialogTransfer] = useState<TransferItem | null>(null);
   const [recipientEmail, setRecipientEmail] = useState("");
   const [recipientName, setRecipientName] = useState("");
+  const [customMessage, setCustomMessage] = useState("");
+  const richTextRef = useRef<HTMLDivElement>(null);
+  const noteRichTextRef = useRef<HTMLDivElement>(null);
 
   // In-app File preview modal state
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -179,20 +182,24 @@ export default function FileTransfer() {
       transferId,
       email,
       name,
+      message,
     }: {
       transferId: string;
       email: string;
       name?: string;
+      message?: string;
     }) => {
       return apiFetch(`/transfer/${transferId}/send`, {
         method: "POST",
-        body: JSON.stringify({ recipientEmail: email, recipientName: name }),
+        body: JSON.stringify({ recipientEmail: email, recipientName: name, customMessage: message }),
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transfers"] });
       toast.success("Email sent successfully.");
       setEmailDialogOpen(false);
+      setCustomMessage("");
+      if (richTextRef.current) richTextRef.current.innerHTML = "";
     },
     onError: (err: any) => {
       console.error(err);
@@ -320,8 +327,9 @@ export default function FileTransfer() {
         }).then(async (data: any) => {
           const selectedClient = clients.find((c) => c.id === selectedClientId);
 
-          // Generate local frontend URL using window.location.origin to match environment ports
-          const shareUrl = `${window.location.origin}/share/${data.shareId}`;
+          // Generate local frontend URL using window.location.origin or custom short link domain to match environment ports
+          const linkDomain = import.meta.env.VITE_SHORT_LINK_DOMAIN || window.location.origin;
+          const shareUrl = `${linkDomain.replace(/\/$/, "")}/f/${data.shareId}`;
 
           if (selectedClient?.email) {
             await sendEmailMutation.mutateAsync({
@@ -342,6 +350,7 @@ export default function FileTransfer() {
 
           queryClient.invalidateQueries({ queryKey: ["transfers"] });
           setMessage("");
+          if (noteRichTextRef.current) noteRichTextRef.current.innerHTML = "";
           setSelectedClientId("none");
         });
       } catch (err: any) {
@@ -372,7 +381,8 @@ export default function FileTransfer() {
   });
 
   const handleCopyLink = (shareId: string) => {
-    const shareUrl = `${window.location.origin}/share/${shareId}`;
+    const linkDomain = import.meta.env.VITE_SHORT_LINK_DOMAIN || window.location.origin;
+    const shareUrl = `${linkDomain.replace(/\/$/, "")}/f/${shareId}`;
     navigator.clipboard.writeText(shareUrl).then(() => {
       setCopiedId(shareId);
       toast.success("Link copied to clipboard!");
@@ -384,6 +394,8 @@ export default function FileTransfer() {
     setEmailDialogTransfer(transfer);
     setRecipientEmail(transfer.client?.email || "");
     setRecipientName(transfer.client?.name || "");
+    setCustomMessage("");
+    if (richTextRef.current) richTextRef.current.innerHTML = "";
     setEmailDialogOpen(true);
   };
 
@@ -394,12 +406,15 @@ export default function FileTransfer() {
       toast.error("Please enter a valid email address.");
       return;
     }
+    const msgHtml = richTextRef.current?.innerHTML?.trim() || "";
     sendEmailMutation.mutate({
       transferId: emailDialogTransfer.id,
       email: recipientEmail,
-      name: recipientName || undefined
+      name: recipientName || undefined,
+      message: msgHtml || undefined,
     });
   };
+
 
   const handlePreviewClick = (transfer: TransferItem) => {
     // Add ?preview=true parameter to avoid incrementing downloadCount in-app
@@ -622,17 +637,17 @@ export default function FileTransfer() {
               </div>
 
               {/* Optional note */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">
                   Add Note / Message (Optional)
                 </label>
-                <Textarea
-                  placeholder="Tell your client what this file is..."
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
+                <RichTextEditor
+                  editorRef={noteRichTextRef}
+                  onChange={(html) => setMessage(html)}
                   disabled={uploadProgress !== null}
-                  className="min-h-[80px] rounded-xl bg-muted/50 border-border/50 focus:bg-card resize-none text-sm"
-                  maxLength={500}
+                  minHeight="90px"
+                  maxHeight="160px"
+                  placeholder="Tell your client what this file is..."
                 />
               </div>
 
@@ -861,8 +876,14 @@ export default function FileTransfer() {
       </div>
 
       {/* Recipient Email input Popup Dialog */}
-      <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
-        <DialogContent className="max-w-[420px] rounded-3xl">
+      <Dialog open={emailDialogOpen} onOpenChange={(open) => {
+        setEmailDialogOpen(open);
+        if (!open) {
+          setCustomMessage("");
+          if (richTextRef.current) richTextRef.current.innerHTML = "";
+        }
+      }}>
+        <DialogContent className="max-w-[500px] rounded-3xl">
           <form onSubmit={handleEmailSendSubmit} className="space-y-4">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-foreground font-bold">
@@ -903,13 +924,31 @@ export default function FileTransfer() {
                   className="h-11 rounded-xl bg-muted/50 border-border/50 focus:bg-card text-sm"
                 />
               </div>
+
+              {/* Rich Text Custom Message */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Custom Message for Client (Optional)
+                </Label>
+                <RichTextEditor
+                  editorRef={richTextRef}
+                  onChange={(html) => setCustomMessage(html)}
+                  minHeight="110px"
+                  maxHeight="220px"
+                  placeholder="Write a personal message to your client... (appears at the top of the email)"
+                />
+              </div>
             </div>
 
             <DialogFooter className="pt-2 gap-2">
               <Button 
                 type="button" 
                 variant="outline" 
-                onClick={() => setEmailDialogOpen(false)} 
+                onClick={() => {
+                  setEmailDialogOpen(false);
+                  setCustomMessage("");
+                  if (richTextRef.current) richTextRef.current.innerHTML = "";
+                }} 
                 className="h-10 rounded-xl text-xs font-semibold uppercase tracking-wider border-border/50 hover:bg-muted"
               >
                 Cancel
