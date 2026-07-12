@@ -9,6 +9,10 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      # Resolve SSH_PORT with a proper env-level fallback (secrets.SSH_PORT || '22')
+      SSH_PORT: ${{ secrets.SSH_PORT != '' && secrets.SSH_PORT || '22' }}
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -33,62 +37,104 @@ jobs:
           npx prisma generate
           npm run build
 
-      # Step 3: Deploy pre-compiled files via Rsync
-      - name: Deploy files to VPS via Rsync
+      # Step 3: Setup SSH key + allow GitHub Actions IPs on VPS firewall
+      - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          
+          # Pre-trust the VPS host key to avoid interactive prompt
+          ssh-keyscan -p ${{ env.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      # Step 4: Open VPS firewall for this runner's IP, deploy, then close it
+      - name: Get GitHub Actions runner IP
+        id: runner_ip
+        run: echo "ip=$(curl -s https://api.ipify.org)" >> $GITHUB_OUTPUT
+
+      - name: Temporarily allow runner IP through VPS firewall
+        run: |
+          RUNNER_IP="${{ steps.runner_ip.outputs.ip }}"
+          echo "🔓 Allowing runner IP $RUNNER_IP on port ${{ env.SSH_PORT }}..."
+          ssh -p ${{ env.SSH_PORT }} \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=10 \
+            -i ~/.ssh/id_ed25519 \
+            root@${{ secrets.SSH_HOST }} \
+            "ufw allow from $RUNNER_IP to any port ${{ env.SSH_PORT }} proto tcp comment 'github-actions-runner' || true" 2>/dev/null || \
+          echo "⚠️  ufw rule not added (firewall may not be enabled or already open — continuing)"
+
+      # Step 5: Deploy pre-compiled files via Rsync
+      - name: Deploy Frontend files to VPS
+        run: |
           echo "📁 Copying Frontend static files to app.hirdanmarketing.com..."
-          rsync -avz -e "ssh -p ${{ secrets.SSH_PORT || 22 }} -o StrictHostKeyChecking=no -o BatchMode=yes -i ~/.ssh/id_ed25519" \
-            dist/ root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
-            
+          rsync -avz --delete \
+            -e "ssh -p ${{ env.SSH_PORT }} -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30 -i ~/.ssh/id_ed25519" \
+            dist/ \
+            root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
+
+      - name: Deploy Backend files to VPS
+        run: |
           echo "📁 Copying Backend compiled files to api.hirdanmarketing.com..."
-          # Copy compiled build folder, package configuration, and prisma setup
-          rsync -avz -e "ssh -p ${{ secrets.SSH_PORT || 22 }} -o StrictHostKeyChecking=no -o BatchMode=yes -i ~/.ssh/id_ed25519" \
+          rsync -avz \
+            -e "ssh -p ${{ env.SSH_PORT }} -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30 -i ~/.ssh/id_ed25519" \
             server/dist server/package.json server/package-lock.json server/prisma \
             root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
 
-      # Step 4: Run server commands (dependencies install & restart service)
+      # Step 6: Run server commands (dependencies install & restart service)
       - name: Execute Server Commands
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
+          port: ${{ env.SSH_PORT }}
+          timeout: 120s
+          command_timeout: 10m
           script: |
             echo "🚀 Finalizing Server Setup..."
-            
+
             # Fix ownership permissions for the frontend site
             chown -R hirdanmarketing-app:hirdanmarketing-app /home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
-            
+
             # Ensure uploads symlink is intact (protects branding files from being wiped)
             mkdir -p /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/public
             ln -sfn /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/uploads \
               /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/public/uploads
-            
+
             # Finish backend setup
             cd /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
-            
+
             echo "📦 Installing all Backend dependencies (incl. dev for Prisma CLI)..."
             npm install --legacy-peer-deps
-            
+
             echo "⚙️ Generating Database Client on server..."
             ./node_modules/.bin/prisma generate
 
             echo "🗄️ Pushing database schema..."
             ./node_modules/.bin/prisma db push --accept-data-loss
-            
+
             echo "🧹 Pruning dev dependencies..."
             npm prune --production --legacy-peer-deps
-            
+
             # Fix ownership permissions for the backend site
             chown -R hirdanmarketing-api:hirdanmarketing-api /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
-            
+
             # --- RESTART NODEJS SERVICE ---
             echo "🔄 Restarting Node.js service for api.hirdanmarketing.com..."
             pm2 restart api || pm2 restart all || echo "Restart command failed, manual intervention needed."
-            
+
             echo "✅ Deployment completed successfully!"
+
+      # Step 7: Revoke the temporary firewall rule (always runs, even on failure)
+      - name: Revoke temporary runner IP from VPS firewall
+        if: always()
+        run: |
+          RUNNER_IP="${{ steps.runner_ip.outputs.ip }}"
+          echo "🔒 Removing runner IP $RUNNER_IP from VPS firewall..."
+          ssh -p ${{ env.SSH_PORT }} \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=10 \
+            -i ~/.ssh/id_ed25519 \
+            root@${{ secrets.SSH_HOST }} \
+            "ufw delete allow from $RUNNER_IP to any port ${{ env.SSH_PORT }} proto tcp || true" 2>/dev/null || \
+          echo "⚠️  Could not remove ufw rule (may not have been added)"
