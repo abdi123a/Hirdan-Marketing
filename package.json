@@ -1,7 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "1.7.0",
+  "version": "2.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -58,9 +58,10 @@
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
+    "react-dropzone": "^16.0.0",
+    "react-google-recaptcha-v3": "^1.11.0",
     "react-hook-form": "^7.61.1",
     "react-resizable-panels": "^2.1.9",
-    "react-google-recaptcha-v3": "^1.11.0",
     "react-router-dom": "^6.30.1",
     "react-to-print": "^3.3.0",
     "recharts": "^2.15.4",

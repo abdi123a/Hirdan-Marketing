@@ -294,7 +294,7 @@ export default function ProformaDetailsPage() {
 
       // Call API
       const dbId = proforma._dbId || proforma.id;
-      const response = await apiFetch(`/proformas/${dbId}/send-email`, {
+      const response = await apiFetch<{ success: boolean; message?: string }>(`/proformas/${dbId}/send-email`, {
         method: "POST",
         body: JSON.stringify({
           to: emailTo,

@@ -200,7 +200,7 @@ export default function InvoiceDetailsPage() {
 
       // Call API
       const dbId = invoice._dbId || invoice.id;
-      const response = await apiFetch(`/invoices/${dbId}/send-email`, {
+      const response = await apiFetch<{ success: boolean; message?: string }>(`/invoices/${dbId}/send-email`, {
         method: "POST",
         body: JSON.stringify({
           to: emailTo,

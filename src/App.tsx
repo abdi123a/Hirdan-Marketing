@@ -60,6 +60,8 @@ import FinancialReportPage from "./pages/FinancialReportPage.tsx";
 import ExpensesPage from "./pages/ExpensesPage.tsx";
 import HrDocumentsPage from "@/pages/HrDocumentsPage.tsx";
 import GenerateHrDocumentPage from "@/pages/GenerateHrDocumentPage.tsx";
+import FileTransfer from "./pages/FileTransfer.tsx";
+import ShareDownload from "./pages/ShareDownload.tsx";
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api-client";
@@ -141,6 +143,7 @@ function AppRoutes() {
       <Route path="/login" element={<AdminLoginPage />} />
       <Route path="/client/login" element={<ClientLoginPage />} />
       <Route path="/verify/:token" element={<VerifyDocumentPage />} />
+      <Route path="/share/:shareId" element={<ShareDownload />} />
 
       {/* Client portal (protected - client role) */}
       <Route
@@ -231,6 +234,7 @@ function AppRoutes() {
         <Route path="services/edit/:id" element={<EditServicePage />} />
         <Route path="services/view/:id" element={<ServiceDetailsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="transfers" element={<FileTransfer />} />
         <Route path="leads" element={<LeadsPage />} />
       </Route>
       <Route path="*" element={<NotFound />} />

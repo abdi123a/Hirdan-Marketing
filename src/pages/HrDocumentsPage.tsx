@@ -2,18 +2,18 @@ import { useState, useEffect, useRef, KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAgencyStore } from "@/lib/store";
 import { useAuthStore } from "@/lib/auth-store";
-import { 
-  Card, CardContent, CardDescription, CardHeader, CardTitle 
+import {
+  Card, CardContent, CardDescription, CardHeader, CardTitle
 } from "@/components/ui/card";
-import { 
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
-import { 
+import {
   Plus, FileText, Landmark, FileSpreadsheet, ShieldAlert,
   Download, RefreshCw, Eye, CheckCircle2, XCircle, Search, Mail, Loader2,
   GraduationCap, Award, Send, RotateCcw, X, AtSign, Users, Paperclip
@@ -90,8 +90,8 @@ function CcTagInput({ tags, onAdd, onRemove }: { tags: string[]; onAdd: (v: stri
 export default function HrDocumentsPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { 
-    hrDocuments, fetchHrDocuments, approveHrDocument, rejectHrDocument, sendHrDocumentEmail, settings: rawSettings 
+  const {
+    hrDocuments, fetchHrDocuments, approveHrDocument, rejectHrDocument, sendHrDocumentEmail, settings: rawSettings
   } = useAgencyStore();
   const settings = rawSettings || { agencyName: "" };
 
@@ -125,7 +125,7 @@ export default function HrDocumentsPage() {
     setLoading(true);
     try {
       await fetchHrDocuments({ pendingApproval: activeTab === 'approvals' });
-    } catch (err) {}
+    } catch (err) { }
     setLoading(false);
   };
 
@@ -318,7 +318,7 @@ export default function HrDocumentsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
-                <Button 
+                <Button
                   onClick={() => navigate("/dashboard/hr/generate?type=WORK_CERTIFICATE")}
                   className="w-full h-9 text-xs rounded-lg font-semibold"
                   variant="hero"
@@ -340,7 +340,7 @@ export default function HrDocumentsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
-                <Button 
+                <Button
                   onClick={() => navigate("/dashboard/hr/generate?type=SALARY_CERTIFICATE")}
                   className="w-full h-9 text-xs rounded-lg font-semibold"
                   variant="hero"
@@ -362,7 +362,7 @@ export default function HrDocumentsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
-                <Button 
+                <Button
                   onClick={() => navigate("/dashboard/hr/generate?type=PAYSLIP")}
                   className="w-full h-9 text-xs rounded-lg font-semibold"
                   variant="hero"
@@ -384,7 +384,7 @@ export default function HrDocumentsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
-                <Button 
+                <Button
                   onClick={() => navigate("/dashboard/hr/generate?type=WARNING_CERTIFICATE")}
                   className="w-full h-9 text-xs rounded-lg font-semibold"
                   variant="hero"
@@ -406,7 +406,7 @@ export default function HrDocumentsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
-                <Button 
+                <Button
                   onClick={() => navigate("/dashboard/hr/generate?type=INTERNSHIP_ACCEPTED_CERTIFICATE")}
                   className="w-full h-9 text-xs rounded-lg font-semibold"
                   variant="hero"
@@ -428,7 +428,7 @@ export default function HrDocumentsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
-                <Button 
+                <Button
                   onClick={() => navigate("/dashboard/hr/generate?type=INTERNSHIP_LETTER")}
                   className="w-full h-9 text-xs rounded-lg font-semibold"
                   variant="hero"
@@ -468,7 +468,7 @@ export default function HrDocumentsPage() {
                   <TableBody>
                     {filteredDocs.map((doc) => {
                       const isDownloadable = doc.status === 'APPROVED' || doc.status === 'FINAL';
-                      
+
                       return (
                         <TableRow key={doc.id} className="hover:bg-muted/5">
                           <TableCell className="font-mono text-xs font-bold text-primary">{doc.docNumber}</TableCell>
@@ -486,17 +486,16 @@ export default function HrDocumentsPage() {
                             {formatDate(doc.generatedAt)}
                           </TableCell>
                           <TableCell>
-                            <Badge 
-                              variant="outline" 
-                              className={`text-[9px] font-black uppercase tracking-wider border-0 px-2.5 py-0.5 rounded-full ${
-                                doc.status === 'APPROVED' || doc.status === 'FINAL' 
+                            <Badge
+                              variant="outline"
+                              className={`text-[9px] font-black uppercase tracking-wider border-0 px-2.5 py-0.5 rounded-full ${doc.status === 'APPROVED' || doc.status === 'FINAL'
                                   ? 'bg-emerald-500/10 text-emerald-600'
                                   : doc.status === 'PENDING_APPROVAL'
                                     ? 'bg-amber-500/10 text-amber-600'
                                     : doc.status === 'REJECTED'
                                       ? 'bg-red-500/10 text-red-600'
                                       : 'bg-muted/40 text-muted-foreground'
-                              }`}
+                                }`}
                             >
                               {doc.status}
                             </Badge>

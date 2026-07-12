@@ -1007,6 +1007,7 @@ export default function AddEmployeePage() {
                       file={getSlotFile("ID_DOC", "National ID scan")}
                       onUpload={(e) => handleFileUpload(e, "ID_DOC", "National ID scan")}
                       onDelete={handleFileDelete}
+                      onPreview={(url, label) => { setPreviewFileUrl(url); setPreviewFileLabel(label); }}
                     />
                   </div>
 
@@ -1022,6 +1023,7 @@ export default function AddEmployeePage() {
                       file={getSlotFile("CONTRACT", "Signed Contract")}
                       onUpload={(e) => handleFileUpload(e, "CONTRACT", "Signed Contract")}
                       onDelete={handleFileDelete}
+                      onPreview={(url, label) => { setPreviewFileUrl(url); setPreviewFileLabel(label); }}
                     />
                   </div>
                 </div>
@@ -1037,6 +1039,7 @@ export default function AddEmployeePage() {
                       file={getSlotFile("CV", "Resume")}
                       onUpload={(e) => handleFileUpload(e, "CV", "Resume")}
                       onDelete={handleFileDelete}
+                      onPreview={(url, label) => { setPreviewFileUrl(url); setPreviewFileLabel(label); }}
                     />
                   </div>
                 </div>
@@ -1774,9 +1777,10 @@ interface UploadSlotProps {
   file?: EmployeeFile;
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onDelete: (id: string) => void;
+  onPreview: (url: string, label: string) => void;
 }
 
-function UploadSlot({ category, label, isUploading, file, onUpload, onDelete }: UploadSlotProps) {
+function UploadSlot({ category, label, isUploading, file, onUpload, onDelete, onPreview }: UploadSlotProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (isUploading) {
@@ -1802,7 +1806,7 @@ function UploadSlot({ category, label, isUploading, file, onUpload, onDelete }: 
           </div>
         </div>
          <div className="flex items-center justify-end gap-2 border-t border-border/40 pt-1.5">
-           <Button variant="ghost" size="sm" onClick={() => { setPreviewFileUrl(file.fileUrl); setPreviewFileLabel(file.label || 'Document'); }} className="h-7 gap-1 text-[10px] font-bold uppercase hover:bg-muted p-2 rounded-lg">
+           <Button variant="ghost" size="sm" onClick={() => onPreview(file.fileUrl, file.label || 'Document')} className="h-7 gap-1 text-[10px] font-bold uppercase hover:bg-muted p-2 rounded-lg">
             <Eye className="w-3 h-3" /> View
           </Button>
           <Button variant="ghost" size="sm" onClick={() => onDelete(file.id)} className="h-7 gap-1 text-[10px] font-bold uppercase text-destructive hover:bg-destructive/10 p-2 rounded-lg">

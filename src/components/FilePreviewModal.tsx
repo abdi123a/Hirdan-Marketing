@@ -7,7 +7,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, Loader2, FileText, AlertCircle } from "lucide-react";
+import { Download, Loader2, FileText, AlertCircle, FileAudio, FileVideo } from "lucide-react";
 import { apiFetchBlob } from "@/lib/api-client";
 
 interface FilePreviewModalProps {
@@ -72,7 +72,7 @@ export default function FilePreviewModal({
     const link = document.createElement("a");
     link.href = previewUrl;
     // Extract file name from URL or use label
-    const extension = fileUrl.split(".").pop();
+    const extension = fileUrl.split("?")[0].split(".").pop();
     const filename = `${fileLabel || "document"}.${extension}`;
     link.download = filename;
     document.body.appendChild(link);
@@ -80,13 +80,29 @@ export default function FilePreviewModal({
     document.body.removeChild(link);
   };
 
-  const isPdf = fileType?.includes("pdf") || fileUrl?.toLowerCase().endsWith(".pdf");
+  const cleanUrl = fileUrl?.split("?")[0]?.toLowerCase() || "";
+  
+  const isPdf = fileType?.includes("pdf") || cleanUrl.endsWith(".pdf");
   const isImage = fileType?.includes("image") || 
-    fileUrl?.toLowerCase().endsWith(".png") || 
-    fileUrl?.toLowerCase().endsWith(".jpg") || 
-    fileUrl?.toLowerCase().endsWith(".jpeg") || 
-    fileUrl?.toLowerCase().endsWith(".gif") || 
-    fileUrl?.toLowerCase().endsWith(".webp");
+    cleanUrl.endsWith(".png") || 
+    cleanUrl.endsWith(".jpg") || 
+    cleanUrl.endsWith(".jpeg") || 
+    cleanUrl.endsWith(".gif") || 
+    cleanUrl.endsWith(".webp") ||
+    cleanUrl.endsWith(".svg");
+
+  const isVideo = fileType?.includes("video") ||
+    cleanUrl.endsWith(".mp4") ||
+    cleanUrl.endsWith(".mov") ||
+    cleanUrl.endsWith(".avi") ||
+    cleanUrl.endsWith(".mkv") ||
+    cleanUrl.endsWith(".webm");
+
+  const isAudio = fileType?.includes("audio") ||
+    cleanUrl.endsWith(".mp3") ||
+    cleanUrl.endsWith(".wav") ||
+    cleanUrl.endsWith(".ogg") ||
+    cleanUrl.endsWith(".aac");
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -146,6 +162,26 @@ export default function FilePreviewModal({
                     src={previewUrl}
                     alt={fileLabel}
                     className="max-w-full max-h-full object-contain rounded-lg shadow-md border"
+                  />
+                </div>
+              ) : isVideo ? (
+                <div className="w-full h-full p-4 flex items-center justify-center bg-black">
+                  <video
+                    src={previewUrl}
+                    className="max-w-full max-h-full object-contain rounded-lg border shadow-md"
+                    controls
+                    preload="metadata"
+                  />
+                </div>
+              ) : isAudio ? (
+                <div className="w-full h-full p-6 flex flex-col items-center justify-center bg-background/50 space-y-6">
+                  <div className="p-6 bg-slate-100 dark:bg-slate-900 rounded-3xl border shadow-inner text-primary animate-pulse-slow">
+                    <FileAudio className="h-16 w-16" />
+                  </div>
+                  <audio
+                    src={previewUrl}
+                    className="w-full max-w-md"
+                    controls
                   />
                 </div>
               ) : isPdf ? (

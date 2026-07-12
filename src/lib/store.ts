@@ -532,7 +532,7 @@ const createDefaultSettings = (): AgencySettings => ({
   smtpEncryption: "tls",
   smtpDriver: "smtp",
   mailEnabled: false,
-  appVersion: "1.7.0",
+  appVersion: "2.0.1",
   versionHistory: [
     {
       version: "1.6.0",

@@ -2,6 +2,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAgencyStore, EmployeeFile, EmployeeActivity } from "@/lib/store";
 import { viewProtectedFile } from "@/lib/api-client";
 import FilePreviewModal from "@/components/FilePreviewModal";
+import { useAuthStore } from "@/lib/auth-store";
+import { formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 export default function EmployeeProfilePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
   const { 
     team, 
     projects, 

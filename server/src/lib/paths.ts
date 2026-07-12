@@ -28,6 +28,7 @@ export const PATHS = {
   BRANDING: path.resolve(UPLOADS_ROOT, 'branding'),
   EMPLOYEE_DOCS: path.resolve(UPLOADS_ROOT, 'employee-docs'),
   RECEIPTS: path.resolve(UPLOADS_ROOT, 'receipts'),
+  TRANSFERS: path.resolve(UPLOADS_ROOT, 'transfers'),
 };
 
 /**

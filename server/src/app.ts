@@ -15,6 +15,7 @@ import rateLimit from 'express-rate-limit';
 
 import { PATHS } from './lib/paths.js';
 import fileRoutes from './routes/files.routes.js';
+import { startTransferCleanupJob } from './lib/transfer-cleanup.js';
 
 // ─── Storage Bootstrap ───────────────────────────────────────────
 
@@ -26,6 +27,7 @@ function bootstrapStorage() {
     PATHS.BRANDING,
     PATHS.EMPLOYEE_DOCS,
     PATHS.RECEIPTS,
+    PATHS.TRANSFERS,
   ];
 
   console.log('📂 [Storage] Bootstrapping directories...');
@@ -50,6 +52,10 @@ function bootstrapStorage() {
 }
 
 bootstrapStorage();
+
+// ─── Background Jobs ─────────────────────────────────────────────
+// Purges expired / deleted transfer files from disk every hour.
+startTransferCleanupJob();
 
 const app = express();
 

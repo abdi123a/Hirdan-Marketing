@@ -35,6 +35,8 @@ import { useMemo, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { apiFetch } from "@/lib/api-client";
+import { QuickAddExpenseModal } from "@/components/QuickAddExpenseModal";
 import {
   formatDistanceToNow,
   isAfter,
@@ -68,11 +70,33 @@ export default function DashboardOverview() {
   const { clients, projects, invoices, subscriptions, leads, fetchAllData } = useAgencyStore();
   const [isLoading, setIsLoading] = useState(true);
   const [trajectoryView, setTrajectoryView] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('monthly');
+  const [monthlyExpenses, setMonthlyExpenses] = useState(0);
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
-      await fetchAllData();
+      
+      const now = new Date();
+      const fromStr = format(startOfMonth(now), "yyyy-MM-dd");
+      const toStr = format(endOfMonth(now), "yyyy-MM-dd");
+
+      await Promise.all([
+        fetchAllData(),
+        apiFetch<{ expenses: any[]; total: number }>(`/expenses?from=${fromStr}&to=${toStr}&limit=200`).then(res => {
+          const totalDollars = res.expenses.reduce((sum, e) => sum + e.amount, 0) / 100;
+          setMonthlyExpenses(totalDollars);
+        }).catch(err => {
+          console.error("Failed to load expenses for dashboard overview:", err);
+        }),
+        apiFetch<{ accounts: any[] }>("/accounts").then(res => {
+          setAccounts(res.accounts);
+        }).catch(err => {
+          console.error("Failed to load accounts for dashboard overview:", err);
+        })
+      ]);
+
       setIsLoading(false);
     };
     loadData();
@@ -87,6 +111,7 @@ export default function DashboardOverview() {
     primary: "from-[hsl(var(--primary))] to-[hsl(260,45%,55%)] shadow-primary/20",
     gold: "from-[hsl(var(--secondary))] to-[hsl(38,95%,58%)] shadow-secondary/20",
     accent: "from-[hsl(var(--primary))] to-[hsl(var(--secondary))] shadow-primary/10",
+    danger: "from-red-500 to-rose-600 shadow-red-500/20",
   };
 
   const stats = useMemo(() => {
@@ -138,10 +163,11 @@ export default function DashboardOverview() {
       { id: 'revenue', label: 'Monthly Revenue', value: formatCurrency(monthlyRevenue), growth: revUp ? 'UP' : 'DOWN', up: revUp, icon: Banknote, gradient: colorMap.gold, hoverBorder: 'hover:border-secondary', link: '/dashboard/invoices' },
       { id: 'mrr', label: 'Active MRR', value: formatCurrency(mrr), icon: TrendingUp, gradient: colorMap.primary, hoverBorder: 'hover:border-primary', link: '/dashboard/subscriptions' },
       { id: 'outstanding', label: 'Outstanding Balance', value: formatCurrency(outstandingAmount), icon: CreditCard, gradient: colorMap.gold, hoverBorder: 'hover:border-secondary', link: '/dashboard/invoices' },
+      { id: 'expenses', label: 'Monthly Expenses', value: formatCurrency(monthlyExpenses), icon: TrendingDown, gradient: colorMap.danger, hoverBorder: 'hover:border-red-500', link: '/dashboard/expenses' },
       { id: 'clients', label: 'Active Clients', value: activeClients.toString(), icon: Users, gradient: colorMap.primary, hoverBorder: 'hover:border-primary', link: '/dashboard/clients' },
       { id: 'leads', label: 'New Leads (This Month)', value: newLeads.toString(), icon: Contact, gradient: colorMap.primary, hoverBorder: 'hover:border-primary', link: '/dashboard/leads' },
     ];
-  }, [clients, invoices, projects, subscriptions, leads]);
+  }, [clients, invoices, projects, subscriptions, leads, monthlyExpenses]);
 
   const revenueTrend = useMemo(() => {
     const now = new Date();
@@ -332,12 +358,18 @@ export default function DashboardOverview() {
   return (
     <div className="space-y-8 pb-10">
       {/* Header section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
           <h2 className="text-2xl font-bold text-foreground tracking-tight">Dashboard Overview</h2>
           <p className="text-sm text-muted-foreground mt-1">High-level financial and operational insights driving your agency.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+          <Button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-background border border-border hover:bg-muted text-foreground rounded-xl text-xs font-bold uppercase tracking-wider transition-all h-auto cursor-pointer font-sans"
+          >
+            <Plus className="w-4 h-4 text-primary" /> Add Expense
+          </Button>
           <Link to="/dashboard/invoices/add" className="flex items-center gap-2 px-4 py-2.5 bg-primary hover:opacity-90 text-primary-foreground rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-md shadow-primary/20">
             <Plus className="w-4 h-4" /> New Invoice
           </Link>
@@ -351,7 +383,7 @@ export default function DashboardOverview() {
       </div>
 
       {/* Row 1: KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 gap-6">
         {stats.map((stat) => (
           <Link key={stat.id} to={stat.link} className={`bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all group border-b-4 ${stat.hoverBorder}`}>
             <div className="flex items-start justify-between mb-4">
@@ -376,16 +408,16 @@ export default function DashboardOverview() {
       <div className="grid grid-cols-12 gap-8">
 
         {/* Left Column (Main Charts & Growth) */}
-        <div className="col-span-12 lg:col-span-8 space-y-8">
+        <div className="col-span-12 xl:col-span-8 space-y-8">
 
           {/* Revenue Trajectory */}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
               <div>
                 <h3 className="text-lg font-bold text-foreground">Revenue Trajectory</h3>
                 <p className="text-xs text-muted-foreground mt-1">Detailed analysis of Paid vs Recurring revenue</p>
               </div>
-              <div className="flex flex-col sm:flex-row items-center gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 <Tabs value={trajectoryView} onValueChange={(v: any) => setTrajectoryView(v)} className="w-full sm:w-[320px]">
                   <TabsList className="grid w-full grid-cols-4 h-8 p-1 bg-muted/50 rounded-lg">
                     <TabsTrigger value="daily" className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Month</TabsTrigger>
@@ -498,7 +530,7 @@ export default function DashboardOverview() {
         </div>
 
         {/* Right Column (Receivables & Pulse) */}
-        <div className="col-span-12 lg:col-span-4 space-y-8">
+        <div className="col-span-12 xl:col-span-4 space-y-8">
 
           {/* Receivables & Cash Flow */}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 relative overflow-hidden group">
@@ -608,6 +640,31 @@ export default function DashboardOverview() {
 
         </div>
       </div>
+      {showAddModal && (
+        <QuickAddExpenseModal
+          accounts={accounts}
+          onClose={() => setShowAddModal(false)}
+          onSaved={async () => {
+            setShowAddModal(false);
+            
+            // Refresh dashboard data
+            setIsLoading(true);
+            const now = new Date();
+            const fromStr = format(startOfMonth(now), "yyyy-MM-dd");
+            const toStr = format(endOfMonth(now), "yyyy-MM-dd");
+            
+            await Promise.all([
+              fetchAllData(),
+              apiFetch<{ expenses: any[]; total: number }>(`/expenses?from=${fromStr}&to=${toStr}&limit=200`).then(res => {
+                const totalDollars = res.expenses.reduce((sum, e) => sum + e.amount, 0) / 100;
+                setMonthlyExpenses(totalDollars);
+              }).catch(err => console.error(err)),
+              apiFetch<{ accounts: any[] }>("/accounts").then(res => setAccounts(res.accounts)).catch(err => console.error(err))
+            ]);
+            setIsLoading(false);
+          }}
+        />
+      )}
     </div>
   );
 }

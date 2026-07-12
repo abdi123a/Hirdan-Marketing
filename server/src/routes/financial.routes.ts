@@ -107,67 +107,41 @@ router.get('/income-statement', async (req: Request, res: Response, next: NextFu
 
     const totalRevenue = invoiceRevenue + subscriptionRevenue;
 
-    // 3. Calculate Payroll Expenses (pro-rated for period)
-    const teamMembers = await prisma.teamMember.findMany({
+    // 3. Calculate Real Expenses in period
+    const dbExpenses = await prisma.expense.findMany({
       where: {
-        status: 'ACTIVE',
-      },
-      select: {
-        basicSalary: true,
-        housingAllowance: true,
-        transportAllowance: true,
-        otherAllowances: true,
-        isHourlyMode: true,
-        hourlyRate: true,
+        date: {
+          gte: fromDate,
+          lte: toDate,
+        },
       },
     });
 
-    let monthlyPayroll = 0;
-    teamMembers.forEach((member) => {
-      if (member.isHourlyMode && member.hourlyRate) {
-        // Estimate 160 hours per month for hourly employees
-        monthlyPayroll += member.hourlyRate * 160;
-      } else {
-        const basic = member.basicSalary || 0;
-        const housing = member.housingAllowance || 0;
-        const transport = member.transportAllowance || 0;
-        
-        let others = 0;
-        if (member.otherAllowances) {
-          try {
-            // Check if otherAllowances is a JSON string of numbers/items
-            const parsed = JSON.parse(member.otherAllowances);
-            if (Array.isArray(parsed)) {
-              others = parsed.reduce((sum: number, item: any) => sum + (Number(item.amount) || 0), 0);
-            } else if (typeof parsed === 'object') {
-              others = Object.values(parsed).reduce((sum: number, val: any) => sum + (Number(val) || 0), 0);
-            }
-          } catch {
-            // Fallback: parse as single number if possible
-            others = Number(member.otherAllowances) || 0;
-          }
-        }
+    let payrollExpense = 0;
+    let rentExpense = 0;
+    let softwareExpense = 0;
+    let marketingExpense = 0;
+    let utilitiesExpense = 0;
+    let miscellaneousExpense = 0;
 
-        monthlyPayroll += basic + housing + transport + others;
+    dbExpenses.forEach((exp) => {
+      const amt = exp.amount; // in cents
+      if (exp.category === 'PAYROLL') {
+        payrollExpense += amt;
+      } else if (exp.category === 'RENT') {
+        rentExpense += amt;
+      } else if (exp.category === 'SOFTWARE') {
+        softwareExpense += amt;
+      } else if (exp.category === 'MARKETING') {
+        marketingExpense += amt;
+      } else if (exp.category === 'UTILITIES') {
+        utilitiesExpense += amt;
+      } else {
+        miscellaneousExpense += amt;
       }
     });
 
-    const totalPayroll = Math.round(monthlyPayroll * months);
-
-    // 4. Simulated Operational Expenses (Rent, Software, Marketing, Utilities)
-    // Scale operational expenses with revenue/team size to make reports look beautiful and complete
-    const rentMonthly = 250000; // $2,500.00
-    const softwareMonthly = 15000 + (teamMembers.length * 2000); // $150 + $20/user
-    const marketingMonthly = Math.round(totalRevenue * 0.05 / months); // 5% of monthly revenue
-    const utilitiesMonthly = 80000; // $800.00
-
-    const rentExpense = Math.round(rentMonthly * months);
-    const softwareExpense = Math.round(softwareMonthly * months);
-    const marketingExpense = Math.round(marketingMonthly * months);
-    const utilitiesExpense = Math.round(utilitiesMonthly * months);
-    const miscellaneousExpense = Math.round(totalRevenue * 0.02); // 2% of revenue
-
-    const totalOperatingExpenses = totalPayroll + rentExpense + softwareExpense + marketingExpense + utilitiesExpense + miscellaneousExpense;
+    const totalOperatingExpenses = payrollExpense + rentExpense + softwareExpense + marketingExpense + utilitiesExpense + miscellaneousExpense;
     
     // Profit metrics
     const grossProfit = totalRevenue; // No COGS in pure service agency model usually
@@ -185,7 +159,7 @@ router.get('/income-statement', async (req: Request, res: Response, next: NextFu
         total: totalRevenue,
       },
       expenses: {
-        payroll: totalPayroll,
+        payroll: payrollExpense,
         rent: rentExpense,
         software: softwareExpense,
         marketing: marketingExpense,
@@ -238,29 +212,14 @@ router.get('/balance-sheet', async (req: Request, res: Response, next: NextFunct
       }
     });
 
-    // Estimate total expenses from seed/inception date (say Jan 1, 2026) to asOfDate
-    const inceptionDate = new Date(2026, 0, 1);
-    const monthsSinceInception = Math.max(0.5, getMonthsInRange(inceptionDate, asOfDate));
-
-    // Get active payroll monthly sum
-    const teamMembers = await prisma.teamMember.findMany({
-      where: { status: 'ACTIVE' },
-      select: {
-        basicSalary: true,
-        housingAllowance: true,
-        transportAllowance: true,
-      },
+    // Real cumulative expenses up to asOfDate
+    const paidExpensesAgg = await prisma.expense.aggregate({
+      where: { date: { lte: asOfDate } },
+      _sum: { amount: true },
     });
+    const cumulativeExpenses = paidExpensesAgg._sum.amount ?? 0;
 
-    let monthlyPayroll = 0;
-    teamMembers.forEach((m) => {
-      monthlyPayroll += (m.basicSalary || 0) + (m.housingAllowance || 0) + (m.transportAllowance || 0);
-    });
-
-    const cumulativePayroll = Math.round(monthlyPayroll * monthsSinceInception);
-    const cumulativeOtherExpenses = Math.round((250000 + 150000 + 40000) * monthsSinceInception); // Rent + Software + Utilities
-
-    const cashAndCashEquivalents = baselineCash + cumulativeRevenue - cumulativePayroll - cumulativeOtherExpenses;
+    const cashAndCashEquivalents = baselineCash + cumulativeRevenue - cumulativeExpenses;
 
     // B. Accounts Receivable (invoices outstanding up to asOfDate)
     const unpaidInvoices = await prisma.invoice.findMany({
@@ -284,9 +243,20 @@ router.get('/balance-sheet', async (req: Request, res: Response, next: NextFunct
       }
     });
 
-    // C. Equipment / Fixed Assets (Simulated office computers & furniture)
-    const fixedAssets = 850000; // $8,500.00
-    const accumulatedDepreciation = Math.round(-75000 * monthsSinceInception); // -$75/month depreciation
+    // C. Equipment / Fixed Assets (Real database EQUIPMENT expenses)
+    const equipmentExpensesAgg = await prisma.expense.aggregate({
+      where: {
+        date: { lte: asOfDate },
+        category: 'EQUIPMENT',
+      },
+      _sum: { amount: true },
+    });
+    const fixedAssets = equipmentExpensesAgg._sum.amount ?? 0;
+
+    // 1% depreciation per month since inception (say Jan 1, 2026)
+    const inceptionDate = new Date(2026, 0, 1);
+    const monthsSinceInception = Math.max(0.5, getMonthsInRange(inceptionDate, asOfDate));
+    const accumulatedDepreciation = Math.round(-0.01 * fixedAssets * monthsSinceInception);
 
     const totalAssets = cashAndCashEquivalents + accountsReceivable + fixedAssets + accumulatedDepreciation;
 
@@ -295,6 +265,21 @@ router.get('/balance-sheet', async (req: Request, res: Response, next: NextFunct
     const accountsPayable = 35000; // $350.00
     
     // B. Accrued Payroll (salaries accumulated for current month but not yet paid)
+    // Get active payroll monthly sum
+    const teamMembers = await prisma.teamMember.findMany({
+      where: { status: 'ACTIVE' },
+      select: {
+        basicSalary: true,
+        housingAllowance: true,
+        transportAllowance: true,
+      },
+    });
+
+    let monthlyPayroll = 0;
+    teamMembers.forEach((m) => {
+      monthlyPayroll += (m.basicSalary || 0) + (m.housingAllowance || 0) + (m.transportAllowance || 0);
+    });
+
     const daysIntoCurrentMonth = asOfDate.getDate();
     const accruedPayroll = Math.round(monthlyPayroll * (daysIntoCurrentMonth / 30));
 
@@ -359,42 +344,40 @@ router.get('/cash-flow', async (req: Request, res: Response, next: NextFunction)
     });
 
     // 2. CASH OUTFLOWS FROM OPERATIONS
-    // Payroll paid in this range
-    const teamMembers = await prisma.teamMember.findMany({
-      where: { status: 'ACTIVE' },
-      select: {
-        basicSalary: true,
-        housingAllowance: true,
-        transportAllowance: true,
+    // Real expenses in this range
+    const periodExpenses = await prisma.expense.findMany({
+      where: {
+        date: { gte: fromDate, lte: toDate },
       },
     });
 
-    let monthlyPayroll = 0;
-    teamMembers.forEach((m) => {
-      monthlyPayroll += (m.basicSalary || 0) + (m.housingAllowance || 0) + (m.transportAllowance || 0);
-    });
+    let operatingCashPayrollOutflows = 0;
+    let operatingCashExpensesOutflows = 0;
+    let investingCashFlow = 0; // EQUIPMENT expenses in period
 
-    const operatingCashPayrollOutflows = Math.round(monthlyPayroll * months);
-    
-    // Operating expenses paid (Rent, Software, Utilities, Marketing)
-    const operatingExpensesMonthly = 250000 + 150000 + 80000; // Rent + Software + Utilities
-    const operatingCashExpensesOutflows = Math.round(operatingExpensesMonthly * months);
+    periodExpenses.forEach((exp) => {
+      const amt = exp.amount;
+      if (exp.category === 'PAYROLL') {
+        operatingCashPayrollOutflows += amt;
+      } else if (exp.category === 'EQUIPMENT') {
+        investingCashFlow += amt;
+      } else {
+        operatingCashExpensesOutflows += amt;
+      }
+    });
 
     const netOperatingCashFlow = operatingCashInflows - operatingCashPayrollOutflows - operatingCashExpensesOutflows;
 
     // 3. CASH FLOW FROM INVESTING
-    // Simulated computer equipment purchases
-    const investingCashFlow = -120000; // -$1,200 purchase of new laptop
+    // Negate the positive sum to show as cash outflow
+    const netInvestingCashFlow = -investingCashFlow;
 
     // 4. CASH FLOW FROM FINANCING
-    // Simulated owner drawing or loan repayment
-    const financingCashFlow = -150000; // -$1,500 owner drawing
+    const financingCashFlow = 0;
 
     // 5. RECONCILIATION
     // Calculate cash at beginning of period
     const baselineCash = 5000000; // $50,000 baseline
-    const inceptionDate = new Date(2026, 0, 1);
-    const monthsBeforeStart = getMonthsInRange(inceptionDate, fromDate);
 
     // Get all paid invoice revenue before fromDate
     const paidInvoicesBefore = await prisma.invoice.findMany({
@@ -418,11 +401,19 @@ router.get('/cash-flow', async (req: Request, res: Response, next: NextFunction)
       }
     });
 
-    const payrollBefore = Math.round(monthlyPayroll * monthsBeforeStart);
-    const expensesBefore = Math.round(operatingExpensesMonthly * monthsBeforeStart);
+    // Get all expenses before fromDate
+    const expensesBeforeAgg = await prisma.expense.aggregate({
+      where: {
+        date: { lt: fromDate },
+      },
+      _sum: {
+        amount: true,
+      },
+    });
+    const expensesBefore = expensesBeforeAgg._sum.amount ?? 0;
     
-    const cashAtBeginning = baselineCash + revenueBefore - payrollBefore - expensesBefore;
-    const netChangeInCash = netOperatingCashFlow + investingCashFlow + financingCashFlow;
+    const cashAtBeginning = baselineCash + revenueBefore - expensesBefore;
+    const netChangeInCash = netOperatingCashFlow + netInvestingCashFlow + financingCashFlow;
     const cashAtEnd = cashAtBeginning + netChangeInCash;
 
     res.json({
@@ -437,8 +428,8 @@ router.get('/cash-flow', async (req: Request, res: Response, next: NextFunction)
         netCashFromOperating: netOperatingCashFlow,
       },
       investingActivities: {
-        purchaseOfEquipment: investingCashFlow,
-        netCashFromInvesting: investingCashFlow,
+        purchaseOfEquipment: -investingCashFlow,
+        netCashFromInvesting: netInvestingCashFlow,
       },
       financingActivities: {
         ownerDrawings: financingCashFlow,

@@ -268,8 +268,8 @@ export default function FinancialReportPage() {
 
       {/* Filter and Date Controls */}
       <Card className="shadow-card border-border print:hidden">
-        <CardContent className="p-4 flex flex-col md:flex-row items-end justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+        <CardContent className="p-4 flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
             <div className="space-y-1 min-w-[160px]">
               <Label className="text-xs text-muted-foreground">Reporting Period</Label>
               <Select value={preset} onValueChange={setPreset}>
@@ -342,7 +342,7 @@ export default function FinancialReportPage() {
       ) : (
         <>
           {/* Financial KPI Cards Summary */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print:grid-cols-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4 print:grid-cols-4">
             <Card className="shadow-card border-border overflow-hidden relative group">
               <CardContent className="p-5">
                 <div className="flex items-center justify-between">
@@ -428,9 +428,9 @@ export default function FinancialReportPage() {
 
             {/* INCOME STATEMENT TAB */}
             <TabsContent value="income-statement" className="space-y-6 mt-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 {/* Statement Sheet */}
-                <Card className="shadow-card border-border lg:col-span-2 print:border-0 print:shadow-none">
+                <Card className="shadow-card border-border xl:col-span-2 print:border-0 print:shadow-none">
                   <CardHeader className="border-b border-border pb-4 print:px-0">
                     <CardTitle className="text-lg font-bold flex items-center gap-2">
                       <FileText className="h-5 w-5 text-primary" />

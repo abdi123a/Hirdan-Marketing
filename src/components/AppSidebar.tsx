@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Users, Briefcase, UserCircle,
   Receipt, CreditCard, CalendarDays, Settings, LogOut, PanelLeftClose, PanelLeft,
   FileText, Package, Zap, Mail, Share2, Presentation, BarChart3, Wallet,
-  FolderHeart
+  FolderHeart, UploadCloud
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
@@ -34,6 +34,7 @@ const mainItems = [
   { title: "Invoices", url: "/dashboard/invoices", icon: Receipt },
   { title: "Subscriptions", url: "/dashboard/subscriptions", icon: CreditCard },
   { title: "Social Media", url: "/dashboard/social-media", icon: Share2 },
+  { title: "File Transfer", url: "/dashboard/transfers", icon: UploadCloud },
   { title: "Monthly Reports", url: "/dashboard/reports/monthly", icon: Presentation },
   { title: "Financial Reports", url: "/dashboard/reports/financial", icon: BarChart3 },
   { title: "Expenses", url: "/dashboard/expenses", icon: Wallet },

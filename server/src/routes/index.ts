@@ -15,6 +15,7 @@ import verifyRoutes from './verify.routes.js';
 import leadsRoutes from './leads.routes.js';
 import usersRoutes from './users.routes.js';
 import aiRoutes from './ai.routes.js';
+import transferRoutes from './transfer.routes.js';
 
 // Social Media Module
 import socialProfilesRoutes from './social-profiles.routes.js';
@@ -62,6 +63,8 @@ router.use('/tasks', tasksRoutes);
 router.use('/portal/social', portalSocialRoutes);
 router.use('/reports', reportsRoutes);
 // router.use('/files', fileRoutes); // Moved to /uploads in app.ts
+
+router.use('/transfer', transferRoutes);
 
 export default router;
 
