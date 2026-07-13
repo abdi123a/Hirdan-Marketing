@@ -532,8 +532,26 @@ const createDefaultSettings = (): AgencySettings => ({
   smtpEncryption: "tls",
   smtpDriver: "smtp",
   mailEnabled: false,
-  appVersion: "2.5.0",
+  appVersion: "2.7.0",
   versionHistory: [
+    {
+      version: "2.7.0",
+      description: "feat: update dashboard layouts, support manual file transfer send actions, multi-file zipping and email sharing templates",
+      author: "Antigravity",
+      date: new Date().toISOString(),
+    },
+    {
+      version: "2.5.0",
+      description: "feat: WeTransfer-style file transfers, financial modules, employee pages, HR documents & security updates",
+      author: "Antigravity",
+      date: new Date().toISOString(),
+    },
+    {
+      version: "2.1.1",
+      description: "feat: setup custom short domain redirect for hirdan.cc and shorten routes to /f/",
+      author: "Antigravity",
+      date: new Date().toISOString(),
+    },
     {
       version: "1.6.0",
       description: "feat: add HR Document Generator with Internship Accepted Certificate and Internship Letter templates, and support custom routing & schema updates",

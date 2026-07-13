@@ -187,6 +187,14 @@ const renewBodySchema = z.object({
   expiryUnit: z.enum(["minutes", "hours", "days"]),
 });
 
+const updateBodySchema = z.object({
+  expiryValue: z.coerce.number().int().min(1).max(365).optional(),
+  expiryUnit: z.enum(["minutes", "hours", "days"]).optional(),
+  clientId: z.string().nullable().optional(),
+  message: z.string().max(5000).nullable().optional(),
+});
+
+
 // ---- POST /api/transfer/upload ------------------------------------------
 // Protected — only logged-in admin/manager/staff can create a transfer link.
 router.post(
@@ -288,6 +296,64 @@ router.post(
         try { fs.unlinkSync(f.path); } catch {}
       }
       console.error("Transfer upload failed:", err);
+      next(err);
+    }
+  }
+);
+
+// ---- PATCH /api/transfer/:id ---------------------------------------------
+// Protected — updates the metadata of an active/in-progress transfer.
+router.patch(
+  "/:id",
+  authenticate,
+  requireRole("ADMIN", "MANAGER", "STAFF"),
+  async (req: Request, res: Response, next: NextFunction): Promise<any> => {
+    try {
+      const id = req.params.id as string;
+      const record = await prisma.sharedFile.findFirst({
+        where: { id, uploadedById: req.user!.userId as string },
+      });
+
+      if (!record) {
+        return next(AppError.notFound("Transfer not found."));
+      }
+
+      const parsed = updateBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return next(AppError.badRequest("Invalid update parameters."));
+      }
+
+      const { expiryValue, expiryUnit, clientId, message } = parsed.data;
+      const updateData: any = {};
+
+      if (clientId !== undefined) {
+        updateData.clientId = clientId === "none" || !clientId ? null : clientId;
+      }
+      if (message !== undefined) {
+        updateData.message = message || null;
+      }
+
+      if (expiryValue && expiryUnit) {
+        const expiresAt = new Date(record.createdAt);
+        if (expiryUnit === "minutes") {
+          expiresAt.setMinutes(expiresAt.getMinutes() + expiryValue);
+        } else if (expiryUnit === "hours") {
+          expiresAt.setHours(expiresAt.getHours() + expiryValue);
+        } else {
+          expiresAt.setDate(expiresAt.getDate() + expiryValue);
+        }
+        updateData.expiresAt = expiresAt;
+      }
+
+      const updated = await prisma.sharedFile.update({
+        where: { id },
+        data: updateData,
+        include: { client: { select: { id: true, name: true, email: true } } },
+      });
+
+      res.json(updated);
+    } catch (err) {
+      console.error("Failed to update transfer metadata:", err);
       next(err);
     }
   }

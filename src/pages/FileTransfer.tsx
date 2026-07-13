@@ -58,6 +58,7 @@ interface TransferItem {
   createdAt: string;
   emailSentTo: string | null;
   emailSentAt: string | null;
+  message?: string | null;
 }
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
@@ -175,6 +176,36 @@ export default function FileTransfer() {
   const [customRenewValue, setCustomRenewValue] = useState<number>(1);
   const [customRenewUnit, setCustomRenewUnit] = useState<"minutes" | "hours" | "days">("days");
 
+  const [activeTransfer, setActiveTransfer] = useState<{ id: string; shareId: string; shareUrl: string; fileName: string } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [wantsToSend, setWantsToSend] = useState(false);
+
+  const activeXhrRef = useRef<XMLHttpRequest | null>(null);
+
+  const stateRef = useRef({
+    selectedClientId,
+    message,
+    expiryType,
+    expiryPreset,
+    customExpiryValue,
+    customExpiryUnit,
+    clients,
+    wantsToSend
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      selectedClientId,
+      message,
+      expiryType,
+      expiryPreset,
+      customExpiryValue,
+      customExpiryUnit,
+      clients,
+      wantsToSend
+    };
+  }, [selectedClientId, message, expiryType, expiryPreset, customExpiryValue, customExpiryUnit, clients, wantsToSend]);
+
   useEffect(() => {
     fetchClients();
   }, [fetchClients]);
@@ -254,12 +285,91 @@ export default function FileTransfer() {
     },
   });
 
+  const submitTransfer = useCallback(
+    async (
+      transferId: string,
+      shareId: string,
+      shareUrl: string,
+      fileName: string
+    ) => {
+      setIsSubmitting(true);
+      const {
+        selectedClientId: currentClientId,
+        message: currentMessage,
+        expiryType: currentExpiryType,
+        expiryPreset: currentExpiryPreset,
+        customExpiryValue: currentCustomExpiryValue,
+        customExpiryUnit: currentCustomExpiryUnit,
+        clients: currentClients
+      } = stateRef.current;
+
+      try {
+        const selectedClient = currentClients.find((c) => c.id === currentClientId);
+
+        // Update transfer metadata on the server using PATCH
+        await apiFetch(`/transfer/${transferId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            clientId: currentClientId,
+            message: currentMessage,
+            expiryValue: currentExpiryType === "preset" ? currentExpiryPreset : currentCustomExpiryValue,
+            expiryUnit: currentExpiryType === "preset" ? "days" : currentCustomExpiryUnit,
+          }),
+        });
+
+        // Set success states
+        setSuccessShareUrl(shareUrl);
+        setSuccessFileName(fileName);
+        setSuccessTransferId(transferId);
+        setSuccessUploadMessage(currentMessage || null);
+        setIsEmailSent(false);
+
+        if (selectedClient?.email) {
+          setSuccessClientName(selectedClient.name);
+          setSuccessClientEmail(selectedClient.email);
+        } else {
+          setSuccessClientName(null);
+          setSuccessClientEmail(null);
+        }
+
+        // Auto copy generated link to clipboard
+        await navigator.clipboard.writeText(shareUrl);
+        toast.success("Upload complete! Link copied.");
+        setSuccessDialogOpen(true);
+
+        queryClient.invalidateQueries({ queryKey: ["transfers"] });
+        
+        // Reset form
+        setSelectedFiles([]);
+        setActiveTransfer(null);
+        setMessage("");
+        if (noteRichTextRef.current) noteRichTextRef.current.innerHTML = "";
+        setSelectedClientId("none");
+      } catch (err: any) {
+        console.error(err);
+        toast.error(err.message || "Failed to submit transfer. Please try again.");
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [queryClient]
+  );
+
   const uploadFile = useCallback(
     async (files: File[]) => {
       if (!files.length) return;
+
+      // Abort any active upload request before starting a new one
+      if (activeXhrRef.current) {
+        activeXhrRef.current.abort();
+        activeXhrRef.current = null;
+      }
+
       setUploadProgress(0);
       setUploadSpeed("0 B/s");
       setTimeRemaining("Calculating...");
+      setActiveTransfer(null);
+      setWantsToSend(false);
 
       const startTime = Date.now();
       
@@ -269,23 +379,33 @@ export default function FileTransfer() {
           formData.append("file", f);
         }
         
-        if (expiryType === "preset") {
-          formData.append("expiryValue", String(expiryPreset));
+        const {
+          expiryType: currentExpiryType,
+          expiryPreset: currentExpiryPreset,
+          customExpiryValue: currentCustomExpiryValue,
+          customExpiryUnit: currentCustomExpiryUnit,
+          selectedClientId: currentClientId,
+          message: currentMessage
+        } = stateRef.current;
+
+        if (currentExpiryType === "preset") {
+          formData.append("expiryValue", String(currentExpiryPreset));
           formData.append("expiryUnit", "days");
         } else {
-          formData.append("expiryValue", String(customExpiryValue));
-          formData.append("expiryUnit", customExpiryUnit);
+          formData.append("expiryValue", String(currentCustomExpiryValue));
+          formData.append("expiryUnit", currentCustomExpiryUnit);
         }
 
-        if (message) formData.append("message", message);
-        if (selectedClientId && selectedClientId !== "none") {
-          formData.append("clientId", selectedClientId);
+        if (currentMessage) formData.append("message", currentMessage);
+        if (currentClientId && currentClientId !== "none") {
+          formData.append("clientId", currentClientId);
         }
 
         const token = useAuthStore.getState().token;
 
-        await new Promise<any>((resolve, reject) => {
+        const data = await new Promise<any>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
+          activeXhrRef.current = xhr;
           xhr.open("POST", `${API_BASE}/transfer/upload`);
           
           if (token) {
@@ -313,6 +433,7 @@ export default function FileTransfer() {
           };
           
           xhr.onload = () => {
+            activeXhrRef.current = null;
             if (xhr.status >= 200 && xhr.status < 300) {
               try {
                 resolve(JSON.parse(xhr.responseText));
@@ -329,66 +450,97 @@ export default function FileTransfer() {
             }
           };
           
-          xhr.onerror = () => reject(new Error("Network error during upload"));
-          xhr.onabort = () => reject(new Error("Upload aborted"));
+          xhr.onerror = () => {
+            activeXhrRef.current = null;
+            reject(new Error("Network error during upload"));
+          };
+          xhr.onabort = () => {
+            activeXhrRef.current = null;
+            reject(new Error("Upload aborted"));
+          };
           
           xhr.withCredentials = true;
           xhr.send(formData);
-        }).then(async (data: any) => {
-          setSelectedFiles([]);
-          const selectedClient = clients.find((c) => c.id === selectedClientId);
-
-          // Generate local frontend URL
-          const linkDomain = import.meta.env.VITE_SHORT_LINK_DOMAIN || (import.meta.env.PROD ? "https://hirdan.cc" : window.location.origin);
-          const shareUrl = `${linkDomain.replace(/\/$/, "")}/f/${data.shareId}`;
-
-          setSuccessShareUrl(shareUrl);
-          setSuccessFileName(data.fileName || (files.length === 1 ? files[0].name : `${files.length} files`));
-          setSuccessTransferId(data.id);
-          setSuccessUploadMessage(message || null);
-          setIsEmailSent(false);
-
-          if (selectedClient?.email) {
-            setSuccessClientName(selectedClient.name);
-            setSuccessClientEmail(selectedClient.email);
-          } else {
-            setSuccessClientName(null);
-            setSuccessClientEmail(null);
-          }
-
-          // Auto copy generated link to clipboard
-          await navigator.clipboard.writeText(shareUrl);
-          toast.success("Upload complete! Link copied.");
-          setSuccessDialogOpen(true);
-
-          queryClient.invalidateQueries({ queryKey: ["transfers"] });
-          setMessage("");
-          if (noteRichTextRef.current) noteRichTextRef.current.innerHTML = "";
-          setSelectedClientId("none");
         });
+
+        // Store active transfer
+        const linkDomain = import.meta.env.VITE_SHORT_LINK_DOMAIN || (import.meta.env.PROD ? "https://hirdan.cc" : window.location.origin);
+        const shareUrl = `${linkDomain.replace(/\/$/, "")}/f/${data.shareId}`;
+        const activeItem = {
+          id: data.id,
+          shareId: data.shareId,
+          shareUrl,
+          fileName: data.fileName || (files.length === 1 ? files[0].name : `${files.length} files`)
+        };
+        setActiveTransfer(activeItem);
+
+        // Automatically trigger the submission only if wantsToSend is true
+        if (stateRef.current.wantsToSend) {
+          await submitTransfer(activeItem.id, activeItem.shareId, activeItem.shareUrl, activeItem.fileName);
+        }
       } catch (err: any) {
-        console.error(err);
-        toast.error(err.message || "Upload failed. Please try again.");
+        if (err.message !== "Upload aborted") {
+          console.error(err);
+          toast.error(err.message || "Upload failed. Please try again.");
+        }
       } finally {
-        setUploadProgress(null);
-        setUploadSpeed(null);
-        setTimeRemaining(null);
+        if (!activeXhrRef.current) {
+          setUploadProgress(null);
+          setUploadSpeed(null);
+          setTimeRemaining(null);
+        }
       }
     },
-    [expiryType, expiryPreset, customExpiryValue, customExpiryUnit, message, selectedClientId, clients, queryClient]
+    [submitTransfer]
   );
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
       if (acceptedFiles.length > 0) {
         setSelectedFiles(prev => {
-          const combined = [...prev, ...acceptedFiles];
-          return combined.slice(0, 300); // cap at 300
+          const combined = [...prev, ...acceptedFiles].slice(0, 300);
+          uploadFile(combined);
+          return combined;
         });
       }
     },
-    []
+    [uploadFile]
   );
+
+  const handleSendClick = () => {
+    if (selectedFiles.length === 0) return;
+
+    if (uploadProgress !== null) {
+      setWantsToSend(true);
+    } else if (activeTransfer) {
+      submitTransfer(activeTransfer.id, activeTransfer.shareId, activeTransfer.shareUrl, activeTransfer.fileName);
+    }
+  };
+
+  const handleClearAll = () => {
+    if (activeXhrRef.current) {
+      activeXhrRef.current.abort();
+      activeXhrRef.current = null;
+    }
+    setSelectedFiles([]);
+    setActiveTransfer(null);
+    setUploadProgress(null);
+    setUploadSpeed(null);
+    setTimeRemaining(null);
+    setWantsToSend(false);
+  };
+
+  const handleRemoveFile = useCallback((idx: number) => {
+    setSelectedFiles(prev => {
+      const updated = prev.filter((_, i) => i !== idx);
+      if (updated.length > 0) {
+        uploadFile(updated);
+      } else {
+        handleClearAll();
+      }
+      return updated;
+    });
+  }, [uploadFile]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -580,25 +732,31 @@ export default function FileTransfer() {
                       </p>
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); setSelectedFiles([]); }}
+                        onClick={(e) => { e.stopPropagation(); handleClearAll(); }}
                         className="text-[9px] text-rose-500 hover:text-rose-600 font-bold uppercase tracking-wide"
                       >
                         Clear All
                       </button>
                     </div>
-                    <div className="max-h-[130px] overflow-y-auto space-y-1 pr-1">
+                    <div className="max-h-[180px] overflow-y-auto grid grid-cols-2 gap-2 pr-1">
                       {selectedFiles.map((f, idx) => (
-                        <div key={idx} className="flex items-center gap-2 bg-muted/50 rounded-lg px-2.5 py-1.5">
-                          <File className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                          <span className="flex-1 text-[10px] truncate text-foreground" title={f.name}>{f.name}</span>
-                          <span className="text-[9px] text-muted-foreground shrink-0">{formatBytes(f.size)}</span>
+                        <div key={idx} className="relative flex flex-col items-center p-3 bg-muted/40 hover:bg-muted/60 border border-border/50 rounded-xl transition-all">
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); setSelectedFiles(prev => prev.filter((_, i) => i !== idx)); }}
-                            className="text-rose-400 hover:text-rose-600 ml-1 shrink-0"
+                            onClick={(e) => { e.stopPropagation(); handleRemoveFile(idx); }}
+                            className="absolute top-1 right-1 h-4 w-4 flex items-center justify-center rounded-full bg-rose-100 hover:bg-rose-200 text-rose-600 transition-colors"
                           >
-                            ×
+                            <span className="text-[10px] font-bold leading-none">×</span>
                           </button>
+                          <div className="mb-1.5 mt-1 shrink-0">
+                            {getFileIcon(f.name)}
+                          </div>
+                          <span className="w-full text-center text-[9px] font-semibold truncate text-foreground px-1" title={f.name}>
+                            {f.name}
+                          </span>
+                          <span className="text-[8px] text-muted-foreground mt-0.5 shrink-0">
+                            {formatBytes(f.size)}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -745,25 +903,25 @@ export default function FileTransfer() {
               {/* Action Button */}
               <div className="pt-2">
                 <Button
-                  onClick={() => {
-                    if (selectedFiles.length > 0) {
-                      uploadFile(selectedFiles);
-                    }
-                  }}
-                  disabled={selectedFiles.length === 0 || uploadProgress !== null}
+                  onClick={handleSendClick}
+                  disabled={selectedFiles.length === 0 || isSubmitting || wantsToSend}
                   className="w-full h-11 rounded-xl text-xs font-bold uppercase tracking-wider bg-primary hover:bg-primary/95 text-white flex items-center justify-center gap-1.5"
                 >
-                  {uploadProgress !== null ? (
+                  {isSubmitting ? (
                     <>
-                      Uploading... {uploadProgress}%
+                      Sending... <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    </>
+                  ) : wantsToSend ? (
+                    <>
+                      Send (Queued... {uploadProgress}%)
                     </>
                   ) : selectedClientId !== "none" ? (
                     <>
-                      Upload{selectedFiles.length > 1 ? ` ${selectedFiles.length} Files` : ""} & Share with Client <Send className="h-3.5 w-3.5" />
+                      Send & Share with Client <Send className="h-3.5 w-3.5" />
                     </>
                   ) : (
                     <>
-                      Upload{selectedFiles.length > 1 ? ` ${selectedFiles.length} Files` : ""} & Generate Link <UploadCloud className="h-3.5 w-3.5" />
+                      Send & Generate Link <UploadCloud className="h-3.5 w-3.5" />
                     </>
                   )}
                 </Button>
