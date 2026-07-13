@@ -20,7 +20,8 @@ import {
   Flame,
   Coins,
   Percent,
-  PiggyBank
+  PiggyBank,
+  Tag
 } from "lucide-react";
 import {
   BarChart,
@@ -131,6 +132,17 @@ export default function DashboardOverview() {
     danger: "from-red-500 to-rose-600 shadow-red-500/20",
   };
 
+  const activeMrr = useMemo(() => {
+    return subscriptions
+      .filter(s => s.status === 'Active')
+      .reduce((sum, s) => {
+        const amt = parseFloat((s.amount || '0').toString().replace(/[^0-9.-]+/g, ''));
+        if (s.billingCycle === 'Annual') return sum + amt / 12;
+        if (s.billingCycle === 'Quarterly') return sum + amt / 3;
+        return sum + amt;
+      }, 0);
+  }, [subscriptions]);
+
   const netProfitValue = useMemo(() => {
     const now = new Date();
     const currentMonth = now.getMonth();
@@ -138,8 +150,8 @@ export default function DashboardOverview() {
     const monthlyRev = invoices
       .filter(inv => (inv.status === 'Paid' || inv.status === 'Partially Paid') && new Date(inv.date).getMonth() === currentMonth && new Date(inv.date).getFullYear() === currentYear)
       .reduce((sum, inv) => sum + (inv.status === 'Paid' ? parseCurrency(inv.amount) : (inv.deposit || 0)), 0);
-    return monthlyRev - monthlyExpenses;
-  }, [invoices, monthlyExpenses]);
+    return monthlyRev - monthlyExpenses + activeMrr;
+  }, [invoices, monthlyExpenses, activeMrr]);
 
   const profitMarginValue = useMemo(() => {
     const now = new Date();
@@ -148,9 +160,10 @@ export default function DashboardOverview() {
     const monthlyRev = invoices
       .filter(inv => (inv.status === 'Paid' || inv.status === 'Partially Paid') && new Date(inv.date).getMonth() === currentMonth && new Date(inv.date).getFullYear() === currentYear)
       .reduce((sum, inv) => sum + (inv.status === 'Paid' ? parseCurrency(inv.amount) : (inv.deposit || 0)), 0);
-    if (monthlyRev === 0) return 0;
-    return Math.round((netProfitValue / monthlyRev) * 100);
-  }, [invoices, netProfitValue]);
+    const totalRev = monthlyRev + activeMrr;
+    if (totalRev === 0) return 0;
+    return Math.round((netProfitValue / totalRev) * 100);
+  }, [invoices, netProfitValue, activeMrr]);
 
   const last3MonthsExpenses = useMemo(() => {
     const now = new Date();
@@ -177,17 +190,6 @@ export default function DashboardOverview() {
     if (lastMonthRev === 0) return monthlyRev > 0 ? 100 : 0;
     return Math.round(((monthlyRev - lastMonthRev) / lastMonthRev) * 100);
   }, [invoices]);
-
-  const activeMrr = useMemo(() => {
-    return subscriptions
-      .filter(s => s.status === 'Active')
-      .reduce((sum, s) => {
-        const amt = parseFloat((s.amount || '0').toString().replace(/[^0-9.-]+/g, ''));
-        if (s.billingCycle === 'Annual') return sum + amt / 12;
-        if (s.billingCycle === 'Quarterly') return sum + amt / 3;
-        return sum + amt;
-      }, 0);
-  }, [subscriptions]);
 
   const activeClientsCount = useMemo(() => {
     return clients.filter(c => c.status === 'Active').length;
@@ -382,11 +384,11 @@ export default function DashboardOverview() {
     });
 
     return Object.entries(groups).map(([category, amount]) => {
-      const meta = EXPENSE_CATEGORIES.find(c => c.value === category) || { label: category, emoji: "📦", color: "#9ca3af" };
+      const meta = EXPENSE_CATEGORIES.find(c => c.value === category) || { label: category, icon: Tag, color: "#9ca3af" };
       return {
         name: meta.label,
         value: Math.round(amount * 100) / 100,
-        emoji: meta.emoji,
+        icon: meta.icon,
         color: meta.color,
       };
     }).sort((a, b) => b.value - a.value);
@@ -759,10 +761,16 @@ export default function DashboardOverview() {
                     {expenseByCategoryData.slice(0, 5).map((item, index) => {
                       const total = expenseByCategoryData.reduce((a, c) => a + c.value, 0);
                       const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
+                      const CatIcon = item.icon || Tag;
                       return (
                         <div key={index} className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-base shrink-0">{item.emoji}</span>
+                            <span
+                              className="p-1 rounded shrink-0"
+                              style={{ backgroundColor: item.color + "15", color: item.color }}
+                            >
+                              <CatIcon className="h-3.5 w-3.5" />
+                            </span>
                             <span className="text-xs font-semibold text-muted-foreground truncate">{item.name}</span>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">

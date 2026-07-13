@@ -52,8 +52,9 @@ const EXPENSE_CATEGORIES = [
 
 const createExpenseSchema = z.object({
   accountId: z.string().min(1, 'Account is required'),
+  employeeId: z.string().uuid().optional().nullable(),
   amount: z.number().positive('Amount must be greater than 0'),
-  category: z.enum(EXPENSE_CATEGORIES).default('OTHER'),
+  category: z.string().default('OTHER'),
   description: z.string().min(1, 'Description is required'),
   date: z.string(),
   notes: z.string().optional().nullable(),
@@ -68,6 +69,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const {
       accountId,
       category,
+      employeeId,
       from,
       to,
       page = '1',
@@ -82,6 +84,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 
     if (accountId) where.accountId = accountId as string;
     if (category) where.category = category as string;
+    if (employeeId) where.employeeId = employeeId as string;
 
     if (from || to) {
       where.date = {};
@@ -94,6 +97,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
         where,
         include: {
           account: { select: { id: true, name: true, type: true, color: true, currency: true } },
+          employee: { select: { id: true, name: true, role: true } },
         },
         orderBy: { date: 'desc' },
         skip,
@@ -174,6 +178,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
       where: { id: req.params.id as string },
       include: {
         account: { select: { id: true, name: true, type: true, color: true, currency: true } },
+        employee: { select: { id: true, name: true, role: true } },
       },
     });
 
@@ -187,10 +192,34 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
 // ─── POST /api/expenses ───────────────────────────────────────────────
 router.post('/', validate({ body: createExpenseSchema }), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { accountId, amount, category, description, date, notes, receiptUrl } = req.body;
+    const { accountId, amount, category, description, date, notes, receiptUrl, employeeId } = req.body;
 
     const account = await prisma.account.findUnique({ where: { id: accountId } });
     if (!account) throw AppError.notFound('Account not found');
+
+    if (employeeId) {
+      const employee = await prisma.teamMember.findUnique({ where: { id: employeeId } });
+      if (!employee) throw AppError.notFound('Employee not found');
+    }
+
+    if (category === 'PAYROLL' && employeeId) {
+      const expDate = new Date(date);
+      const startOfMonth = new Date(expDate.getFullYear(), expDate.getMonth(), 1);
+      const endOfMonth = new Date(expDate.getFullYear(), expDate.getMonth() + 1, 0, 23, 59, 59, 999);
+      const existingPayroll = await prisma.expense.findFirst({
+        where: {
+          employeeId,
+          category: 'PAYROLL',
+          date: {
+            gte: startOfMonth,
+            lte: endOfMonth
+          }
+        }
+      });
+      if (existingPayroll) {
+        throw AppError.badRequest('A payroll expense has already been recorded for this employee for this month.');
+      }
+    }
 
     // Amount comes in as dollars, store as cents
     const amountCents = Math.round(amount * 100);
@@ -198,6 +227,7 @@ router.post('/', validate({ body: createExpenseSchema }), async (req: Request, r
     const expense = await prisma.expense.create({
       data: {
         accountId,
+        employeeId: employeeId || null,
         amount: amountCents,
         category,
         description,
@@ -207,6 +237,7 @@ router.post('/', validate({ body: createExpenseSchema }), async (req: Request, r
       },
       include: {
         account: { select: { id: true, name: true, type: true, color: true, currency: true } },
+        employee: { select: { id: true, name: true, role: true } },
       },
     });
 
@@ -222,7 +253,35 @@ router.put('/:id', validate({ body: updateExpenseSchema }), async (req: Request,
     const existing = await prisma.expense.findUnique({ where: { id: req.params.id as string } });
     if (!existing) throw AppError.notFound('Expense not found');
 
-    const { id: _id, createdAt: _c, updatedAt: _u, account: _a, ...data } = req.body;
+    const { id: _id, createdAt: _c, updatedAt: _u, account: _a, employee: _e, ...data } = req.body;
+
+    if (data.employeeId) {
+      const employee = await prisma.teamMember.findUnique({ where: { id: data.employeeId } });
+      if (!employee) throw AppError.notFound('Employee not found');
+    }
+
+    const targetCategory = data.category !== undefined ? data.category : existing.category;
+    const targetEmployeeId = data.employeeId !== undefined ? data.employeeId : existing.employeeId;
+    const targetDate = data.date !== undefined ? new Date(data.date) : existing.date;
+
+    if (targetCategory === 'PAYROLL' && targetEmployeeId) {
+      const startOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
+      const endOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0, 23, 59, 59, 999);
+      const existingPayroll = await prisma.expense.findFirst({
+        where: {
+          id: { not: req.params.id as string },
+          employeeId: targetEmployeeId,
+          category: 'PAYROLL',
+          date: {
+            gte: startOfMonth,
+            lte: endOfMonth
+          }
+        }
+      });
+      if (existingPayroll) {
+        throw AppError.badRequest('A payroll expense has already been recorded for this employee for this month.');
+      }
+    }
 
     const updateData: any = { ...data };
     if (data.amount !== undefined) updateData.amount = Math.round(data.amount * 100);
@@ -233,6 +292,7 @@ router.put('/:id', validate({ body: updateExpenseSchema }), async (req: Request,
       data: updateData,
       include: {
         account: { select: { id: true, name: true, type: true, color: true, currency: true } },
+        employee: { select: { id: true, name: true, role: true } },
       },
     });
 

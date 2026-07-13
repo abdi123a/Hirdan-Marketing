@@ -87,6 +87,7 @@ router.get('/income-statement', async (req: Request, res: Response, next: NextFu
         amount: true,
         startDate: true,
         endDate: true,
+        billingCycle: true,
       },
     });
 
@@ -101,7 +102,13 @@ router.get('/income-statement', async (req: Request, res: Response, next: NextFu
       
       if (subStart <= subEnd) {
         const activeMonths = getMonthsInRange(subStart, subEnd);
-        subscriptionRevenue += sub.amount * activeMonths;
+        let monthlyRate = sub.amount;
+        if (sub.billingCycle === 'ANNUAL') {
+          monthlyRate = sub.amount / 12;
+        } else if (sub.billingCycle === 'QUARTERLY') {
+          monthlyRate = sub.amount / 3;
+        }
+        subscriptionRevenue += monthlyRate * activeMonths;
       }
     });
 
@@ -438,6 +445,38 @@ router.get('/cash-flow', async (req: Request, res: Response, next: NextFunction)
       netChangeInCash,
       cashAtBeginning,
       cashAtEnd,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── GET /api/financial/monthly-commitments ────────────────────────
+router.get('/monthly-commitments', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const activeRecurring = await prisma.recurringExpense.findMany({
+      where: { isActive: true },
+    });
+    const recurringTotal = activeRecurring.reduce((sum, r) => sum + r.amount, 0);
+
+    const activeTeam = await prisma.teamMember.findMany({
+      where: { status: 'ACTIVE' },
+      select: {
+        basicSalary: true,
+        housingAllowance: true,
+        transportAllowance: true,
+      },
+    });
+
+    let payrollTotal = 0;
+    activeTeam.forEach((m) => {
+      payrollTotal += (m.basicSalary || 0) + (m.housingAllowance || 0) + (m.transportAllowance || 0);
+    });
+
+    res.json({
+      recurringTotal,
+      payrollTotal,
+      combinedMonthlyBurden: recurringTotal + payrollTotal,
     });
   } catch (error) {
     next(error);

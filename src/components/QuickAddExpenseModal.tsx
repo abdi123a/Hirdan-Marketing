@@ -8,11 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { Wallet, Tag, Calendar, FileText, Check, X, Image as ImageIcon } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Wallet, Tag, Calendar, FileText, Check, X, Users, Image as ImageIcon } from "lucide-react";
 import { EXPENSE_CATEGORIES, centsToAmount } from "@/pages/ExpensesPage";
+import { useAgencyStore } from "@/lib/store";
 
 interface Account {
   id: string;
@@ -31,6 +30,7 @@ interface Expense {
   date: string;
   receiptUrl: string | null;
   notes: string | null;
+  employeeId?: string | null;
 }
 
 interface QuickAddExpenseModalProps {
@@ -42,6 +42,8 @@ interface QuickAddExpenseModalProps {
     date?: string;
     category?: string;
     receiptUrl?: string;
+    employeeId?: string;
+    accountId?: string;
   } | null;
   onClose: () => void;
   onSaved: () => void;
@@ -65,23 +67,52 @@ export function QuickAddExpenseModal({
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
+  const [employeeId, setEmployeeId] = useState("");
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+
+  const { team, fetchTeam } = useAgencyStore();
+
+  useEffect(() => {
+    if (team.length === 0) {
+      fetchTeam();
+    }
+  }, [team.length, fetchTeam]);
 
   // Prefill or Load editing data
   useEffect(() => {
     if (expense) {
       setAccountId(expense.accountId);
       setAmount(String(centsToAmount(expense.amount)));
-      setCategory(expense.category);
+      const isPresetCat = EXPENSE_CATEGORIES.some(c => c.value === expense.category);
+      if (isPresetCat) {
+        setCategory(expense.category);
+        setIsCustomCategory(false);
+      } else {
+        setCategory(expense.category);
+        setIsCustomCategory(true);
+      }
       setDescription(expense.description);
       setDate(expense.date.split("T")[0]);
       setNotes(expense.notes || "");
       setReceiptUrl(expense.receiptUrl);
+      setEmployeeId(expense.employeeId || "");
     } else if (prefill) {
       if (prefill.amount) setAmount(String(prefill.amount));
       if (prefill.description) setDescription(prefill.description);
       if (prefill.date) setDate(prefill.date);
-      if (prefill.category) setCategory(prefill.category);
+      if (prefill.category) {
+        const isPresetCat = EXPENSE_CATEGORIES.some(c => c.value === prefill.category);
+        if (isPresetCat) {
+          setCategory(prefill.category);
+          setIsCustomCategory(false);
+        } else {
+          setCategory(prefill.category);
+          setIsCustomCategory(true);
+        }
+      }
       if (prefill.receiptUrl) setReceiptUrl(prefill.receiptUrl);
+      if (prefill.employeeId) setEmployeeId(prefill.employeeId);
+      if (prefill.accountId) setAccountId(prefill.accountId);
     }
   }, [expense, prefill]);
 
@@ -115,8 +146,9 @@ export function QuickAddExpenseModal({
     try {
       const payload = {
         accountId,
+        employeeId: (employeeId && employeeId !== "none") ? employeeId : null,
         amount: parseFloat(amount),
-        category,
+        category: category.trim().toUpperCase(),
         description,
         date: new Date(date).toISOString(),
         notes,
@@ -201,15 +233,68 @@ export function QuickAddExpenseModal({
           <div className="space-y-1.5">
             <Label htmlFor="category">Category</Label>
             <div className="relative">
-              <Select value={category} onValueChange={setCategory}>
+              <Select
+                value={isCustomCategory ? "CUSTOM" : category}
+                onValueChange={(val) => {
+                  if (val === "CUSTOM") {
+                    setIsCustomCategory(true);
+                    setCategory("");
+                  } else {
+                    setIsCustomCategory(false);
+                    setCategory(val);
+                  }
+                }}
+              >
                 <SelectTrigger className="w-full pl-9">
                   <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <SelectValue placeholder="Select Category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {EXPENSE_CATEGORIES.map((cat) => (
-                    <SelectItem key={cat.value} value={cat.value}>
-                      {cat.emoji} {cat.label}
+                  {EXPENSE_CATEGORIES.map((cat) => {
+                    const CatIcon = cat.icon;
+                    return (
+                      <SelectItem key={cat.value} value={cat.value}>
+                        <span className="flex items-center gap-2">
+                          <CatIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <span>{cat.label}</span>
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
+                  <SelectItem value="CUSTOM">➕ Add Custom Category...</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Custom Category Input */}
+            {isCustomCategory && (
+              <div className="space-y-1.5 mt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                <Label htmlFor="customCategoryName">Custom Category Name</Label>
+                <Input
+                  id="customCategoryName"
+                  placeholder="E.g., Legal, Cleaning, Consultant..."
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Employee selection (Optional) */}
+          <div className="space-y-1.5">
+            <Label htmlFor="employee">Associate with Employee (Optional)</Label>
+            <div className="relative">
+              <Select value={employeeId} onValueChange={setEmployeeId}>
+                <SelectTrigger className="w-full pl-9">
+                  <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <SelectValue placeholder="No employee associated" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No employee associated</SelectItem>
+                  {team.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name} ({m.role})
                     </SelectItem>
                   ))}
                 </SelectContent>

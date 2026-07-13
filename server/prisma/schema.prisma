@@ -171,6 +171,7 @@ model TeamMember {
   files         EmployeeFile[]
   activities    EmployeeActivity[]
   hrDocuments   HrDocument[]
+  expenses      Expense[]           @relation("EmployeeExpenses")
 
   @@index([managerId])
   @@map("team_members")
@@ -869,6 +870,7 @@ model Account {
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
   expenses          Expense[]
+  recurringExpenses RecurringExpense[]
   transfersFrom     AccountTransfer[] @relation("TransferFrom")
   transfersTo       AccountTransfer[] @relation("TransferTo")
 
@@ -879,8 +881,9 @@ model Account {
 model Expense {
   id          String          @id @default(uuid())
   accountId   String          @map("account_id")
+  employeeId  String?         @map("employee_id")
   amount      Int             // stored in smallest currency unit (cents)
-  category    ExpenseCategory @default(OTHER)
+  category    String          @default("OTHER")
   description String          @db.Text
   date        DateTime
   receiptUrl  String?         @map("receipt_url") @db.LongText
@@ -888,12 +891,36 @@ model Expense {
   createdAt   DateTime        @default(now()) @map("created_at")
   updatedAt   DateTime        @updatedAt @map("updated_at")
 
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account  Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employee TeamMember? @relation("EmployeeExpenses", fields: [employeeId], references: [id], onDelete: SetNull)
 
   @@index([accountId])
   @@index([date])
   @@index([category])
+  @@index([employeeId])
   @@map("expenses")
+}
+
+/// A standing monthly business expense (template, not a real payment)
+model RecurringExpense {
+  id          String          @id @default(uuid())
+  name        String                          // e.g. "Office Rent"
+  category    String          @default("OTHER")
+  amount      Int                             // cents
+  accountId   String?         @map("account_id") // preferred payment account
+  description String?         @db.Text
+  isActive    Boolean         @default(true) @map("is_active")
+  dayOfMonth  Int?            @map("day_of_month") // e.g. 1 = 1st of month
+  startDate   DateTime        @default(now()) @map("start_date")
+  endDate     DateTime?       @map("end_date")
+  frequency   String          @default("MONTHLY") // "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" | "ON_DEMAND"
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt     @map("updated_at")
+
+  account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@map("recurring_expenses")
 }
 
 /// Money transfer between two accounts

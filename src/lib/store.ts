@@ -532,8 +532,14 @@ const createDefaultSettings = (): AgencySettings => ({
   smtpEncryption: "tls",
   smtpDriver: "smtp",
   mailEnabled: false,
-  appVersion: "2.7.0",
+  appVersion: "2.9.0",
   versionHistory: [
+    {
+      version: "2.8.0",
+      description: "feat: implement recurring expenses, associate expenses with employees, and improve financial dashboard and expenses management UI",
+      author: "Antigravity",
+      date: new Date().toISOString(),
+    },
     {
       version: "2.7.0",
       description: "feat: update dashboard layouts, support manual file transfer send actions, multi-file zipping and email sharing templates",

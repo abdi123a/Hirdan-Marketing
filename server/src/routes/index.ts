@@ -29,6 +29,7 @@ import reportsRoutes from './reports.routes.js';
 import financialRoutes from './financial.routes.js';
 import accountsRoutes from './accounts.routes.js';
 import expensesRoutes from './expenses.routes.js';
+import recurringExpensesRoutes from './recurring-expenses.routes.js';
 import hrRoutes from './hr.routes.js';
 
 const router = Router();
@@ -53,6 +54,7 @@ router.use('/ai', aiRoutes);
 router.use('/financial', financialRoutes);
 router.use('/accounts', accountsRoutes);
 router.use('/expenses', expensesRoutes);
+router.use('/recurring-expenses', recurringExpensesRoutes);
 
 // Social Media Module — nested under existing resource paths
 router.use('/clients', socialProfilesRoutes);
