@@ -12,7 +12,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Wallet, Tag, Calendar, FileText, Check } from "lucide-react";
+import { Wallet, Tag, Calendar, FileText, Check, Building2, Smartphone, Banknote } from "lucide-react";
 import { EXPENSE_CATEGORIES, centsToAmount } from "@/pages/ExpensesPage";
 
 interface Account {
@@ -20,6 +20,7 @@ interface Account {
   name: string;
   type: "BANK" | "MOBILE_WALLET" | "CASH";
   currency: string;
+  image?: string | null;
 }
 
 interface RecurringExpense {
@@ -278,11 +279,25 @@ export function RecurringExpenseModal({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No preferred account</SelectItem>
-                  {accounts.map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id}>
-                      {acc.name} ({acc.type.replace("_", " ")})
-                    </SelectItem>
-                  ))}
+                  {accounts.map((acc) => {
+                    let AccIcon = Banknote;
+                    if (acc.type === "BANK") AccIcon = Building2;
+                    if (acc.type === "MOBILE_WALLET") AccIcon = Smartphone;
+                    return (
+                      <SelectItem key={acc.id} value={acc.id}>
+                        <div className="flex items-center gap-2">
+                          {acc.image ? (
+                            <img src={acc.image} alt={acc.name} className="h-5 w-5 rounded-full object-cover shrink-0" />
+                          ) : (
+                            <div className="h-5 w-5 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                              <AccIcon className="h-3 w-3" />
+                            </div>
+                          )}
+                          <span>{acc.name} ({acc.type.replace("_", " ")})</span>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>

@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils";
+import { useAgencyStore } from "@/lib/store";
+import { parseAmountNumber } from "@/lib/money";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -90,6 +92,7 @@ interface CashFlowData {
 
 export default function FinancialReportPage() {
   const { toast } = useToast();
+  const { invoices, fetchInvoices } = useAgencyStore();
   const [activeTab, setActiveTab] = useState<string>("income-statement");
   const [preset, setPreset] = useState<string>("this-month");
   
@@ -174,9 +177,67 @@ export default function FinancialReportPage() {
     fetchFinancialData();
   }, [startDate, endDate, toast]);
 
+  useEffect(() => {
+    fetchInvoices();
+  }, [fetchInvoices]);
+
   const handlePrint = () => {
     window.print();
   };
+
+  const gatewayReportData = useMemo(() => {
+    if (!startDate || !endDate) return [];
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    const groups: Record<string, number> = {};
+    let totalCollected = 0;
+
+    const rangeInvoices = invoices.filter(inv => {
+      const d = new Date(inv.date);
+      return d >= start && d <= end && (inv.status === 'Paid' || inv.status === 'Partially Paid');
+    });
+
+    rangeInvoices.forEach(inv => {
+      const method = inv.paymentMethod || 'Unspecified';
+      const amount = inv.status === 'Paid' ? parseAmountNumber(inv.amount) : (inv.deposit || 0);
+      groups[method] = (groups[method] || 0) + amount;
+      totalCollected += amount;
+    });
+
+    const colors = [
+      "hsl(var(--primary))",
+      "hsl(260, 45%, 55%)",
+      "hsl(var(--secondary))",
+      "hsl(142, 72%, 29%)",
+      "hsl(200, 80%, 40%)",
+      "hsl(0, 72%, 51%)",
+      "#9ca3af"
+    ];
+
+    return Object.entries(groups).map(([gateway, amount], index) => {
+      return {
+        name: gateway,
+        value: Math.round(amount * 100) / 100,
+        color: colors[index % colors.length],
+        percentage: totalCollected > 0 ? (amount / totalCollected) * 100 : 0
+      };
+    }).sort((a, b) => b.value - a.value);
+  }, [invoices, startDate, endDate]);
+
+  const rangeInvoices = useMemo(() => {
+    if (!startDate || !endDate) return [];
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    return invoices
+      .filter(inv => {
+        const d = new Date(inv.date);
+        return d >= start && d <= end && (inv.status === 'Paid' || inv.status === 'Partially Paid');
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [invoices, startDate, endDate]);
 
   // Safe division utility
   const formatVal = (cents: number | undefined) => {
@@ -414,7 +475,7 @@ export default function FinancialReportPage() {
 
           {/* Main Statement Tabs */}
           <Tabs defaultValue="income-statement" className="w-full" onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3 bg-muted/50 p-1 rounded-xl h-11 print:hidden max-w-xl">
+            <TabsList className="grid w-full grid-cols-4 bg-muted/50 p-1 rounded-xl h-11 print:hidden max-w-2xl">
               <TabsTrigger value="income-statement" className="rounded-lg text-[13px] font-medium transition-all">
                 Income Statement
               </TabsTrigger>
@@ -423,6 +484,9 @@ export default function FinancialReportPage() {
               </TabsTrigger>
               <TabsTrigger value="cash-flow" className="rounded-lg text-[13px] font-medium transition-all">
                 Cash Flow
+              </TabsTrigger>
+              <TabsTrigger value="payment-gateways" className="rounded-lg text-[13px] font-medium transition-all">
+                Payment Gateways
               </TabsTrigger>
             </TabsList>
 
@@ -784,6 +848,140 @@ export default function FinancialReportPage() {
                   </div>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* PAYMENT GATEWAYS TAB */}
+            <TabsContent value="payment-gateways" className="space-y-6 mt-6">
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                {/* Gateway breakdown table */}
+                <Card className="shadow-card border-border xl:col-span-2 print:border-0 print:shadow-none">
+                  <CardHeader className="border-b border-border pb-4 print:px-0">
+                    <CardTitle className="text-lg font-bold flex items-center gap-2">
+                      <Wallet className="h-5 w-5 text-primary" />
+                      Payment Gateway Revenue Breakdown
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      Total collections grouped by payment gateway for period from {startDate} to {endDate}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0 print:p-0">
+                    <div className="divide-y divide-border/60 text-sm">
+                      <div className="p-4 bg-muted/10 print:px-0 flex justify-between font-bold text-foreground py-2 text-[15px]">
+                        <span>GATEWAY / METHOD</span>
+                        <span>TOTAL RECEIVED</span>
+                      </div>
+                      {gatewayReportData.map((gateway) => (
+                        <div key={gateway.name} className="p-4 flex justify-between items-center text-foreground font-semibold">
+                          <div className="flex items-center gap-2">
+                            <span className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: gateway.color }} />
+                            <span>{gateway.name}</span>
+                            <Badge variant="outline" className="text-[10px] ml-2">
+                              {gateway.percentage.toFixed(1)}%
+                            </Badge>
+                          </div>
+                          <span>{formatCurrency(gateway.value)}</span>
+                        </div>
+                      ))}
+                      {gatewayReportData.length === 0 && (
+                        <div className="p-8 text-center text-muted-foreground text-sm">
+                          No payments recorded in this period.
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Pie Chart Card */}
+                <div className="space-y-6 print:hidden">
+                  <Card className="shadow-card border-border">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <PieIcon className="h-4 w-4" /> Share of Wallet
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="h-60 flex items-center justify-center">
+                      {gatewayReportData.length > 0 ? (
+                        <div className="flex items-center justify-between w-full">
+                          <div className="w-[120px] h-[120px] shrink-0">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={gatewayReportData}
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={35}
+                                  outerRadius={55}
+                                  paddingAngle={3}
+                                  dataKey="value"
+                                >
+                                  {gatewayReportData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                  ))}
+                                </Pie>
+                                <RechartsTooltip formatter={(v) => [formatCurrency(Number(v)), '']} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div className="flex flex-col gap-1.5 text-xs ml-2 shrink-0">
+                            {gatewayReportData.map((item) => (
+                              <div key={item.name} className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                                <span className="text-muted-foreground truncate max-w-[120px]">{item.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center text-muted-foreground text-sm py-8">
+                          No data to display.
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Detailed range transactions list */}
+                {rangeInvoices.length > 0 && (
+                  <Card className="shadow-card border-border xl:col-span-3">
+                    <CardHeader>
+                      <CardTitle className="text-base font-bold flex items-center gap-2">
+                        <FileText className="h-4.5 w-4.5 text-muted-foreground" />
+                        Transactions List
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        Individual paid invoices in this period
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="divide-y divide-border/60 text-xs">
+                        <div className="grid grid-cols-5 p-3 bg-muted/20 font-bold text-muted-foreground">
+                          <div>Invoice ID</div>
+                          <div>Client</div>
+                          <div>Date</div>
+                          <div>Gateway</div>
+                          <div className="text-right">Paid Amount</div>
+                        </div>
+                        {rangeInvoices.map((inv) => {
+                          const amt = inv.status === 'Paid' ? parseAmountNumber(inv.amount) : (inv.deposit || 0);
+                          return (
+                            <div key={inv.id} className="grid grid-cols-5 p-3 items-center text-foreground hover:bg-muted/10 transition-colors">
+                              <div className="font-semibold text-primary">{inv.invoiceNumber}</div>
+                              <div className="truncate pr-2 font-medium">{inv.client}</div>
+                              <div className="text-muted-foreground">{new Date(inv.date).toLocaleDateString()}</div>
+                              <div>
+                                <Badge variant="outline" className="text-[10px] py-0 px-2 font-medium capitalize">
+                                  {inv.paymentMethod || 'Unspecified'}
+                                </Badge>
+                              </div>
+                              <div className="text-right font-black">{formatCurrency(amt)}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
             </TabsContent>
           </Tabs>
         </>

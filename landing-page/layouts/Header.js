@@ -3,6 +3,31 @@ import { nextUtility } from "@/utility";
 import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
 import { useSettings } from "@/components/SettingsProvider";
+
+// Read cached settings synchronously from localStorage to avoid logo flash on initial render
+function getInitialCachedSettings() {
+  if (typeof window === "undefined") return null;
+  try {
+    const cached = localStorage.getItem("agency_settings");
+    return cached ? JSON.parse(cached) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Hook that returns settings from API or falls back to localStorage cache
+function useEffectiveSettings() {
+  const { settings, resolveImageUrl, appUrl } = useSettings();
+  const [cachedSettings, setCachedSettings] = useState(null);
+
+  useEffect(() => {
+    const cached = getInitialCachedSettings();
+    if (cached) setCachedSettings(cached);
+  }, []);
+
+  const effectiveSettings = settings || cachedSettings;
+  return { settings: effectiveSettings, resolveImageUrl, appUrl };
+}
 const Header = ({ header, single }) => {
   useEffect(() => {
     nextUtility.stickyNav();
@@ -93,7 +118,7 @@ const MobileMenu = ({ single }) => {
 };
 
 const Sidebar = ({ sidebarToggle, close, menu, single }) => {
-  const { settings, appUrl, resolveImageUrl } = useSettings();
+  const { settings, appUrl, resolveImageUrl } = useEffectiveSettings();
   const logo = resolveImageUrl(settings?.logo) || "assets/img/logo/black-logo.svg";
 
   const agencySettings = settings || {};
@@ -101,15 +126,22 @@ const Sidebar = ({ sidebarToggle, close, menu, single }) => {
   const address = agencySettings.address || "Cite Barwaqo, Republic of Djibouti";
   const phone = agencySettings.phone || "+253 77 64 61 59";
 
-  let social = {};
-  if (typeof agencySettings.socialLinks === "string") {
-    try {
-      social = JSON.parse(agencySettings.socialLinks);
-    } catch (e) {
-      social = {};
+  // Normalize socialLinks: support both new array format and legacy {facebook, twitter...} object
+  let socialArray = [];
+  const rawSocial = agencySettings.socialLinks;
+  if (Array.isArray(rawSocial)) {
+    socialArray = rawSocial.filter(s => s.url);
+  } else {
+    let socialObj = {};
+    if (typeof rawSocial === "string") {
+      try { socialObj = JSON.parse(rawSocial); } catch (e) { socialObj = {}; }
+    } else if (rawSocial && typeof rawSocial === "object") {
+      socialObj = rawSocial;
     }
-  } else if (agencySettings.socialLinks && typeof agencySettings.socialLinks === "object") {
-    social = agencySettings.socialLinks;
+    const iconMap = { facebook: 'fa-facebook-f', twitter: 'fa-twitter', instagram: 'fa-instagram', linkedin: 'fa-linkedin-in' };
+    socialArray = Object.entries(socialObj)
+      .filter(([, url]) => url)
+      .map(([key, url]) => ({ id: key, platform: key, icon: iconMap[key] || 'fa-globe', url }));
   }
 
   return (
@@ -180,33 +212,11 @@ const Sidebar = ({ sidebarToggle, close, menu, single }) => {
                   </Link>
                 </div>
                 <div className="social-icon d-flex align-items-center">
-                  {social.facebook && (
-                    <a href={social.facebook} target="_blank" rel="noreferrer">
-                      <i className="fab fa-facebook-f" />
+                  {socialArray.map(s => (
+                    <a key={s.id} href={s.url} target="_blank" rel="noreferrer" title={s.platform}>
+                      <i className={`${s.icon === 'fa-globe' ? 'fas' : 'fab'} ${s.icon}`} />
                     </a>
-                  )}
-                  {social.twitter && (
-                    <a href={social.twitter} target="_blank" rel="noreferrer">
-                      <i className="fab fa-twitter" />
-                    </a>
-                  )}
-                  {social.linkedin && (
-                    <a href={social.linkedin} target="_blank" rel="noreferrer">
-                      <i className="fab fa-linkedin-in" />
-                    </a>
-                  )}
-                  {social.instagram && (
-                    <a href={social.instagram} target="_blank" rel="noreferrer">
-                      <i className="fab fa-instagram" />
-                    </a>
-                  )}
-                  {!social.facebook && !social.twitter && !social.linkedin && !social.instagram && (
-                    <>
-                      <a href="https://facebook.com/hirdan" target="_blank" rel="noreferrer"><i className="fab fa-facebook-f" /></a>
-                      <a href="https://twitter.com/hirdan" target="_blank" rel="noreferrer"><i className="fab fa-twitter" /></a>
-                      <a href="https://linkedin.com/company/hirdan" target="_blank" rel="noreferrer"><i className="fab fa-linkedin-in" /></a>
-                    </>
-                  )}
+                  ))}
                 </div>
               </div>
             </div>
@@ -287,7 +297,7 @@ const Header1 = ({ single, menu }) => {
 };
 
 const Header2 = ({ single }) => {
-  const { settings, appUrl, resolveImageUrl } = useSettings();
+  const { settings, appUrl, resolveImageUrl } = useEffectiveSettings();
   const logo = resolveImageUrl(settings?.logo) || "assets/img/logo/black-logo.svg";
 
   const singleMenu = [
@@ -466,7 +476,7 @@ const Header5 = ({ single }) => {
 };
 
 const Header6 = ({ single }) => {
-  const { settings, appUrl, resolveImageUrl } = useSettings();
+  const { settings, appUrl, resolveImageUrl } = useEffectiveSettings();
   const logo = resolveImageUrl(settings?.logo) || "assets/img/logo/black-logo.svg";
 
   const [sidebarToggle, setSidebarToggle] = useState(false);

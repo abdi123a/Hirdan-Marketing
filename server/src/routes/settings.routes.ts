@@ -66,6 +66,8 @@ router.get('/public', async (req: Request, res: Response, next) => {
         recaptchaSiteKey: settings.recaptchaSiteKey,
         googleAnalyticsEnabled: settings.googleAnalyticsEnabled,
         googleAnalyticsMeasurementId: settings.googleAnalyticsMeasurementId,
+        developmentMode: settings.developmentMode,
+        comingSoonMessage: settings.comingSoonMessage,
       }
     });
   } catch (error) {
@@ -140,6 +142,8 @@ router.get('/', async (req: Request, res: Response, next) => {
           recaptchaSecretKey: settings.recaptchaSecretKey,
           googleAnalyticsEnabled: settings.googleAnalyticsEnabled,
           googleAnalyticsMeasurementId: settings.googleAnalyticsMeasurementId,
+          developmentMode: settings.developmentMode,
+          comingSoonMessage: settings.comingSoonMessage,
           socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
         },
       });
@@ -176,6 +180,8 @@ const settingsDtoSchema = z.object({
   recaptchaSecretKey: z.string().optional().nullable(),
   googleAnalyticsEnabled: z.boolean().optional(),
   googleAnalyticsMeasurementId: z.string().optional().nullable(),
+  developmentMode: z.boolean().optional(),
+  comingSoonMessage: z.string().optional().nullable(),
   openAiApiKey: z.string().optional().nullable(),
   claudeApiKey: z.string().optional().nullable(),
   geminiApiKey: z.string().optional().nullable(),

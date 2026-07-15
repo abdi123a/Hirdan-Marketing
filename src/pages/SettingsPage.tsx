@@ -68,7 +68,7 @@ import {
   Edit2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useAgencyStore, AgencySettings, PaymentMethod, VersionEntry } from "@/lib/store";
+import { useAgencyStore, AgencySettings, PaymentMethod, SocialLink, VersionEntry } from "@/lib/store";
 import { ProtectedBrandingImage } from "@/components/ProtectedBrandingImage";
 import { Progress } from "@/components/ui/progress";
 import { apiFetch } from "@/lib/api-client";
@@ -224,6 +224,9 @@ export default function SettingsPage() {
 
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   const [showSmtpPassword, setShowSmtpPassword] = useState(false);
+  const [showOpenAiKey, setShowOpenAiKey] = useState(false);
+  const [showClaudeKey, setShowClaudeKey] = useState(false);
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [isTestingEmail, setIsTestingEmail] = useState(false);
   const [emailStatus, setEmailStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [showTestEmailDialog, setShowTestEmailDialog] = useState(false);
@@ -273,6 +276,7 @@ export default function SettingsPage() {
     currency: string;
     color: string | null;
     icon: string | null;
+    image: string | null;
     notes: string | null;
     balance: number;
   }
@@ -356,6 +360,68 @@ export default function SettingsPage() {
     }));
   };
 
+  // --- Dynamic Social Links handlers ---
+  const SOCIAL_ICON_OPTIONS: { icon: string; platform: string; label: string }[] = [
+    { icon: 'fa-facebook-f',    platform: 'Facebook',   label: 'Facebook' },
+    { icon: 'fa-twitter',       platform: 'Twitter',    label: 'Twitter (X)' },
+    { icon: 'fa-instagram',     platform: 'Instagram',  label: 'Instagram' },
+    { icon: 'fa-linkedin-in',   platform: 'LinkedIn',   label: 'LinkedIn' },
+    { icon: 'fa-youtube',       platform: 'YouTube',    label: 'YouTube' },
+    { icon: 'fa-tiktok',        platform: 'TikTok',     label: 'TikTok' },
+    { icon: 'fa-snapchat',      platform: 'Snapchat',   label: 'Snapchat' },
+    { icon: 'fa-pinterest',     platform: 'Pinterest',  label: 'Pinterest' },
+    { icon: 'fa-telegram',      platform: 'Telegram',   label: 'Telegram' },
+    { icon: 'fa-whatsapp',      platform: 'WhatsApp',   label: 'WhatsApp' },
+    { icon: 'fa-discord',       platform: 'Discord',    label: 'Discord' },
+    { icon: 'fa-reddit',        platform: 'Reddit',     label: 'Reddit' },
+    { icon: 'fa-github',        platform: 'GitHub',     label: 'GitHub' },
+    { icon: 'fa-dribbble',      platform: 'Dribbble',   label: 'Dribbble' },
+    { icon: 'fa-behance',       platform: 'Behance',    label: 'Behance' },
+    { icon: 'fa-vimeo-v',       platform: 'Vimeo',      label: 'Vimeo' },
+    { icon: 'fa-twitch',        platform: 'Twitch',     label: 'Twitch' },
+    { icon: 'fa-medium',        platform: 'Medium',     label: 'Medium' },
+    { icon: 'fa-globe',         platform: 'Website',    label: 'Website / Other' },
+  ];
+
+  const addSocialLink = () => {
+    const newEntry: SocialLink = {
+      id: crypto.randomUUID(),
+      platform: 'Facebook',
+      icon: 'fa-facebook-f',
+      url: '',
+    };
+    setFormData(prev => ({
+      ...prev,
+      socialLinks: Array.isArray(prev.socialLinks)
+        ? [...prev.socialLinks, newEntry]
+        : [newEntry],
+    }));
+  };
+
+  const removeSocialLink = (id: string) => {
+    setFormData(prev => ({
+      ...prev,
+      socialLinks: Array.isArray(prev.socialLinks)
+        ? prev.socialLinks.filter((s: SocialLink) => s.id !== id)
+        : [],
+    }));
+  };
+
+  const updateSocialLink = (id: string, field: keyof SocialLink, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      socialLinks: Array.isArray(prev.socialLinks)
+        ? prev.socialLinks.map((s: SocialLink) =>
+            s.id === id
+              ? field === 'icon'
+                ? { ...s, icon: value, platform: SOCIAL_ICON_OPTIONS.find(o => o.icon === value)?.platform || s.platform }
+                : { ...s, [field]: value }
+              : s
+          )
+        : [],
+    }));
+  };
+
   const handleNotificationChange = (key: keyof AgencySettings['notifications'], value: boolean) => {
     setFormData(prev => ({
       ...prev,
@@ -405,6 +471,32 @@ export default function SettingsPage() {
       ...prev,
       paymentMethods: (prev.paymentMethods || []).map(m => m.id === id ? { ...m, [field]: value } : m)
     }));
+  };
+
+  const handlePaymentMethodImageChange = async (id: string, file: File) => {
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please upload an image smaller than 5MB.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const url = await uploadFile(file);
+      handlePaymentMethodChange(id, 'image', url);
+      toast({
+        title: "Upload Successful",
+        description: "Payment method image has been updated.",
+      });
+    } catch (error) {
+      toast({
+        title: "Upload Failed",
+        description: "There was an error uploading the image. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   const addPaymentMethod = () => {
@@ -1001,6 +1093,53 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Site Availability & Analytics */}
+          <Card className="shadow-card border-border overflow-hidden">
+            <CardHeader className="bg-muted/30 border-b pb-6">
+              <CardTitle className="font-display text-xl flex items-center gap-2">
+                <Globe className="h-5 w-5 text-primary" /> Landing Page &amp; SEO Configuration
+              </CardTitle>
+              <CardDescription>Control your landing page visibility, coming soon page, and search engine indexation.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-8 space-y-6">
+              {/* Development Mode Toggle */}
+              <div className="flex items-start justify-between p-6 rounded-2xl border bg-background hover:bg-muted/10 transition-all group">
+                <div className="space-y-1 pr-4">
+                  <p className="font-bold flex items-center gap-2 text-foreground">
+                    <Shield className="h-4 w-4 text-primary" /> Development Mode (Coming Soon Page)
+                  </p>
+                  <p className="text-sm text-muted-foreground max-w-xl">
+                    When enabled, visitors will see a Coming Soon page. Google and other search engines will be instructed not to index your website (using robots noindex tag).
+                  </p>
+                </div>
+                <Switch 
+                  checked={formData.developmentMode} 
+                  onCheckedChange={(val) => setFormData(prev => ({ ...prev, developmentMode: val }))} 
+                  className="data-[state=checked]:bg-primary"
+                />
+              </div>
+
+              {formData.developmentMode && (
+                <div className="grid gap-2 border p-6 rounded-2xl bg-muted/20 animate-in fade-in duration-200">
+                  <Label htmlFor="comingSoonMessage" className="font-semibold text-sm">
+                    Coming Soon Message
+                  </Label>
+                  <Textarea
+                    id="comingSoonMessage"
+                    value={formData.comingSoonMessage || ''}
+                    onChange={handleInputChange}
+                    placeholder="We're currently working on something amazing. Check back soon!"
+                    className="min-h-[100px] bg-background focus-visible:ring-primary"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This message will be prominently displayed on the Coming Soon screen.
+                  </p>
+                </div>
+              )}
+
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="localization" className="mt-0 outline-none space-y-6">
@@ -1155,16 +1294,50 @@ export default function SettingsPage() {
                       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-3 mb-3">
-                            <div className={`p-2 rounded-lg ${
-                              method.type === 'stripe' ? 'bg-indigo-50 text-indigo-500' : 
-                              method.type === 'paypal' ? 'bg-blue-50 text-blue-500' : 
-                              method.type === 'bank' ? 'bg-emerald-50 text-emerald-500' : 
-                              'bg-slate-50 text-slate-500'
-                            }`}>
-                              {method.type === 'stripe' && <CreditCard className="h-4 w-4" />}
-                              {method.type === 'paypal' && <CreditCard className="h-4 w-4" />}
-                              {method.type === 'bank' && <Briefcase className="h-4 w-4" />}
-                              {method.type === 'other' && <HelpCircle className="h-4 w-4" />}
+                             <div className="relative group shrink-0">
+                              {method.image ? (
+                                <img src={method.image} className="h-10 w-10 rounded-lg object-cover border" alt={method.name} />
+                              ) : (
+                                <div className={`p-2.5 rounded-lg ${
+                                  method.type === 'stripe' ? 'bg-indigo-50 text-indigo-500' : 
+                                  method.type === 'paypal' ? 'bg-blue-50 text-blue-500' : 
+                                  method.type === 'bank' ? 'bg-emerald-50 text-emerald-500' : 
+                                  'bg-slate-50 text-slate-500'
+                                }`}>
+                                  {method.type === 'stripe' && <CreditCard className="h-4 w-4" />}
+                                  {method.type === 'paypal' && <CreditCard className="h-4 w-4" />}
+                                  {method.type === 'bank' && <Briefcase className="h-4 w-4" />}
+                                  {method.type === 'other' && <HelpCircle className="h-4 w-4" />}
+                                </div>
+                              )}
+                              <label className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center rounded-lg cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Upload className="h-3.5 w-3.5 text-white mb-0.5" />
+                                <span className="text-[8px] text-white font-bold uppercase tracking-wider">Logo</span>
+                                <input 
+                                  type="file" 
+                                  accept="image/*" 
+                                  className="hidden" 
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      await handlePaymentMethodImageChange(method.id, file);
+                                    }
+                                  }}
+                                />
+                              </label>
+                              {method.image && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handlePaymentMethodChange(method.id, 'image', '');
+                                  }}
+                                  className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Remove image"
+                                >
+                                  <Trash2 className="h-2.5 w-2.5" />
+                                </button>
+                              )}
                             </div>
                             <div className="flex-1 min-w-0">
                               <Input 
@@ -1248,52 +1421,85 @@ export default function SettingsPage() {
         <TabsContent value="social" className="mt-0 outline-none space-y-6">
           <Card className="shadow-card border-border overflow-hidden">
             <CardHeader className="bg-muted/30 border-b pb-6">
-              <CardTitle className="font-display text-xl">Social Media Links</CardTitle>
-              <CardDescription>Connect your agency social profiles to display in portal.</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="font-display text-xl">Social Media Links</CardTitle>
+                  <CardDescription>Add the social profiles you want displayed on your landing page and Coming Soon page.</CardDescription>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={addSocialLink}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add Social
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-8">
-              <div className="grid md:grid-cols-2 gap-8">
-                <div className="space-y-2">
-                  <Label htmlFor="linkedin" className="font-semibold">LinkedIn Profile</Label>
-                  <Input 
-                    id="linkedin" 
-                    value={formData.socialLinks.linkedin || ''} 
-                    onChange={handleSocialChange} 
-                    placeholder="https://linkedin.com/company/your-agency" 
-                    className="h-11 focus-visible:ring-primary"
-                  />
+              {(!Array.isArray(formData.socialLinks) || (formData.socialLinks as SocialLink[]).length === 0) ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed border-border rounded-2xl gap-3">
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                    <Link className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <p className="font-semibold text-sm">No social links yet</p>
+                  <p className="text-xs text-muted-foreground max-w-xs">Click "Add Social" to connect your agency's social media profiles. They'll appear in the landing page footer and Coming Soon page.</p>
+                  <Button type="button" variant="outline" size="sm" onClick={addSocialLink} className="mt-1 gap-1.5">
+                    <Plus className="h-3.5 w-3.5" /> Add Social Link
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="twitter" className="font-semibold">Twitter (X) Profile</Label>
-                  <Input 
-                    id="twitter" 
-                    value={formData.socialLinks.twitter || ''} 
-                    onChange={handleSocialChange} 
-                    placeholder="https://twitter.com/your-agency" 
-                    className="h-11 focus-visible:ring-primary"
-                  />
+              ) : (
+                <div className="space-y-3">
+                  {(formData.socialLinks as SocialLink[]).map((link, idx) => (
+                    <div key={link.id} className="flex items-center gap-3 p-3 rounded-xl border bg-muted/10 hover:bg-muted/20 transition-all">
+                      {/* Icon preview */}
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-primary">
+                        <i className={`${link.icon === 'fa-globe' ? 'fas' : 'fab'} ${link.icon}`} style={{ fontSize: '16px' }} />
+                      </div>
+
+                      {/* Icon picker */}
+                      <Select
+                        value={link.icon}
+                        onValueChange={(val) => updateSocialLink(link.id, 'icon', val)}
+                      >
+                        <SelectTrigger className="h-10 w-[155px] shrink-0 text-xs font-semibold focus:ring-primary">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-64">
+                          {SOCIAL_ICON_OPTIONS.map(opt => (
+                            <SelectItem key={opt.icon} value={opt.icon}>
+                              <div className="flex items-center gap-2">
+                                <i className={`${opt.icon === 'fa-globe' ? 'fas' : 'fab'} ${opt.icon} w-4`} />
+                                <span>{opt.label}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      {/* URL input */}
+                      <Input
+                        value={link.url}
+                        onChange={(e) => updateSocialLink(link.id, 'url', e.target.value)}
+                        placeholder={`https://${link.platform.toLowerCase()}.com/your-page`}
+                        className="flex-1 h-10 focus-visible:ring-primary text-sm"
+                      />
+
+                      {/* Remove button */}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeSocialLink(link.id)}
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/5 rounded-lg shrink-0"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="instagram" className="font-semibold">Instagram Profile</Label>
-                  <Input 
-                    id="instagram" 
-                    value={formData.socialLinks.instagram || ''} 
-                    onChange={handleSocialChange} 
-                    placeholder="https://instagram.com/your-agency" 
-                    className="h-11 focus-visible:ring-primary"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="facebook" className="font-semibold">Facebook Page</Label>
-                  <Input 
-                    id="facebook" 
-                    value={formData.socialLinks.facebook || ''} 
-                    onChange={handleSocialChange} 
-                    placeholder="https://facebook.com/your-agency" 
-                    className="h-11 focus-visible:ring-primary"
-                  />
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1369,7 +1575,7 @@ export default function SettingsPage() {
                   {[
                     { id: 'openai', name: 'OpenAI', desc: 'GPT-4o & GPT-4o-mini models', icon: Sparkles, color: 'from-green-500/10 to-emerald-500/5 hover:border-green-500/30' },
                     { id: 'claude', name: 'Anthropic Claude', desc: 'Claude 3.5 Sonnet models', icon: Server, color: 'from-orange-500/10 to-amber-500/5 hover:border-orange-500/30' },
-                    { id: 'gemini', name: 'Google Gemini', desc: 'Gemini 1.5 Pro & Flash models', icon: Globe, color: 'from-blue-500/10 to-cyan-500/5 hover:border-blue-500/30' },
+                    { id: 'gemini', name: 'Google Gemini', desc: 'Gemini 2.5 Flash Lite (Free tier)', icon: Globe, color: 'from-blue-500/10 to-cyan-500/5 hover:border-blue-500/30' },
                   ].map((p) => {
                     const isSelected = (formData.mainAiProvider || 'openai') === p.id;
                     const IconComponent = p.icon;
@@ -1419,14 +1625,24 @@ export default function SettingsPage() {
                     <Label htmlFor="openAiApiKey" className="font-medium text-xs text-muted-foreground uppercase tracking-wider">OpenAI API Key</Label>
                     <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-[11px] text-purple-600 hover:underline">Get key</a>
                   </div>
-                  <Input 
-                    id="openAiApiKey" 
-                    type="password"
-                    value={formData.openAiApiKey || ''} 
-                    onChange={handleInputChange} 
-                    placeholder="sk-..." 
-                    className="h-11 focus-visible:ring-purple-500 border-border/80 rounded-xl"
-                  />
+                  <div className="relative">
+                    <Input 
+                      id="openAiApiKey" 
+                      type={showOpenAiKey ? 'text' : 'password'}
+                      value={formData.openAiApiKey || ''} 
+                      onChange={handleInputChange} 
+                      placeholder="sk-..." 
+                      className="h-11 pr-10 focus-visible:ring-purple-500 border-border/80 rounded-xl"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowOpenAiKey(p => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showOpenAiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Claude Input */}
@@ -1435,14 +1651,24 @@ export default function SettingsPage() {
                     <Label htmlFor="claudeApiKey" className="font-medium text-xs text-muted-foreground uppercase tracking-wider">Anthropic Claude API Key</Label>
                     <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-[11px] text-purple-600 hover:underline">Get key</a>
                   </div>
-                  <Input 
-                    id="claudeApiKey" 
-                    type="password"
-                    value={formData.claudeApiKey || ''} 
-                    onChange={handleInputChange} 
-                    placeholder="sk-ant-..." 
-                    className="h-11 focus-visible:ring-purple-500 border-border/80 rounded-xl"
-                  />
+                  <div className="relative">
+                    <Input 
+                      id="claudeApiKey" 
+                      type={showClaudeKey ? 'text' : 'password'}
+                      value={formData.claudeApiKey || ''} 
+                      onChange={handleInputChange} 
+                      placeholder="sk-ant-..." 
+                      className="h-11 pr-10 focus-visible:ring-purple-500 border-border/80 rounded-xl"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowClaudeKey(p => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showClaudeKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Gemini Input */}
@@ -1451,14 +1677,24 @@ export default function SettingsPage() {
                     <Label htmlFor="geminiApiKey" className="font-medium text-xs text-muted-foreground uppercase tracking-wider">Google Gemini API Key</Label>
                     <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-[11px] text-purple-600 hover:underline">Get key</a>
                   </div>
-                  <Input 
-                    id="geminiApiKey" 
-                    type="password"
-                    value={formData.geminiApiKey || ''} 
-                    onChange={handleInputChange} 
-                    placeholder="AIzaSy..." 
-                    className="h-11 focus-visible:ring-purple-500 border-border/80 rounded-xl"
-                  />
+                  <div className="relative">
+                    <Input 
+                      id="geminiApiKey" 
+                      type={showGeminiKey ? 'text' : 'password'}
+                      value={formData.geminiApiKey || ''} 
+                      onChange={handleInputChange} 
+                      placeholder="AIzaSy..." 
+                      className="h-11 pr-10 focus-visible:ring-purple-500 border-border/80 rounded-xl"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowGeminiKey(p => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showGeminiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -2267,9 +2503,15 @@ export default function SettingsPage() {
                   <Card key={acc.id} className="border shadow-sm overflow-hidden flex flex-col justify-between">
                     <CardHeader className="pb-3 flex flex-row items-start justify-between space-y-0">
                       <div className="flex items-center gap-2.5">
-                        <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                          <AccIcon className="h-4.5 w-4.5" />
-                        </div>
+                        {acc.image ? (
+                          <div className="h-9 w-9 rounded-xl overflow-hidden border shrink-0">
+                            <img src={acc.image} alt={acc.name} className="h-full w-full object-cover" />
+                          </div>
+                        ) : (
+                          <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                            <AccIcon className="h-4.5 w-4.5" />
+                          </div>
+                        )}
                         <div>
                           <CardTitle className="text-sm font-bold truncate max-w-[140px]">{acc.name}</CardTitle>
                           <span className="text-[10px] text-muted-foreground uppercase font-medium tracking-wide">
@@ -2357,6 +2599,50 @@ export default function SettingsPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
+                    <Label>Profile Image / Logo</Label>
+                    <div className="flex items-center gap-3">
+                      {editingAccount?.image ? (
+                        <div className="relative group h-12 w-12 rounded-xl overflow-hidden border shrink-0">
+                          <img src={editingAccount.image} className="h-full w-full object-cover" alt="Account Logo" />
+                          <button 
+                            type="button"
+                            onClick={() => setEditingAccount(p => ({ ...p, image: null }))}
+                            className="absolute inset-0 bg-black/60 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="h-12 w-12 rounded-xl border border-dashed flex items-center justify-center text-muted-foreground bg-muted/20 shrink-0">
+                          <Wallet className="h-5 w-5" />
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <Input 
+                          type="file" 
+                          accept="image/*"
+                          className="text-xs h-9 cursor-pointer"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              if (file.size > 5 * 1024 * 1024) {
+                                toast({ title: "File too large", description: "Image must be under 5MB", variant: "destructive" });
+                                return;
+                              }
+                              try {
+                                const url = await uploadFile(file);
+                                setEditingAccount(p => ({ ...p, image: url }));
+                                toast({ title: "Image uploaded successfully" });
+                              } catch {
+                                toast({ title: "Failed to upload image", variant: "destructive" });
+                              }
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
                     <Label htmlFor="accNotes">Notes / Description</Label>
                     <Textarea
                       id="accNotes"
@@ -2421,9 +2707,25 @@ export default function SettingsPage() {
                         <SelectValue placeholder="Select source account" />
                       </SelectTrigger>
                       <SelectContent>
-                        {settingsAccounts.map(acc => (
-                          <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-                        ))}
+                        {settingsAccounts.map(acc => {
+                          let AccIcon = Banknote;
+                          if (acc.type === "BANK") AccIcon = Building2;
+                          if (acc.type === "MOBILE_WALLET") AccIcon = Smartphone;
+                          return (
+                            <SelectItem key={acc.id} value={acc.id}>
+                              <div className="flex items-center gap-2">
+                                {acc.image ? (
+                                  <img src={acc.image} alt={acc.name} className="h-5 w-5 rounded-full object-cover shrink-0" />
+                                ) : (
+                                  <div className="h-5 w-5 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                                    <AccIcon className="h-3 w-3" />
+                                  </div>
+                                )}
+                                <span>{acc.name}</span>
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   </div>
@@ -2437,9 +2739,25 @@ export default function SettingsPage() {
                         <SelectValue placeholder="Select destination account" />
                       </SelectTrigger>
                       <SelectContent>
-                        {settingsAccounts.map(acc => (
-                          <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-                        ))}
+                        {settingsAccounts.map(acc => {
+                          let AccIcon = Banknote;
+                          if (acc.type === "BANK") AccIcon = Building2;
+                          if (acc.type === "MOBILE_WALLET") AccIcon = Smartphone;
+                          return (
+                            <SelectItem key={acc.id} value={acc.id}>
+                              <div className="flex items-center gap-2">
+                                {acc.image ? (
+                                  <img src={acc.image} alt={acc.name} className="h-5 w-5 rounded-full object-cover shrink-0" />
+                                ) : (
+                                  <div className="h-5 w-5 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                                    <AccIcon className="h-3 w-3" />
+                                  </div>
+                                )}
+                                <span>{acc.name}</span>
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   </div>

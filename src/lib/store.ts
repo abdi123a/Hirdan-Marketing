@@ -276,6 +276,14 @@ export interface PaymentMethod {
   type: 'stripe' | 'paypal' | 'bank' | 'other';
   details: string;
   isActive: boolean;
+  image?: string;
+}
+
+export interface SocialLink {
+  id: string;
+  platform: string;
+  icon: string;  // Font Awesome class, e.g. "fa-facebook-f"
+  url: string;
 }
 
 export interface VersionEntry {
@@ -358,13 +366,10 @@ export interface AgencySettings {
   recaptchaSecretKey: string;
   googleAnalyticsEnabled: boolean;
   googleAnalyticsMeasurementId: string;
+  developmentMode: boolean;
+  comingSoonMessage: string;
   paymentMethods: PaymentMethod[];
-  socialLinks: {
-    facebook?: string;
-    twitter?: string;
-    instagram?: string;
-    linkedin?: string;
-  };
+  socialLinks: SocialLink[];
   notifications: {
     emailAlerts: boolean;
     projectUpdates: boolean;
@@ -517,13 +522,10 @@ const createDefaultSettings = (): AgencySettings => ({
   recaptchaSecretKey: "",
   googleAnalyticsEnabled: false,
   googleAnalyticsMeasurementId: "",
+  developmentMode: false,
+  comingSoonMessage: "",
   paymentMethods: [],
-  socialLinks: {
-    linkedin: "",
-    twitter: "",
-    instagram: "",
-    facebook: "",
-  },
+  socialLinks: [],
   notifications: {
     emailAlerts: true,
     projectUpdates: true,
@@ -542,7 +544,7 @@ const createDefaultSettings = (): AgencySettings => ({
   smtpEncryption: "tls",
   smtpDriver: "smtp",
   mailEnabled: false,
-  appVersion: "2.11.1",
+  appVersion: "2.11.2",
   versionHistory: [
     {
       version: "2.9.0",
@@ -953,13 +955,35 @@ export const useAgencyStore = create<AgencyStore>()(
                 return m;
               });
             }
+            // Normalize socialLinks: support both new array format and legacy {facebook, twitter...} object
+            let parsedSocialLinks: SocialLink[] = [];
+            const rawSocial = settings.socialLinks;
+            if (Array.isArray(rawSocial)) {
+              parsedSocialLinks = rawSocial;
+            } else if (rawSocial && typeof rawSocial === 'object') {
+              const iconMap: Record<string, string> = {
+                facebook: 'fa-facebook-f',
+                twitter: 'fa-twitter',
+                instagram: 'fa-instagram',
+                linkedin: 'fa-linkedin-in'
+              };
+              parsedSocialLinks = Object.entries(rawSocial)
+                .filter(([, url]) => url)
+                .map(([platform, url]) => ({
+                  id: platform,
+                  platform: platform.charAt(0).toUpperCase() + platform.slice(1),
+                  icon: iconMap[platform] || 'fa-globe',
+                  url: url as string
+                }));
+            }
+
             const defaults = createDefaultSettings();
             set({
               settings: {
                 ...defaults,
                 ...settings,
                 paymentMethods: settings.paymentMethods ?? defaults.paymentMethods,
-                socialLinks: { ...defaults.socialLinks, ...(settings.socialLinks || {}) },
+                socialLinks: parsedSocialLinks,
                 notifications: { ...defaults.notifications, ...(settings.notifications || {}) },
               },
             });

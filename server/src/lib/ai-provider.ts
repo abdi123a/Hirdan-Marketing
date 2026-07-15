@@ -45,7 +45,8 @@ export interface AiResponse {
 const DEFAULT_MODELS: Record<AiProvider, string> = {
   openai: 'gpt-4o',
   claude: 'claude-3-5-sonnet-20241022',
-  gemini: 'gemini-1.5-pro',
+  // gemini-2.5-flash-lite: highest free-tier quota, available to all users
+  gemini: 'gemini-2.5-flash-lite',
 };
 
 // ─── OpenAI ────────────────────────────────────────────────────────────────
@@ -185,6 +186,19 @@ async function callClaude(
 }
 
 // ─── Google Gemini ─────────────────────────────────────────────────────────
+
+/** Small helper — returns true for retriable Gemini HTTP status codes */
+function isGeminiRetriable(status: number, message: string): boolean {
+  if (status === 429 || status === 503) return true;
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('high demand') ||
+    lower.includes('temporarily unavailable') ||
+    lower.includes('please try again') ||
+    lower.includes('resource exhausted')
+  );
+}
+
 async function callGemini(
   apiKey: string,
   messages: AiMessage[],
@@ -227,42 +241,61 @@ async function callGemini(
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:generateContent?key=${apiKey}`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  // ── Retry loop with exponential backoff (max 3 attempts) ──────────────────
+  const MAX_RETRIES = 3;
+  let lastError: Error = new Error('Unknown Gemini error');
 
-  if (!res.ok) {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) {
+      const data = await res.json() as Record<string, any>;
+      const candidate = data.candidates?.[0];
+      const parts = candidate?.content?.parts || [];
+
+      // Tool calls
+      const funcCalls = parts.filter((p: any) => p.functionCall);
+      if (funcCalls.length > 0) {
+        return {
+          content: '',
+          toolCalls: funcCalls.map((p: any, i: number) => ({
+            id: `gemini-tool-${i}`,
+            name: p.functionCall.name,
+            args: p.functionCall.args || {},
+          })),
+          provider: 'gemini',
+          model: resolvedModel,
+        };
+      }
+
+      const textPart = parts.find((p: any) => p.text);
+      return {
+        content: textPart?.text || '',
+        provider: 'gemini',
+        model: resolvedModel,
+      };
+    }
+
+    // Parse the error body
     const err = await res.json().catch(() => ({})) as Record<string, any>;
-    throw new Error(`Gemini error: ${err?.error?.message || res.statusText}`);
+    const errMsg: string = err?.error?.message || res.statusText || 'Unknown error';
+    lastError = new Error(`Gemini error: ${errMsg}`);
+
+    if (attempt < MAX_RETRIES && isGeminiRetriable(res.status, errMsg)) {
+      // Exponential backoff: 2s, 4s, 8s…
+      const delay = Math.pow(2, attempt) * 1000;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      continue;
+    }
+
+    throw lastError;
   }
 
-  const data = await res.json() as Record<string, any>;
-  const candidate = data.candidates?.[0];
-  const parts = candidate?.content?.parts || [];
-
-  // Tool calls
-  const funcCalls = parts.filter((p: any) => p.functionCall);
-  if (funcCalls.length > 0) {
-    return {
-      content: '',
-      toolCalls: funcCalls.map((p: any, i: number) => ({
-        id: `gemini-tool-${i}`,
-        name: p.functionCall.name,
-        args: p.functionCall.args || {},
-      })),
-      provider: 'gemini',
-      model: resolvedModel,
-    };
-  }
-
-  const textPart = parts.find((p: any) => p.text);
-  return {
-    content: textPart?.text || '',
-    provider: 'gemini',
-    model: resolvedModel,
-  };
+  throw lastError;
 }
 
 // ─── Public Interface ──────────────────────────────────────────────────────

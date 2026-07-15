@@ -19,6 +19,7 @@ const createAccountSchema = z.object({
   currency: z.string().default('USD'),
   color: z.string().optional().nullable(),
   icon: z.string().optional().nullable(),
+  image: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
 

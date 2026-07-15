@@ -397,6 +397,39 @@ export default function DashboardOverview() {
     }).sort((a, b) => b.value - a.value);
   }, [filteredExpenses]);
 
+  const gatewayReportData = useMemo(() => {
+    const groups: Record<string, number> = {};
+    let totalCollected = 0;
+    
+    invoices.forEach(inv => {
+      if (inv.status === 'Paid' || inv.status === 'Partially Paid') {
+        const method = inv.paymentMethod || 'Unspecified';
+        const amount = inv.status === 'Paid' ? parseCurrency(inv.amount) : (inv.deposit || 0);
+        groups[method] = (groups[method] || 0) + amount;
+        totalCollected += amount;
+      }
+    });
+
+    const colors = [
+      "hsl(var(--primary))",
+      "hsl(260, 45%, 55%)",
+      "hsl(var(--secondary))",
+      "hsl(142, 72%, 29%)",
+      "hsl(200, 80%, 40%)",
+      "hsl(0, 72%, 51%)",
+      "#9ca3af"
+    ];
+
+    return Object.entries(groups).map(([gateway, amount], index) => {
+      return {
+        name: gateway,
+        value: Math.round(amount * 100) / 100,
+        color: colors[index % colors.length],
+        percentage: totalCollected > 0 ? (amount / totalCollected) * 100 : 0
+      };
+    }).sort((a, b) => b.value - a.value);
+  }, [invoices]);
+
   const activities = useMemo(() => {
     const items: any[] = [];
     invoices.slice(-10).forEach(i => {
@@ -735,8 +768,8 @@ export default function DashboardOverview() {
         </div>
       </div>
 
-      {/* ── Row 3: 3 Column Layout ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* ── Row 3: 4 Column Layout ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
 
         {/* Col 1: Expense Hub */}
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col justify-between">
@@ -809,6 +842,62 @@ export default function DashboardOverview() {
               </div>
             </TabsContent>
           </Tabs>
+        </div>
+
+        {/* Col 2: Payment Gateways */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                <Wallet className="w-4 h-4 text-primary" /> Payment Gateways
+              </h3>
+              <Link to="/dashboard/financial-report" className="text-[10px] uppercase tracking-widest font-bold text-primary hover:text-primary/80">
+                 Reports
+              </Link>
+            </div>
+
+            <div className="flex-1 flex flex-col justify-center">
+              {gatewayReportData.length > 0 ? (
+                <div className="flex flex-col items-center gap-6 py-2">
+                  <div className="w-[180px] h-[180px] shrink-0 mx-auto">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie data={gatewayReportData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
+                          {gatewayReportData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(v: number) => [formatCurrency(v), '']} contentStyle={{ borderRadius: "8px", border: "1px solid hsl(var(--border))", padding: "8px", fontSize: '12px', background: 'hsl(var(--card))' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="w-full space-y-3">
+                    {gatewayReportData.slice(0, 3).map((item, index) => {
+                      const total = gatewayReportData.reduce((a, c) => a + c.value, 0);
+                      const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
+                      return (
+                        <div key={index} className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }}></div>
+                            <span className="text-xs font-semibold text-foreground truncate">{item.name}</span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <span className="text-xs font-black text-foreground">{formatCurrency(item.value)}</span>
+                            <span className="text-[10px] font-bold text-muted-foreground w-6 text-right">{pct}%</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground">
+                  <CreditCard className="w-8 h-8 opacity-20 mb-2" />
+                  <span className="text-sm font-semibold">No gateway data</span>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Col 2: Project Pulse + Revenue Target stacked */}

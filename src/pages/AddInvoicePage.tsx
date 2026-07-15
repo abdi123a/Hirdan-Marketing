@@ -7,7 +7,7 @@ import { RichDescriptionEditor } from "@/components/RichDescriptionEditor";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Save, Plus, Trash2, Receipt, Shield, GripVertical } from "lucide-react";
+import { ArrowLeft, Save, Plus, Trash2, Receipt, Shield, GripVertical, CreditCard } from "lucide-react";
 import { useAgencyStore, Invoice, InvoiceItem } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, parseCurrency } from "@/lib/utils";
@@ -15,6 +15,8 @@ import { ClientSelector } from "@/components/ClientSelector";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { DeliveryNoteEditor } from "@/components/DeliveryNoteEditor";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 
 const generateInvoiceId = () => `INV-${Math.floor(Math.random() * 9000 + 1000)}`;
 
@@ -53,6 +55,7 @@ export default function AddInvoicePage() {
   ]);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showPaymentPrompt, setShowPaymentPrompt] = useState(false);
 
   const setField = <K extends keyof Invoice>(field: K, value: Invoice[K]) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -216,7 +219,12 @@ export default function AddInvoicePage() {
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label>Status</Label>
-                    <Select value={form.status} onValueChange={(v) => setField("status", v as any)}>
+                    <Select value={form.status} onValueChange={(v) => {
+                      setField("status", v as any);
+                      if (v === "Paid") {
+                        setShowPaymentPrompt(true);
+                      }
+                    }}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Pending">Pending</SelectItem>
@@ -267,7 +275,23 @@ export default function AddInvoicePage() {
                         <SelectTrigger><SelectValue placeholder="Select payment method" /></SelectTrigger>
                         <SelectContent>
                           {settings.paymentMethods?.filter(m => m.isActive).map(m => (
-                            <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>
+                            <SelectItem key={m.id} value={m.name}>
+                              <div className="flex items-center gap-2">
+                                {m.image ? (
+                                  <img src={m.image} alt={m.name} className="h-5 w-5 rounded-full object-cover shrink-0" />
+                                ) : (
+                                  <div className={`h-5 w-5 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold ${
+                                    m.type === 'stripe' ? 'bg-indigo-100 text-indigo-700' :
+                                    m.type === 'paypal' ? 'bg-blue-100 text-blue-700' :
+                                    m.type === 'bank' ? 'bg-emerald-100 text-emerald-700' :
+                                    'bg-slate-100 text-slate-700'
+                                  }`}>
+                                    {m.name.charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                                <span>{m.name}</span>
+                              </div>
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -522,6 +546,64 @@ export default function AddInvoicePage() {
           </div>
         </div>
       </div>
+
+      <Dialog open={showPaymentPrompt} onOpenChange={setShowPaymentPrompt}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-primary" /> Select Payment Method
+            </DialogTitle>
+            <DialogDescription>
+              This invoice is marked as paid. Please select which payment gateway or account was used.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-2.5 py-4">
+            {settings.paymentMethods?.filter(m => m.isActive).map((method) => (
+              <button
+                key={method.id}
+                type="button"
+                onClick={() => {
+                  setField("paymentMethod", method.name);
+                  setShowPaymentPrompt(false);
+                }}
+                className={`flex items-center justify-between p-3 rounded-xl border text-left hover:bg-muted/50 hover:border-primary/50 transition-all ${
+                  form.paymentMethod === method.name ? 'border-primary bg-primary/5' : 'border-border'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  {method.image ? (
+                    <img src={method.image} alt={method.name} className="h-8 w-8 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
+                      method.type === 'stripe' ? 'bg-indigo-100 text-indigo-700' :
+                      method.type === 'paypal' ? 'bg-blue-100 text-blue-700' :
+                      method.type === 'bank' ? 'bg-emerald-100 text-emerald-700' :
+                      'bg-slate-100 text-slate-700'
+                    }`}>
+                      {method.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm font-bold text-foreground">{method.name}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{method.type}</p>
+                  </div>
+                </div>
+                {form.paymentMethod === method.name && (
+                  <Badge variant="hero" className="text-[10px] px-2 py-0.5">Selected</Badge>
+                )}
+              </button>
+            ))}
+            {(!settings.paymentMethods || settings.paymentMethods.filter(m => m.isActive).length === 0) && (
+              <p className="text-sm text-muted-foreground text-center py-4">No active payment methods configured in Settings.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPaymentPrompt(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

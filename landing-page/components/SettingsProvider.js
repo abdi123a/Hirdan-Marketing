@@ -1,5 +1,18 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import ComingSoon from "./ComingSoon";
+import Preloader from "../layouts/Preloader";
+
+// Read cached settings from localStorage immediately (avoids blank flash)
+function getCachedSettings() {
+  if (typeof window === "undefined") return null;
+  try {
+    const cached = localStorage.getItem("agency_settings");
+    return cached ? JSON.parse(cached) : null;
+  } catch (e) {
+    return null;
+  }
+}
 
 const SettingsContext = createContext({
   settings: null,
@@ -15,6 +28,7 @@ const SettingsContext = createContext({
 export const useSettings = () => useContext(SettingsContext);
 
 export default function SettingsProvider({ children }) {
+  // Start with null to prevent hydration mismatch, and load from cache inside useEffect
   const [settings, setSettings] = useState(null);
   const [landingPageContent, setLandingPageContent] = useState(null);
   const [caseStudies, setCaseStudies] = useState([]);
@@ -38,8 +52,24 @@ export default function SettingsProvider({ children }) {
   }, [apiBaseUrl]);
 
   useEffect(() => {
+    // Read settings from cache immediately on mount to prevent any blank/unstyled flash
+    const cached = getCachedSettings();
+    if (cached) {
+      setSettings(cached);
+    }
+
+    const setMetaTag = (attrName, attrValue, content) => {
+      if (typeof document === "undefined") return;
+      let tag = document.querySelector(`meta[${attrName}='${attrValue}']`);
+      if (!tag) {
+        tag = document.createElement('meta');
+        tag.setAttribute(attrName, attrValue);
+        document.getElementsByTagName('head')[0].appendChild(tag);
+      }
+      tag.content = content;
+    };
+
     const fetchSettings = async () => {
-      console.log("[DEBUG SettingsProvider] fetchSettings starting...");
       let data = null;
       try {
         const response = await fetch(`${apiBaseUrl}/api/settings`).catch((err) => {
@@ -59,9 +89,7 @@ export default function SettingsProvider({ children }) {
               const faviconUrl = resolveImageUrl(data.settings.favicon);
               let links = document.querySelectorAll("link[rel*='icon']");
               if (links.length > 0) {
-                links.forEach(link => {
-                  link.href = faviconUrl;
-                });
+                links.forEach(link => { link.href = faviconUrl; });
               } else {
                 const link = document.createElement('link');
                 link.rel = 'icon';
@@ -79,10 +107,39 @@ export default function SettingsProvider({ children }) {
             if (data.settings.primaryColor) {
               document.documentElement.style.setProperty('--theme', data.settings.primaryColor);
             }
+
+            // robots metadata if developmentMode is active
+            if (data.settings.developmentMode) {
+              setMetaTag('name', 'robots', 'noindex,nofollow');
+            } else {
+              setMetaTag('name', 'robots', 'index,follow');
+            }
+
+            // Google Analytics Injection
+            if (data.settings.googleAnalyticsEnabled && data.settings.googleAnalyticsMeasurementId) {
+              const measurementId = data.settings.googleAnalyticsMeasurementId.trim();
+              if (measurementId && !document.getElementById('ga-gtag-script')) {
+                const gtagScript = document.createElement('script');
+                gtagScript.id = 'ga-gtag-script';
+                gtagScript.async = true;
+                gtagScript.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`;
+                document.head.appendChild(gtagScript);
+
+                const initScript = document.createElement('script');
+                initScript.id = 'ga-gtag-init';
+                initScript.innerHTML = `
+                  window.dataLayer = window.dataLayer || [];
+                  function gtag(){dataLayer.push(arguments);}
+                  gtag('js', new Date());
+                  gtag('config', '${measurementId}', { page_path: window.location.pathname });
+                `;
+                document.head.appendChild(initScript);
+              }
+            }
           }
         }
 
-        const lpResponse = await fetch(`${apiBaseUrl}/api/landing-page/content`).catch((err) => null);
+        const lpResponse = await fetch(`${apiBaseUrl}/api/landing-page/content`).catch(() => null);
         if (lpResponse && lpResponse.ok) {
           const lpData = await lpResponse.json();
           setLandingPageContent(lpData.content);
@@ -91,33 +148,17 @@ export default function SettingsProvider({ children }) {
           setTestimonials(lpData.testimonials || []);
 
           if (lpData.content) {
-            const setMetaTag = (attrName, attrValue, content) => {
-              if (typeof document === "undefined") return;
-              let tag = document.querySelector(`meta[${attrName}='${attrValue}']`);
-              if (!tag) {
-                tag = document.createElement('meta');
-                tag.setAttribute(attrName, attrValue);
-                document.getElementsByTagName('head')[0].appendChild(tag);
-              }
-              tag.content = content;
-            };
-
-            // Dynamic Title Update with SEO Title prioritisation
             const pageTitle = lpData.content.seoTitle || 
               (data && data.settings && data.settings.agencyName ? `${data.settings.agencyName} | Elevating Your Brand` : "SEOX");
             document.title = pageTitle;
 
-            // Standard SEO description
             if (lpData.content.seoDescription) {
               setMetaTag('name', 'description', lpData.content.seoDescription);
             }
-
-            // Standard SEO keywords
             if (lpData.content.seoKeywords) {
               setMetaTag('name', 'keywords', lpData.content.seoKeywords);
             }
 
-            // Open Graph (Facebook / LinkedIn) & Twitter SEO Card
             setMetaTag('property', 'og:title', pageTitle);
             setMetaTag('name', 'twitter:title', pageTitle);
             setMetaTag('property', 'og:type', 'website');
@@ -144,7 +185,6 @@ export default function SettingsProvider({ children }) {
       } catch (error) {
         console.error("[DEBUG SettingsProvider] Failed to fetch settings:", error);
       } finally {
-        console.log("[DEBUG SettingsProvider] fetchSettings finally block, setting isLoading to false");
         setIsLoading(false);
       }
     };
@@ -153,7 +193,12 @@ export default function SettingsProvider({ children }) {
 
   return (
     <SettingsContext.Provider value={{ settings, landingPageContent, caseStudies, projects, testimonials, isLoading, apiBaseUrl, appUrl, resolveImageUrl }}>
-      {children}
+      <Preloader />
+      {settings?.developmentMode ? (
+        <ComingSoon />
+      ) : (
+        children
+      )}
     </SettingsContext.Provider>
   );
 }

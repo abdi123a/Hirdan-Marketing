@@ -10,7 +10,9 @@ export function errorHandler(
 ): void {
   // Default error values
   let statusCode = 500;
-  let message = 'Internal server error';
+  // Pass through the real error message so API/provider errors are visible
+  // to the client rather than being hidden behind a generic 500 message.
+  let message = err.message || 'Internal server error';
   let isOperational = false;
 
   if (err instanceof AppError) {

@@ -1,7 +1,30 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useSettings } from "@/components/SettingsProvider";
+
+// Read cached settings from localStorage to avoid logo flash on initial render
+function getInitialCachedSettings() {
+  if (typeof window === "undefined") return null;
+  try {
+    const cached = localStorage.getItem("agency_settings");
+    return cached ? JSON.parse(cached) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function useEffectiveSettings() {
+  const ctx = useSettings();
+  const [cachedSettings, setCachedSettings] = useState(null);
+
+  useEffect(() => {
+    const cached = getInitialCachedSettings();
+    if (cached) setCachedSettings(cached);
+  }, []);
+
+  return { ...ctx, settings: ctx.settings || cachedSettings };
+}
 
 const Footer = ({ footer }) => {
   switch (footer) {
@@ -27,6 +50,16 @@ const Footer = ({ footer }) => {
 export default Footer;
 
 const Footer1 = () => {
+  const { settings } = useEffectiveSettings();
+  const agencySettings = settings || {};
+  const rawSocial = agencySettings.socialLinks;
+  let socialArray = [];
+  if (Array.isArray(rawSocial)) {
+    socialArray = rawSocial.filter(s => s.url);
+  } else if (rawSocial && typeof rawSocial === 'object') {
+    const iconMap = { facebook: 'fa-facebook-f', twitter: 'fa-twitter', instagram: 'fa-instagram', linkedin: 'fa-linkedin-in' };
+    socialArray = Object.entries(rawSocial).filter(([, url]) => url).map(([k, url]) => ({ id: k, platform: k, icon: iconMap[k] || 'fa-globe', url }));
+  }
   return (
     <footer className="footer-section footer-bg">
       <div className="container">
@@ -38,7 +71,7 @@ const Footer1 = () => {
           </div>
           <div className="discussed-content wow fadeInUp" data-wow-delay=".5s">
             <h2>
-              Let’s Discussed About <span>Your Projects</span>
+              Let's Discussed About <span>Your Projects</span>
             </h2>
             <Link href="contact" className="theme-btn hover-white">
               Get Started <i className="far fa-arrow-right" />
@@ -61,22 +94,16 @@ const Footer1 = () => {
                     totae
                   </p>
                   <div className="social-icon d-flex align-items-center">
-                    <a href="#">
-                      <i className="fab fa-facebook-f" />
-                    </a>
-                    <a href="#">
-                      <i className="fab fa-twitter" />
-                    </a>
-                    <a href="#">
-                      <i className="fab fa-vimeo-v" />
-                    </a>
-                    <a href="#">
-                      <i className="fab fa-pinterest-p" />
-                    </a>
+                    {socialArray.map(s => (
+                      <a key={s.id} href={s.url} target="_blank" rel="noreferrer" title={s.platform}>
+                        <i className={`${s.icon === 'fa-globe' ? 'fas' : 'fab'} ${s.icon}`} />
+                      </a>
+                    ))}
                   </div>
                 </div>
               </div>
             </div>
+
             <div
               className="col-xl-3 col-lg-4 col-md-6 ps-lg-5 wow fadeInUp"
               data-wow-delay=".4s"
@@ -228,6 +255,16 @@ const Footer1 = () => {
 };
 
 const Footer2 = () => {
+  const { settings } = useEffectiveSettings();
+  const agencySettings = settings || {};
+  const rawSocial = agencySettings.socialLinks;
+  let socialArray = [];
+  if (Array.isArray(rawSocial)) {
+    socialArray = rawSocial.filter(s => s.url);
+  } else if (rawSocial && typeof rawSocial === 'object') {
+    const iconMap = { facebook: 'fa-facebook-f', twitter: 'fa-twitter', instagram: 'fa-instagram', linkedin: 'fa-linkedin-in' };
+    socialArray = Object.entries(rawSocial).filter(([, url]) => url).map(([k, url]) => ({ id: k, platform: k, icon: iconMap[k] || 'fa-globe', url }));
+  }
   return (
     <footer className="footer-section footer-bg">
       <div className="container">
@@ -249,18 +286,11 @@ const Footer2 = () => {
                     totae
                   </p>
                   <div className="social-icon d-flex align-items-center">
-                    <a href="#">
-                      <i className="fab fa-facebook-f" />
-                    </a>
-                    <a href="#">
-                      <i className="fab fa-twitter" />
-                    </a>
-                    <a href="#">
-                      <i className="fab fa-vimeo-v" />
-                    </a>
-                    <a href="#">
-                      <i className="fab fa-pinterest-p" />
-                    </a>
+                    {socialArray.map(s => (
+                      <a key={s.id} href={s.url} target="_blank" rel="noreferrer" title={s.platform}>
+                        <i className={`${s.icon === 'fa-globe' ? 'fas' : 'fab'} ${s.icon}`} />
+                      </a>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -408,6 +438,16 @@ const Footer2 = () => {
 };
 
 const Footer3 = () => {
+  const { settings } = useEffectiveSettings();
+  const agencySettings = settings || {};
+  const rawSocial = agencySettings.socialLinks;
+  let socialArray = [];
+  if (Array.isArray(rawSocial)) {
+    socialArray = rawSocial.filter(s => s.url);
+  } else if (rawSocial && typeof rawSocial === 'object') {
+    const iconMap = { facebook: 'fa-facebook-f', twitter: 'fa-twitter', instagram: 'fa-instagram', linkedin: 'fa-linkedin-in' };
+    socialArray = Object.entries(rawSocial).filter(([, url]) => url).map(([k, url]) => ({ id: k, platform: k, icon: iconMap[k] || 'fa-globe', url }));
+  }
   return (
     <footer className="footer-section footer-bg">
       <div className="container">
@@ -429,18 +469,11 @@ const Footer3 = () => {
                     totae
                   </p>
                   <div className="social-icon d-flex align-items-center">
-                    <a href="#">
-                      <i className="fab fa-facebook-f" />
-                    </a>
-                    <a href="#">
-                      <i className="fab fa-twitter" />
-                    </a>
-                    <a href="#">
-                      <i className="fab fa-vimeo-v" />
-                    </a>
-                    <a href="#">
-                      <i className="fab fa-pinterest-p" />
-                    </a>
+                    {socialArray.map(s => (
+                      <a key={s.id} href={s.url} target="_blank" rel="noreferrer" title={s.platform}>
+                        <i className={`${s.icon === 'fa-globe' ? 'fas' : 'fab'} ${s.icon}`} />
+                      </a>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -562,7 +595,7 @@ const Footer3 = () => {
 };
 
 const Footer4 = () => {
-  const { settings, apiBaseUrl, resolveImageUrl, landingPageContent } = useSettings();
+  const { settings, apiBaseUrl, resolveImageUrl, landingPageContent } = useEffectiveSettings();
   const logo = resolveImageUrl(settings?.whiteLogo || settings?.logo) || "assets/img/logo/white-logo.svg";
 
   const [email, setEmail] = useState("");
@@ -576,15 +609,22 @@ const Footer4 = () => {
   const footerPhone = agencySettings.phone || "+253 77 64 61 59";
   const footerTagline = content.footerTagline || "Hirdan Marketing helps businesses build their brand, grow their audience, and turn attention into actual sales.";
 
-  let social = {};
-  if (typeof agencySettings.socialLinks === "string") {
-    try {
-      social = JSON.parse(agencySettings.socialLinks);
-    } catch (e) {
-      social = {};
+  // Normalize socialLinks: support both new array format and legacy {facebook, twitter...} object
+  let socialArray = [];
+  const rawSocial = agencySettings.socialLinks;
+  if (Array.isArray(rawSocial)) {
+    socialArray = rawSocial.filter(s => s.url);
+  } else {
+    let socialObj = {};
+    if (typeof rawSocial === "string") {
+      try { socialObj = JSON.parse(rawSocial); } catch (e) { socialObj = {}; }
+    } else if (rawSocial && typeof rawSocial === "object") {
+      socialObj = rawSocial;
     }
-  } else if (agencySettings.socialLinks && typeof agencySettings.socialLinks === "object") {
-    social = agencySettings.socialLinks;
+    const iconMap = { facebook: 'fa-facebook-f', twitter: 'fa-twitter', instagram: 'fa-instagram', linkedin: 'fa-linkedin-in' };
+    socialArray = Object.entries(socialObj)
+      .filter(([, url]) => url)
+      .map(([key, url]) => ({ id: key, platform: key, icon: iconMap[key] || 'fa-globe', url }));
   }
 
   const handleNewsletterSubmit = async (e) => {
@@ -638,33 +678,13 @@ const Footer4 = () => {
                 <div className="footer-content">
                   <p>{footerTagline}</p>
                   <div className="social-icon d-flex align-items-center">
-                    {social.facebook && (
-                      <a href={social.facebook} target="_blank" rel="noreferrer">
-                        <i className="fab fa-facebook-f" />
-                      </a>
-                    )}
-                    {social.twitter && (
-                      <a href={social.twitter} target="_blank" rel="noreferrer">
-                        <i className="fab fa-twitter" />
-                      </a>
-                    )}
-                    {social.linkedin && (
-                      <a href={social.linkedin} target="_blank" rel="noreferrer">
-                        <i className="fab fa-linkedin-in" />
-                      </a>
-                    )}
-                    {social.instagram && (
-                      <a href={social.instagram} target="_blank" rel="noreferrer">
-                        <i className="fab fa-instagram" />
-                      </a>
-                    )}
-                    {!social.facebook && !social.twitter && !social.linkedin && !social.instagram && (
-                      <>
-                        <a href="https://facebook.com/hirdan" target="_blank" rel="noreferrer"><i className="fab fa-facebook-f" /></a>
-                        <a href="https://twitter.com/hirdan" target="_blank" rel="noreferrer"><i className="fab fa-twitter" /></a>
-                        <a href="https://linkedin.com/company/hirdan" target="_blank" rel="noreferrer"><i className="fab fa-linkedin-in" /></a>
-                      </>
-                    )}
+                    {socialArray.length > 0 ? (
+                      socialArray.map(s => (
+                        <a key={s.id} href={s.url} target="_blank" rel="noreferrer" title={s.platform}>
+                          <i className={`${s.icon === 'fa-globe' ? 'fas' : 'fab'} ${s.icon}`} />
+                        </a>
+                      ))
+                    ) : null}
                   </div>
                 </div>
               </div>
