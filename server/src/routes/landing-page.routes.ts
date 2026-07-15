@@ -322,11 +322,7 @@ router.get('/content', async (req: Request, res: Response, next) => {
       updateData.process3Title = "Content & Publishing";
       needsUpdate = true;
     }
-    if (content.process4Title === "Reporting") {
-      content.process4Title = "Reporting";
-      updateData.process4Title = "Reporting";
-      needsUpdate = true;
-    }
+
     if (content.ctaSubtitle === "tailored social strategies") {
       content.ctaSubtitle = "Let's Work Together";
       updateData.ctaSubtitle = "Let's Work Together";
