@@ -4,8 +4,14 @@
 # Exit on any error
 set -e
 
-echo "📦 Building Frontend..."
+echo "📦 Building Frontend (CRM Dashboard)..."
 npm run build
+
+echo "📦 Building Landing Page (hirdanmarketing.com)..."
+cd landing-page
+npm install --legacy-peer-deps
+npm run build
+cd ..
 
 echo "📦 Building Backend..."
 cd server
@@ -17,6 +23,10 @@ cd ..
 echo "🚀 Copying Frontend static files to app.hirdanmarketing.com..."
 rsync -avz -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
   dist/ root@72.61.192.11:/home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
+
+echo "🚀 Copying Landing Page static files to hirdanmarketing.com..."
+rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
+  landing-page/dist/ root@72.61.192.11:/home/hirdanmarketing/htdocs/hirdanmarketing.com/
    
 echo "🚀 Copying Backend compiled files to api.hirdanmarketing.com..."
 rsync -avz -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \

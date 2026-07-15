@@ -23,13 +23,20 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      # Step 1: Build the static Frontend
+      # Step 1: Build the static Frontend (CRM Dashboard → app.hirdanmarketing.com)
       - name: Build Frontend
         run: |
           npm install --legacy-peer-deps
           npm run build
 
-      # Step 2: Build the Backend in GitHub Action
+      # Step 2: Build the Landing Page (Next.js → hirdanmarketing.com)
+      - name: Build Landing Page
+        run: |
+          cd landing-page
+          npm install --legacy-peer-deps
+          npm run build
+
+      # Step 3: Build the Backend in GitHub Action
       - name: Build Backend
         run: |
           cd server
@@ -72,6 +79,14 @@ jobs:
             dist/ \
             root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
 
+      - name: Deploy Landing Page files to VPS
+        run: |
+          echo "📁 Copying Landing Page static files to hirdanmarketing.com..."
+          rsync -avz --delete \
+            -e "ssh -p ${{ env.SSH_PORT }} -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30 -i ~/.ssh/id_ed25519" \
+            landing-page/dist/ \
+            root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing/htdocs/hirdanmarketing.com/
+
       - name: Deploy Backend files to VPS
         run: |
           echo "📁 Copying Backend compiled files to api.hirdanmarketing.com..."
@@ -95,6 +110,10 @@ jobs:
 
             # Fix ownership permissions for the frontend site
             chown -R hirdanmarketing-app:hirdanmarketing-app /home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
+
+            # Fix ownership permissions for the landing page site
+            chown -R hirdanmarketing:hirdanmarketing /home/hirdanmarketing/htdocs/hirdanmarketing.com/ 2>/dev/null || \
+            chown -R www-data:www-data /home/hirdanmarketing/htdocs/hirdanmarketing.com/ || true
 
             # Ensure uploads symlink is intact (protects branding files from being wiped)
             mkdir -p /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/public
