@@ -104,6 +104,9 @@ const clientDtoSchema = z.object({
   notes: z.string().optional().nullable().transform(val => val || null),
   status: z.enum(['ACTIVE', 'PAUSED', 'CHURNED']).optional(),
   initials: z.string().optional().nullable().transform(val => val || null),
+  invoiceGenerationDay: z.number().int().min(1).max(28).optional().nullable(),
+  paymentReminderDelay: z.number().int().min(0).max(30).optional().nullable(),
+  overdueNoticeDelay: z.number().int().min(0).max(60).optional().nullable(),
 });
 
 const clientSelfUpdateSchema = z.object({

@@ -8,16 +8,36 @@ import {
   Settings, User, Clock, CreditCard, 
   MapPin, Building2, ChevronRight, CheckCircle2,
   FileText, TrendingUp, Calendar, Zap, AlertTriangle, Layers, Tag, Briefcase,
-  ShieldCheck
+  ShieldCheck, Loader2
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export default function PackageDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { packages, subscriptions, services, projects } = useAgencyStore();
+  const { packages, subscriptions, services, projects, fetchPackages, fetchSubscriptions, fetchServices } = useAgencyStore();
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const promises = [];
+        if (packages.length === 0) promises.push(fetchPackages());
+        if (subscriptions.length === 0) promises.push(fetchSubscriptions());
+        if (services.length === 0) promises.push(fetchServices());
+        if (promises.length > 0) {
+          await Promise.all(promises);
+        }
+      } catch (err) {
+        console.error("Error loading package details dependencies:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, [id, fetchPackages, fetchSubscriptions, fetchServices, packages.length, subscriptions.length, services.length]);
 
   const pkg = useMemo(() => packages.find((p) => p.id === id), [packages, id]);
   
@@ -30,6 +50,14 @@ export default function PackageDetailsPage() {
     if (!pkg?.serviceIds) return [];
     return services.filter(s => pkg.serviceIds?.includes(s.id));
   }, [pkg, services]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 text-primary animate-spin" />
+      </div>
+    );
+  }
 
   if (!pkg) {
     return (
@@ -62,7 +90,7 @@ export default function PackageDetailsPage() {
           <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/packages/edit/${pkg.id}`)} className="h-9 gap-2 text-xs font-semibold">
             <Settings className="h-3.5 w-3.5" /> Edit Package
           </Button>
-          <Button variant="hero" size="sm" className="h-9 gap-2 text-xs font-semibold shadow-premium" onClick={() => navigate('/dashboard/subscriptions/add')}>
+          <Button variant="hero" size="sm" className="h-9 gap-2 text-xs font-semibold shadow-premium" onClick={() => navigate(`/dashboard/subscriptions/add?packageId=${pkg.id}`)}>
             <Briefcase className="h-3.5 w-3.5" /> Apply Template
           </Button>
         </div>

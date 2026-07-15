@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Save, User, Building2, Mail, Phone, Globe, MapPin, Briefcase, FileText } from "lucide-react";
+import { ArrowLeft, Save, User, Building2, Mail, Phone, Globe, MapPin, Briefcase, FileText, Calendar } from "lucide-react";
 import { useAgencyStore, Client } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 
@@ -33,7 +33,7 @@ export default function EditClientPage() {
     }
   }, [id, clients, fetchClients, navigate, toast]);
 
-  const set = (field: keyof Client, value: string | number) =>
+  const set = (field: keyof Client, value: any) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
   const validate = () => {
@@ -241,6 +241,54 @@ export default function EditClientPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="revenue" className="text-sm font-medium">Estimated Revenue</Label>
                 <Input id="revenue" placeholder="$5,000" value={form.revenue} onChange={(e) => set("revenue", e.target.value)} />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-card border-border">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-primary" /> Billing & Automation
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="invoiceGenerationDay" className="text-sm font-medium">Invoice Generation Day</Label>
+                <Input 
+                  id="invoiceGenerationDay" 
+                  type="number" 
+                  min={1} 
+                  max={28} 
+                  value={form.invoiceGenerationDay || ""} 
+                  onChange={(e) => set("invoiceGenerationDay", e.target.value ? parseInt(e.target.value) : null)} 
+                />
+                <p className="text-xs text-muted-foreground">Day of the month to generate invoice (1-28)</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="paymentReminderDelay" className="text-sm font-medium">Payment Reminder Delay (Days)</Label>
+                <Input 
+                  id="paymentReminderDelay" 
+                  type="number" 
+                  min={0} 
+                  max={30} 
+                  value={form.paymentReminderDelay ?? ""} 
+                  onChange={(e) => set("paymentReminderDelay", e.target.value ? parseInt(e.target.value) : null)} 
+                />
+                <p className="text-xs text-muted-foreground">Grace period days after due date to send reminder</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="overdueNoticeDelay" className="text-sm font-medium">Overdue Notice Delay (Days)</Label>
+                <Input 
+                  id="overdueNoticeDelay" 
+                  type="number" 
+                  min={0} 
+                  max={60} 
+                  value={form.overdueNoticeDelay ?? ""} 
+                  onChange={(e) => set("overdueNoticeDelay", e.target.value ? parseInt(e.target.value) : null)} 
+                />
+                <p className="text-xs text-muted-foreground">Days after invoice creation to send overdue notice</p>
               </div>
             </CardContent>
           </Card>

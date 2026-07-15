@@ -8,15 +8,37 @@ import {
   Settings, User, Clock, CreditCard, 
   MapPin, Building2, ChevronRight, CheckCircle2,
   FileText, TrendingUp, Calendar, Zap, AlertTriangle, Layers, Tag, Briefcase, Activity,
-  Package as PackageIcon
+  Package as PackageIcon, Loader2
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export default function ServiceDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { services, projects, invoices, packages, subscriptions } = useAgencyStore();
+  const { services, projects, invoices, packages, subscriptions, fetchServices, fetchProjects, fetchInvoices, fetchPackages, fetchSubscriptions } = useAgencyStore();
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const promises = [];
+        if (services.length === 0) promises.push(fetchServices());
+        if (projects.length === 0) promises.push(fetchProjects());
+        if (invoices.length === 0) promises.push(fetchInvoices());
+        if (packages.length === 0) promises.push(fetchPackages());
+        if (subscriptions.length === 0) promises.push(fetchSubscriptions());
+        if (promises.length > 0) {
+          await Promise.all(promises);
+        }
+      } catch (err) {
+        console.error("Error loading service details dependencies:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, [id, fetchServices, fetchProjects, fetchInvoices, fetchPackages, fetchSubscriptions, services.length, projects.length, invoices.length, packages.length, subscriptions.length]);
 
   const service = useMemo(() => services.find((s) => s.id === id), [services, id]);
   
@@ -41,6 +63,14 @@ export default function ServiceDetailsPage() {
       return count + itemsMatching.length;
     }, 0);
   }, [invoices, service]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 text-primary animate-spin" />
+      </div>
+    );
+  }
 
   if (!service) {
     return (

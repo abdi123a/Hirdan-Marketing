@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
+import { runBillingCycle } from '../lib/subscription-billing.js';
 
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
@@ -124,11 +125,20 @@ router.put('/:id', requireAdmin, validate({ body: subscriptionDtoSchema.partial(
 });
 
 // ─── DELETE /api/subscriptions/:id ──────────────────────────────
-
 router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) => {
   try {
     await prisma.subscription.delete({ where: { id: req.params.id as string } });
     res.json({ message: 'Subscription deleted' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── POST /api/subscriptions/run-billing-cycle ──────────────────
+router.post('/run-billing-cycle', requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    await runBillingCycle();
+    res.json({ success: true, message: 'Subscription billing cycle executed successfully' });
   } catch (error) {
     next(error);
   }

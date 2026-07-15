@@ -200,6 +200,8 @@ router.put('/:id', requireAdmin, validate({ body: invoiceDtoSchema.partial() }),
       throw AppError.badRequest('Invoice amount mismatch');
     }
 
+    const statusChangedToPaid = targetInvoice.status !== 'PAID' && invoiceData.status === 'PAID';
+
     const invoice = await prisma.invoice.update({
       where: { id: targetInvoice.id },
       data: {
@@ -209,6 +211,13 @@ router.put('/:id', requireAdmin, validate({ body: invoiceDtoSchema.partial() }),
       },
       include: { items: { orderBy: { position: 'asc' } } },
     });
+
+    if (statusChangedToPaid) {
+      sendPaymentConfirmationEmail(invoice.id).catch(err => {
+        console.error('Error sending automatic payment confirmation email:', err);
+      });
+    }
+
     res.json({ invoice });
   } catch (error) {
     next(error);
@@ -294,5 +303,111 @@ router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response,
     next(error);
   }
 });
+
+async function sendPaymentConfirmationEmail(invoiceId: string) {
+  try {
+    const inv = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        client: true,
+        items: { orderBy: { position: 'asc' } }
+      }
+    });
+
+    if (!inv || !inv.client?.email || inv.paymentConfirmationSentAt) {
+      return;
+    }
+
+    const settings = await prisma.agencySettings.findFirst();
+    const currencySymbol = settings?.currency ?? 'USD';
+    const amountFormatted = `${currencySymbol} ${(inv.amount / 100).toFixed(2)}`;
+
+    const subject = `Payment Confirmed: Invoice ${inv.invoiceNumber}`;
+
+    let itemsRows = '';
+    const items = inv.items || [];
+    for (const item of items) {
+      const itemTotal = (item.quantity * item.unitPrice / 100).toFixed(2);
+      itemsRows += `
+        <tr>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #475569;">${item.description}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #475569; text-align: center;">${item.quantity}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #475569; text-align: right;">${currencySymbol} ${(item.unitPrice / 100).toFixed(2)}</td>
+          <td style="padding: 12px; border-bottom: 1px solid #e2e8f0; color: #475569; text-align: right;">${currencySymbol} ${itemTotal}</td>
+        </tr>
+      `;
+    }
+
+    const contentHtml = `
+      <h2 style="color: #10b981; font-size: 20px; margin-bottom: 16px;">Thank you for your payment!</h2>
+      <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
+        We have successfully received and processed your payment for invoice <strong>${inv.invoiceNumber}</strong>.
+      </p>
+      <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+        <table cellpadding="0" cellspacing="0" border="0" width="100%">
+          <tr>
+            <td style="color: #64748b; font-size: 14px; padding-bottom: 8px;"><strong>Invoice Date:</strong></td>
+            <td style="color: #334155; font-size: 14px; padding-bottom: 8px; text-align: right;">${inv.date.toISOString().split('T')[0]}</td>
+          </tr>
+          <tr>
+            <td style="color: #64748b; font-size: 14px;"><strong>Payment Method:</strong></td>
+            <td style="color: #334155; font-size: 14px; text-align: right;">${inv.paymentMethod || 'Credit Card / Bank Transfer'}</td>
+          </tr>
+        </table>
+      </div>
+      <h3 style="color: #334155; font-size: 16px; margin: 24px 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">Invoice Summary</h3>
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; margin-bottom: 24px;">
+        <thead>
+          <tr style="background-color: #f1f5f9;">
+            <th style="padding: 8px 12px; text-align: left; color: #475569; font-size: 13px;">Description</th>
+            <th style="padding: 8px 12px; text-align: center; color: #475569; font-size: 13px; width: 60px;">Qty</th>
+            <th style="padding: 8px 12px; text-align: right; color: #475569; font-size: 13px; width: 100px;">Price</th>
+            <th style="padding: 8px 12px; text-align: right; color: #475569; font-size: 13px; width: 100px;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemsRows}
+          <tr>
+            <td colspan="2"></td>
+            <td style="padding: 12px 8px; font-weight: bold; color: #334155; text-align: right;">Total Paid:</td>
+            <td style="padding: 12px 8px; font-weight: bold; color: #10b981; text-align: right; font-size: 16px;">${amountFormatted}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
+        A copy of your official PDF receipt is available for download at any time by logging in to your Client Portal.
+      </p>
+    `;
+
+    const appUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const emailHtml = await generateEmailHtml({
+      title: subject,
+      preheader: `Payment confirmation for invoice ${inv.invoiceNumber}.`,
+      contentHtml,
+      actionButton: {
+        label: 'View in Portal',
+        url: `${appUrl}/dashboard/invoices`,
+      }
+    });
+
+    const result = await sendEmail({
+      to: inv.client.email,
+      subject,
+      html: emailHtml,
+    });
+
+    if (result.success) {
+      await prisma.invoice.update({
+        where: { id: inv.id },
+        data: { paymentConfirmationSentAt: new Date() }
+      });
+      console.log(`[Email] Automatic payment confirmation email sent to ${inv.client.email} for invoice ${inv.invoiceNumber}`);
+    } else {
+      console.error(`[Email] Failed to send payment confirmation email: ${result.error}`);
+    }
+  } catch (err) {
+    console.error('[Email] Unexpected error in sendPaymentConfirmationEmail:', err);
+  }
+}
 
 export default router;

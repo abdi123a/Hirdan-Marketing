@@ -30,6 +30,9 @@ export interface Client {
   initials: string;
   createdAt: string;
   userId?: string | null;
+  invoiceGenerationDay?: number | null;
+  paymentReminderDelay?: number | null;
+  overdueNoticeDelay?: number | null;
 }
 
 export interface Project {
@@ -544,7 +547,7 @@ const createDefaultSettings = (): AgencySettings => ({
   smtpEncryption: "tls",
   smtpDriver: "smtp",
   mailEnabled: false,
-  appVersion: "2.12.0",
+  appVersion: "2.12.1",
   versionHistory: [
     {
       version: "2.11.2",
@@ -698,7 +701,10 @@ export const useAgencyStore = create<AgencyStore>()(
             revenue: formatCurrency((c.revenue || 0) / 100),
             initials: c.initials || (c.company ? c.company.substring(0, 2).toUpperCase() : c.name.substring(0, 2).toUpperCase()),
             createdAt: c.createdAt,
-            userId: c.userId
+            userId: c.userId,
+            invoiceGenerationDay: c.invoiceGenerationDay,
+            paymentReminderDelay: c.paymentReminderDelay,
+            overdueNoticeDelay: c.overdueNoticeDelay
           }));
           set({ clients: mappedClients });
         } catch (error) {

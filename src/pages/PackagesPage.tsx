@@ -18,19 +18,23 @@ import { useNavigate } from "react-router-dom";
 import { formatCurrency } from "@/lib/utils";
 
 export default function PackagesPage() {
-  const { packages, deletePackage, fetchPackages } = useAgencyStore();
+  const { packages, deletePackage, fetchPackages, subscriptions, fetchSubscriptions } = useAgencyStore();
   const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState<'all' | 'Subscription' | 'Service' | 'One-time'>('all');
   const { toast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchPackages();
-  }, [fetchPackages]);
+    fetchSubscriptions();
+  }, [fetchPackages, fetchSubscriptions]);
 
-  const filtered = packages.filter((pkg) =>
-    pkg.name.toLowerCase().includes(search.toLowerCase()) ||
-    pkg.description.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = packages.filter((pkg) => {
+    const matchesSearch = pkg.name.toLowerCase().includes(search.toLowerCase()) ||
+      pkg.description.toLowerCase().includes(search.toLowerCase());
+    const matchesTab = activeTab === 'all' || pkg.type === activeTab;
+    return matchesSearch && matchesTab;
+  });
 
   const handleDelete = async (id: string) => {
     try {
@@ -53,12 +57,25 @@ export default function PackagesPage() {
         </Button>
       </div>
 
-      <div className="flex items-center justify-between gap-4 bg-muted/30 p-4 rounded-xl border border-border/50">
-        <div className="relative flex-1 max-w-md">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-muted/30 p-4 rounded-xl border border-border/50">
+        <div className="flex flex-wrap gap-1 bg-background p-1 rounded-lg border border-border/50">
+          {(['all', 'Subscription', 'Service', 'One-time'] as const).map((tab) => (
+            <Button
+              key={tab}
+              variant={activeTab === tab ? "hero" : "ghost"}
+              size="sm"
+              onClick={() => setActiveTab(tab)}
+              className="text-xs h-8 px-3 rounded-md"
+            >
+              {tab === 'all' ? 'All Packages' : tab}
+            </Button>
+          ))}
+        </div>
+        <div className="relative w-full sm:w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input 
             placeholder="Search packages..." 
-            className="pl-9 bg-card border-border/50" 
+            className="pl-9 bg-card border-border/50 h-9" 
             value={search} 
             onChange={(e) => setSearch(e.target.value)} 
           />
@@ -110,10 +127,10 @@ export default function PackagesPage() {
               </div>
             </CardHeader>
             <CardContent className="pb-6">
-              <div className="mb-6">
+              <div className="mb-4">
                 <span className="text-3xl font-bold text-foreground">{formatCurrency(pkg.price)}</span>
               </div>
-              <ul className="space-y-2.5">
+              <ul className="space-y-2.5 mb-4">
                 {pkg.features.map((feature, i) => (
                   <li key={i} className="flex items-start gap-2.5 text-sm text-muted-foreground">
                     <Check className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
@@ -121,13 +138,29 @@ export default function PackagesPage() {
                   </li>
                 ))}
               </ul>
+              {(() => {
+                const activeSubs = subscriptions.filter(s => (s.packageId === pkg.id || s.plan === pkg.name) && s.status === 'Active');
+                const mrr = activeSubs.reduce((sum, s) => sum + parseFloat(s.amount.replace(/[^0-9.]/g, "")), 0);
+                return (
+                  <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-border/50 text-xs font-semibold text-muted-foreground">
+                    <div>
+                      <span className="text-[10px] uppercase block tracking-wider font-bold">Adoptions</span>
+                      <span className="text-foreground text-sm font-bold">{activeSubs.length} active</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase block tracking-wider font-bold">MRR Value</span>
+                      <span className="text-primary text-sm font-bold">{formatCurrency(mrr)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </CardContent>
             <CardFooter className="pt-0 border-t border-border/10 mt-auto" onClick={(e) => e.stopPropagation()}>
               <Button className="w-full mt-4 bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all duration-300 rounded-xl py-6"
                 onClick={() => toast({ 
                   title: "Assign Package", 
                   description: `Assigning "${pkg.name}" to a client... This will pre-fill a new subscription form.`,
-                  action: <Button variant="outline" size="sm" onClick={() => navigate("/dashboard/subscriptions/add")}>Proceed</Button>
+                  action: <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/subscriptions/add?packageId=${pkg.id}`)}>Proceed</Button>
                 })}
               >
                 Assign to Client

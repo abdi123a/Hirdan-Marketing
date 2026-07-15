@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +14,10 @@ import { formatCurrency } from "@/lib/utils";
 
 export default function AddSubscriptionPage() {
   const navigate = useNavigate();
-  const { clients, packages, services, addSubscription, settings } = useAgencyStore();
+  const [searchParams] = useSearchParams();
+  const preselectedPackageId = searchParams.get("packageId");
+  const preselectedServiceId = searchParams.get("serviceId");
+  const { clients, packages, services, addSubscription, updateClient, settings } = useAgencyStore();
   const { toast } = useToast();
 
   const subscriptionOptions = useMemo(() => {
@@ -75,6 +78,36 @@ export default function AddSubscriptionPage() {
   const [featureInput, setFeatureInput] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const [invoiceGenerationDay, setInvoiceGenerationDay] = useState<number>(1);
+  const [paymentReminderDelay, setPaymentReminderDelay] = useState<number>(5);
+  const [overdueNoticeDelay, setOverdueNoticeDelay] = useState<number>(10);
+
+  useEffect(() => {
+    if (preselectedPackageId && packages.length > 0) {
+      const pkg = packages.find(p => p.id === preselectedPackageId);
+      if (pkg) {
+        setForm(prev => ({
+          ...prev,
+          plan: pkg.name,
+          packageId: pkg.id,
+          amount: pkg.price.toString().replace(/[^0-9.]/g, ''),
+          features: pkg.features ? (Array.isArray(pkg.features) ? pkg.features : JSON.parse(pkg.features)) : [],
+        }));
+      }
+    } else if (preselectedServiceId && services.length > 0) {
+      const svc = services.find(s => s.id === preselectedServiceId);
+      if (svc) {
+        setForm(prev => ({
+          ...prev,
+          plan: svc.name,
+          serviceId: svc.id,
+          amount: svc.basePrice.toString().replace(/[^0-9.]/g, ''),
+          features: [],
+        }));
+      }
+    }
+  }, [preselectedPackageId, preselectedServiceId, packages, services]);
+
   const setField = (field: keyof Subscription, value: any) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
@@ -115,6 +148,16 @@ export default function AddSubscriptionPage() {
         ...form,
         features: form.features || [],
       } as Omit<Subscription, "id">);
+
+      // Save/update the client's automated billing settings
+      if (form.clientId) {
+        await updateClient(form.clientId, {
+          invoiceGenerationDay,
+          paymentReminderDelay,
+          overdueNoticeDelay,
+        });
+      }
+
       toast({ title: "Subscription added!", description: `${form.plan} plan for ${form.client} has been created.` });
       navigate("/dashboard/subscriptions");
     } catch (e) {
@@ -229,6 +272,11 @@ export default function AddSubscriptionPage() {
                   onValueChange={(v) => {
                     const c = clients.find((cl) => cl.company === v || cl.name === v);
                     setForm((p) => ({ ...p, client: v, clientId: c?.id, clientEmail: c?.email }));
+                    if (c) {
+                      setInvoiceGenerationDay(c.invoiceGenerationDay ?? 1);
+                      setPaymentReminderDelay(c.paymentReminderDelay ?? 5);
+                      setOverdueNoticeDelay(c.overdueNoticeDelay ?? 10);
+                    }
                   }}
                 >
                   <SelectTrigger className={errors.client ? "border-destructive" : ""}>
@@ -244,6 +292,57 @@ export default function AddSubscriptionPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Billing & Automation (Only visible if a client is selected) */}
+          {form.clientId && (
+            <Card className="shadow-card border-border">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-primary" /> Client Billing & Automation
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="invoiceGenerationDay" className="text-sm font-medium">Invoice Generation Day</Label>
+                  <Input 
+                    id="invoiceGenerationDay" 
+                    type="number" 
+                    min={1} 
+                    max={28} 
+                    value={invoiceGenerationDay || ""} 
+                    onChange={(e) => setInvoiceGenerationDay(e.target.value ? parseInt(e.target.value) : 1)} 
+                  />
+                  <p className="text-xs text-muted-foreground">Day of the month to generate invoice (1-28)</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="paymentReminderDelay" className="text-sm font-medium">Payment Reminder Delay (Days)</Label>
+                  <Input 
+                    id="paymentReminderDelay" 
+                    type="number" 
+                    min={0} 
+                    max={30} 
+                    value={paymentReminderDelay ?? ""} 
+                    onChange={(e) => setPaymentReminderDelay(e.target.value ? parseInt(e.target.value) : 0)} 
+                  />
+                  <p className="text-xs text-muted-foreground">Grace period days after due date to send reminder</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="overdueNoticeDelay" className="text-sm font-medium">Overdue Notice Delay (Days)</Label>
+                  <Input 
+                    id="overdueNoticeDelay" 
+                    type="number" 
+                    min={0} 
+                    max={60} 
+                    value={overdueNoticeDelay ?? ""} 
+                    onChange={(e) => setOverdueNoticeDelay(e.target.value ? parseInt(e.target.value) : 0)} 
+                  />
+                  <p className="text-xs text-muted-foreground">Days after invoice creation to send overdue notice</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Dates */}
           <Card className="shadow-card border-border">

@@ -8,7 +8,7 @@ import {
   Settings, User, Clock, CreditCard,
   MapPin, Building2, ChevronRight, CheckCircle2,
   FileText, TrendingUp, Calendar, Zap, AlertTriangle, Package as PackageIcon, ShieldCheck,
-  Activity
+  Activity, Bell, RefreshCw
 } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -29,8 +29,9 @@ export default function SubscriptionDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { subscriptions, clients, packages, services, getVerificationToken, settings } = useAgencyStore();
+  const { subscriptions, clients, packages, services, getVerificationToken, settings, fetchSubscriptions, fetchClients, fetchPackages, fetchServices } = useAgencyStore();
   const [verificationToken, setVerificationToken] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
   const [cycles, setCycles] = useState<any[]>([]);
   const [loadingCycles, setLoadingCycles] = useState(true);
@@ -40,6 +41,50 @@ export default function SubscriptionDetailsPage() {
     useAi: true, prompt: "",
   });
   const [generating, setGenerating] = useState(false);
+  const [runningBilling, setRunningBilling] = useState(false);
+
+  const handleRunBillingCycle = async () => {
+    try {
+      setRunningBilling(true);
+      const res = await apiFetch<{ success: boolean; message: string }>("/subscriptions/run-billing-cycle", {
+        method: "POST",
+      });
+      if (res.success) {
+        toast({
+          title: "Billing Check Executed",
+          description: res.message || "Manual check completed.",
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: "Billing Check Failed",
+        description: err.message || "Could not run manual billing cycle",
+        variant: "destructive",
+      });
+    } finally {
+      setRunningBilling(false);
+    }
+  };
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const promises = [];
+        if (subscriptions.length === 0) promises.push(fetchSubscriptions());
+        if (clients.length === 0) promises.push(fetchClients());
+        if (packages.length === 0) promises.push(fetchPackages());
+        if (services.length === 0) promises.push(fetchServices());
+        if (promises.length > 0) {
+          await Promise.all(promises);
+        }
+      } catch (err) {
+        console.error("Error loading subscription details dependencies:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, [id, fetchSubscriptions, fetchClients, fetchPackages, fetchServices, subscriptions.length, clients.length, packages.length, services.length]);
 
   useEffect(() => {
     if (id) {
@@ -145,6 +190,14 @@ export default function SubscriptionDetailsPage() {
     [services, subscription]
   );
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 text-primary animate-spin" />
+      </div>
+    );
+  }
+
   if (!subscription) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
@@ -180,6 +233,16 @@ export default function SubscriptionDetailsPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleRunBillingCycle} 
+            disabled={runningBilling}
+            className="h-9 gap-2 text-xs font-semibold border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-50"
+          >
+            {runningBilling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Run Billing Check
+          </Button>
           <Button variant="outline" size="sm" onClick={() => navigate(`/dashboard/subscriptions/edit/${subscription.id}`)} className="h-9 gap-2 text-xs font-semibold">
             <Settings className="h-3.5 w-3.5" /> Manage Subscription
           </Button>
@@ -246,6 +309,24 @@ export default function SubscriptionDetailsPage() {
                       </div>
                     </div>
                   ))}
+
+                  <div className="pt-4 border-t border-border/40 mt-4 space-y-3">
+                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Automated Billing Rules</p>
+                    <div className="space-y-2 text-xs font-semibold text-foreground/80">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5 text-primary" />
+                        <span>Invoice Day: Day {client?.invoiceGenerationDay ?? 1} of month</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Bell className="w-3.5 h-3.5 text-primary" />
+                        <span>Reminder Grace: {client?.paymentReminderDelay ?? 5} days</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-3.5 h-3.5 text-primary" />
+                        <span>Overdue Notice: {client?.overdueNoticeDelay ?? 10} days</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div className="space-y-5">
                   <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-4">Included Services</h4>

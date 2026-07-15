@@ -16,6 +16,7 @@ import rateLimit from 'express-rate-limit';
 import { PATHS } from './lib/paths.js';
 import fileRoutes from './routes/files.routes.js';
 import { startTransferCleanupJob } from './lib/transfer-cleanup.js';
+import { startSubscriptionBillingJob } from './lib/subscription-billing.js';
 
 // ─── Storage Bootstrap ───────────────────────────────────────────
 
@@ -56,6 +57,8 @@ bootstrapStorage();
 // ─── Background Jobs ─────────────────────────────────────────────
 // Purges expired / deleted transfer files from disk every hour.
 startTransferCleanupJob();
+// Automatically generate subscription invoices and send reminders/overdue notices.
+startSubscriptionBillingJob();
 
 const app = express();
 

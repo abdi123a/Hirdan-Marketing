@@ -77,9 +77,13 @@ export default function SubscriptionsPage() {
   };
 
   const handleRenew = async (id: string, currentRenewal: string, cycle: string, client: string) => {
-    if (currentRenewal === "N/A") return;
-    const date = new Date(currentRenewal);
-    if (date.toString() === 'Invalid Date') return;
+    let date = new Date();
+    if (currentRenewal && currentRenewal !== "N/A") {
+      const parsed = new Date(currentRenewal);
+      if (parsed.toString() !== 'Invalid Date') {
+        date = parsed;
+      }
+    }
 
     if (cycle === "Monthly") date.setMonth(date.getMonth() + 1);
     else if (cycle === "Quarterly") date.setMonth(date.getMonth() + 3);
