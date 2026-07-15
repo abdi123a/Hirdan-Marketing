@@ -10,6 +10,7 @@ import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { execSync } from 'child_process';
 
 import { PATHS } from '../lib/paths.js';
 import { sendEmail, maskApiKey, generateEmailHtml } from '../lib/email.js';
@@ -76,7 +77,11 @@ router.get('/public', async (req: Request, res: Response, next) => {
 });
 
 // ─── GET /api/settings ───────────────────────────────────────────
-// Public endpoint for guest users to see agency branding
+// Public endpoint for guest users to see agency branding.
+// Authenticated staff/admin users receive all fields including
+// sensitive API keys and mail config.  A `_isAdminResponse` flag is
+// included so the frontend can tell whether the sensitive fields
+// were intentionally returned or simply absent from a guest response.
 
 router.get('/', async (req: Request, res: Response, next) => {
   try {
@@ -96,31 +101,40 @@ router.get('/', async (req: Request, res: Response, next) => {
       });
     }
 
-    // Determine if requester is an admin
-    let isAdmin = false;
+    // Determine if requester is an authenticated staff member or admin
+    let isStaffOrAdmin = false;
     try {
       const authHeader = req.headers.authorization;
       if (authHeader && authHeader.startsWith('Bearer ')) {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, env.JWT_SECRET) as any;
-        if (decoded.role === 'ADMIN') isAdmin = true;
+        if (['ADMIN', 'MANAGER', 'STAFF'].includes(decoded.role)) {
+          isStaffOrAdmin = true;
+        }
       }
     } catch (e) {
-      // Ignore token errors; default to guest access
+      // Token expired or invalid — fall back to guest access silently.
+      // This is expected for unauthenticated requests (login page, etc.).
     }
 
-    if (isAdmin) {
-      // Parse JSON fields for the full response
+    if (isStaffOrAdmin) {
+      // Parse JSON fields for the full response.
+      // Include `_isAdminResponse: true` so the frontend store knows
+      // that sensitive fields (API keys, mail config) are genuinely
+      // present in this response — even when their value is null.
       res.json({
         settings: {
           ...settings,
+          _isAdminResponse: true,
           paymentMethods: settings.paymentMethods ? JSON.parse(settings.paymentMethods) : [],
           socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
           notifications: settings.notifications ? JSON.parse(settings.notifications) : {},
         },
       });
     } else {
-      // Expose ONLY safe public fields for guest/client branding
+      // Expose ONLY safe public fields for guest/client branding.
+      // `_isAdminResponse` is intentionally omitted (undefined) so the
+      // frontend knows NOT to overwrite sensitive fields from this response.
       res.json({
         settings: {
           agencyName: settings.agencyName,
@@ -208,6 +222,9 @@ const settingsDtoSchema = z.object({
   smtpEncryption: z.string().optional().nullable(),
   smtpDriver: z.string().optional().nullable(),
   mailEnabled: z.boolean().optional(),
+  googleDriveFolderId: z.string().optional().nullable(),
+  googleDriveServiceAccountJson: z.string().optional().nullable(),
+  googleDriveEnabled: z.boolean().optional(),
   id: z.string().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
@@ -244,6 +261,20 @@ router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }
       taxRate,
       ...rest
     } = req.body;
+
+    // Safeguard: strip empty-string values for sensitive fields so a
+    // frontend that loaded defaults (because it received a guest/public
+    // response) doesn't accidentally wipe real API keys from the DB.
+    // Sending `undefined` tells Prisma to skip updating the column.
+    const sensitiveKeys = [
+      'openAiApiKey', 'claudeApiKey', 'geminiApiKey',
+      'resendApiKey', 'emailFrom', 'mailerName',
+    ] as const;
+    for (const key of sensitiveKeys) {
+      if (rest[key] === '') {
+        rest[key] = undefined;
+      }
+    }
 
     const settings = await prisma.agencySettings.update({
       where: { id: existing.id },
@@ -372,7 +403,7 @@ router.post('/email/test', authenticate, requireAdmin, async (req: Request, res:
     // Accept custom recipient from body, fallback to settings adminEmail or request user's email
     const { to } = req.body;
     const testRecipient = to || settings?.adminEmail || req.user!.email;
-    const agencyName = settings?.agencyName ?? 'Agency Flow Pro';
+    const agencyName = settings?.agencyName ?? 'Hirdan Marketing';
 
     const emailHtml = await generateEmailHtml({
       title: 'Email Delivery Test',
@@ -399,6 +430,293 @@ router.post('/email/test', authenticate, requireAdmin, async (req: Request, res:
     }
 
     res.json({ success: true, sentTo: testRecipient, emailId: result.id });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── GOOGLE DRIVE HELPER ──────────────────────────────────────────
+async function uploadToGoogleDrive(filePath: string, filename: string, serviceAccountJsonStr: string, folderId?: string) {
+  const credentials = JSON.parse(serviceAccountJsonStr);
+  const clientEmail = credentials.client_email;
+  const privateKey = credentials.private_key;
+
+  if (!clientEmail || !privateKey) {
+    throw new Error('Invalid Google Service Account JSON structure. Ensure client_email and private_key are present.');
+  }
+
+  const payload = {
+    iss: clientEmail,
+    scope: 'https://www.googleapis.com/auth/drive.file',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    iat: Math.floor(Date.now() / 1000)
+  };
+
+  const token = jwt.sign(payload, privateKey, { algorithm: 'RS256' });
+
+  const authResponse = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: token
+    })
+  });
+
+  if (!authResponse.ok) {
+    const errText = await authResponse.text();
+    throw new Error(`Google Auth failed: ${errText}`);
+  }
+
+  const authData = await authResponse.json() as any;
+  const accessToken = authData.access_token;
+
+  const fileContent = fs.readFileSync(filePath);
+  const metadata = {
+    name: filename,
+    parents: folderId ? [folderId] : undefined
+  };
+
+  const boundary = 'foo_bar_boundary';
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const closeDelimiter = `\r\n--${boundary}--`;
+
+  const requestBody = Buffer.concat([
+    Buffer.from(delimiter + 'Content-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(metadata)),
+    Buffer.from(delimiter + 'Content-Type: application/octet-stream\r\n\r\n'),
+    fileContent,
+    Buffer.from(closeDelimiter)
+  ]);
+
+  const uploadResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+      'Content-Length': requestBody.length.toString()
+    },
+    body: requestBody
+  });
+
+  if (!uploadResponse.ok) {
+    const errText = await uploadResponse.text();
+    throw new Error(`Google Drive upload failed: ${errText}`);
+  }
+
+  const uploadData = await uploadResponse.json() as any;
+  return uploadData.id;
+}
+
+// ─── GET /api/settings/backups ────────────────────────────────────
+// Lists all local backup files.
+router.get('/backups', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const backupDir = path.resolve(__dirname, '../../backups');
+
+    if (!fs.existsSync(backupDir)) {
+      res.json({ backups: [] });
+      return;
+    }
+
+    const files = fs.readdirSync(backupDir);
+    const backups = files
+      .filter(file => file.startsWith('backup_') && file.endsWith('.sql'))
+      .map(file => {
+        const filePath = path.join(backupDir, file);
+        const stats = fs.statSync(filePath);
+        return {
+          filename: file,
+          size: stats.size,
+          createdAt: stats.mtime
+        };
+      })
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    res.json({ backups });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── POST /api/settings/backups ───────────────────────────────────
+// Manually triggers a database backup and uploads to Google Drive if configured.
+router.post('/backups', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const scriptPath = path.resolve(__dirname, '../../scripts/backup.cjs');
+
+    console.log('⚡ Triggering database backup script...');
+    execSync(`node "${scriptPath}"`, { stdio: 'inherit' });
+
+    // Find the latest backup file created
+    const backupDir = path.resolve(__dirname, '../../backups');
+    const files = fs.readdirSync(backupDir);
+    const sqlFiles = files
+      .filter(file => file.startsWith('backup_') && file.endsWith('.sql'))
+      .map(file => {
+        const filePath = path.join(backupDir, file);
+        const stats = fs.statSync(filePath);
+        return { filename: file, path: filePath, createdAt: stats.mtime };
+      })
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    if (sqlFiles.length === 0) {
+      throw AppError.badRequest('Failed to generate local backup file.');
+    }
+
+    const latestBackup = sqlFiles[0];
+
+    // Check if Google Drive integration is configured
+    const settings = await prisma.agencySettings.findFirst();
+    let uploadedToGDrive = false;
+    let gDriveFileId = undefined;
+    let uploadError = undefined;
+
+    if (settings?.googleDriveEnabled && settings?.googleDriveServiceAccountJson) {
+      try {
+        console.log('☁️ Auto-uploading backup to Google Drive...');
+        gDriveFileId = await uploadToGoogleDrive(
+          latestBackup.path,
+          latestBackup.filename,
+          settings.googleDriveServiceAccountJson,
+          settings.googleDriveFolderId || undefined
+        );
+        uploadedToGDrive = true;
+      } catch (err: any) {
+        console.error('❌ Google Drive auto-upload failed:', err.message);
+        uploadError = err.message;
+      }
+    }
+
+    res.json({
+      success: true,
+      filename: latestBackup.filename,
+      uploadedToGDrive,
+      gDriveFileId,
+      uploadError
+    });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+// ─── POST /api/settings/backups/gdrive-test ───────────────────────
+// Tests Google Drive integration by uploading a small test file.
+router.post('/backups/gdrive-test', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const { serviceAccountJson, folderId } = req.body;
+
+    if (!serviceAccountJson) {
+      throw AppError.badRequest('Google Service Account JSON is required.');
+    }
+
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const testFilePath = path.join(__dirname, 'gdrive-test.txt');
+    fs.writeFileSync(testFilePath, `Connection test successful! Created at: ${new Date().toISOString()}`);
+
+    try {
+      const gDriveFileId = await uploadToGoogleDrive(
+        testFilePath,
+        'connection_test.txt',
+        serviceAccountJson,
+        folderId || undefined
+      );
+
+      // Clean up local test file
+      fs.unlinkSync(testFilePath);
+
+      res.json({ success: true, fileId: gDriveFileId });
+    } catch (err: any) {
+      if (fs.existsSync(testFilePath)) fs.unlinkSync(testFilePath);
+      throw AppError.badRequest(err.message || 'Google Drive test failed.');
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── GET /api/settings/backups/:filename/download ─────────────────
+// Downloads a specific local backup file.
+router.get('/backups/:filename/download', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const filename = req.params.filename as string;
+
+    // Security: Prevent path traversal attacks
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      throw AppError.badRequest('Invalid backup filename.');
+    }
+
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const filePath = path.resolve(__dirname, '../../backups', filename);
+
+    if (!fs.existsSync(filePath)) {
+      throw AppError.notFound('Backup file not found.');
+    }
+
+    res.download(filePath, filename);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── POST /api/settings/backups/:filename/upload-gdrive ────────────
+// Manually uploads an existing local backup to Google Drive.
+router.post('/backups/:filename/upload-gdrive', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const filename = req.params.filename as string;
+
+    // Security check
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      throw AppError.badRequest('Invalid backup filename.');
+    }
+
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const filePath = path.resolve(__dirname, '../../backups', filename);
+
+    if (!fs.existsSync(filePath)) {
+      throw AppError.notFound('Backup file not found.');
+    }
+
+    const settings = await prisma.agencySettings.findFirst();
+    if (!settings?.googleDriveServiceAccountJson) {
+      throw AppError.badRequest('Google Drive integration is not configured. Add your Service Account JSON key first.');
+    }
+
+    const fileId = await uploadToGoogleDrive(
+      filePath,
+      filename,
+      settings.googleDriveServiceAccountJson,
+      settings.googleDriveFolderId || undefined
+    );
+
+    res.json({ success: true, fileId });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+// ─── DELETE /api/settings/backups/:filename ───────────────────────
+// Deletes a local backup file.
+router.delete('/backups/:filename', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const filename = req.params.filename as string;
+
+    // Security check
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      throw AppError.badRequest('Invalid backup filename.');
+    }
+
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const filePath = path.resolve(__dirname, '../../backups', filename);
+
+    if (!fs.existsSync(filePath)) {
+      throw AppError.notFound('Backup file not found.');
+    }
+
+    fs.unlinkSync(filePath);
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

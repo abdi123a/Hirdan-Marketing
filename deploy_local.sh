@@ -43,13 +43,17 @@ ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 root@72.61.192.11 << 'EOF'
   
   cd /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
   npm install --production --legacy-peer-deps
+  
+  echo "🗄️ Running pre-migration database backup..."
+  node scripts/backup.cjs
+  
   npx prisma@6.9.0 generate
   npx prisma@6.9.0 db push --accept-data-loss
   
   chown -R hirdanmarketing-api:hirdanmarketing-api /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
   
   echo "🔄 Restarting Node.js service..."
-  pm2 restart api || pm2 restart all || echo "Restart failed"
+  sudo -u hirdanmarketing-api pm2 restart api || pm2 restart api || pm2 restart all || echo "Restart failed"
   
   echo "✅ Server commands finished!"
 EOF

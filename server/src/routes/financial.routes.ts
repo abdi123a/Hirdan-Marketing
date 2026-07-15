@@ -226,7 +226,14 @@ router.get('/balance-sheet', async (req: Request, res: Response, next: NextFunct
     });
     const cumulativeExpenses = paidExpensesAgg._sum.amount ?? 0;
 
-    const cashAndCashEquivalents = baselineCash + cumulativeRevenue - cumulativeExpenses;
+    // Real cumulative deposits up to asOfDate
+    const depositsAgg = await prisma.deposit.aggregate({
+      where: { date: { lte: asOfDate } },
+      _sum: { amount: true },
+    });
+    const cumulativeDeposits = depositsAgg._sum.amount ?? 0;
+
+    const cashAndCashEquivalents = baselineCash + cumulativeRevenue + cumulativeDeposits - cumulativeExpenses;
 
     // B. Accounts Receivable (invoices outstanding up to asOfDate)
     const unpaidInvoices = await prisma.invoice.findMany({
@@ -380,7 +387,16 @@ router.get('/cash-flow', async (req: Request, res: Response, next: NextFunction)
     const netInvestingCashFlow = -investingCashFlow;
 
     // 4. CASH FLOW FROM FINANCING
-    const financingCashFlow = 0;
+    // Deposits in this range
+    const periodDepositsAgg = await prisma.deposit.aggregate({
+      where: {
+        date: { gte: fromDate, lte: toDate },
+      },
+      _sum: {
+        amount: true,
+      },
+    });
+    const financingCashFlow = periodDepositsAgg._sum.amount ?? 0;
 
     // 5. RECONCILIATION
     // Calculate cash at beginning of period
@@ -418,8 +434,19 @@ router.get('/cash-flow', async (req: Request, res: Response, next: NextFunction)
       },
     });
     const expensesBefore = expensesBeforeAgg._sum.amount ?? 0;
+
+    // Get all deposits before fromDate
+    const depositsBeforeAgg = await prisma.deposit.aggregate({
+      where: {
+        date: { lt: fromDate },
+      },
+      _sum: {
+        amount: true,
+      },
+    });
+    const depositsBefore = depositsBeforeAgg._sum.amount ?? 0;
     
-    const cashAtBeginning = baselineCash + revenueBefore - expensesBefore;
+    const cashAtBeginning = baselineCash + revenueBefore + depositsBefore - expensesBefore;
     const netChangeInCash = netOperatingCashFlow + netInvestingCashFlow + financingCashFlow;
     const cashAtEnd = cashAtBeginning + netChangeInCash;
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,9 +8,11 @@ import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiUpload } from "@/lib/api-client";
 import { 
   Loader2, Save, FileText, Image as ImageIcon, Plus, Trash2, Edit2, 
-  Star, LayoutGrid, CheckCircle2, ChevronRight, HelpCircle, Folder
+  Star, LayoutGrid, CheckCircle2, ChevronRight, HelpCircle, Folder,
+  UploadCloud, Monitor, Eye, Sparkles, Settings, ArrowUpRight, HelpCircle as HelpIcon,
+  X, Layers, Play, Compass, DollarSign, Award, ThumbsUp, Tag, PlusCircle, Check,
+  Smartphone, MonitorIcon, ChevronDown, ChevronUp, Lock, ArrowLeft
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -52,10 +55,79 @@ interface Testimonial {
   avatarUrl: string | null;
 }
 
+// Custom Premium Upload Zone
+function UploadZone({ 
+  label, 
+  imageUrl, 
+  onUpload, 
+  isUploading, 
+  onClear 
+}: { 
+  label: string; 
+  imageUrl: string; 
+  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void; 
+  isUploading: boolean; 
+  onClear?: () => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between items-center">
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</span>
+        {imageUrl && onClear && (
+          <button 
+            type="button" 
+            onClick={onClear} 
+            className="text-[11px] text-destructive hover:underline flex items-center gap-1 transition-all"
+          >
+            <Trash2 className="w-3 h-3" /> Clear
+          </button>
+        )}
+      </div>
+      <div className={`relative border-2 border-dashed border-border hover:border-primary/50 transition-all rounded-xl p-4 flex flex-col items-center justify-center min-h-[140px] bg-muted/10 group overflow-hidden ${imageUrl ? 'border-solid bg-muted/5' : ''}`}>
+        {imageUrl ? (
+          <div className="relative w-full h-full min-h-[108px] flex items-center justify-center">
+            <img src={imageUrl} alt={label} className="max-h-[120px] max-w-full object-contain rounded-lg shadow-sm transition-transform group-hover:scale-[1.02]" />
+            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-lg gap-2">
+              <label className="cursor-pointer bg-white text-black hover:bg-neutral-100 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-md flex items-center gap-1 transition-all">
+                <UploadCloud className="w-3.5 h-3.5" /> Replace
+                <input type="file" accept="image/*" className="hidden" onChange={onUpload} disabled={isUploading} />
+              </label>
+              {onClear && (
+                <button type="button" onClick={onClear} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 p-1.5 rounded-lg shadow-md transition-all">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer py-4">
+            <div className="bg-primary/10 p-3 rounded-full text-primary mb-2 group-hover:scale-110 transition-transform">
+              {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
+            </div>
+            <span className="text-xs font-medium text-foreground">Click to upload image</span>
+            <span className="text-[10px] text-muted-foreground mt-1">PNG, JPG, SVG or WebP</span>
+            <input type="file" accept="image/*" className="hidden" onChange={onUpload} disabled={isUploading} />
+          </label>
+        )}
+        {isUploading && (
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-xs flex flex-col items-center justify-center gap-2">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-[10px] text-muted-foreground font-semibold">Uploading...</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function LandingPageEditor() {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState("hero");
+  const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop");
+  const [expandedFaqIndex, setExpandedFaqIndex] = useState<number | null>(0);
 
   // Dynamic content states
   const [staticContent, setStaticContent] = useState<any>({
@@ -444,1407 +516,1846 @@ export default function LandingPageEditor() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[500px] gap-4">
         <Loader2 className="w-10 h-10 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">Loading landing page editor...</p>
+        <p className="text-sm text-muted-foreground">Loading landing page CMS...</p>
       </div>
     );
   }
 
+  // Sidebar Grouped Navigation Setup
+  const navigationGroups = [
+    {
+      title: "Core Branding & Pages",
+      items: [
+        { id: "hero", label: "Hero Banner", icon: Sparkles },
+        { id: "about", label: "About Page / Mission", icon: Compass },
+        { id: "clientlogos", label: "Client Logos", icon: Award },
+      ]
+    },
+    {
+      title: "Content & Blocks",
+      items: [
+        { id: "services", label: "Services Cards", icon: Layers },
+        { id: "process", label: "Roadmap Timeline", icon: Play },
+        { id: "packages", label: "Pricing Packages", icon: DollarSign },
+        { id: "faqs", label: "FAQ Accordion", icon: HelpIcon },
+      ]
+    },
+    {
+      title: "Portfolios & Reviews",
+      items: [
+        { id: "casestudies", label: "Case Studies", icon: FileText },
+        { id: "projects", label: "Agency Projects", icon: Folder },
+        { id: "testimonials", label: "Client Reviews", icon: ThumbsUp },
+      ]
+    },
+    {
+      title: "Metadata & SEO",
+      items: [
+        { id: "seo", label: "SEO & Taglines", icon: Settings },
+      ]
+    }
+  ];
+
   return (
-    <div className="container mx-auto py-8 px-4 text-left max-w-6xl">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-3xl font-bold font-display tracking-tight text-foreground flex items-center gap-2">
-            <LayoutGrid className="w-8 h-8 text-primary" />
-            Landing Page Editor
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Customize SMM Agency layout texts, case studies, and testimonials in real-time.
-          </p>
+    <div className="w-full min-h-[calc(100vh-2rem)] text-left px-4 md:px-6 lg:px-8 py-6">
+      {/* Top Header Panel */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 bg-card border border-border p-5 md:p-6 rounded-2xl shadow-xs">
+        <div className="flex items-start gap-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/dashboard/settings?tab=general")}
+            className="shrink-0 h-9 rounded-xl border-border hover:bg-muted"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1.5" />
+            Settings
+          </Button>
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[#5C30FD] px-2.5 py-1 bg-[#5C30FD]/10 rounded-md">Live CMS Suite</span>
+            <h1 className="text-2xl md:text-3xl font-extrabold font-display tracking-tight text-foreground mt-2 flex items-center gap-2">
+              Landing Page Customizer
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Build, edit, and reorganize SMM Agency sections in a live split workspace environment.
+            </p>
+          </div>
         </div>
         
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <a 
             href={import.meta.env.VITE_LANDING_URL || "https://hirdanmarketing.com"} 
             target="_blank" 
             rel="noreferrer"
-            className="px-4 py-2 border border-border hover:bg-muted text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
+            className="px-4 py-2 border border-border hover:bg-muted text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors bg-background text-foreground shadow-xs"
           >
-            Preview Landing Page <ChevronRight className="w-3.5 h-3.5" />
+            Visit Live Site <ArrowUpRight className="w-3.5 h-3.5" />
           </a>
         </div>
       </div>
 
-      <Tabs defaultValue="hero" className="w-full flex flex-col gap-6">
-        <TabsList className="bg-muted p-1 border border-border rounded-xl self-start flex-wrap h-auto gap-1">
-          <TabsTrigger value="hero" className="rounded-lg text-xs font-bold px-4 py-2">Hero Section</TabsTrigger>
-          <TabsTrigger value="about" className="rounded-lg text-xs font-bold px-4 py-2">About Section</TabsTrigger>
-          <TabsTrigger value="services" className="rounded-lg text-xs font-bold px-4 py-2">Services</TabsTrigger>
-          <TabsTrigger value="process" className="rounded-lg text-xs font-bold px-4 py-2">Roadmap Steps</TabsTrigger>
-          <TabsTrigger value="packages" className="rounded-lg text-xs font-bold px-4 py-2">Pricing Packages</TabsTrigger>
-          <TabsTrigger value="casestudies" className="rounded-lg text-xs font-bold px-4 py-2">Case Studies</TabsTrigger>
-          <TabsTrigger value="projects" className="rounded-lg text-xs font-bold px-4 py-2">Projects</TabsTrigger>
-          <TabsTrigger value="testimonials" className="rounded-lg text-xs font-bold px-4 py-2">Testimonials</TabsTrigger>
-          <TabsTrigger value="faqs" className="rounded-lg text-xs font-bold px-4 py-2">FAQs</TabsTrigger>
-          <TabsTrigger value="clientlogos" className="rounded-lg text-xs font-bold px-4 py-2">Client Logos</TabsTrigger>
-          <TabsTrigger value="seo" className="rounded-lg text-xs font-bold px-4 py-2">SEO Settings</TabsTrigger>
-        </TabsList>
+      {/* Main CMS Split Workspace */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 xl:gap-8 items-start">
+        
+        {/* Panel 1: Vertical Sidebar Navigation (col-span-2) */}
+        <div className="xl:col-span-2 space-y-6">
+          <Card className="border border-border shadow-sm p-4 bg-card rounded-2xl">
+            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-3 mb-3">Navigation</h3>
+            <div className="space-y-4">
+              {navigationGroups.map((group, gIdx) => (
+                <div key={gIdx} className="space-y-1">
+                  <h4 className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-wide px-3 mt-2 mb-1">{group.title}</h4>
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setActiveTab(item.id);
+                          // Auto scroll preview panel to correct mock section
+                          const el = document.getElementById(`mock-section-${item.id}`);
+                          if (el) {
+                            el.scrollIntoView({ behavior: "smooth", block: "center" });
+                          }
+                        }}
+                        className={`w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-xl transition-all ${
+                          isActive 
+                            ? "bg-[#5C30FD] text-white shadow-sm shadow-[#5C30FD]/20 scale-[1.01]" 
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span>{item.label}</span>
+                        {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </Card>
 
-        {/* ─── TAB: HERO SECTION ────────────────────────────────────────── */}
-        <TabsContent value="hero">
-          <form onSubmit={handleSaveContent}>
-            <Card className="border border-border shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold font-display">Hero Customization</CardTitle>
-                <CardDescription>Configure the main title, descriptions, CTA actions, and trust badge.</CardDescription>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="md:col-span-2 flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Hero Background Image</label>
-                  <div className="flex items-center gap-4">
-                    {staticContent.heroImageUrl && (
-                      <img src={staticContent.heroImageUrl} alt="Hero" className="w-16 h-16 object-cover rounded shadow-sm border border-border" />
-                    )}
-                    <div className="flex-1">
-                      <Input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={e => handleStaticImageUpload(e, "heroImageUrl")} 
-                        disabled={staticUploading === "heroImageUrl"}
-                      />
-                      {staticUploading === "heroImageUrl" && <span className="text-xs text-muted-foreground mt-1 inline-block">Uploading...</span>}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Hero Background Shape Image</label>
-                  <div className="flex items-center gap-4">
-                    {staticContent.heroShapeImageUrl && (
-                      <img src={staticContent.heroShapeImageUrl} alt="Shape" className="w-16 h-16 object-cover rounded shadow-sm border border-border" />
-                    )}
-                    <div className="flex-1">
-                      <Input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={e => handleStaticImageUpload(e, "heroShapeImageUrl")} 
-                        disabled={staticUploading === "heroShapeImageUrl"}
-                      />
-                      {staticUploading === "heroShapeImageUrl" && <span className="text-xs text-muted-foreground mt-1 inline-block">Uploading...</span>}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Hero Subtitle Badge Icon</label>
-                  <div className="flex items-center gap-4">
-                    {staticContent.heroBadgeImageUrl && (
-                      <img src={staticContent.heroBadgeImageUrl} alt="Badge" className="w-16 h-16 object-cover rounded shadow-sm border border-border" />
-                    )}
-                    <div className="flex-1">
-                      <Input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={e => handleStaticImageUpload(e, "heroBadgeImageUrl")} 
-                        disabled={staticUploading === "heroBadgeImageUrl"}
-                      />
-                      {staticUploading === "heroBadgeImageUrl" && <span className="text-xs text-muted-foreground mt-1 inline-block">Uploading...</span>}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Hero Badge Subtitle</label>
-                  <Input 
-                    value={staticContent.heroSubtitle} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, heroSubtitle: e.target.value }))}
-                    placeholder="e.g. Social Media Marketing"
-                    required
-                  />
-                </div>
-                
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Main Title Heading</label>
-                  <Input 
-                    value={staticContent.heroTitle} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, heroTitle: e.target.value }))}
-                    placeholder="e.g. Growth With High-Impact Social Media"
-                    required
-                  />
-                </div>
-
-                <div className="md:col-span-2 flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Description Content</label>
-                  <Textarea 
-                    value={staticContent.heroDescription} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, heroDescription: e.target.value }))}
-                    placeholder="Brief intro text..."
-                    rows={3}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Button 1 (Primary CTA) Text</label>
-                  <Input 
-                    value={staticContent.heroBtn1Text} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, heroBtn1Text: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Button 2 (Secondary CTA) Text</label>
-                  <Input 
-                    value={staticContent.heroBtn2Text} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, heroBtn2Text: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Award/Trust Statistics Number</label>
-                  <Input 
-                    value={staticContent.heroAwardNumber} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, heroAwardNumber: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Award/Trust Label Text</label>
-                  <Input 
-                    value={staticContent.heroAwardLabel} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, heroAwardLabel: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Trust/Award Image ("Trusted By 1M+ People")</label>
-                  <div className="flex items-center gap-4">
-                    {staticContent.trustImageUrl && (
-                      <img src={staticContent.trustImageUrl} alt="Trust" className="w-16 h-16 object-cover rounded shadow-sm border border-border" />
-                    )}
-                    <div className="flex-1">
-                      <Input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={e => handleStaticImageUpload(e, "trustImageUrl")} 
-                        disabled={staticUploading === "trustImageUrl"}
-                      />
-                      {staticUploading === "trustImageUrl" && <span className="text-xs text-muted-foreground mt-1 inline-block">Uploading...</span>}
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-              <div className="p-6 border-t border-border flex justify-end">
-                <Button type="submit" disabled={isSaving} className="gap-2">
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save Hero Settings
-                </Button>
+          {/* Quick Help Card */}
+          <Card className="border border-border shadow-xs bg-muted/30 p-4 rounded-2xl hidden lg:block">
+            <div className="flex gap-3">
+              <HelpIcon className="w-5 h-5 text-[#5C30FD] shrink-0" />
+              <div>
+                <h4 className="text-xs font-bold text-foreground">Interactive Mockup</h4>
+                <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
+                  Your changes are applied directly in real-time. The browser mockup replicates your <strong>Next.js theme design</strong> exactly, including correct colors, shapes, badge layouts, checkmarks, and brand styles.
+                </p>
               </div>
-            </Card>
-          </form>
-        </TabsContent>
+            </div>
+          </Card>
+        </div>
 
-        {/* ─── TAB: ABOUT SECTION ───────────────────────────────────────── */}
-        <TabsContent value="about">
-          <form onSubmit={handleSaveContent}>
-            <Card className="border border-border shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold font-display">About Customization</CardTitle>
-                <CardDescription>Configure about copywriting text, bullet points checklist, and agency growth counts.</CardDescription>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">About Image</label>
-                  <div className="flex items-center gap-4">
-                    {staticContent.aboutImageUrl && (
-                      <img src={staticContent.aboutImageUrl} alt="About" className="w-16 h-16 object-cover rounded shadow-sm border border-border" />
-                    )}
-                    <div className="flex-1">
-                      <Input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={e => handleStaticImageUpload(e, "aboutImageUrl")} 
-                        disabled={staticUploading === "aboutImageUrl"}
-                      />
-                      {staticUploading === "aboutImageUrl" && <span className="text-xs text-muted-foreground mt-1 inline-block">Uploading...</span>}
-                    </div>
+        {/* Panel 2: Active Form Area (col-span-5) */}
+        <div className="xl:col-span-5 space-y-6">
+          
+          {/* TAB CONTENT: HERO SECTION */}
+          {activeTab === "hero" && (
+            <form onSubmit={handleSaveContent}>
+              <Card className="border border-border shadow-sm rounded-2xl">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-[#5C30FD]" /> Hero Banner
+                  </CardTitle>
+                  <CardDescription>Setup layout content, background structures, and primary client call-to-actions.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <UploadZone 
+                    label="Hero Main Background Image" 
+                    imageUrl={staticContent.heroImageUrl} 
+                    isUploading={staticUploading === "heroImageUrl"}
+                    onUpload={e => handleStaticImageUpload(e, "heroImageUrl")}
+                    onClear={() => setStaticContent((prev: any) => ({ ...prev, heroImageUrl: "" }))}
+                  />
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <UploadZone 
+                      label="Shape Overlay Graphics" 
+                      imageUrl={staticContent.heroShapeImageUrl} 
+                      isUploading={staticUploading === "heroShapeImageUrl"}
+                      onUpload={e => handleStaticImageUpload(e, "heroShapeImageUrl")}
+                      onClear={() => setStaticContent((prev: any) => ({ ...prev, heroShapeImageUrl: "" }))}
+                    />
+                    <UploadZone 
+                      label="Subtitle Badge Graphic" 
+                      imageUrl={staticContent.heroBadgeImageUrl} 
+                      isUploading={staticUploading === "heroBadgeImageUrl"}
+                      onUpload={e => handleStaticImageUpload(e, "heroBadgeImageUrl")}
+                      onClear={() => setStaticContent((prev: any) => ({ ...prev, heroBadgeImageUrl: "" }))}
+                    />
                   </div>
-                </div>
 
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">About Section Subtitle</label>
-                  <Input 
-                    value={staticContent.aboutSubtitle} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, aboutSubtitle: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">About Section Title</label>
-                  <Input 
-                    value={staticContent.aboutTitle} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, aboutTitle: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="md:col-span-2 flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">About Section Description</label>
-                  <Textarea 
-                    value={staticContent.aboutDescription} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, aboutDescription: e.target.value }))}
-                    rows={4}
-                    required
-                  />
-                </div>
-
-                <div className="md:col-span-2 flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Checklist Bullets (Comma-separated)</label>
-                  <Input 
-                    value={staticContent.aboutBullets} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, aboutBullets: e.target.value }))}
-                    placeholder="e.g. Bullet 1, Bullet 2, Bullet 3"
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Campaigns Managed Stat Count</label>
-                  <Input 
-                    value={staticContent.aboutCampaigns} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, aboutCampaigns: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Total Active Clients Stat Count</label>
-                  <Input 
-                    value={staticContent.aboutClients} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, aboutClients: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="md:col-span-2 border-t border-border pt-4 mt-2">
-                  <h4 className="text-sm font-bold text-foreground mb-4">About Page Mission & Stats</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Mission Title</label>
+                  <div className="space-y-4 pt-2">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">Badge Subtitle Label</label>
                       <Input 
-                        value={staticContent.aboutMissionTitle || ""} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, aboutMissionTitle: e.target.value }))}
+                        value={staticContent.heroSubtitle} 
+                        onChange={e => setStaticContent(prev => ({ ...prev, heroSubtitle: e.target.value }))}
+                        placeholder="e.g. Creative Social Media Marketing"
+                        required
+                        className="rounded-xl"
                       />
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Mission Description</label>
-                      <Textarea 
-                        value={staticContent.aboutMissionDesc || ""} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, aboutMissionDesc: e.target.value }))}
-                        rows={2}
+                    
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">Main Title Heading</label>
+                      <Input 
+                        value={staticContent.heroTitle} 
+                        onChange={e => setStaticContent(prev => ({ ...prev, heroTitle: e.target.value }))}
+                        placeholder="e.g. Growth With High-Impact Social Media"
+                        required
+                        className="rounded-xl"
                       />
                     </div>
-                    <div className="md:col-span-2 flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Mission Bullets (One per line or Comma-separated)</label>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">Intro Description Content</label>
                       <Textarea 
-                        value={staticContent.aboutMissionBullets || ""} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, aboutMissionBullets: e.target.value }))}
-                        placeholder="e.g. Bullet 1&#10;Bullet 2&#10;Bullet 3"
+                        value={staticContent.heroDescription} 
+                        onChange={e => setStaticContent(prev => ({ ...prev, heroDescription: e.target.value }))}
+                        placeholder="Introduce your agency..."
                         rows={3}
+                        required
+                        className="rounded-xl resize-none"
                       />
                     </div>
-                    <div className="md:col-span-2 flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">About Page Stats (One per line)</label>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">Primary CTA Text</label>
+                        <Input 
+                          value={staticContent.heroBtn1Text} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, heroBtn1Text: e.target.value }))}
+                          required
+                          className="rounded-xl"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">Secondary CTA Text</label>
+                        <Input 
+                          value={staticContent.heroBtn2Text} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, heroBtn2Text: e.target.value }))}
+                          required
+                          className="rounded-xl"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="border-t border-border pt-4 mt-2 grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">Award Number</label>
+                        <Input 
+                          value={staticContent.heroAwardNumber} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, heroAwardNumber: e.target.value }))}
+                          required
+                          className="rounded-xl font-mono text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">Award Label Text</label>
+                        <Input 
+                          value={staticContent.heroAwardLabel} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, heroAwardLabel: e.target.value }))}
+                          required
+                          className="rounded-xl text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <UploadZone 
+                      label="Trust Badge Image (Trusted Clients overlay)" 
+                      imageUrl={staticContent.trustImageUrl} 
+                      isUploading={staticUploading === "trustImageUrl"}
+                      onUpload={e => handleStaticImageUpload(e, "trustImageUrl")}
+                      onClear={() => setStaticContent((prev: any) => ({ ...prev, trustImageUrl: "" }))}
+                    />
+                  </div>
+                </CardContent>
+                <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save Hero Section
+                  </Button>
+                </div>
+              </Card>
+            </form>
+          )}
+
+          {/* TAB CONTENT: ABOUT SECTION */}
+          {activeTab === "about" && (
+            <form onSubmit={handleSaveContent}>
+              <Card className="border border-border shadow-sm rounded-2xl">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
+                    <Compass className="w-5 h-5 text-[#5C30FD]" /> About & Mission
+                  </CardTitle>
+                  <CardDescription>Configure brand details, checkboxes bullet checklist, and statistics charts.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <UploadZone 
+                    label="About Showcase Image" 
+                    imageUrl={staticContent.aboutImageUrl} 
+                    isUploading={staticUploading === "aboutImageUrl"}
+                    onUpload={e => handleStaticImageUpload(e, "aboutImageUrl")}
+                    onClear={() => setStaticContent((prev: any) => ({ ...prev, aboutImageUrl: "" }))}
+                  />
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">Section Subtitle</label>
+                        <Input 
+                          value={staticContent.aboutSubtitle} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, aboutSubtitle: e.target.value }))}
+                          required
+                          className="rounded-xl"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">Section Title</label>
+                        <Input 
+                          value={staticContent.aboutTitle} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, aboutTitle: e.target.value }))}
+                          required
+                          className="rounded-xl"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">Section Description</label>
                       <Textarea 
-                        value={Array.isArray(staticContent.aboutStatsJson) ? staticContent.aboutStatsJson.join("\n") : ""} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, aboutStatsJson: e.target.value.split("\n").filter(Boolean) }))}
-                        placeholder="e.g. 15+ Businesses We've Worked With&#10;8+ Years Of Experience"
+                        value={staticContent.aboutDescription} 
+                        onChange={e => setStaticContent(prev => ({ ...prev, aboutDescription: e.target.value }))}
                         rows={4}
+                        required
+                        className="rounded-xl resize-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">Checklist Bullets (Comma-separated)</label>
+                      <Input 
+                        value={staticContent.aboutBullets} 
+                        onChange={e => setStaticContent(prev => ({ ...prev, aboutBullets: e.target.value }))}
+                        placeholder="e.g. Premium Strategy, 24/7 Monitoring, Fast Setup"
+                        required
+                        className="rounded-xl"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">Campaigns Stat Count</label>
+                        <Input 
+                          value={staticContent.aboutCampaigns} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, aboutCampaigns: e.target.value }))}
+                          required
+                          className="rounded-xl"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">Active Clients Stat</label>
+                        <Input 
+                          value={staticContent.aboutClients} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, aboutClients: e.target.value }))}
+                          required
+                          className="rounded-xl"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="border-t border-border pt-4 space-y-4">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-primary">About Page Specific Mission & Stats</h4>
+                      
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">Mission Title</label>
+                        <Input 
+                          value={staticContent.aboutMissionTitle || ""} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, aboutMissionTitle: e.target.value }))}
+                          className="rounded-xl"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">Mission Description</label>
+                        <Textarea 
+                          value={staticContent.aboutMissionDesc || ""} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, aboutMissionDesc: e.target.value }))}
+                          rows={2}
+                          className="rounded-xl resize-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">Mission Bullets (One per line)</label>
+                        <Textarea 
+                          value={staticContent.aboutMissionBullets || ""} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, aboutMissionBullets: e.target.value }))}
+                          placeholder="e.g. Bullet One&#10;Bullet Two"
+                          rows={3}
+                          className="rounded-xl font-mono text-xs"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">About Page Stats (One per line)</label>
+                        <Textarea 
+                          value={Array.isArray(staticContent.aboutStatsJson) ? staticContent.aboutStatsJson.join("\n") : ""} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, aboutStatsJson: e.target.value.split("\n").filter(Boolean) }))}
+                          placeholder="e.g. 150+ Happy Businesses&#10;99.9% Success Rate"
+                          rows={3}
+                          className="rounded-xl font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+                <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save About Settings
+                  </Button>
+                </div>
+              </Card>
+            </form>
+          )}
+
+          {/* TAB CONTENT: SERVICES */}
+          {activeTab === "services" && (
+            <form onSubmit={handleSaveContent}>
+              <Card className="border border-border shadow-sm rounded-2xl">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
+                    <Layers className="w-5 h-5 text-[#5C30FD]" /> Services Cards
+                  </CardTitle>
+                  <CardDescription>Manage the grid items that display your key service offerings.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    {Array.isArray(staticContent.servicesJson) && staticContent.servicesJson.map((service: any, idx: number) => (
+                      <div key={idx} className="p-4 border border-border rounded-xl bg-muted/20 relative space-y-3 shadow-xs">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-bold text-[#5C30FD] px-2 py-0.5 bg-[#5C30FD]/10 rounded-md">Service #{idx + 1}</span>
+                          <button
+                            type="button"
+                            className="text-xs text-destructive hover:underline flex items-center gap-1"
+                            onClick={() => {
+                              const updated = [...staticContent.servicesJson];
+                              updated.splice(idx, 1);
+                              setStaticContent((prev: any) => ({ ...prev, servicesJson: updated }));
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Remove
+                          </button>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Service Title</label>
+                              <Input
+                                value={service.title || ""}
+                                onChange={(e) => {
+                                  const updated = [...staticContent.servicesJson];
+                                  updated[idx] = { ...service, title: e.target.value };
+                                  setStaticContent((prev: any) => ({ ...prev, servicesJson: updated }));
+                                }}
+                                required
+                                className="h-8 text-xs rounded-lg"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Icon CSS Class</label>
+                              <Input
+                                value={service.icon || "flaticon-graphic-design"}
+                                onChange={(e) => {
+                                  const updated = [...staticContent.servicesJson];
+                                  updated[idx] = { ...service, icon: e.target.value };
+                                  setStaticContent((prev: any) => ({ ...prev, servicesJson: updated }));
+                                }}
+                                className="h-8 text-xs rounded-lg font-mono"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Description</label>
+                            <Textarea
+                              value={service.description || ""}
+                              onChange={(e) => {
+                                const updated = [...staticContent.servicesJson];
+                                updated[idx] = { ...service, description: e.target.value };
+                                  setStaticContent((prev: any) => ({ ...prev, servicesJson: updated }));
+                              }}
+                              rows={2}
+                              required
+                              className="text-xs rounded-lg resize-none"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full gap-2 border-dashed rounded-xl py-6"
+                    onClick={() => {
+                      const updated = [...(staticContent.servicesJson || []), { title: "", description: "", icon: "flaticon-graphic-design" }];
+                      setStaticContent((prev: any) => ({ ...prev, servicesJson: updated }));
+                    }}
+                  >
+                    <Plus className="w-4 h-4" /> Add New Service Card
+                  </Button>
+                </CardContent>
+                <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save Services Settings
+                  </Button>
+                </div>
+              </Card>
+            </form>
+          )}
+
+          {/* TAB CONTENT: TIMELINE ROADMAP PROCESS */}
+          {activeTab === "process" && (
+            <form onSubmit={handleSaveContent}>
+              <Card className="border border-border shadow-sm rounded-2xl">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
+                    <Play className="w-5 h-5 text-[#5C30FD]" /> Roadmap Process & CTA Forms
+                  </CardTitle>
+                  <CardDescription>Setup the step-by-step roadmap items and the lead capture backdrop.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">Section Subtitle</label>
+                      <Input 
+                        value={staticContent.processSubtitle} 
+                        onChange={e => setStaticContent(prev => ({ ...prev, processSubtitle: e.target.value }))}
+                        required
+                        className="rounded-xl"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">Section Title</label>
+                      <Input 
+                        value={staticContent.processTitle} 
+                        onChange={e => setStaticContent(prev => ({ ...prev, processTitle: e.target.value }))}
+                        required
+                        className="rounded-xl"
                       />
                     </div>
                   </div>
-                </div>
-              </CardContent>
-              <div className="p-6 border-t border-border flex justify-end">
-                <Button type="submit" disabled={isSaving} className="gap-2">
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save About Settings
-                </Button>
-              </div>
-            </Card>
-          </form>
-        </TabsContent>
 
-        {/* ─── TAB: ROADMAP STEPS ────────────────────────────────────────── */}
-        <TabsContent value="process">
-          <form onSubmit={handleSaveContent}>
-            <Card className="border border-border shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold font-display">Workflow Roadmap Steps</CardTitle>
-                <CardDescription>Customize the step-by-step roadmap timeline graphics.</CardDescription>
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Roadmap Subtitle</label>
-                  <Input 
-                    value={staticContent.processSubtitle} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, processSubtitle: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Roadmap Section Title</label>
-                  <Input 
-                    value={staticContent.processTitle} 
-                    onChange={e => setStaticContent(prev => ({ ...prev, processTitle: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                {/* Step 1 */}
-                <div className="md:col-span-2 border-t border-border pt-4 mt-2">
-                  <h4 className="text-sm font-bold text-foreground mb-4">Step 01 - Discovery</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Title</label>
-                      <Input 
-                        value={staticContent.process1Title} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, process1Title: e.target.value }))}
-                        required
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Description</label>
-                      <Input 
-                        value={staticContent.process1Desc} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, process1Desc: e.target.value }))}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Step 2 */}
-                <div className="md:col-span-2 border-t border-border pt-4 mt-2">
-                  <h4 className="text-sm font-bold text-foreground mb-4">Step 02 - Development</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Title</label>
-                      <Input 
-                        value={staticContent.process2Title} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, process2Title: e.target.value }))}
-                        required
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Description</label>
-                      <Input 
-                        value={staticContent.process2Desc} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, process2Desc: e.target.value }))}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Step 3 */}
-                <div className="md:col-span-2 border-t border-border pt-4 mt-2">
-                  <h4 className="text-sm font-bold text-foreground mb-4">Step 03 - Optimization</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Title</label>
-                      <Input 
-                        value={staticContent.process3Title} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, process3Title: e.target.value }))}
-                        required
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Description</label>
-                      <Input 
-                        value={staticContent.process3Desc} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, process3Desc: e.target.value }))}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Step 4 */}
-                <div className="md:col-span-2 border-t border-border pt-4 mt-2">
-                  <h4 className="text-sm font-bold text-foreground mb-4">Step 04 - Reporting</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Title</label>
-                      <Input 
-                        value={staticContent.process4Title || ""} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, process4Title: e.target.value }))}
-                        required
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Description</label>
-                      <Input 
-                        value={staticContent.process4Desc || ""} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, process4Desc: e.target.value }))}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* CTA Form Text Section */}
-                <div className="md:col-span-2 border-t border-border pt-4 mt-2">
-                  <h4 className="text-sm font-bold text-foreground mb-4">CTA Section (Forms Area)</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="md:col-span-2 flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Contact Area Background Image</label>
-                      <div className="flex items-center gap-4">
-                        {staticContent.contactImageUrl && (
-                          <img src={staticContent.contactImageUrl} alt="Contact" className="w-16 h-16 object-cover rounded shadow-sm border border-border" />
-                        )}
-                        <div className="flex-1">
+                  {/* Render 4 steps */}
+                  {[1, 2, 3, 4].map((num) => (
+                    <div key={num} className="p-4 border border-border rounded-xl bg-muted/20 space-y-3">
+                      <span className="text-[10px] font-bold text-foreground bg-primary/20 px-2 py-0.5 rounded">Step 0{num}</span>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-semibold text-muted-foreground">Title</label>
                           <Input 
-                            type="file" 
-                            accept="image/*" 
-                            onChange={e => handleStaticImageUpload(e, "contactImageUrl")} 
-                            disabled={staticUploading === "contactImageUrl"}
+                            value={staticContent[`process${num}Title`] || ""} 
+                            onChange={e => setStaticContent(prev => ({ ...prev, [`process${num}Title`]: e.target.value }))}
+                            required
+                            className="h-8 text-xs rounded-lg"
                           />
-                          {staticUploading === "contactImageUrl" && <span className="text-xs text-muted-foreground mt-1 inline-block">Uploading...</span>}
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-semibold text-muted-foreground">Short Description</label>
+                          <Input 
+                            value={staticContent[`process${num}Desc`] || ""} 
+                            onChange={e => setStaticContent(prev => ({ ...prev, [`process${num}Desc`]: e.target.value }))}
+                            required
+                            className="h-8 text-xs rounded-lg"
+                          />
                         </div>
                       </div>
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Subtitle</label>
-                      <Input 
-                        value={staticContent.ctaSubtitle} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, ctaSubtitle: e.target.value }))}
-                        required
-                      />
+                  ))}
+
+                  {/* Form Call to Action Segment */}
+                  <div className="border-t border-border pt-4 space-y-4">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-primary">Contact / Lead Capture Backdrop</h4>
+                    
+                    <UploadZone 
+                      label="Contact Area Background Image" 
+                      imageUrl={staticContent.contactImageUrl} 
+                      isUploading={staticUploading === "contactImageUrl"}
+                      onUpload={e => handleStaticImageUpload(e, "contactImageUrl")}
+                      onClear={() => setStaticContent((prev: any) => ({ ...prev, contactImageUrl: "" }))}
+                    />
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">CTA Subtitle</label>
+                        <Input 
+                          value={staticContent.ctaSubtitle} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, ctaSubtitle: e.target.value }))}
+                          required
+                          className="rounded-xl"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground">CTA Title</label>
+                        <Input 
+                          value={staticContent.ctaTitle} 
+                          onChange={e => setStaticContent(prev => ({ ...prev, ctaTitle: e.target.value }))}
+                          required
+                          className="rounded-xl"
+                        />
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Title</label>
-                      <Input 
-                        value={staticContent.ctaTitle} 
-                        onChange={e => setStaticContent(prev => ({ ...prev, ctaTitle: e.target.value }))}
-                        required
-                      />
-                    </div>
-                    <div className="md:col-span-2 flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground">Description</label>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground">CTA Description text</label>
                       <Input 
                         value={staticContent.ctaDescription} 
                         onChange={e => setStaticContent(prev => ({ ...prev, ctaDescription: e.target.value }))}
                         required
+                        className="rounded-xl"
                       />
                     </div>
                   </div>
+                </CardContent>
+                <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save Timeline Settings
+                  </Button>
                 </div>
+              </Card>
+            </form>
+          )}
 
-              </CardContent>
-              <div className="p-6 border-t border-border flex justify-end">
-                <Button type="submit" disabled={isSaving} className="gap-2">
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save Steps Settings
-                </Button>
-              </div>
-            </Card>
-          </form>
-        </TabsContent>
+          {/* TAB CONTENT: CLIENT LOGOS */}
+          {activeTab === "clientlogos" && (
+            <form onSubmit={handleSaveContent}>
+              <Card className="border border-border shadow-sm rounded-2xl">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
+                    <Award className="w-5 h-5 text-[#5C30FD]" /> Client Logos Slider
+                  </CardTitle>
+                  <CardDescription>Upload customer brand logos displayed in the scrolling marquee banner.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="border-2 border-dashed border-border rounded-xl p-6 text-center bg-muted/10">
+                    <UploadCloud className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                    <span className="text-xs font-semibold text-foreground block">Add Client Logo Graphic(s)</span>
+                    <span className="text-[10px] text-muted-foreground block mt-1 mb-4">Multiple files can be chosen at once.</span>
+                    <Input 
+                      type="file" 
+                      accept="image/*" 
+                      multiple
+                      onChange={async (e) => {
+                        const files = e.target.files;
+                        if (!files || files.length === 0) return;
+                        
+                        setStaticUploading("clientLogos");
+                        const uploadedUrls: string[] = [];
+                        
+                        try {
+                          for (let i = 0; i < files.length; i++) {
+                            const file = files[i];
+                            const formData = new FormData();
+                            formData.append("image", file);
+                            const res = await apiUpload<{ url: string }>("/landing-page/upload", formData);
+                            uploadedUrls.push(res.url);
+                          }
+                          
+                          setStaticContent((prev: any) => ({
+                            ...prev,
+                            clientLogos: [...(prev.clientLogos || []), ...uploadedUrls]
+                          }));
+                          toast({ title: "Uploaded", description: `${uploadedUrls.length} logo(s) added successfully.` });
+                        } catch (error: any) {
+                          toast({ title: "Upload Failed", description: error.message || "Upload failed.", variant: "destructive" });
+                        } finally {
+                          setStaticUploading(null);
+                          e.target.value = '';
+                        }
+                      }} 
+                      disabled={staticUploading === "clientLogos"}
+                      className="max-w-xs mx-auto cursor-pointer text-xs"
+                    />
+                  </div>
 
-        {/* ─── TAB: CASE STUDIES ────────────────────────────────────────── */}
-        <TabsContent value="casestudies">
-          <Card className="border border-border shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <div>
-                <CardTitle className="text-lg font-bold font-display">Case Studies Portfolio</CardTitle>
-                <CardDescription>Add, update, or remove SMM success stories.</CardDescription>
-              </div>
-              <Button size="sm" onClick={() => handleOpenCsDialog()} className="gap-1.5 text-xs font-bold">
-                <Plus className="w-4 h-4" /> Add Case Study
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {caseStudies.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">No custom case studies added yet. Displaying layout placeholders.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {caseStudies.map(study => (
-                    <div key={study.id} className="border border-border rounded-xl overflow-hidden flex flex-col justify-between bg-muted/20">
-                      <div className="aspect-[4/3] bg-muted relative overflow-hidden">
-                        <img src={study.imageUrl} alt={study.title} className="w-full h-full object-cover" />
-                      </div>
-                      <div className="p-4 flex-grow text-left">
-                        <span className="text-[10px] font-bold text-primary uppercase tracking-widest block mb-1">{study.category}</span>
-                        <h4 className="text-sm font-bold text-foreground line-clamp-1 mb-2">{study.title}</h4>
-                        <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed font-light">{study.description}</p>
-                      </div>
-                      <div className="p-3 border-t border-border flex items-center justify-end gap-2 bg-card">
-                        <Button size="sm" variant="outline" className="h-8 px-2.5" onClick={() => handleOpenCsDialog(study)}>
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button size="sm" variant="destructive" className="h-8 px-2.5" onClick={() => handleDeleteCs(study.id)}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
+                  {staticUploading === "clientLogos" && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      <span>Processing file uploads...</span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+                  )}
 
-        {/* ─── TAB: PROJECTS ──────────────────────────────────────────────── */}
-        <TabsContent value="projects">
-          <Card className="border border-border shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <div>
-                <CardTitle className="text-lg font-bold font-display">Landing Page Projects</CardTitle>
-                <CardDescription>Manage the projects displayed on the portfolio page.</CardDescription>
-              </div>
-              <Button size="sm" onClick={() => handleOpenPDialog()} className="gap-1.5 text-xs font-bold">
-                <Plus className="w-4 h-4" /> Add Project
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {projects.length === 0 ? (
-                <div className="text-center py-12 border-2 border-dashed border-border rounded-xl bg-muted/20">
-                  <Folder className="w-10 h-10 mx-auto text-muted-foreground mb-3 opacity-20" />
-                  <p className="text-sm font-semibold text-foreground">No projects found</p>
-                  <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">Click "Add Project" to showcase your work.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                  {projects.map(project => (
-                    <div key={project.id} className="group border border-border bg-card rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
-                      <div className="h-40 w-full bg-muted relative overflow-hidden">
-                        {project.imageUrl ? (
-                          <img src={project.imageUrl} alt={project.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center opacity-30"><ImageIcon className="w-8 h-8" /></div>
-                        )}
-                        <div className="absolute top-3 left-3">
-                          <span className="bg-background/90 backdrop-blur text-foreground text-[10px] font-bold px-2.5 py-1 rounded-md border border-border shadow-sm uppercase tracking-wide">
-                            {project.category}
-                          </span>
+                  {Array.isArray(staticContent.clientLogos) && staticContent.clientLogos.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-4">
+                      {staticContent.clientLogos.map((url: string, index: number) => (
+                        <div key={index} className="border border-border p-3 rounded-xl bg-card relative group flex items-center justify-center min-h-[70px]">
+                          <img src={url} alt={`Client ${index + 1}`} className="max-h-8 max-w-full object-contain" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStaticContent((prev: any) => ({
+                                ...prev,
+                                clientLogos: prev.clientLogos.filter((_: any, i: number) => i !== index)
+                              }));
+                            }}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-full flex items-center justify-center shadow-md transition-all opacity-0 group-hover:opacity-100"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                      </div>
-                      <div className="p-4 flex flex-col justify-between">
-                        <div>
-                          <h4 className="font-bold text-sm text-foreground mb-1.5 line-clamp-1">{project.title}</h4>
-                          <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{project.description}</p>
-                        </div>
-                        <div className="mt-4 pt-4 border-t border-border/60 flex items-center justify-between gap-2">
-                          <Button size="sm" variant="outline" className="flex-1 h-8 text-xs font-bold" onClick={() => handleOpenPDialog(project)}>
-                            <Edit2 className="w-3.5 h-3.5 mr-1.5" /> Edit
-                          </Button>
-                          <Button size="sm" variant="destructive" className="h-8 px-2.5" onClick={() => handleDeleteP(project.id)}>
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  ) : (
+                    <div className="text-center py-6 text-xs text-muted-foreground">
+                      No custom client logos uploaded yet. Defaults will display.
+                    </div>
+                  )}
+                </CardContent>
+                <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save Client Logos
+                  </Button>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+              </Card>
+            </form>
+          )}
 
-        {/* ─── TAB: TESTIMONIALS ────────────────────────────────────────── */}
-        <TabsContent value="testimonials">
-          <Card className="border border-border shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <div>
-                <CardTitle className="text-lg font-bold font-display">Client Testimonials</CardTitle>
-                <CardDescription>Manage dynamic client feedback quotes slider.</CardDescription>
-              </div>
-              <Button size="sm" onClick={() => handleOpenTDialog()} className="gap-1.5 text-xs font-bold">
-                <Plus className="w-4 h-4" /> Add Testimonial
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {testimonials.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Star className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">No custom testimonials added yet. Displaying layout placeholders.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {testimonials.map(t => (
-                    <div key={t.id} className="border border-border p-6 rounded-xl flex flex-col justify-between bg-muted/20 text-left">
-                      <div>
-                        <div className="flex items-center gap-1 text-secondary mb-3">
-                          {[...Array(t.rating)].map((_, i) => (
-                            <Star key={i} className="w-3.5 h-3.5 fill-current" />
-                          ))}
+          {/* TAB CONTENT: PRICING PACKAGES */}
+          {activeTab === "packages" && (
+            <form onSubmit={handleSaveContent}>
+              <Card className="border border-border shadow-sm rounded-2xl">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
+                    <DollarSign className="w-5 h-5 text-[#5C30FD]" /> Pricing Packages
+                  </CardTitle>
+                  <CardDescription>Setup agency subscriptions and packages shown to prospects.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-4">
+                    {Array.isArray(staticContent.packagesJson) && staticContent.packagesJson.map((pkg: any, idx: number) => (
+                      <div key={idx} className="p-4 border border-border rounded-xl bg-muted/20 relative space-y-4">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-bold text-primary px-2 py-0.5 bg-primary/10 rounded-md">{pkg.name || "Unnamed Package"}</span>
+                          <button
+                            type="button"
+                            className="text-xs text-destructive hover:underline flex items-center gap-1"
+                            onClick={() => {
+                              const updated = [...staticContent.packagesJson];
+                              updated.splice(idx, 1);
+                              setStaticContent((prev: any) => ({ ...prev, packagesJson: updated }));
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Remove
+                          </button>
                         </div>
-                        <p className="text-sm italic font-light text-foreground/80 leading-relaxed mb-6">"{t.feedback}"</p>
-                      </div>
-                      <div className="flex items-center justify-between border-t border-border pt-4 bg-transparent">
-                        <div className="flex items-center gap-3">
-                          {t.avatarUrl && (
-                            <img src={t.avatarUrl} alt={t.name} className="w-10 h-10 rounded-full object-cover border border-border" />
-                          )}
-                          <div>
-                            <h4 className="text-xs font-bold text-foreground block">{t.name}</h4>
-                            <span className="text-[10px] text-muted-foreground block">{t.role}</span>
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Package Name</label>
+                              <Input
+                                value={pkg.name || ""}
+                                onChange={(e) => {
+                                  const updated = [...staticContent.packagesJson];
+                                  updated[idx] = { ...pkg, name: e.target.value };
+                                  setStaticContent((prev: any) => ({ ...prev, packagesJson: updated }));
+                                }}
+                                required
+                                className="h-8 text-xs rounded-lg"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-muted-foreground uppercase">Price / Schedule</label>
+                              <Input
+                                value={pkg.price || ""}
+                                onChange={(e) => {
+                                  const updated = [...staticContent.packagesJson];
+                                  updated[idx] = { ...pkg, price: e.target.value };
+                                  setStaticContent((prev: any) => ({ ...prev, packagesJson: updated }));
+                                }}
+                                required
+                                className="h-8 text-xs rounded-lg"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Best For / Tagline</label>
+                            <Input
+                              value={pkg.bestFor || ""}
+                              onChange={(e) => {
+                                const updated = [...staticContent.packagesJson];
+                                updated[idx] = { ...pkg, bestFor: e.target.value };
+                                setStaticContent((prev: any) => ({ ...prev, packagesJson: updated }));
+                              }}
+                              className="h-8 text-xs rounded-lg"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Bullet Features (One per line)</label>
+                            <Textarea
+                              value={Array.isArray(pkg.features) ? pkg.features.join("\n") : ""}
+                              onChange={(e) => {
+                                const updated = [...staticContent.packagesJson];
+                                updated[idx] = { ...pkg, features: e.target.value.split("\n").filter(Boolean) };
+                                setStaticContent((prev: any) => ({ ...prev, packagesJson: updated }));
+                              }}
+                              rows={4}
+                              required
+                              className="text-xs rounded-lg font-sans"
+                            />
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button size="sm" variant="outline" className="h-8 px-2.5" onClick={() => handleOpenTDialog(t)}>
+                      </div>
+                    ))}
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full gap-2 border-dashed rounded-xl py-5"
+                    onClick={() => {
+                      const updated = [...(staticContent.packagesJson || []), { name: "", price: "", bestFor: "", features: [] }];
+                      setStaticContent((prev: any) => ({ ...prev, packagesJson: updated }));
+                    }}
+                  >
+                    <Plus className="w-4 h-4" /> Add Pricing Package Card
+                  </Button>
+                </CardContent>
+                <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save Packages Settings
+                  </Button>
+                </div>
+              </Card>
+            </form>
+          )}
+
+          {/* TAB CONTENT: CASE STUDIES */}
+          {activeTab === "casestudies" && (
+            <Card className="border border-border shadow-sm rounded-2xl">
+              <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
+                <div>
+                  <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-[#5C30FD]" /> Case Studies Portfolio
+                  </CardTitle>
+                  <CardDescription>Showcase your visual success stories, views generated, ROAS etc.</CardDescription>
+                </div>
+                <Button size="sm" onClick={() => handleOpenCsDialog()} className="gap-1 rounded-xl text-xs font-bold">
+                  <Plus className="w-3.5 h-3.5" /> Add Case Study
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {caseStudies.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-xl bg-muted/10">
+                    <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                    <p className="text-xs">No custom case studies yet. Static items are rendering.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {caseStudies.map(study => (
+                      <div key={study.id} className="border border-border rounded-xl p-3 flex gap-4 items-center bg-muted/15 shadow-xs">
+                        <div className="w-16 h-16 bg-muted rounded-lg overflow-hidden shrink-0">
+                          <img src={study.imageUrl} alt={study.title} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="flex-grow text-left">
+                          <span className="text-[9px] font-bold text-primary uppercase tracking-wider block">{study.category}</span>
+                          <h4 className="text-xs font-bold text-foreground line-clamp-1">{study.title}</h4>
+                          <p className="text-[10px] text-muted-foreground line-clamp-1">{study.description}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button size="icon" variant="outline" className="h-8 w-8 rounded-lg" onClick={() => handleOpenCsDialog(study)}>
                             <Edit2 className="w-3.5 h-3.5" />
                           </Button>
-                          <Button size="sm" variant="destructive" className="h-8 px-2.5" onClick={() => handleDeleteT(t.id)}>
+                          <Button size="icon" variant="destructive" className="h-8 w-8 rounded-lg" onClick={() => handleDeleteCs(study.id)}>
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
                         </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ─── TAB: CLIENT LOGOS ────────────────────────────────────────── */}
-        <TabsContent value="clientlogos">
-          <form onSubmit={handleSaveContent}>
-            <Card className="border border-border shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between gap-4">
-                <div>
-                  <CardTitle className="text-lg font-bold font-display">Client Logos (Infinite Slider)</CardTitle>
-                  <CardDescription>Upload client logos to display in the infinitely scrolling marquee on the landing page.</CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Input 
-                    type="file" 
-                    accept="image/*" 
-                    multiple
-                    onChange={async (e) => {
-                      const files = e.target.files;
-                      if (!files || files.length === 0) return;
-                      
-                      setStaticUploading("clientLogos");
-                      const uploadedUrls: string[] = [];
-                      
-                      try {
-                        for (let i = 0; i < files.length; i++) {
-                          const file = files[i];
-                          const formData = new FormData();
-                          formData.append("image", file);
-                          const res = await apiUpload<{ url: string }>("/landing-page/upload", formData);
-                          uploadedUrls.push(res.url);
-                        }
-                        
-                        setStaticContent((prev: any) => ({
-                          ...prev,
-                          clientLogos: [...(prev.clientLogos || []), ...uploadedUrls]
-                        }));
-                        toast({ title: "Uploaded", description: `${uploadedUrls.length} logo(s) added. Remember to save settings!` });
-                      } catch (error: any) {
-                        toast({ title: "Upload Failed", description: error.message || "Image upload failed.", variant: "destructive" });
-                      } finally {
-                        setStaticUploading(null);
-                        e.target.value = '';
-                      }
-                    }} 
-                    disabled={staticUploading === "clientLogos"}
-                    className="w-auto cursor-pointer"
-                  />
-                </div>
-              </CardHeader>
-              <CardContent>
-                {staticUploading === "clientLogos" && <p className="text-sm text-muted-foreground mb-4">Uploading image...</p>}
-                {!(staticContent.clientLogos?.length > 0) ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p className="text-sm">No client logos added yet. Static placeholders will be shown.</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                    {staticContent.clientLogos.map((url: string, index: number) => (
-                      <div key={index} className="border border-border p-4 rounded-xl flex flex-col justify-between bg-muted/20 items-center relative group">
-                        <img src={url} alt={`Client Logo ${index + 1}`} className="max-w-full max-h-16 object-contain" />
-                        <Button 
-                          type="button"
-                          variant="destructive" 
-                          size="icon" 
-                          className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity rounded-full shadow-md"
-                          onClick={() => {
-                            setStaticContent((prev: any) => ({
-                              ...prev,
-                              clientLogos: prev.clientLogos.filter((_: any, i: number) => i !== index)
-                            }));
-                          }}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
                       </div>
                     ))}
                   </div>
                 )}
               </CardContent>
-              <div className="p-6 border-t border-border flex justify-end">
-                <Button type="submit" disabled={isSaving} className="gap-2">
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save Client Logos
-                </Button>
-              </div>
             </Card>
-          </form>
-        </TabsContent>
+          )}
 
-        {/* ─── TAB: SEO SETTINGS ────────────────────────────────────────── */}
-        <TabsContent value="seo">
-          <form onSubmit={handleSaveContent}>
-            <Card className="border border-border shadow-sm">
-              <CardHeader className="border-b border-border bg-card">
-                <CardTitle className="text-lg font-bold flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-primary" />
-                  Landing Page SEO Settings
-                </CardTitle>
-                <CardDescription>
-                  Optimize how your landing page appears on Google and other search engines. Good SEO settings are essential for generating organic search traffic.
-                </CardDescription>
+          {/* TAB CONTENT: PROJECTS */}
+          {activeTab === "projects" && (
+            <Card className="border border-border shadow-sm rounded-2xl">
+              <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
+                <div>
+                  <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
+                    <Folder className="w-5 h-5 text-[#5C30FD]" /> Portfolio Projects
+                  </CardTitle>
+                  <CardDescription>Manage the detailed case/project profiles displayed on your showcases.</CardDescription>
+                </div>
+                <Button size="sm" onClick={() => handleOpenPDialog()} className="gap-1 rounded-xl text-xs font-bold">
+                  <Plus className="w-3.5 h-3.5" /> Add Project
+                </Button>
               </CardHeader>
-              <CardContent className="p-6 space-y-6">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-semibold text-foreground">SEO Meta Title</label>
-                    <span className="text-xs text-muted-foreground">
-                      {(staticContent.seoTitle || "").length} / 60 chars (recommended)
-                    </span>
+              <CardContent>
+                {projects.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-xl bg-muted/10">
+                    <Folder className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                    <p className="text-xs">No projects configured. Showcase is empty.</p>
                   </div>
-                  <Input
-                    value={staticContent.seoTitle || ""}
-                    onChange={(e) => setStaticContent((prev: any) => ({ ...prev, seoTitle: e.target.value }))}
-                    placeholder="e.g. SEOX - High-Impact Social Media Marketing Agency"
-                    className="border border-input rounded-xl px-4 py-2.5 text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    This is the main title displayed on Google search results. Keep it catchy and under 60 characters.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-semibold text-foreground">SEO Meta Description</label>
-                    <span className="text-xs text-muted-foreground">
-                      {(staticContent.seoDescription || "").length} / 160 chars (recommended)
-                    </span>
-                  </div>
-                  <Textarea
-                    value={staticContent.seoDescription || ""}
-                    onChange={(e) => setStaticContent((prev: any) => ({ ...prev, seoDescription: e.target.value }))}
-                    placeholder="e.g. Whether you're a local business or national brand, we help you grow with custom high-impact marketing..."
-                    className="border border-input rounded-xl px-4 py-2.5 text-sm min-h-[100px]"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    A brief summary of your landing page. Google usually truncates descriptions longer than 150-160 characters.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">SEO Keywords (Comma Separated)</label>
-                  <Input
-                    value={staticContent.seoKeywords || ""}
-                    onChange={(e) => setStaticContent((prev: any) => ({ ...prev, seoKeywords: e.target.value }))}
-                    placeholder="e.g. social media agency, branding, marketing strategy, SEOX"
-                    className="border border-input rounded-xl px-4 py-2.5 text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    List relevant keywords separated by commas to help search crawlers categorize your website.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">SEO Share Image (OG Image)</label>
-                  <div className="flex items-center gap-4">
-                    {staticContent.seoImage ? (
-                      <div className="relative w-40 h-24 rounded-lg overflow-hidden border border-border bg-muted flex items-center justify-center">
-                        <img 
-                          src={staticContent.seoImage} 
-                          alt="SEO Share Preview" 
-                          className="object-cover w-full h-full"
-                        />
-                      </div>
-                    ) : (
-                      <div className="w-40 h-24 rounded-lg border border-dashed border-border bg-muted flex flex-col items-center justify-center text-muted-foreground">
-                        <ImageIcon className="w-6 h-6 mb-1" />
-                        <span className="text-[10px]">No Image</span>
-                      </div>
-                    )}
-                    <div className="space-y-1.5 flex-1">
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          id="seo-image-upload"
-                          className="hidden"
-                          onChange={(e) => handleStaticImageUpload(e, "seoImage")}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => document.getElementById("seo-image-upload")?.click()}
-                          disabled={staticUploading === "seoImage"}
-                          className="gap-2 text-xs font-semibold rounded-lg"
-                        >
-                          {staticUploading === "seoImage" ? (
-                            <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              Uploading...
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="w-3.5 h-3.5" />
-                              Upload Share Image
-                            </>
-                          )}
-                        </Button>
-                        {staticContent.seoImage && (
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            onClick={() => setStaticContent((prev: any) => ({ ...prev, seoImage: "" }))}
-                            className="p-2 h-9 rounded-lg"
-                          >
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {projects.map(project => (
+                      <div key={project.id} className="border border-border rounded-xl p-3 flex gap-4 items-center bg-muted/15 shadow-xs">
+                        <div className="w-16 h-16 bg-muted rounded-lg overflow-hidden shrink-0">
+                          <img src={project.imageUrl} alt={project.title} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="flex-grow text-left">
+                          <span className="text-[9px] font-bold text-primary uppercase tracking-wider block">{project.category}</span>
+                          <h4 className="text-xs font-bold text-foreground line-clamp-1">{project.title}</h4>
+                          <p className="text-[10px] text-muted-foreground line-clamp-1">{project.description}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button size="icon" variant="outline" className="h-8 w-8 rounded-lg" onClick={() => handleOpenPDialog(project)}>
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button size="icon" variant="destructive" className="h-8 w-8 rounded-lg" onClick={() => handleDeleteP(project.id)}>
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
-                        )}
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        Recommended size: 1200x630 pixels. This image is displayed when your landing page is shared on social networks like Facebook, LinkedIn, Twitter, etc.
-                      </p>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* TAB CONTENT: TESTIMONIALS */}
+          {activeTab === "testimonials" && (
+            <Card className="border border-border shadow-sm rounded-2xl">
+              <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
+                <div>
+                  <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
+                    <ThumbsUp className="w-5 h-5 text-[#5C30FD]" /> Client Reviews
+                  </CardTitle>
+                  <CardDescription>Manage user feedback testimonials and star ratings.</CardDescription>
+                </div>
+                <Button size="sm" onClick={() => handleOpenTDialog()} className="gap-1 rounded-xl text-xs font-bold">
+                  <Plus className="w-3.5 h-3.5" /> Add Review
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {testimonials.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-xl bg-muted/10">
+                    <Star className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                    <p className="text-xs">No client reviews configured. Default review slide showing.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {testimonials.map(t => (
+                      <div key={t.id} className="border border-border rounded-xl p-3 flex gap-4 items-center bg-muted/15 shadow-xs">
+                        <div className="w-12 h-12 bg-muted rounded-full overflow-hidden shrink-0">
+                          {t.avatarUrl ? (
+                            <img src={t.avatarUrl} alt={t.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xs font-bold text-muted-foreground uppercase">{t.name[0]}</div>
+                          )}
+                        </div>
+                        <div className="flex-grow text-left">
+                          <h4 className="text-xs font-bold text-foreground line-clamp-1">{t.name}</h4>
+                          <span className="text-[9px] text-muted-foreground block mb-0.5">{t.role}</span>
+                          <div className="flex items-center text-yellow-500">
+                            {[...Array(t.rating)].map((_, i) => (
+                              <Star key={i} className="w-2.5 h-2.5 fill-current" />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button size="icon" variant="outline" className="h-8 w-8 rounded-lg" onClick={() => handleOpenTDialog(t)}>
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button size="icon" variant="destructive" className="h-8 w-8 rounded-lg" onClick={() => handleDeleteT(t.id)}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* TAB CONTENT: FAQs */}
+          {activeTab === "faqs" && (
+            <form onSubmit={handleSaveContent}>
+              <Card className="border border-border shadow-sm rounded-2xl">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
+                    <HelpIcon className="w-5 h-5 text-[#5C30FD]" /> FAQ Accordions
+                  </CardTitle>
+                  <CardDescription>Setup questions and answers listed on your sales page footer.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-4">
+                    {Array.isArray(staticContent.faqsJson) && staticContent.faqsJson.map((faq: any, idx: number) => (
+                      <div key={idx} className="p-4 border border-border rounded-xl bg-muted/20 relative space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-bold text-[#5C30FD] px-2 py-0.5 bg-[#5C30FD]/10 rounded-md">FAQ #{idx + 1}</span>
+                          <button
+                            type="button"
+                            className="text-xs text-destructive hover:underline flex items-center gap-1"
+                            onClick={() => {
+                              const updated = [...staticContent.faqsJson];
+                              updated.splice(idx, 1);
+                              setStaticContent((prev: any) => ({ ...prev, faqsJson: updated }));
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Remove
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Question Text</label>
+                            <Input
+                              value={faq.question || ""}
+                              onChange={(e) => {
+                                const updated = [...staticContent.faqsJson];
+                                updated[idx] = { ...faq, question: e.target.value };
+                                setStaticContent((prev: any) => ({ ...prev, faqsJson: updated }));
+                              }}
+                              required
+                              className="h-8 text-xs rounded-lg"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Answer Detail</label>
+                            <Textarea
+                              value={faq.answer || ""}
+                              onChange={(e) => {
+                                const updated = [...staticContent.faqsJson];
+                                updated[idx] = { ...faq, answer: e.target.value };
+                                setStaticContent((prev: any) => ({ ...prev, faqsJson: updated }));
+                              }}
+                              rows={2}
+                              required
+                              className="text-xs rounded-lg resize-none"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full gap-2 border-dashed rounded-xl py-5"
+                    onClick={() => {
+                      const updated = [...(staticContent.faqsJson || []), { question: "", answer: "" }];
+                      setStaticContent((prev: any) => ({ ...prev, faqsJson: updated }));
+                    }}
+                  >
+                    <Plus className="w-4 h-4" /> Add FAQ Item
+                  </Button>
+                </CardContent>
+                <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save FAQs Settings
+                  </Button>
+                </div>
+              </Card>
+            </form>
+          )}
+
+          {/* TAB CONTENT: SEO SETTINGS */}
+          {activeTab === "seo" && (
+            <form onSubmit={handleSaveContent}>
+              <Card className="border border-border shadow-sm rounded-2xl">
+                <CardHeader>
+                  <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-[#5C30FD]" /> SEO & Taglines
+                  </CardTitle>
+                  <CardDescription>Tune landing page titles, keywords, description tags, and social graphic previews.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground">SEO Meta Title</label>
+                    <Input
+                      value={staticContent.seoTitle || ""}
+                      onChange={(e) => setStaticContent((prev: any) => ({ ...prev, seoTitle: e.target.value }))}
+                      placeholder="e.g. AgencyFlow - Premium SMM Agency"
+                      className="rounded-xl"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground">SEO Meta Description</label>
+                    <Textarea
+                      value={staticContent.seoDescription || ""}
+                      onChange={(e) => setStaticContent((prev: any) => ({ ...prev, seoDescription: e.target.value }))}
+                      placeholder="Enter a brief summary..."
+                      rows={3}
+                      className="rounded-xl resize-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground">SEO Keywords (Comma Separated)</label>
+                    <Input
+                      value={staticContent.seoKeywords || ""}
+                      onChange={(e) => setStaticContent((prev: any) => ({ ...prev, seoKeywords: e.target.value }))}
+                      placeholder="marketing, smm agency, design"
+                      className="rounded-xl"
+                    />
+                  </div>
+
+                  <UploadZone 
+                    label="OG Social Share Image (1200x630px recommended)" 
+                    imageUrl={staticContent.seoImage} 
+                    isUploading={staticUploading === "seoImage"}
+                    onUpload={e => handleStaticImageUpload(e, "seoImage")}
+                    onClear={() => setStaticContent((prev: any) => ({ ...prev, seoImage: "" }))}
+                  />
+
+                  <div className="border-t border-border pt-4 space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground">Footer Tagline Text</label>
+                    <Input
+                      value={staticContent.footerTagline || ""}
+                      onChange={(e) => setStaticContent((prev: any) => ({ ...prev, footerTagline: e.target.value }))}
+                      placeholder="We grow your business with creative marketing that delivers real results."
+                      className="rounded-xl"
+                    />
+                  </div>
+                </CardContent>
+                <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save SEO Settings
+                  </Button>
+                </div>
+              </Card>
+            </form>
+          )}
+
+        </div>
+
+        {/* Panel 3: Accurate Next.js Theme Visual Preview Window (col-span-5) */}
+        <div className="xl:col-span-5 sticky top-6 hidden xl:block">
+          <div className="border border-border rounded-2xl shadow-2xl bg-white text-slate-800 overflow-hidden font-sans">
+            
+            {/* Mock Window Top Bar */}
+            <div className="bg-[#101828] px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 block" />
+                <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 block" />
+                <span className="w-2.5 h-2.5 rounded-full bg-green-500 block" />
+              </div>
+              <div className="bg-slate-900/60 text-[10px] text-slate-300 font-mono px-3 py-1 rounded-md text-center truncate max-w-[200px] select-none flex items-center gap-1">
+                <Lock className="w-2.5 h-2.5 text-green-400" />
+                <span>hirdanmarketing.com</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-slate-900/80 px-2 py-0.5 rounded-lg border border-slate-700">
+                <button 
+                  onClick={() => setPreviewMode("desktop")}
+                  className={`p-1 rounded transition-colors ${previewMode === "desktop" ? "bg-[#5C30FD] text-white" : "text-slate-400 hover:text-white"}`}
+                  title="Desktop View"
+                >
+                  <MonitorIcon className="w-3.5 h-3.5" />
+                </button>
+                <button 
+                  onClick={() => setPreviewMode("mobile")}
+                  className={`p-1 rounded transition-colors ${previewMode === "mobile" ? "bg-[#5C30FD] text-white" : "text-slate-400 hover:text-white"}`}
+                  title="Mobile View"
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Mock Scrollable Content */}
+            <div 
+              className={`p-0 overflow-y-auto space-y-0 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-white text-left transition-all duration-300 ${
+                previewMode === "mobile" ? "max-w-[360px] mx-auto border-x border-slate-200 shadow-inner" : "w-full"
+              }`}
+              style={{ maxHeight: "700px" }}
+            >
+              {/* Header Navigation Mockup */}
+              <div className="bg-[#101828] text-white px-5 py-4 flex items-center justify-between border-b border-slate-800">
+                <div className="flex items-center gap-1">
+                  <span className="font-extrabold text-sm tracking-tight text-white">Hirdan<span className="text-[#5C30FD]">Marketing</span></span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] text-slate-300 hover:text-white font-medium cursor-pointer hidden md:inline">Services</span>
+                  <span className="text-[10px] text-slate-300 hover:text-white font-medium cursor-pointer hidden md:inline">About</span>
+                  <span className="bg-[#5C30FD] text-white font-bold text-[9px] px-3 py-1.5 rounded-[10px] hover:bg-[#FFC107] transition-all cursor-pointer">
+                    Get Quote
+                  </span>
+                </div>
+              </div>
+
+              {/* 1. MOCK HERO SECTION (Matches hero-section hero-4 exact style) */}
+              <div 
+                id="mock-section-hero"
+                className={`p-6 bg-white transition-all relative border-b border-slate-100 ${
+                  activeTab === 'hero' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                }`}
+              >
+                {activeTab === 'hero' && (
+                  <span className="absolute top-2 right-2 text-[9px] font-extrabold uppercase bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Hero Edit</span>
+                )}
+                
+                <div className="flex flex-col gap-4">
+                  <div className="space-y-3">
+                    <span className="inline-flex items-center gap-1 bg-[#5C30FD]/10 text-[#5C30FD] text-[10px] font-bold px-2.5 py-1 rounded-full">
+                      {staticContent.heroBadgeImageUrl ? (
+                        <img src={staticContent.heroBadgeImageUrl} alt="icon" className="h-3 object-contain" />
+                      ) : (
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#5C30FD]" />
+                      )}
+                      {staticContent.heroSubtitle || "Digital Marketing Agency"}
+                    </span>
+                    <h1 className="text-xl md:text-2xl font-black text-[#101828] leading-tight font-display">
+                      {staticContent.heroTitle || "Marketing That Builds Real Growth"}
+                    </h1>
+                    <p className="text-[11px] text-[#696969] leading-relaxed">
+                      {staticContent.heroDescription || "Hirdan Marketing helps businesses build their brand, grow their audience, and turn attention into actual sales."}
+                    </p>
+                    
+                    <div className="flex flex-wrap items-center gap-3 pt-2">
+                      <span className="bg-[#5C30FD] text-white font-bold text-[10px] px-5 py-2.5 rounded-[14px] hover:bg-[#FFC107] transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-[#5C30FD]/15">
+                        {staticContent.heroBtn1Text || "Get A Quote"}
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </span>
+                      {staticContent.heroBtn2Text && (
+                        <span className="border border-slate-200 text-slate-700 font-bold text-[10px] px-5 py-2.5 rounded-[14px] hover:bg-slate-50 transition-all cursor-pointer">
+                          {staticContent.heroBtn2Text}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Trust Author Area */}
+                  <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                      {staticContent.trustImageUrl ? (
+                        <img src={staticContent.trustImageUrl} alt="trust" className="w-full h-full object-cover" />
+                      ) : (
+                        <Award className="w-5 h-5 text-[#5C30FD]" />
+                      )}
+                    </div>
+                    <div className="text-[9px] text-[#101828] font-bold leading-tight">
+                      {staticContent.heroAwardLabel || "Trusted by 15+ businesses and organizations"}
+                      {staticContent.heroAwardNumber && (
+                        <div className="text-primary font-mono text-[10px]">{staticContent.heroAwardNumber}</div>
+                      )}
                     </div>
                   </div>
                 </div>
-
-                <div className="space-y-2 border-t border-border pt-4">
-                  <label className="text-sm font-semibold text-foreground">Footer Tagline Text</label>
-                  <Input
-                    value={staticContent.footerTagline || ""}
-                    onChange={(e) => setStaticContent((prev: any) => ({ ...prev, footerTagline: e.target.value }))}
-                    placeholder="e.g. We grow your business with creative marketing that delivers real results."
-                    className="border border-input rounded-xl px-4 py-2.5 text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    This tagline text is shown in the footer layout under the agency logo.
-                  </p>
-                </div>
-              </CardContent>
-              <div className="p-6 border-t border-border flex justify-end">
-                <Button type="submit" disabled={isSaving} className="gap-2">
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save SEO Settings
-                </Button>
               </div>
-            </Card>
-          </form>
-        </TabsContent>
 
-        <TabsContent value="services">
-          <form onSubmit={handleSaveContent}>
-            <Card className="border border-border shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold font-display">Services Customization</CardTitle>
-                <CardDescription>Configure the customer-facing services displayed on your home and services page.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {Array.isArray(staticContent.servicesJson) && staticContent.servicesJson.map((service: any, idx: number) => (
-                    <div key={idx} className="p-4 border border-border rounded-xl bg-muted/10 space-y-4">
-                      <div className="flex justify-between items-center">
-                        <h4 className="text-sm font-bold text-foreground">Service {idx + 1}</h4>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive h-7 px-2 hover:bg-destructive/10"
-                          onClick={() => {
-                            const updated = [...staticContent.servicesJson];
-                            updated.splice(idx, 1);
-                            setStaticContent((prev: any) => ({ ...prev, servicesJson: updated }));
-                          }}
-                        >
-                          Remove
-                        </Button>
+              {/* 2. MOCK BRAND MARQUEE (Matches brand-section-2) */}
+              <div 
+                id="mock-section-clientlogos"
+                className={`py-4 bg-[#FAF9FF] border-y border-[#E6E6E6] transition-all relative ${
+                  activeTab === 'clientlogos' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                }`}
+              >
+                {activeTab === 'clientlogos' && (
+                  <span className="absolute top-1 right-2 text-[8px] font-bold bg-[#5C30FD] text-white px-1.5 py-0.5 rounded shadow-sm animate-pulse z-10">Logos</span>
+                )}
+                <span className="text-[9px] font-extrabold uppercase text-[#696969] tracking-wider text-center block mb-2 opacity-80">
+                  Brands We've Worked With
+                </span>
+                <div className="flex items-center justify-center gap-6 px-4 overflow-hidden">
+                  {Array.isArray(staticContent.clientLogos) && staticContent.clientLogos.length > 0 ? (
+                    staticContent.clientLogos.slice(0, 5).map((logo: string, idx: number) => (
+                      <img key={idx} src={logo} alt="brand logo" className="h-5 object-contain max-w-[50px] shrink-0 opacity-70 hover:opacity-100 transition-opacity" />
+                    ))
+                  ) : (
+                    <div className="flex gap-4 opacity-30 select-none">
+                      <span className="text-[9px] font-bold">BRAND A</span>
+                      <span className="text-[9px] font-bold">BRAND B</span>
+                      <span className="text-[9px] font-bold">BRAND C</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 3. MOCK ABOUT SECTION (Matches about-section fix section-padding) */}
+              <div 
+                id="mock-section-about"
+                className={`p-6 bg-white transition-all relative border-b border-slate-100 ${
+                  activeTab === 'about' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                }`}
+              >
+                {activeTab === 'about' && (
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">About</span>
+                )}
+                
+                <div className="flex flex-col gap-4">
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl aspect-[4/3] overflow-hidden flex items-center justify-center relative shadow-sm">
+                    {staticContent.aboutImageUrl ? (
+                      <img src={staticContent.aboutImageUrl} alt="About Showcase" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="text-slate-300 flex flex-col items-center gap-1">
+                        <ImageIcon className="w-8 h-8" />
+                        <span className="text-[9px]">About Section Image</span>
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-muted-foreground">Title</label>
-                        <Input
-                          value={service.title || ""}
-                          onChange={(e) => {
-                            const updated = [...staticContent.servicesJson];
-                            updated[idx] = { ...service, title: e.target.value };
-                            setStaticContent((prev: any) => ({ ...prev, servicesJson: updated }));
-                          }}
-                          required
-                        />
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-[#5C30FD] uppercase tracking-wider">
+                      <img src="assets/img/bale.png" alt="bale" className="h-2.5" onerror="this.style.display='none'" />
+                      {staticContent.aboutSubtitle || "Who We Are"}
+                    </span>
+                    <h3 className="text-base font-extrabold text-[#101828] leading-tight">
+                      {staticContent.aboutTitle || "A Full-Service Digital Marketing Agency"}
+                    </h3>
+                    <p className="text-[10px] text-[#696969] leading-relaxed">
+                      {staticContent.aboutDescription || "We bring together strategy, design, and content under one team, so every part of your presence works toward the same goal."}
+                    </p>
+
+                    <div className="grid grid-cols-1 gap-1.5 pt-2">
+                      {staticContent.aboutBullets ? (
+                        staticContent.aboutBullets.split(",").map((bullet: string, i: number) => (
+                          <div key={i} className="flex items-center gap-2 text-[10px] font-medium text-[#101828]">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-[#5C30FD] shrink-0" />
+                            <span>{bullet.trim()}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="flex items-center gap-2 text-[10px] text-[#696969]">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-slate-300" />
+                          <span>Consistent quality content</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex gap-4 pt-4 border-t border-slate-100 grid grid-cols-2">
+                      <div className="bg-[#FAF9FF] p-2.5 rounded-xl border border-slate-100">
+                        <span className="text-xs font-black text-[#5C30FD] block">{staticContent.aboutCampaigns || "240+"}</span>
+                        <span className="text-[8px] text-[#696969] block mt-0.5">Campaigns Run</span>
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-muted-foreground">Description</label>
-                        <Textarea
-                          value={service.description || ""}
-                          onChange={(e) => {
-                            const updated = [...staticContent.servicesJson];
-                            updated[idx] = { ...service, description: e.target.value };
-                            setStaticContent((prev: any) => ({ ...prev, servicesJson: updated }));
-                          }}
-                          rows={3}
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-muted-foreground">Icon Class</label>
-                        <Input
-                          value={service.icon || "flaticon-graphic-design"}
-                          onChange={(e) => {
-                            const updated = [...staticContent.servicesJson];
-                            updated[idx] = { ...service, icon: e.target.value };
-                            setStaticContent((prev: any) => ({ ...prev, servicesJson: updated }));
-                          }}
-                        />
+                      <div className="bg-[#FAF9FF] p-2.5 rounded-xl border border-slate-100">
+                        <span className="text-xs font-black text-[#5C30FD] block">{staticContent.aboutClients || "15+"}</span>
+                        <span className="text-[8px] text-[#696969] block mt-0.5">Active Clients</span>
                       </div>
                     </div>
-                  ))}
+                  </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full gap-2 border-dashed"
-                  onClick={() => {
-                    const updated = [...(staticContent.servicesJson || []), { title: "", description: "", icon: "flaticon-graphic-design" }];
-                    setStaticContent((prev: any) => ({ ...prev, servicesJson: updated }));
-                  }}
-                >
-                  <Plus className="w-4 h-4" /> Add New Service Card
-                </Button>
-              </CardContent>
-              <div className="p-6 border-t border-border flex justify-end">
-                <Button type="submit" disabled={isSaving} className="gap-2">
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save Services Settings
-                </Button>
               </div>
-            </Card>
-          </form>
-        </TabsContent>
 
-        <TabsContent value="faqs">
-          <form onSubmit={handleSaveContent}>
-            <Card className="border border-border shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold font-display">Frequently Asked Questions</CardTitle>
-                <CardDescription>Customize the FAQs displayed on the Home and Services pages.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
+              {/* 4. MOCK SERVICES (Matches service-section-4 fix bg-cover) */}
+              <div 
+                id="mock-section-services"
+                className={`p-6 bg-[#101828] text-white transition-all relative border-b border-slate-900 ${
+                  activeTab === 'services' ? 'bg-[#5C30FD]/15 ring-2 ring-[#5C30FD] ring-inset' : ''
+                }`}
+              >
+                {activeTab === 'services' && (
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Services</span>
+                )}
+                
+                <span className="text-[#5C30FD] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
+                  Popular Services
+                </span>
+                <h3 className="text-sm font-bold text-white text-center mb-4 leading-snug">
+                  We Provide Best Digital Marketing Services
+                </h3>
+
+                <div className="grid grid-cols-1 gap-3">
+                  {Array.isArray(staticContent.servicesJson) && staticContent.servicesJson.length > 0 ? (
+                    staticContent.servicesJson.slice(0, 3).map((svc: any, idx: number) => {
+                      const isActive = idx === 1; // Middle matches Next.js theme active box hover styling
+                      return (
+                        <div 
+                          key={idx} 
+                          className={`p-3.5 rounded-xl border transition-all ${
+                            isActive 
+                              ? "bg-[#5C30FD] border-transparent text-white shadow-md shadow-[#5C30FD]/10 scale-[1.01]" 
+                              : "bg-slate-900/50 border-slate-800 text-slate-300"
+                          }`}
+                        >
+                          <span className={`text-[8px] font-mono block mb-1 opacity-70 ${isActive ? 'text-yellow-300' : 'text-[#8760FD]'}`}>
+                            [{svc.icon || "service-icon"}]
+                          </span>
+                          <h4 className="text-xs font-bold text-white mb-1">{svc.title || "Graphic Design"}</h4>
+                          <p className={`text-[9px] leading-relaxed ${isActive ? 'text-white/90' : 'text-slate-400'}`}>
+                            {svc.description || "Branded graphic assets..."}
+                          </p>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-4 text-[10px] text-slate-500">
+                      No services cards loaded. Default catalog displays.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 5. MOCK TIMELINE ROADMAP (Matches working-section-2) */}
+              <div 
+                id="mock-section-process"
+                className={`p-6 bg-white transition-all relative border-b border-slate-100 ${
+                  activeTab === 'process' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                }`}
+              >
+                {activeTab === 'process' && (
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Roadmap</span>
+                )}
+                
+                <span className="text-[#5C30FD] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
+                  {staticContent.processSubtitle || "How We Work"}
+                </span>
+                <h3 className="text-sm font-bold text-[#101828] text-center mb-5">
+                  {staticContent.processTitle || "A Process Built On Strategy"}
+                </h3>
+
                 <div className="space-y-4">
-                  {Array.isArray(staticContent.faqsJson) && staticContent.faqsJson.map((faq: any, idx: number) => (
-                    <div key={idx} className="p-4 border border-border rounded-xl bg-muted/10 space-y-3 relative">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute top-2 right-2 w-6 h-6 text-destructive hover:bg-destructive/10"
-                        onClick={() => {
-                          const updated = [...staticContent.faqsJson];
-                          updated.splice(idx, 1);
-                          setStaticContent((prev: any) => ({ ...prev, faqsJson: updated }));
-                        }}
+                  {[1, 2, 3, 4].map((num) => {
+                    const isEven = num % 2 === 0;
+                    return (
+                      <div 
+                        key={num} 
+                        className={`p-3 rounded-xl border border-slate-150 flex gap-3 items-center ${
+                          isEven ? 'bg-[#FAF9FF]' : 'bg-white'
+                        }`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-muted-foreground">Question {idx + 1}</label>
-                        <Input
-                          value={faq.question || ""}
-                          onChange={(e) => {
-                            const updated = [...staticContent.faqsJson];
-                            updated[idx] = { ...faq, question: e.target.value };
-                            setStaticContent((prev: any) => ({ ...prev, faqsJson: updated }));
-                          }}
-                          required
-                        />
+                        <div className="w-8 h-8 rounded-full bg-[#5C30FD]/10 text-[#5C30FD] font-black text-xs flex items-center justify-center shrink-0">
+                          {num}
+                        </div>
+                        <div className="flex-grow text-left">
+                          <span className="text-[8px] font-bold text-[#696969] block">Step 0{num}</span>
+                          <h4 className="text-[10px] font-bold text-[#101828]">{staticContent[`process${num}Title`] || `Phase ${num}`}</h4>
+                          <p className="text-[9px] text-[#696969] line-clamp-1">{staticContent[`process${num}Desc`] || `Description snippet.`}</p>
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-muted-foreground">Answer</label>
-                        <Textarea
-                          value={faq.answer || ""}
-                          onChange={(e) => {
-                            const updated = [...staticContent.faqsJson];
-                            updated[idx] = { ...faq, answer: e.target.value };
-                            setStaticContent((prev: any) => ({ ...prev, faqsJson: updated }));
-                          }}
-                          rows={3}
-                          required
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full gap-2 border-dashed"
-                  onClick={() => {
-                    const updated = [...(staticContent.faqsJson || []), { question: "", answer: "" }];
-                    setStaticContent((prev: any) => ({ ...prev, faqsJson: updated }));
-                  }}
-                >
-                  <Plus className="w-4 h-4" /> Add FAQ Item
-                </Button>
-              </CardContent>
-              <div className="p-6 border-t border-border flex justify-end">
-                <Button type="submit" disabled={isSaving} className="gap-2">
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save FAQs Settings
-                </Button>
               </div>
-            </Card>
-          </form>
-        </TabsContent>
 
-        <TabsContent value="packages">
-          <form onSubmit={handleSaveContent}>
-            <Card className="border border-border shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold font-display">Pricing Packages</CardTitle>
-                <CardDescription>Configure the package names, prices, features lists, and best-for descriptions shown on the pricing plan and service pages.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {Array.isArray(staticContent.packagesJson) && staticContent.packagesJson.map((pkg: any, idx: number) => (
-                    <div key={idx} className="p-4 border border-border rounded-xl bg-muted/10 space-y-4">
-                      <div className="flex justify-between items-center">
-                        <h4 className="text-sm font-bold text-foreground">{pkg.name || "New Package"}</h4>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive h-7 px-2 hover:bg-destructive/10"
-                          onClick={() => {
-                            const updated = [...staticContent.packagesJson];
-                            updated.splice(idx, 1);
-                            setStaticContent((prev: any) => ({ ...prev, packagesJson: updated }));
-                          }}
+              {/* 6. MOCK PRICING PACKAGES (Matches pricing-section) */}
+              <div 
+                id="mock-section-packages"
+                className={`p-6 bg-[#FAF9FF] transition-all relative border-b border-slate-100 ${
+                  activeTab === 'packages' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                }`}
+              >
+                {activeTab === 'packages' && (
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Pricing</span>
+                )}
+                
+                <span className="text-[#5C30FD] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
+                  Pricing Package
+                </span>
+                <h3 className="text-sm font-bold text-[#101828] text-center mb-5">
+                  Flexible Packages Built For Your Growth
+                </h3>
+
+                <div className="space-y-4">
+                  {Array.isArray(staticContent.packagesJson) && staticContent.packagesJson.length > 0 ? (
+                    staticContent.packagesJson.slice(0, 3).map((pkg: any, idx: number) => {
+                      const isActive = idx === 1; // Middle card holds active status in Next.js
+                      return (
+                        <div 
+                          key={idx} 
+                          className={`p-4 rounded-xl border bg-white transition-all relative overflow-hidden ${
+                            isActive 
+                              ? "border-[#5C30FD] ring-1 ring-[#5C30FD] shadow-md" 
+                              : "border-slate-200"
+                          }`}
                         >
-                          Remove
-                        </Button>
+                          {isActive && (
+                            <div className="absolute top-0 right-0 bg-[#5C30FD] text-white font-bold text-[7px] uppercase px-2 py-0.5 rounded-bl">
+                              Popular
+                            </div>
+                          )}
+                          <span className="text-[8px] font-bold text-[#696969] uppercase block">{pkg.name} Plan</span>
+                          <h4 className="text-sm font-black text-[#101828] mt-1 mb-2">{pkg.price || "Contact Us"}</h4>
+                          <p className="text-[8px] text-[#696969] mb-3 leading-relaxed">{pkg.bestFor}</p>
+                          
+                          <div className="space-y-1 pt-2 border-t border-slate-100 text-[8px] text-[#101828]">
+                            {Array.isArray(pkg.features) && pkg.features.slice(0, 3).map((feat: string, fIdx: number) => (
+                              <div key={fIdx} className="flex items-center gap-1.5">
+                                <span className="text-green-500">✓</span> {feat}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-4 text-[10px] text-slate-400">No packages loaded.</div>
+                  )}
+                </div>
+              </div>
+
+              {/* 7. MOCK PORTFOLIOS & PROJECTS */}
+              <div 
+                id="mock-section-projects"
+                className={`p-6 bg-white transition-all relative border-b border-slate-100 ${
+                  activeTab === 'projects' || activeTab === 'casestudies' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                }`}
+              >
+                {(activeTab === 'projects' || activeTab === 'casestudies') && (
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Showcase</span>
+                )}
+                <span className="text-[#5C30FD] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
+                  Our Work
+                </span>
+                <h3 className="text-sm font-bold text-[#101828] text-center mb-4">
+                  Case Studies & Projects
+                </h3>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {projects.slice(0, 2).map((p, pIdx) => (
+                    <div key={pIdx} className="border border-slate-150 bg-white rounded-xl overflow-hidden shadow-xs">
+                      <div className="aspect-[4/3] bg-slate-100 overflow-hidden">
+                        <img src={p.imageUrl} alt={p.title} className="w-full h-full object-cover" />
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-muted-foreground">Package Name</label>
-                        <Input
-                          value={pkg.name || ""}
-                          onChange={(e) => {
-                            const updated = [...staticContent.packagesJson];
-                            updated[idx] = { ...pkg, name: e.target.value };
-                            setStaticContent((prev: any) => ({ ...prev, packagesJson: updated }));
-                          }}
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-muted-foreground">Price (e.g. 120,000 FDJ/month)</label>
-                        <Input
-                          value={pkg.price || ""}
-                          onChange={(e) => {
-                            const updated = [...staticContent.packagesJson];
-                            updated[idx] = { ...pkg, price: e.target.value };
-                            setStaticContent((prev: any) => ({ ...prev, packagesJson: updated }));
-                          }}
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-muted-foreground">Best For</label>
-                        <Input
-                          value={pkg.bestFor || ""}
-                          onChange={(e) => {
-                            const updated = [...staticContent.packagesJson];
-                            updated[idx] = { ...pkg, bestFor: e.target.value };
-                            setStaticContent((prev: any) => ({ ...prev, packagesJson: updated }));
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-semibold text-muted-foreground">Features (One per line)</label>
-                        <Textarea
-                          value={Array.isArray(pkg.features) ? pkg.features.join("\n") : ""}
-                          onChange={(e) => {
-                            const updated = [...staticContent.packagesJson];
-                            updated[idx] = { ...pkg, features: e.target.value.split("\n").filter(Boolean) };
-                            setStaticContent((prev: any) => ({ ...prev, packagesJson: updated }));
-                          }}
-                          rows={6}
-                          required
-                        />
+                      <div className="p-2">
+                        <span className="text-[7px] font-bold text-[#5C30FD] uppercase">{p.category}</span>
+                        <h4 className="text-[9px] font-bold text-[#101828] truncate mt-0.5">{p.title}</h4>
                       </div>
                     </div>
                   ))}
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full gap-2 border-dashed"
-                  onClick={() => {
-                    const updated = [...(staticContent.packagesJson || []), { name: "", price: "", bestFor: "", features: [] }];
-                    setStaticContent((prev: any) => ({ ...prev, packagesJson: updated }));
-                  }}
-                >
-                  <Plus className="w-4 h-4" /> Add Pricing Package
-                </Button>
-              </CardContent>
-              <div className="p-6 border-t border-border flex justify-end">
-                <Button type="submit" disabled={isSaving} className="gap-2">
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save Packages Settings
-                </Button>
               </div>
-            </Card>
-          </form>
-        </TabsContent>
-      </Tabs>
 
-      {/* ─── DIALOG: CASE STUDY CRUD ───────────────────────────────────── */}
+              {/* 8. MOCK TESTIMONIALS SLIDER */}
+              <div 
+                id="mock-section-testimonials"
+                className={`p-6 bg-[#101828] text-white transition-all relative border-b border-slate-900 ${
+                  activeTab === 'testimonials' ? 'bg-[#5C30FD]/15 ring-2 ring-[#5C30FD] ring-inset' : ''
+                }`}
+              >
+                {activeTab === 'testimonials' && (
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Reviews</span>
+                )}
+                <span className="text-[#5C30FD] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
+                  Testimonials
+                </span>
+                <h3 className="text-sm font-bold text-white text-center mb-4">
+                  What Global Clients Say
+                </h3>
+
+                <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 text-center space-y-3">
+                  <div className="flex items-center justify-center gap-0.5 text-yellow-400">
+                    {[...Array(5)].map((_, star) => (
+                      <Star key={star} className="w-3 h-3 fill-current" />
+                    ))}
+                  </div>
+                  <p className="text-[10px] italic text-slate-300 leading-relaxed">
+                    {testimonials[0]?.feedback || "Hirdan Marketing helped us grow our active user audience base and visual campaigns."}
+                  </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-7 h-7 bg-slate-850 rounded-full border border-slate-700 overflow-hidden">
+                      {testimonials[0]?.avatarUrl && (
+                        <img src={testimonials[0].avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                      )}
+                    </div>
+                    <div className="text-left leading-tight">
+                      <span className="text-[9px] font-bold text-white block">{testimonials[0]?.name || "Alex Carter"}</span>
+                      <span className="text-[8px] text-slate-400 block">{testimonials[0]?.role || "Founder, Growth"}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 9. MOCK FAQ (Matches Faq accordion) */}
+              <div 
+                id="mock-section-faqs"
+                className={`p-6 bg-white transition-all relative border-b border-slate-100 ${
+                  activeTab === 'faqs' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                }`}
+              >
+                {activeTab === 'faqs' && (
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">FAQ</span>
+                )}
+                <span className="text-[#5C30FD] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
+                  Some Questions
+                </span>
+                <h3 className="text-sm font-bold text-[#101828] text-center mb-4">
+                  Frequently Asked Questions
+                </h3>
+
+                <div className="space-y-2">
+                  {Array.isArray(staticContent.faqsJson) && staticContent.faqsJson.slice(0, 3).map((faq: any, fIdx: number) => {
+                    const isExpanded = expandedFaqIndex === fIdx;
+                    return (
+                      <div key={fIdx} className="border border-slate-100 rounded-lg overflow-hidden bg-white">
+                        <button 
+                          type="button"
+                          onClick={() => setExpandedFaqIndex(isExpanded ? null : fIdx)}
+                          className="w-full p-2.5 flex items-center justify-between text-left text-[9px] font-bold text-[#101828] hover:bg-slate-50 transition-colors"
+                        >
+                          <span>{faq.question || "FAQ Question"}</span>
+                          <span className={`transition-transform duration-200 text-[#5C30FD] ${isExpanded ? 'rotate-180' : ''}`}>
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </span>
+                        </button>
+                        {isExpanded && (
+                          <div className="p-2.5 bg-slate-50 text-[9px] text-[#696969] border-t border-slate-100 leading-relaxed">
+                            {faq.answer || "Answer content detail."}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer Mockup */}
+              <div className="bg-[#101828] text-white p-6 space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="font-black text-xs text-white">Hirdan<span className="text-[#5C30FD]">Marketing</span></span>
+                  <span className="text-[7px] text-slate-400">© 2026 Hirdan Marketing</span>
+                </div>
+                <p className="text-[9px] text-slate-400 max-w-xs leading-relaxed">
+                  {staticContent.footerTagline || "We grow your business with creative marketing that delivers real results."}
+                </p>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* ─── DIALOGS REDESIGNED ─── */}
+      
+      {/* CASE STUDY CRUD DIALOG */}
       <Dialog open={csDialogOpen} onOpenChange={setCsDialogOpen}>
-        <DialogContent className="sm:max-w-[450px]">
+        <DialogContent className="sm:max-w-[480px] rounded-2xl border-border p-6 shadow-2xl">
           <DialogHeader>
-            <DialogTitle>{csEditingId ? "Edit Case Study" : "Add Case Study"}</DialogTitle>
-            <DialogDescription>Create SMM case studies. Upload local images to make them public.</DialogDescription>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              {csEditingId ? "Configure Case Study" : "Add Success Portfolio"}
+            </DialogTitle>
+            <DialogDescription>
+              Detail a strategic marketing success story. Upload high-res images to showcase ROAS, views, or CTR.
+            </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-4 py-4 text-left">
-            <div className="flex flex-col gap-1.5">
+          <div className="space-y-4 py-4 text-left">
+            <div className="space-y-1.5">
               <label className="text-xs font-semibold text-muted-foreground">Case Study Title</label>
               <Input 
                 value={csForm.title} 
                 onChange={e => setCsForm(prev => ({ ...prev, title: e.target.value }))}
-                placeholder="e.g. Viral Reels Strategy"
+                placeholder="e.g. Organic Viral Reels Booster"
+                className="rounded-xl"
               />
             </div>
             
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground">Category</label>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">Category Tag</label>
               <Input 
                 value={csForm.category} 
                 onChange={e => setCsForm(prev => ({ ...prev, category: e.target.value }))}
-                placeholder="e.g. TikTok & Reels"
+                placeholder="e.g. TikTok Marketing"
+                className="rounded-xl"
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground">Short Description</label>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">Short Description & Outcomes</label>
               <Textarea 
                 value={csForm.description} 
                 onChange={e => setCsForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="Details about outcomes, views generated, ROAS etc."
+                placeholder="Include stats like: 12M views generated, 15% CTR increase..."
                 rows={3}
+                className="rounded-xl resize-none"
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground">Display Image</label>
-              <div className="flex items-center gap-3">
-                <Input 
-                  value={csForm.imageUrl} 
-                  onChange={e => setCsForm(prev => ({ ...prev, imageUrl: e.target.value }))}
-                  placeholder="URL or upload a file"
-                  className="flex-grow"
-                />
-                <label className="cursor-pointer bg-muted hover:bg-muted/80 border border-border h-10 px-4 flex items-center justify-center rounded-lg text-xs font-bold gap-2">
-                  {csUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
-                  Upload
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    onChange={e => handleFileUpload(e, "case-study")} 
-                    className="hidden" 
-                    disabled={csUploading}
-                  />
-                </label>
-              </div>
-            </div>
+            <UploadZone 
+              label="Feature Portfolio Image" 
+              imageUrl={csForm.imageUrl} 
+              isUploading={csUploading}
+              onUpload={e => handleFileUpload(e, "case-study")}
+              onClear={() => setCsForm(prev => ({ ...prev, imageUrl: "" }))}
+            />
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCsDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveCs}>Save Case Study</Button>
+          <DialogFooter className="bg-muted/10 p-4 border-t border-border -mx-6 -mb-6 rounded-b-2xl">
+            <Button variant="outline" className="rounded-xl text-xs" onClick={() => setCsDialogOpen(false)}>Cancel</Button>
+            <Button className="rounded-xl text-xs bg-[#5C30FD] text-white hover:bg-[#FFC107]" onClick={handleSaveCs}>Save Case Study</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ─── DIALOG: TESTIMONIAL CRUD ──────────────────────────────────── */}
+      {/* TESTIMONIAL CRUD DIALOG */}
       <Dialog open={tDialogOpen} onOpenChange={setTDialogOpen}>
-        <DialogContent className="sm:max-w-[450px]">
+        <DialogContent className="sm:max-w-[480px] rounded-2xl border-border p-6 shadow-2xl">
           <DialogHeader>
-            <DialogTitle>{tEditingId ? "Edit Testimonial" : "Add Testimonial"}</DialogTitle>
-            <DialogDescription>Create client feedback testimonial.</DialogDescription>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <ThumbsUp className="w-5 h-5 text-primary" />
+              {tEditingId ? "Edit Review Card" : "New Client Review"}
+            </DialogTitle>
+            <DialogDescription>
+              Create or edit a customer feedback review quote.
+            </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-4 py-4 text-left">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground">Client Name</label>
-              <Input 
-                value={tForm.name} 
-                onChange={e => setTForm(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="e.g. Sophia Carter"
-              />
-            </div>
-            
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground">Client Role / Company</label>
-              <Input 
-                value={tForm.role} 
-                onChange={e => setTForm(prev => ({ ...prev, role: e.target.value }))}
-                placeholder="e.g. Founder, Bloom Cosmetics"
-              />
+          <div className="space-y-4 py-4 text-left">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Client Name</label>
+                <Input 
+                  value={tForm.name} 
+                  onChange={e => setTForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Sophia Carter"
+                  className="rounded-xl"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Role / Company</label>
+                <Input 
+                  value={tForm.role} 
+                  onChange={e => setTForm(prev => ({ ...prev, role: e.target.value }))}
+                  placeholder="Founder, Bloom"
+                  className="rounded-xl"
+                />
+              </div>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground">Feedback Quote</label>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">Feedback Quote Text</label>
               <Textarea 
                 value={tForm.feedback} 
                 onChange={e => setTForm(prev => ({ ...prev, feedback: e.target.value }))}
-                placeholder="Client quote..."
-                rows={4}
+                placeholder="Writing client review feedback..."
+                rows={3}
+                className="rounded-xl resize-none"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">Rating Stars (1-5)</label>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Rating Star Count (1-5)</label>
                 <Input 
                   type="number"
                   min={1}
                   max={5}
                   value={tForm.rating} 
                   onChange={e => setTForm(prev => ({ ...prev, rating: parseInt(e.target.value) || 5 }))}
+                  className="rounded-xl"
                 />
               </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">Client Avatar</label>
-                <div className="flex items-center gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Avatar Image</label>
+                <div className="flex gap-2">
                   <Input 
                     value={tForm.avatarUrl} 
                     onChange={e => setTForm(prev => ({ ...prev, avatarUrl: e.target.value }))}
-                    placeholder="/uploads/branding/logo.png"
-                    className="flex-grow text-xs"
+                    placeholder="/uploads/client.png"
+                    className="rounded-xl text-xs flex-grow"
                   />
-                  <label className="cursor-pointer bg-muted hover:bg-muted/80 border border-border h-10 px-3 flex items-center justify-center rounded-lg text-xs font-bold gap-1">
-                    {tUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5" />}
-                    Upload
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      onChange={e => handleFileUpload(e, "testimonial")} 
-                      className="hidden" 
-                      disabled={tUploading}
-                    />
+                  <label className="cursor-pointer bg-muted border border-border h-10 px-3 flex items-center justify-center rounded-xl text-xs font-bold shrink-0 hover:bg-muted/80">
+                    {tUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
+                    <input type="file" accept="image/*" onChange={e => handleFileUpload(e, "testimonial")} className="hidden" disabled={tUploading} />
                   </label>
                 </div>
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveT}>Save Testimonial</Button>
+          <DialogFooter className="bg-muted/10 p-4 border-t border-border -mx-6 -mb-6 rounded-b-2xl">
+            <Button variant="outline" className="rounded-xl text-xs" onClick={() => setTDialogOpen(false)}>Cancel</Button>
+            <Button className="rounded-xl text-xs bg-[#5C30FD] text-white hover:bg-[#FFC107]" onClick={handleSaveT}>Save Testimonial</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ─── DIALOG: PROJECT ──────────────────────────────────────────── */}
+      {/* PROJECT CRUD DIALOG */}
       <Dialog open={pDialogOpen} onOpenChange={setPDialogOpen}>
-        <DialogContent className="max-w-3xl p-0 overflow-hidden border-border shadow-2xl max-h-[85vh] flex flex-col">
-          <DialogHeader className="p-6 pb-4 bg-muted/30 border-b border-border flex-shrink-0">
-            <DialogTitle className="font-display font-bold text-xl">{pEditingId ? "Edit Project" : "Add Project"}</DialogTitle>
-            <DialogDescription className="text-sm">Enter the project details and professional portfolio information below.</DialogDescription>
+        <DialogContent className="max-w-3xl rounded-2xl border-border p-0 overflow-hidden shadow-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader className="p-6 pb-4 bg-muted/20 border-b border-border flex-shrink-0">
+            <DialogTitle className="font-display font-bold text-xl flex items-center gap-2">
+              <Folder className="w-5 h-5 text-[#5C30FD]" />
+              {pEditingId ? "Modify Portfolio Project" : "Create Portfolio Project"}
+            </DialogTitle>
+            <DialogDescription className="text-sm">
+              Input strategic details, metadata, and dynamic images to display in the case study portal.
+            </DialogDescription>
           </DialogHeader>
           
           <div className="p-6 space-y-6 overflow-y-auto flex-grow bg-background">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1.5">
+              <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground">Project Title</label>
-                <Input value={pForm.title} onChange={e => setPForm(prev => ({ ...prev, title: e.target.value }))} placeholder="e.g. Website Redesign & Development" />
+                <Input value={pForm.title} onChange={e => setPForm(prev => ({ ...prev, title: e.target.value }))} placeholder="e.g. SEO Campaign & Redesign" className="rounded-xl" />
               </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-muted-foreground">Category</label>
-                <Input value={pForm.category} onChange={e => setPForm(prev => ({ ...prev, category: e.target.value }))} placeholder="e.g. Design, Branding" />
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground">Category Tag</label>
+                <Input value={pForm.category} onChange={e => setPForm(prev => ({ ...prev, category: e.target.value }))} placeholder="e.g. SEO, Design" className="rounded-xl" />
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground">Main Overview Description</label>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">Project Overview</label>
               <Textarea 
                 value={pForm.description} 
                 onChange={e => setPForm(prev => ({ ...prev, description: e.target.value }))} 
-                placeholder="Designing a digital product and branding project involves several key steps..."
+                placeholder="Provide a detailed description of the project achievements..."
                 rows={3}
-                className="resize-none"
+                className="rounded-xl resize-none"
               />
             </div>
 
-            {/* Metadata Fields */}
             <div className="border-t border-border pt-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">Project Metadata (Sidebar Info)</h4>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-primary mb-3">Project Metadata</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="flex flex-col gap-1.5">
+                <div className="space-y-1">
                   <label className="text-[10px] font-semibold text-muted-foreground">Client Name</label>
-                  <Input value={pForm.clientName} onChange={e => setPForm(prev => ({ ...prev, clientName: e.target.value }))} placeholder="e.g. Myron S." className="h-9 text-xs" />
+                  <Input value={pForm.clientName} onChange={e => setPForm(prev => ({ ...prev, clientName: e.target.value }))} className="h-9 text-xs rounded-xl" />
                 </div>
-                <div className="flex flex-col gap-1.5">
+                <div className="space-y-1">
                   <label className="text-[10px] font-semibold text-muted-foreground">Project Date</label>
-                  <Input value={pForm.projectDate} onChange={e => setPForm(prev => ({ ...prev, projectDate: e.target.value }))} placeholder="e.g. October, 2024" className="h-9 text-xs" />
+                  <Input value={pForm.projectDate} onChange={e => setPForm(prev => ({ ...prev, projectDate: e.target.value }))} className="h-9 text-xs rounded-xl" />
                 </div>
-                <div className="flex flex-col gap-1.5">
+                <div className="space-y-1">
                   <label className="text-[10px] font-semibold text-muted-foreground">Location</label>
-                  <Input value={pForm.location} onChange={e => setPForm(prev => ({ ...prev, location: e.target.value }))} placeholder="e.g. New York" className="h-9 text-xs" />
+                  <Input value={pForm.location} onChange={e => setPForm(prev => ({ ...prev, location: e.target.value }))} className="h-9 text-xs rounded-xl" />
                 </div>
-                <div className="flex flex-col gap-1.5">
+                <div className="space-y-1">
                   <label className="text-[10px] font-semibold text-muted-foreground">Duration</label>
-                  <Input value={pForm.duration} onChange={e => setPForm(prev => ({ ...prev, duration: e.target.value }))} placeholder="e.g. 1 month" className="h-9 text-xs" />
+                  <Input value={pForm.duration} onChange={e => setPForm(prev => ({ ...prev, duration: e.target.value }))} className="h-9 text-xs rounded-xl" />
                 </div>
               </div>
             </div>
 
-            {/* Project Gallery Images */}
             <div className="border-t border-border pt-4 space-y-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Project Gallery Images (Up to 4)</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-primary">Project Showcase Images (Up to 4)</h4>
+              <div className="grid grid-cols-2 gap-4">
                 {[
-                  { field: "imageUrl", label: "Image 1 (Main Top-Left)" },
-                  { field: "imageUrl2", label: "Image 2 (Top-Right)" },
-                  { field: "imageUrl3", label: "Image 3 (Bottom-Left)" },
-                  { field: "imageUrl4", label: "Image 4 (Bottom-Right)" }
+                  { field: "imageUrl", label: "Image 1 (Primary Header)" },
+                  { field: "imageUrl2", label: "Image 2 (Grid Right)" },
+                  { field: "imageUrl3", label: "Image 3 (Grid Mid)" },
+                  { field: "imageUrl4", label: "Image 4 (Grid Base)" }
                 ].map(({ field, label }) => (
-                  <div key={field} className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-semibold text-muted-foreground">{label}</label>
-                    <div className="flex items-center gap-2">
+                  <div key={field} className="space-y-1">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase">{label}</label>
+                    <div className="flex gap-2">
                       <Input 
                         value={pForm[field] || ""} 
                         onChange={e => setPForm(prev => ({ ...prev, [field]: e.target.value }))}
-                        placeholder="/uploads/branding/..."
-                        className="text-xs h-9 flex-grow"
+                        placeholder="/uploads/project..."
+                        className="text-xs h-9 rounded-xl flex-grow"
                       />
-                      <label className="cursor-pointer bg-muted hover:bg-muted/80 border border-border h-9 px-3 flex items-center justify-center rounded-lg text-xs font-bold gap-1 shadow-sm">
-                        {pUploadingField === `project_${field}` ? <Loader2 className="w-3 animate-spin" /> : <ImageIcon className="w-3 text-muted-foreground" />}
-                        Upload
-                        <input 
-                          type="file" 
-                          accept="image/*" 
-                          onChange={e => handleFileUpload(e, `project_${field}` as any)} 
-                          className="hidden" 
-                          disabled={pUploadingField !== null}
-                        />
+                      <label className="cursor-pointer bg-muted border border-border h-9 px-3 flex items-center justify-center rounded-xl text-xs font-bold shrink-0 hover:bg-muted/80">
+                        {pUploadingField === `project_${field}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
+                        <input type="file" accept="image/*" onChange={e => handleFileUpload(e, `project_${field}` as any)} className="hidden" disabled={pUploadingField !== null} />
                       </label>
                     </div>
                   </div>
@@ -1852,56 +2363,43 @@ export default function LandingPageEditor() {
               </div>
             </div>
 
-            {/* Dynamic Content Sections Builder */}
             <div className="border-t border-border pt-4 space-y-4">
               <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Detailed Content Sections</h4>
-                <Button type="button" size="sm" variant="outline" onClick={addSection} className="text-xs font-bold h-8 gap-1">
-                  <Plus className="w-3.5 h-3.5" /> Add Section
+                <h4 className="text-xs font-bold uppercase tracking-wider text-primary">Key Content Sections</h4>
+                <Button type="button" size="sm" variant="outline" onClick={addSection} className="text-xs font-bold h-8 rounded-lg">
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Add Section
                 </Button>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {pForm.sections && pForm.sections.map((section: any, index: number) => (
-                  <div key={index} className="p-4 border border-border rounded-xl bg-muted/10 relative space-y-3">
-                    <Button 
+                  <div key={index} className="p-4 border border-border rounded-xl bg-muted/15 relative space-y-3 shadow-xs">
+                    <button 
                       type="button" 
-                      variant="ghost" 
-                      size="icon" 
-                      className="absolute top-2 right-2 w-6 h-6 text-destructive hover:bg-destructive/10" 
+                      className="absolute top-2.5 right-2.5 text-xs text-destructive hover:underline"
                       onClick={() => removeSection(index)}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
+                    </button>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div className="md:col-span-1 flex flex-col gap-1">
-                        <label className="text-[10px] font-semibold text-muted-foreground">Section Title</label>
-                        <Input 
-                          value={section.title} 
-                          onChange={e => updateSection(index, "title", e.target.value)} 
-                          placeholder="e.g. Project Initiation"
-                          className="h-8 text-xs"
-                        />
+                    <div className="grid grid-cols-3 gap-3 pt-2">
+                      <div className="col-span-1 space-y-1">
+                        <label className="text-[9px] font-semibold uppercase text-muted-foreground">Section Title</label>
+                        <Input value={section.title} onChange={e => updateSection(index, "title", e.target.value)} className="h-8 text-xs rounded-lg" />
                       </div>
-                      <div className="md:col-span-2 flex flex-col gap-1">
-                        <label className="text-[10px] font-semibold text-muted-foreground">Description (Optional)</label>
-                        <Input 
-                          value={section.content} 
-                          onChange={e => updateSection(index, "content", e.target.value)} 
-                          placeholder="Short introductory text..."
-                          className="h-8 text-xs"
-                        />
+                      <div className="col-span-2 space-y-1">
+                        <label className="text-[9px] font-semibold uppercase text-muted-foreground">Short Content</label>
+                        <Input value={section.content} onChange={e => updateSection(index, "content", e.target.value)} className="h-8 text-xs rounded-lg" />
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-semibold text-muted-foreground">Checklist Bullet Points (Comma-separated)</label>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-semibold uppercase text-muted-foreground">Checklist Bullets (Comma Separated)</label>
                       <Input 
                         value={section.bullets?.join(", ") || ""} 
                         onChange={e => updateSection(index, "bullets", e.target.value.split(",").map(s => s.trim()).filter(Boolean))} 
-                        placeholder="Bullet 1, Bullet 2, Bullet 3"
-                        className="h-8 text-xs"
+                        placeholder="Bullet 1, Bullet 2"
+                        className="h-8 text-xs rounded-lg"
                       />
                     </div>
                   </div>
@@ -1911,9 +2409,9 @@ export default function LandingPageEditor() {
           </div>
           
           <DialogFooter className="p-4 border-t border-border bg-muted/20 flex-shrink-0">
-            <Button variant="outline" onClick={() => setPDialogOpen(false)} className="h-9 font-bold text-xs">Cancel</Button>
-            <Button onClick={handleSaveP} className="h-9 font-bold text-xs gap-1.5 shadow-sm">
-              <Save className="w-3.5 h-3.5" /> {pEditingId ? "Save Changes" : "Create Project"}
+            <Button variant="outline" onClick={() => setPDialogOpen(false)} className="h-9 font-bold text-xs rounded-xl">Cancel</Button>
+            <Button onClick={handleSaveP} className="h-9 font-bold text-xs rounded-xl gap-1 bg-[#5C30FD] text-white hover:bg-[#FFC107]">
+              <Save className="w-3.5 h-3.5" /> {pEditingId ? "Save Project" : "Create Project"}
             </Button>
           </DialogFooter>
         </DialogContent>

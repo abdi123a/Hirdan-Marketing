@@ -452,6 +452,9 @@ model AgencySettings {
   smtpDriver          String?  @map("smtp_driver")
   mailEnabled         Boolean  @default(false) @map("mail_enabled")
   hrFallbackApproverId String?  @map("hr_fallback_approver_id")
+  googleDriveFolderId        String?  @map("google_drive_folder_id")
+  googleDriveServiceAccountJson String? @map("google_drive_service_account_json") @db.LongText
+  googleDriveEnabled         Boolean  @default(false) @map("google_drive_enabled")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -889,6 +892,7 @@ model Account {
   recurringExpenses RecurringExpense[]
   transfersFrom     AccountTransfer[] @relation("TransferFrom")
   transfersTo       AccountTransfer[] @relation("TransferTo")
+  deposits          Deposit[]
 
   @@map("accounts")
 }
@@ -955,6 +959,24 @@ model AccountTransfer {
   @@index([fromAccountId])
   @@index([toAccountId])
   @@map("account_transfers")
+}
+
+/// External deposit into an account
+model Deposit {
+  id          String   @id @default(uuid())
+  accountId   String   @map("account_id")
+  amount      Int      // in cents
+  category    String   @default("OTHER") // e.g. OWNER_INVESTMENT, REVENUE, REFUND, OTHER
+  description String?  @db.Text
+  date        DateTime
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([date])
+  @@map("deposits")
 }
 
 // ─── HR Document Generator Module ─────────────────────────────────

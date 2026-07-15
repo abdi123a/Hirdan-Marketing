@@ -392,7 +392,7 @@ export default function FinancialReportPage() {
             <p className="text-sm text-slate-500 mt-1">Statement Period: {startDate} to {endDate}</p>
           </div>
           <div className="text-right">
-            <h2 className="text-lg font-bold text-slate-800">Agency Flow Pro</h2>
+            <h2 className="text-lg font-bold text-slate-800">{settings?.agencyName || 'Hirdan Marketing'}</h2>
             <p className="text-xs text-slate-500">Corporate Finance & Ledger</p>
           </div>
         </div>

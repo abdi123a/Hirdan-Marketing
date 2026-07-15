@@ -31,3 +31,8 @@ dist-ssr
 # Uploads
 uploads/
 **/uploads/
+
+# Database Backups
+backups/
+**/backups/
+

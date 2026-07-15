@@ -37,7 +37,7 @@ export default function AiAssistantPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hello! I am your Agency Flow Pro AI assistant. How can I help you today? You can select a client scope below, or try one of the quick drafting actions to summarize files, financials, monthly reports, or emails."
+      content: "Hello! I am your Hirdan Marketing AI assistant. How can I help you today? You can select a client scope below, or try one of the quick drafting actions to summarize files, financials, monthly reports, or emails."
     }
   ]);
   const [input, setInput] = useState("");

@@ -1,6 +1,6 @@
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
-import { Outlet, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Bell, Search, LogOut } from "lucide-react";
 import { SidebarMobileTrigger } from "@/components/ui/sidebar";
 import hirdanLogo from "@/assets/hirdan-logo.png";
@@ -26,6 +26,10 @@ export default function DashboardLayout() {
   const { user, logout } = useAuthStore();
   const { settings, fetchSettings, fetchAllData } = useAgencyStore();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isLandingEditor =
+    location.pathname === "/dashboard/settings" &&
+    new URLSearchParams(location.search).get("tab") === "landing-page";
 
   useEffect(() => {
     fetchSettings();
@@ -53,11 +57,11 @@ export default function DashboardLayout() {
   const adminName = settings.agencyName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <SidebarProvider>
+    <SidebarProvider open={!isLandingEditor}>
       <div className="min-h-screen flex w-full bg-background font-sans">
-        <AppSidebar />
+        {!isLandingEditor && <AppSidebar />}
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="shrink-0 sticky top-0 z-10 border-b border-border bg-card/80 backdrop-blur-md">
+          {!isLandingEditor && <header className="shrink-0 sticky top-0 z-10 border-b border-border bg-card/80 backdrop-blur-md">
             <div className="h-14 md:h-16 flex items-center justify-between gap-2 px-4 md:px-6">
               <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
                 {/* Mobile Sidebar Toggle & Logo */}
@@ -128,8 +132,8 @@ export default function DashboardLayout() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </form>
-          </header>
-          <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 min-w-0">
+          </header>}
+          <main className={isLandingEditor ? "flex-1 overflow-auto min-w-0" : "flex-1 overflow-auto p-4 md:p-6 lg:p-8 min-w-0"}>
             <Outlet />
           </main>
         </div>

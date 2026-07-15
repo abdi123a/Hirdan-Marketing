@@ -6,70 +6,71 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuthStore } from "@/lib/auth-store";
 
-import NotFound from "./pages/NotFound.tsx";
-import AdminLoginPage from "./pages/AdminLoginPage.tsx";
-import ClientLoginPage from "./pages/ClientLoginPage.tsx";
-import ClientPortalPage from "./pages/ClientPortalPage.tsx";
-import DashboardLayout from "./components/DashboardLayout.tsx";
-import { AgencyAppearanceManager } from "./components/AgencyAppearanceManager.tsx";
-import { GlobalUploadProgress } from "./components/GlobalUploadProgress.tsx";
-import DashboardOverview from "./pages/DashboardOverview.tsx";
-import ClientsPage from "./pages/ClientsPage.tsx";
-import AddClientPage from "./pages/AddClientPage.tsx";
-import ProjectsPage from "./pages/ProjectsPage.tsx";
-import AddProjectPage from "./pages/AddProjectPage.tsx";
-import TeamPage from "./pages/TeamPage.tsx";
-import AddEmployeePage from "./pages/AddEmployeePage.tsx";
-import EmployeeProfilePage from "./pages/EmployeeProfilePage.tsx";
-import InvoicesPage from "./pages/InvoicesPage.tsx";
-import AddInvoicePage from "./pages/AddInvoicePage.tsx";
-import SubscriptionsPage from "./pages/SubscriptionsPage.tsx";
-import AddSubscriptionPage from "./pages/AddSubscriptionPage.tsx";
-import CalendarPage from "./pages/CalendarPage.tsx";
-import SettingsPage from "./pages/SettingsPage.tsx";
-import AiAssistantPage from "./pages/AiAssistantPage.tsx";
-import EditClientPage from "./pages/EditClientPage.tsx";
-import EditProjectPage from "./pages/EditProjectPage.tsx";
-// EditTeamMemberPage replaced by AddEmployeePage in edit mode
-import EditInvoicePage from "./pages/EditInvoicePage.tsx";
-import EditSubscriptionPage from "./pages/EditSubscriptionPage.tsx";
-import ProformaPage from "./pages/ProformaPage.tsx";
-import PackagesPage from "./pages/PackagesPage.tsx";
-import ServicesPage from "./pages/ServicesPage.tsx";
-import AddProformaPage from "./pages/AddProformaPage.tsx";
-import EditProformaPage from "./pages/EditProformaPage.tsx";
-import AddPackagePage from "./pages/AddPackagePage.tsx";
-import EditPackagePage from "./pages/EditPackagePage.tsx";
-import AddServicePage from "./pages/AddServicePage.tsx";
-import EditServicePage from "./pages/EditServicePage.tsx";
-import ClientDetailsPage from "./pages/ClientDetailsPage.tsx";
-import ProjectDetailsPage from "./pages/ProjectDetailsPage.tsx";
-// TeamMemberDetailsPage replaced by EmployeeProfilePage
-import InvoiceDetailsPage from "./pages/InvoiceDetailsPage.tsx";
-import ProformaDetailsPage from "./pages/ProformaDetailsPage.tsx";
-import SubscriptionDetailsPage from "./pages/SubscriptionDetailsPage.tsx";
-import PackageDetailsPage from "./pages/PackageDetailsPage.tsx";
-import ServiceDetailsPage from "./pages/ServiceDetailsPage.tsx";
-import LeadsPage from "./pages/LeadsPage.tsx";
-import VerifyDocumentPage from "./pages/VerifyDocumentPage.tsx";
-import UsersPage from './pages/UsersPage.tsx';
-import AddUserPage from './pages/AddUserPage.tsx';
-import SocialMediaTasksPage from './pages/SocialMediaTasksPage.tsx';
-import SocialMediaPlannerPage from './pages/SocialMediaPlannerPage.tsx';
-import MonthlyReportStudioPage from "./pages/MonthlyReportStudioPage.tsx";
-import FinancialReportPage from "./pages/FinancialReportPage.tsx";
-import ExpensesPage from "./pages/ExpensesPage.tsx";
-import HrDocumentsPage from "@/pages/HrDocumentsPage.tsx";
-import GenerateHrDocumentPage from "@/pages/GenerateHrDocumentPage.tsx";
-import FileTransfer from "./pages/FileTransfer.tsx";
-import ShareDownload from "./pages/ShareDownload.tsx";
-import LandingPageEditor from "./pages/LandingPageEditor.tsx";
-import PluginsPage from "./pages/PluginsPage.tsx";
-
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { apiFetch } from "@/lib/api-client";
 import { useAgencyStore } from "@/lib/store";
 import { LoadingScreen } from "@/components/ui/LoadingScreen";
+
+// Core static layouts and public/login pages to keep initial bundle load instantaneous
+import NotFound from "./pages/NotFound.tsx";
+import AdminLoginPage from "./pages/AdminLoginPage.tsx";
+import ClientLoginPage from "./pages/ClientLoginPage.tsx";
+import DashboardLayout from "./components/DashboardLayout.tsx";
+import { AgencyAppearanceManager } from "./components/AgencyAppearanceManager.tsx";
+import { GlobalUploadProgress } from "./components/GlobalUploadProgress.tsx";
+import VerifyDocumentPage from "./pages/VerifyDocumentPage.tsx";
+import ShareDownload from "./pages/ShareDownload.tsx";
+
+// Lazy-loaded pages (code splitting for admin/client features)
+const ClientPortalPage = lazy(() => import("./pages/ClientPortalPage.tsx"));
+const DashboardOverview = lazy(() => import("./pages/DashboardOverview.tsx"));
+const ClientsPage = lazy(() => import("./pages/ClientsPage.tsx"));
+const AddClientPage = lazy(() => import("./pages/AddClientPage.tsx"));
+const ProjectsPage = lazy(() => import("./pages/ProjectsPage.tsx"));
+const AddProjectPage = lazy(() => import("./pages/AddProjectPage.tsx"));
+const TeamPage = lazy(() => import("./pages/TeamPage.tsx"));
+const AddEmployeePage = lazy(() => import("./pages/AddEmployeePage.tsx"));
+const EmployeeProfilePage = lazy(() => import("./pages/EmployeeProfilePage.tsx"));
+const InvoicesPage = lazy(() => import("./pages/InvoicesPage.tsx"));
+const AddInvoicePage = lazy(() => import("./pages/AddInvoicePage.tsx"));
+const SubscriptionsPage = lazy(() => import("./pages/SubscriptionsPage.tsx"));
+const AddSubscriptionPage = lazy(() => import("./pages/AddSubscriptionPage.tsx"));
+const CalendarPage = lazy(() => import("./pages/CalendarPage.tsx"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage.tsx"));
+const AiAssistantPage = lazy(() => import("./pages/AiAssistantPage.tsx"));
+const EditClientPage = lazy(() => import("./pages/EditClientPage.tsx"));
+const EditProjectPage = lazy(() => import("./pages/EditProjectPage.tsx"));
+const EditInvoicePage = lazy(() => import("./pages/EditInvoicePage.tsx"));
+const EditSubscriptionPage = lazy(() => import("./pages/EditSubscriptionPage.tsx"));
+const ProformaPage = lazy(() => import("./pages/ProformaPage.tsx"));
+const PackagesPage = lazy(() => import("./pages/PackagesPage.tsx"));
+const ServicesPage = lazy(() => import("./pages/ServicesPage.tsx"));
+const AddProformaPage = lazy(() => import("./pages/AddProformaPage.tsx"));
+const EditProformaPage = lazy(() => import("./pages/EditProformaPage.tsx"));
+const AddPackagePage = lazy(() => import("./pages/AddPackagePage.tsx"));
+const EditPackagePage = lazy(() => import("./pages/EditPackagePage.tsx"));
+const AddServicePage = lazy(() => import("./pages/AddServicePage.tsx"));
+const EditServicePage = lazy(() => import("./pages/EditServicePage.tsx"));
+const ClientDetailsPage = lazy(() => import("./pages/ClientDetailsPage.tsx"));
+const ProjectDetailsPage = lazy(() => import("./pages/ProjectDetailsPage.tsx"));
+const InvoiceDetailsPage = lazy(() => import("./pages/InvoiceDetailsPage.tsx"));
+const ProformaDetailsPage = lazy(() => import("./pages/ProformaDetailsPage.tsx"));
+const SubscriptionDetailsPage = lazy(() => import("./pages/SubscriptionDetailsPage.tsx"));
+const PackageDetailsPage = lazy(() => import("./pages/PackageDetailsPage.tsx"));
+const ServiceDetailsPage = lazy(() => import("./pages/ServiceDetailsPage.tsx"));
+const LeadsPage = lazy(() => import("./pages/LeadsPage.tsx"));
+const UsersPage = lazy(() => import('./pages/UsersPage.tsx'));
+const AddUserPage = lazy(() => import('./pages/AddUserPage.tsx'));
+const SocialMediaTasksPage = lazy(() => import('./pages/SocialMediaTasksPage.tsx'));
+const SocialMediaPlannerPage = lazy(() => import('./pages/SocialMediaPlannerPage.tsx'));
+const MonthlyReportStudioPage = lazy(() => import("./pages/MonthlyReportStudioPage.tsx"));
+const FinancialReportPage = lazy(() => import("./pages/FinancialReportPage.tsx"));
+const ExpensesPage = lazy(() => import("./pages/ExpensesPage.tsx"));
+const HrDocumentsPage = lazy(() => import("@/pages/HrDocumentsPage.tsx"));
+const GenerateHrDocumentPage = lazy(() => import("@/pages/GenerateHrDocumentPage.tsx"));
+const FileTransfer = lazy(() => import("./pages/FileTransfer.tsx"));
+const LandingPageEditor = lazy(() => import("./pages/LandingPageEditor.tsx"));
+const PluginsPage = lazy(() => import("./pages/PluginsPage.tsx"));
 
 const queryClient = new QueryClient();
 
@@ -253,7 +254,9 @@ const App = () => (
       <BrowserRouter>
         <AgencyAppearanceManager />
         <GlobalUploadProgress />
-        <AppRoutes />
+        <Suspense fallback={<LoadingScreen fadeOut={false} />}>
+          <AppRoutes />
+        </Suspense>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

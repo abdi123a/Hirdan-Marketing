@@ -33,6 +33,14 @@ const transferSchema = z.object({
   date: z.string().optional(),
 });
 
+const createDepositSchema = z.object({
+  accountId: z.string().min(1, 'Account is required'),
+  amount: z.number().positive('Amount must be greater than 0'),
+  category: z.string().default('OTHER'),
+  description: z.string().optional().nullable(),
+  date: z.string().optional(),
+});
+
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 /**
@@ -42,7 +50,7 @@ const transferSchema = z.object({
  * - Transfers in added
  */
 async function getAccountBalance(accountId: string): Promise<number> {
-  const [expensesAgg, transfersOutAgg, transfersInAgg] = await Promise.all([
+  const [expensesAgg, transfersOutAgg, transfersInAgg, depositsAgg] = await Promise.all([
     prisma.expense.aggregate({
       where: { accountId },
       _sum: { amount: true },
@@ -55,14 +63,19 @@ async function getAccountBalance(accountId: string): Promise<number> {
       where: { toAccountId: accountId },
       _sum: { amount: true },
     }),
+    prisma.deposit.aggregate({
+      where: { accountId },
+      _sum: { amount: true },
+    }),
   ]);
 
   const totalExpenses = expensesAgg._sum.amount ?? 0;
   const totalOut = transfersOutAgg._sum.amount ?? 0;
   const totalIn = transfersInAgg._sum.amount ?? 0;
+  const totalDeposits = depositsAgg._sum.amount ?? 0;
 
-  // Balance = money in - money out - expenses
-  return totalIn - totalOut - totalExpenses;
+  // Balance = deposits + money in - money out - expenses
+  return totalDeposits + totalIn - totalOut - totalExpenses;
 }
 
 // ─── GET /api/accounts ────────────────────────────────────────────────
@@ -211,6 +224,63 @@ router.get('/:id/transfers', async (req: Request, res: Response, next: NextFunct
     });
 
     res.json({ transfers });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── POST /api/accounts/deposit ──────────────────────────────────────
+router.post('/deposit', validate({ body: createDepositSchema }), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { accountId, amount, category, description, date } = req.body;
+
+    const account = await prisma.account.findUnique({ where: { id: accountId } });
+    if (!account) throw AppError.notFound('Account not found');
+
+    // Amount comes in as dollars from frontend, store as cents
+    const amountCents = Math.round(amount * 100);
+
+    const deposit = await prisma.deposit.create({
+      data: {
+        accountId,
+        amount: amountCents,
+        category: category || 'OTHER',
+        description: description || null,
+        date: date ? new Date(date) : new Date(),
+      },
+    });
+
+    res.status(201).json({ deposit });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── GET /api/accounts/:id/deposits ──────────────────────────────────
+router.get('/:id/deposits', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const deposits = await prisma.deposit.findMany({
+      where: { accountId: req.params.id as string },
+      orderBy: { date: 'desc' },
+    });
+
+    res.json({ deposits });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── DELETE /api/accounts/deposit/:id ────────────────────────────────
+router.delete('/deposit/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const existing = await prisma.deposit.findUnique({ where: { id: req.params.id as string } });
+    if (!existing) throw AppError.notFound('Deposit record not found');
+
+    await prisma.deposit.delete({
+      where: { id: req.params.id as string },
+    });
+
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

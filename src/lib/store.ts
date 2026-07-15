@@ -391,6 +391,9 @@ export interface AgencySettings {
   smtpEncryption: string;
   smtpDriver: string;
   mailEnabled: boolean;
+  googleDriveFolderId: string;
+  googleDriveServiceAccountJson: string;
+  googleDriveEnabled: boolean;
   appVersion: string;
   versionHistory: VersionEntry[];
   updatedAt: string;
@@ -547,7 +550,10 @@ const createDefaultSettings = (): AgencySettings => ({
   smtpEncryption: "tls",
   smtpDriver: "smtp",
   mailEnabled: false,
-  appVersion: "2.12.1",
+  googleDriveFolderId: "",
+  googleDriveServiceAccountJson: "",
+  googleDriveEnabled: false,
+  appVersion: "2.13.0",
   versionHistory: [
     {
       version: "2.11.2",
@@ -964,6 +970,13 @@ export const useAgencyStore = create<AgencyStore>()(
           const res = await apiFetch<{ settings: any }>('/settings');
           if (res.settings) {
             const settings = res.settings;
+
+            // Detect whether this is a full admin response or a stripped guest response.
+            // Guest responses omit sensitive fields (API keys, mail config) — we must
+            // NOT overwrite the store's existing values for those fields with empty defaults.
+            const isAdminResponse = !!settings._isAdminResponse;
+            delete settings._isAdminResponse; // strip the flag before storing
+
             // Handle backward compatibility for paymentMethods
             if (Array.isArray(settings.paymentMethods)) {
               settings.paymentMethods = settings.paymentMethods.map((m: any, idx: number) => {
@@ -1002,15 +1015,35 @@ export const useAgencyStore = create<AgencyStore>()(
             }
 
             const defaults = createDefaultSettings();
-            set({
-              settings: {
-                ...defaults,
-                ...settings,
-                paymentMethods: settings.paymentMethods ?? defaults.paymentMethods,
-                socialLinks: parsedSocialLinks,
-                notifications: { ...defaults.notifications, ...(settings.notifications || {}) },
-              },
-            });
+            const currentSettings = get().settings;
+
+            // Sensitive fields that are ONLY returned in admin responses.
+            // If we got a guest response, we keep whatever the store already has
+            // for these fields — preventing accidental data loss on save.
+            const sensitiveFields: (keyof AgencySettings)[] = [
+              'openAiApiKey', 'claudeApiKey', 'geminiApiKey', 'mainAiProvider',
+              'resendApiKey', 'emailFrom', 'mailerName',
+              'smtpHost', 'smtpPort', 'smtpUsername', 'smtpEncryption', 'smtpDriver',
+              'mailEnabled', 'googleDriveFolderId', 'googleDriveServiceAccountJson', 'googleDriveEnabled',
+            ];
+
+            const merged: AgencySettings = {
+              ...defaults,
+              ...settings,
+              paymentMethods: settings.paymentMethods ?? defaults.paymentMethods,
+              socialLinks: parsedSocialLinks,
+              notifications: { ...defaults.notifications, ...(settings.notifications || {}) },
+            };
+
+            // Preserve sensitive fields from the current store when the API response
+            // is a guest/public response (i.e. those fields weren't returned at all).
+            if (!isAdminResponse) {
+              for (const field of sensitiveFields) {
+                (merged as any)[field] = currentSettings[field];
+              }
+            }
+
+            set({ settings: merged });
           }
         } catch (error) {
           console.error("Failed to fetch settings:", error);

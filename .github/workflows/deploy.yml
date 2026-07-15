@@ -126,6 +126,9 @@ jobs:
             echo "📦 Installing all Backend dependencies (incl. dev for Prisma CLI)..."
             npm install --legacy-peer-deps
 
+            echo "🗄️ Running pre-migration database backup..."
+            node scripts/backup.cjs
+
             echo "⚙️ Generating Database Client on server..."
             ./node_modules/.bin/prisma generate
 
@@ -140,7 +143,7 @@ jobs:
 
             # --- RESTART NODEJS SERVICE ---
             echo "🔄 Restarting Node.js service for api.hirdanmarketing.com..."
-            pm2 restart api || pm2 restart all || echo "Restart command failed, manual intervention needed."
+            sudo -u hirdanmarketing-api pm2 restart api || pm2 restart api || pm2 restart all || echo "Restart command failed, manual intervention needed."
 
             echo "✅ Deployment completed successfully!"
 

@@ -66,12 +66,17 @@ import {
   Smartphone,
   Banknote,
   Edit2,
+  Database,
+  Download,
+  Cloud,
+  CloudOff,
+  PlusCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyStore, AgencySettings, PaymentMethod, SocialLink, VersionEntry } from "@/lib/store";
 import { ProtectedBrandingImage } from "@/components/ProtectedBrandingImage";
 import { Progress } from "@/components/ui/progress";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, downloadProtectedFile } from "@/lib/api-client";
 import UsersPage from "./UsersPage";
 import PluginsPage from "./PluginsPage";
 import LandingPageEditor from "./LandingPageEditor";
@@ -232,15 +237,138 @@ export default function SettingsPage() {
   const [showTestEmailDialog, setShowTestEmailDialog] = useState(false);
   const [testEmailTarget, setTestEmailTarget] = useState('');
 
+  const [backups, setBackups] = useState<{ filename: string; size: number; createdAt: string }[]>([]);
+  const [loadingBackups, setLoadingBackups] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isTestingDrive, setIsTestingDrive] = useState(false);
+  const [isUploadingToDrive, setIsUploadingToDrive] = useState<string | null>(null);
+
+  const fetchBackups = async () => {
+    setLoadingBackups(true);
+    try {
+      const res = await apiFetch<{ backups: any[] }>('/settings/backups');
+      setBackups(res.backups);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingBackups(false);
+    }
+  };
+
+  const handleCreateBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const res = await apiFetch<{ success: boolean; filename: string; uploadedToGDrive?: boolean; uploadError?: string }>('/settings/backups', {
+        method: 'POST'
+      });
+      if (res.success) {
+        toast({
+          title: "Backup Complete",
+          description: `Backup ${res.filename} created successfully.${res.uploadedToGDrive ? ' Auto-uploaded to Google Drive.' : ''}`,
+        });
+        if (res.uploadError) {
+          toast({
+            title: "Google Drive Upload Failed",
+            description: res.uploadError,
+            variant: "destructive"
+          });
+        }
+        fetchBackups();
+      }
+    } catch (err: any) {
+      toast({
+        title: "Backup Failed",
+        description: err.message || "Could not trigger database backup.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleDeleteBackup = async (filename: string) => {
+    try {
+      await apiFetch(`/settings/backups/${filename}`, { method: 'DELETE' });
+      toast({
+        title: "Backup Deleted",
+        description: `Successfully deleted ${filename}.`
+      });
+      fetchBackups();
+    } catch (err: any) {
+      toast({
+        title: "Delete Failed",
+        description: err.message || "Could not delete backup file.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleUploadBackupToGDrive = async (filename: string) => {
+    setIsUploadingToDrive(filename);
+    try {
+      const res = await apiFetch<{ success: boolean; fileId: string }>(`/settings/backups/${filename}/upload-gdrive`, {
+        method: 'POST'
+      });
+      if (res.success) {
+        toast({
+          title: "Upload Successful",
+          description: `Backup uploaded to Google Drive. File ID: ${res.fileId}`
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: "Upload Failed",
+        description: err.message || "Could not upload backup to Google Drive.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploadingToDrive(null);
+    }
+  };
+
+  const handleTestGDriveConnection = async () => {
+    setIsTestingDrive(true);
+    try {
+      const res = await apiFetch<{ success: boolean; fileId: string }>('/settings/backups/gdrive-test', {
+        method: 'POST',
+        body: JSON.stringify({
+          serviceAccountJson: formData.googleDriveServiceAccountJson,
+          folderId: formData.googleDriveFolderId
+        })
+      });
+      if (res.success) {
+        toast({
+          title: "Connection Successful",
+          description: "Successfully connected to Google Drive and created test file!"
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: "Connection Failed",
+        description: err.message || "Could not verify Google Drive integration.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsTestingDrive(false);
+    }
+  };
+
   const queryParams = new URLSearchParams(window.location.search);
   const tabParam = queryParams.get("tab");
   const [activeTab, setActiveTab] = useState(tabParam || "general");
+  const isLandingEditor = activeTab === "landing-page";
 
   useEffect(() => {
     if (tabParam) {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
+
+  useEffect(() => {
+    if (activeTab === 'system') {
+      fetchBackups();
+    }
+  }, [activeTab]);
 
   // Email Templates state
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>(DEFAULT_EMAIL_TEMPLATES);
@@ -291,6 +419,14 @@ export default function SettingsPage() {
     toAccountId: "",
     amount: "",
     note: "",
+    date: new Date().toISOString().split("T")[0]
+  });
+  const [showDepositDialog, setShowDepositDialog] = useState(false);
+  const [depositPayload, setDepositPayload] = useState({
+    accountId: "",
+    amount: "",
+    category: "OWNER_INVESTMENT",
+    description: "",
     date: new Date().toISOString().split("T")[0]
   });
 
@@ -526,8 +662,9 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="animate-in fade-in duration-500 max-w-[1400px]">
+    <div className={`animate-in fade-in duration-500 ${isLandingEditor ? "w-full" : "max-w-[1400px]"}`}>
       {/* Page Header */}
+      {!isLandingEditor && (
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-display font-bold text-foreground">Settings</h1>
@@ -541,9 +678,11 @@ export default function SettingsPage() {
           {isSaving ? "Saving..." : "Save Changes"}
         </Button>
       </div>
+      )}
 
       <Tabs value={activeTab} onValueChange={(val) => { setActiveTab(val); navigate(`/dashboard/settings?tab=${val}`, { replace: true }); }} className="w-full">
         {/* ── Mobile: horizontal scrollable tab bar ── */}
+        {!isLandingEditor && (
         <TabsList className="lg:hidden bg-muted/50 p-1 mb-6 flex overflow-x-auto whitespace-nowrap scrollbar-none justify-start border border-border/50 rounded-xl w-full">
           <TabsTrigger value="general" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
             <User className="h-3.5 w-3.5" /> General
@@ -587,15 +726,20 @@ export default function SettingsPage() {
           <TabsTrigger value="system" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
             <Terminal className="h-3.5 w-3.5" /> System
           </TabsTrigger>
+          <TabsTrigger value="backups" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0 text-blue-600 dark:text-blue-400">
+            <Database className="h-3.5 w-3.5" /> Backup
+          </TabsTrigger>
           <TabsTrigger value="plugins" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0 text-emerald-600 dark:text-emerald-400">
             <Puzzle className="h-3.5 w-3.5" /> Plugins
           </TabsTrigger>
         </TabsList>
+        )}
 
         {/* ── Desktop: sidebar + content flex wrapper ── */}
-        <div className="lg:flex lg:gap-8 lg:items-start">
+        <div className={isLandingEditor ? "" : "lg:flex lg:gap-8 lg:items-start"}>
 
         {/* ── Desktop sidebar (hidden on mobile) ── */}
+        {!isLandingEditor && (
         <div className="hidden lg:block lg:w-[260px] lg:shrink-0">
           <div className="sticky top-20 space-y-3">
             {/* Agency Info Card */}
@@ -756,13 +900,21 @@ export default function SettingsPage() {
                   <Terminal className="h-4 w-4 shrink-0" />
                   <span>System &amp; Versioning</span>
                 </TabsTrigger>
+                <TabsTrigger
+                  value="backups"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Database className="h-4 w-4 shrink-0" />
+                  <span>Database Backups</span>
+                </TabsTrigger>
               </TabsList>
             </div>
-          </div>{/* end sticky sidebar */}
-        </div>{/* end desktop sidebar */}
+          </div>
+        </div>
+        )}
 
         {/* ── Tab content area (visible on all screen sizes) ── */}
-        <div className="lg:flex-1 lg:min-w-0">
+        <div className={isLandingEditor ? "w-full" : "lg:flex-1 lg:min-w-0"}>
 
         <TabsContent value="general" className="mt-0 outline-none space-y-6">
           <Card className="shadow-card border-border overflow-hidden">
@@ -2372,6 +2524,8 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
+
+
           {/* Git-style version history */}
           <Card className="shadow-card border-border overflow-hidden">
             <CardHeader className="bg-muted/30 border-b pb-6">
@@ -2443,6 +2597,23 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground">Configure your bank accounts, mobile wallets, and cash pools.</p>
             </div>
             <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDepositPayload({
+                    accountId: "",
+                    amount: "",
+                    category: "OWNER_INVESTMENT",
+                    description: "",
+                    date: new Date().toISOString().split("T")[0]
+                  });
+                  setShowDepositDialog(true);
+                }}
+                className="gap-1.5"
+              >
+                <PlusCircle className="h-4 w-4" /> Deposit Money
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -2552,9 +2723,27 @@ export default function SettingsPage() {
                     </CardHeader>
                     <CardContent className="pt-0 pb-4">
                       <p className="text-xs text-muted-foreground uppercase font-semibold">Running Balance</p>
-                      <p className={`text-2xl font-bold mt-1 ${acc.balance < 0 ? "text-red-500" : "text-emerald-600"}`}>
-                        {acc.balance < 0 ? "-" : ""}${Math.abs(acc.balance / 100).toFixed(2)}
-                      </p>
+                      <div className="flex justify-between items-center mt-1">
+                        <p className={`text-2xl font-bold ${acc.balance < 0 ? "text-red-500" : "text-emerald-600"}`}>
+                          {acc.balance < 0 ? "-" : ""}${Math.abs(acc.balance / 100).toFixed(2)}
+                        </p>
+                        <Button
+                          variant="outline"
+                          className="h-7 px-2.5 text-xs gap-1"
+                          onClick={() => {
+                            setDepositPayload({
+                              accountId: acc.id,
+                              amount: "",
+                              category: "OWNER_INVESTMENT",
+                              description: "",
+                              date: new Date().toISOString().split("T")[0]
+                            });
+                            setShowDepositDialog(true);
+                          }}
+                        >
+                          <PlusCircle className="h-3.5 w-3.5" /> Deposit
+                        </Button>
+                      </div>
                       {acc.notes && (
                         <p className="text-xs text-muted-foreground mt-2 line-clamp-2 border-t pt-2">{acc.notes}</p>
                       )}
@@ -2835,12 +3024,283 @@ export default function SettingsPage() {
               </DialogContent>
             </Dialog>
           )}
+
+          {/* Deposit Dialog */}
+          {showDepositDialog && (
+            <Dialog open onOpenChange={() => setShowDepositDialog(false)}>
+              <DialogContent className="sm:max-w-[400px]">
+                <DialogHeader>
+                  <DialogTitle>Deposit Money</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label>Account</Label>
+                    <Select
+                      value={depositPayload.accountId}
+                      onValueChange={val => setDepositPayload(p => ({ ...p, accountId: val }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select destination account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {settingsAccounts.map(acc => {
+                          let AccIcon = Banknote;
+                          if (acc.type === "BANK") AccIcon = Building2;
+                          if (acc.type === "MOBILE_WALLET") AccIcon = Smartphone;
+                          return (
+                            <SelectItem key={acc.id} value={acc.id}>
+                              <div className="flex items-center gap-2">
+                                {acc.image ? (
+                                  <img src={acc.image} alt={acc.name} className="h-5 w-5 rounded-full object-cover shrink-0" />
+                                ) : (
+                                  <div className="h-5 w-5 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                                    <AccIcon className="h-3 w-3" />
+                                  </div>
+                                )}
+                                <span>{acc.name}</span>
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Amount</Label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold">$</span>
+                      <Input
+                        type="number"
+                        placeholder="0.00"
+                        value={depositPayload.amount}
+                        onChange={e => setDepositPayload(p => ({ ...p, amount: e.target.value }))}
+                        className="pl-7"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Category</Label>
+                    <Select
+                      value={depositPayload.category}
+                      onValueChange={val => setDepositPayload(p => ({ ...p, category: val }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="OWNER_INVESTMENT">Owner Investment / Capital</SelectItem>
+                        <SelectItem value="REVENUE">Revenue / Invoice Payment</SelectItem>
+                        <SelectItem value="REFUND">Refund</SelectItem>
+                        <SelectItem value="OTHER">Other Income</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Date</Label>
+                    <Input
+                      type="date"
+                      value={depositPayload.date}
+                      onChange={e => setDepositPayload(p => ({ ...p, date: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Description / Notes</Label>
+                    <Textarea
+                      placeholder="Source or reason for deposit..."
+                      value={depositPayload.description}
+                      onChange={e => setDepositPayload(p => ({ ...p, description: e.target.value }))}
+                      rows={2}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowDepositDialog(false)}>Cancel</Button>
+                  <Button
+                    onClick={async () => {
+                      const { accountId, amount, category, description, date } = depositPayload;
+                      if (!accountId) {
+                        toast({ title: "Please select an account", variant: "destructive" });
+                        return;
+                      }
+                      if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+                        toast({ title: "Please enter a valid amount", variant: "destructive" });
+                        return;
+                      }
+
+                      try {
+                        await apiFetch("/accounts/deposit", {
+                          method: "POST",
+                          body: JSON.stringify({
+                            accountId,
+                            amount: parseFloat(amount),
+                            category,
+                            description,
+                            date: new Date(date).toISOString(),
+                          }),
+                        });
+                        toast({ title: "Deposit recorded successfully!" });
+                        setShowDepositDialog(false);
+                        fetchSettingsAccounts();
+                      } catch {
+                        toast({ title: "Failed to record deposit", variant: "destructive" });
+                      }
+                    }}
+                  >
+                    Deposit
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
         </TabsContent>
         <TabsContent value="users" className="mt-0 outline-none">
           <UsersPage />
         </TabsContent>
         <TabsContent value="landing-page" className="mt-0 outline-none">
           <LandingPageEditor />
+        </TabsContent>
+        <TabsContent value="backups" className="mt-0 outline-none space-y-6">
+          <Card className="shadow-card border-border overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-blue-500/10 to-transparent border-b pb-6">
+              <CardTitle className="font-display text-xl flex items-center gap-2">
+                <Database className="h-5 w-5 text-blue-500" /> Database Backups Management
+              </CardTitle>
+              <CardDescription>Manually trigger full database backups and download or manage previously saved SQL snapshots.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-8 space-y-6">
+              {/* Google Drive Status Banner */}
+              {settings.googleDriveEnabled && settings.googleDriveServiceAccountJson ? (
+                <div className="flex items-center gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/20 text-sm text-green-700 dark:text-green-400">
+                  <Cloud className="h-5 w-5" />
+                  <div>
+                    <p className="font-semibold">Cloud Sync Active</p>
+                    <p>New backups are automatically securely uploaded to your configured Google Drive.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-sm text-yellow-700 dark:text-yellow-400">
+                  <div className="flex items-center gap-3">
+                    <CloudOff className="h-5 w-5 shrink-0" />
+                    <div>
+                      <p className="font-semibold">Cloud Sync Disabled</p>
+                      <p>Backups are only stored locally. Enable Google Drive sync in the Plugins tab to secure them in the cloud.</p>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    className="bg-yellow-50/50 border-yellow-500/30 hover:bg-yellow-500/20 text-yellow-700 h-9 shrink-0"
+                    onClick={() => navigate("/dashboard/plugins")}
+                  >
+                    Setup Google Drive
+                  </Button>
+                </div>
+              )}
+
+              <div className="flex justify-between items-center flex-wrap gap-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <Database className="h-4 w-4 text-blue-500" /> Local Backups Directory
+                  </h3>
+                  <p className="text-xs text-muted-foreground">List of backups stored locally on the server. Old backups are automatically pruned.</p>
+                </div>
+                <Button
+                  onClick={handleCreateBackup}
+                  disabled={isBackingUp}
+                  className="bg-blue-600 hover:bg-blue-700 text-white gap-2 px-6 h-11"
+                >
+                  {isBackingUp ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Creating Backup...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4" />
+                      Backup Database Now
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {loadingBackups ? (
+                <div className="text-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-500 mb-2" />
+                  <p className="text-xs text-muted-foreground">Loading backups list...</p>
+                </div>
+              ) : backups.length === 0 ? (
+                <div className="text-center py-10 border border-dashed rounded-2xl bg-muted/10 text-muted-foreground">
+                  <Database className="h-10 w-10 mx-auto mb-3 opacity-30 text-blue-500" />
+                  <p className="font-medium">No database backups found.</p>
+                  <p className="text-xs">Trigger a manual backup above to create one.</p>
+                </div>
+              ) : (
+                <div className="border border-border/80 rounded-2xl overflow-hidden bg-background">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm border-collapse">
+                      <thead>
+                        <tr className="bg-muted/40 border-b border-border/60 text-xs font-semibold text-muted-foreground">
+                          <th className="p-4">Filename</th>
+                          <th className="p-4">Size</th>
+                          <th className="p-4">Created Date</th>
+                          <th className="p-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/50">
+                        {backups.map((backup) => (
+                          <tr key={backup.filename} className="hover:bg-muted/10">
+                            <td className="p-4 font-mono text-xs font-medium text-foreground">{backup.filename}</td>
+                            <td className="p-4 text-xs text-muted-foreground">{(backup.size / 1024 / 1024).toFixed(2)} MB</td>
+                            <td className="p-4 text-xs text-muted-foreground">
+                              {new Date(backup.createdAt).toLocaleString('en-US', {
+                                year: 'numeric', month: 'short', day: 'numeric',
+                                hour: '2-digit', minute: '2-digit'
+                              })}
+                            </td>
+                            <td className="p-4 text-right flex justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => downloadProtectedFile(`/settings/backups/${backup.filename}/download`, backup.filename)}
+                                className="h-8 w-8 p-0 rounded-lg text-muted-foreground hover:text-blue-500 hover:bg-blue-500/5"
+                                title="Download SQL Backup File"
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                              {formData.googleDriveServiceAccountJson && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleUploadBackupToGDrive(backup.filename)}
+                                  disabled={isUploadingToDrive !== null}
+                                  className="h-8 w-8 p-0 rounded-lg text-muted-foreground hover:text-green-600 hover:bg-green-50"
+                                  title="Upload Backup to Google Drive"
+                                >
+                                  {isUploadingToDrive === backup.filename ? (
+                                    <Loader2 className="h-4 w-4 animate-spin text-green-500" />
+                                  ) : (
+                                    <Cloud className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteBackup(backup.filename)}
+                                className="h-8 w-8 p-0 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/5"
+                                title="Delete Local Backup"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
         <TabsContent value="plugins" className="mt-0 outline-none">
           <PluginsPage />

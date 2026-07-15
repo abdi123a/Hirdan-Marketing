@@ -26,15 +26,15 @@ const AnimatedLogo = () => (
       xmlns="http://www.w3.org/2000/svg"
       className="relative z-10 overflow-visible"
     >
-      {/* Yellow Circle - Pulsing with z-depth shadow */}
       <circle
         cx="300.12"
         cy="360.72"
         r="300.12"
         fill="#f5b21a"
-        className="animate-pulse-slow origin-center duration-[3000ms]"
+        className="animate-pulse-slow origin-center"
         style={{
-          filter: 'drop-shadow(0 0 50px rgba(245, 178, 26, 0.45))'
+          filter: 'drop-shadow(0 0 50px rgba(245, 178, 26, 0.45))',
+          animationDuration: '3s'
         }}
       />
 
