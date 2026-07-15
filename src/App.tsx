@@ -27,6 +27,7 @@ import SubscriptionsPage from "./pages/SubscriptionsPage.tsx";
 import AddSubscriptionPage from "./pages/AddSubscriptionPage.tsx";
 import CalendarPage from "./pages/CalendarPage.tsx";
 import SettingsPage from "./pages/SettingsPage.tsx";
+import AiAssistantPage from "./pages/AiAssistantPage.tsx";
 import EditClientPage from "./pages/EditClientPage.tsx";
 import EditProjectPage from "./pages/EditProjectPage.tsx";
 // EditTeamMemberPage replaced by AddEmployeePage in edit mode
@@ -62,6 +63,8 @@ import HrDocumentsPage from "@/pages/HrDocumentsPage.tsx";
 import GenerateHrDocumentPage from "@/pages/GenerateHrDocumentPage.tsx";
 import FileTransfer from "./pages/FileTransfer.tsx";
 import ShareDownload from "./pages/ShareDownload.tsx";
+import LandingPageEditor from "./pages/LandingPageEditor.tsx";
+import PluginsPage from "./pages/PluginsPage.tsx";
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api-client";
@@ -172,11 +175,7 @@ function AppRoutes() {
         <Route path="clients/view/:id" element={<ClientDetailsPage />} />
 
         {/* User Management */}
-        <Route path="users" element={
-          <ProtectedRoute allowedRoles="admin">
-            <UsersPage />
-          </ProtectedRoute>
-        } />
+        <Route path="users" element={<Navigate to="/dashboard/settings?tab=users" replace />} />
         <Route path="users/add" element={
           <ProtectedRoute allowedRoles="admin">
             <AddUserPage />
@@ -235,6 +234,9 @@ function AppRoutes() {
         <Route path="services/edit/:id" element={<EditServicePage />} />
         <Route path="services/view/:id" element={<ServiceDetailsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="ai-assistant" element={<AiAssistantPage />} />
+        <Route path="settings/landing-page" element={<Navigate to="/dashboard/settings?tab=landing-page" replace />} />
+        <Route path="plugins" element={<Navigate to="/dashboard/settings?tab=plugins" replace />} />
         <Route path="transfers" element={<FileTransfer />} />
         <Route path="leads" element={<LeadsPage />} />
       </Route>

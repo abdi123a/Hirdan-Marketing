@@ -1,0 +1,34 @@
+@import url("https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,300..900;1,300..900&display=swap");
+
+.footer-section .color-shape, .footer-section .color-shape-2 {
+  z-index: 1 !important;
+  pointer-events: none !important;
+}
+
+.footer-widgets-wrapper .single-footer-widget .contact-info-area .contact-items.color-style-2 .icon {
+  color: var(--theme) !important;
+}
+
+#scrollUp {
+  background-color: var(--theme) !important;
+}
+
+#scrollUp:hover {
+  background-color: #FFC107 !important;
+  color: var(--header) !important;
+}
+.footer-widgets-wrapper .single-footer-widget .footer-content .social-icon a {
+  background-color: var(--theme) !important;
+}
+.footer-widgets-wrapper .single-footer-widget .footer-content .social-icon a:hover {
+  background-color: #FFC107 !important;
+  color: var(--header) !important;
+}
+
+.theme-btn:hover {
+  background-color: #FFC107 !important;
+  color: var(--header) !important;
+}
+.theme-btn:hover::before, .theme-btn:hover::after {
+  background-color: #FFC107 !important;
+}

@@ -21,7 +21,10 @@ import {
   Coins,
   Percent,
   PiggyBank,
-  Tag
+  Tag,
+  FileText,
+  Clock,
+  Wallet
 } from "lucide-react";
 import {
   BarChart,
@@ -489,126 +492,128 @@ export default function DashboardOverview() {
     <div className="space-y-6 pb-10">
 
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
         <div>
           <h2 className="text-2xl font-bold text-foreground tracking-tight">Dashboard Overview</h2>
           <p className="text-sm text-muted-foreground mt-0.5">Your agency's financial & operational snapshot.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
+            variant="outline"
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-background border border-border hover:bg-muted text-foreground rounded-xl text-xs font-bold uppercase tracking-wider transition-all h-auto cursor-pointer"
+            className="flex items-center gap-2 rounded-xl text-xs font-bold uppercase tracking-wider h-10 px-4 bg-background border-border hover:bg-muted text-foreground"
           >
             <Plus className="w-3.5 h-3.5 text-primary" /> Add Expense
           </Button>
-          <Link to="/dashboard/invoices/add" className="flex items-center gap-2 px-4 py-2 bg-primary hover:opacity-90 text-primary-foreground rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-md shadow-primary/20">
-            <Plus className="w-3.5 h-3.5" /> New Invoice
-          </Link>
-          <Link to="/dashboard/clients/add" className="flex items-center gap-2 px-4 py-2 bg-background border border-border hover:bg-muted text-foreground rounded-xl text-xs font-bold uppercase tracking-wider transition-all">
-            <UserPlus className="w-3.5 h-3.5 text-primary" /> Add Client
-          </Link>
-          <Link to="/dashboard/settings" className="p-2 bg-background border border-border hover:bg-muted text-foreground rounded-xl transition-all">
-            <Settings className="w-4 h-4" />
-          </Link>
+          <Button variant="outline" className="flex items-center gap-2 rounded-xl text-xs font-bold uppercase tracking-wider h-10 px-4 bg-background border-border hover:bg-muted text-foreground" asChild>
+            <Link to="/dashboard/clients/add">
+              <UserPlus className="w-3.5 h-3.5 text-foreground" /> Add Client
+            </Link>
+          </Button>
+          <Button className="flex items-center gap-2 bg-primary hover:opacity-90 text-primary-foreground rounded-xl text-xs font-bold uppercase tracking-wider h-10 px-4 shadow-md shadow-primary/20 border-0" asChild>
+            <Link to="/dashboard/invoices/add">
+              <Plus className="w-3.5 h-3.5" /> New Invoice
+            </Link>
+          </Button>
+          <Button variant="outline" size="icon" className="rounded-xl h-10 w-10 shrink-0 bg-background border-border hover:bg-muted text-foreground" asChild>
+            <Link to="/dashboard/settings">
+              <Settings className="w-4 h-4" />
+            </Link>
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Summary Bar ── */}
+      <div className="bg-white rounded-full border border-gray-100 px-6 py-3 flex flex-wrap items-center gap-4 sm:gap-6 shadow-sm w-full">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-primary shadow-sm shadow-primary/50"></div>
+          <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Active MRR</span>
+          <span className="text-sm font-black ml-1 text-foreground">{formatCurrency(activeMrr)}</span>
+        </div>
+        <div className="hidden sm:block w-px h-4 bg-gray-100"></div>
+        <div className="flex items-center gap-2">
+          <Users className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Active Clients</span>
+          <span className="text-sm font-black ml-1 text-foreground">{activeClientsCount}</span>
+        </div>
+        <div className="hidden sm:block w-px h-4 bg-gray-100"></div>
+        <div className="flex items-center gap-2">
+          <Target className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">New Leads This Month</span>
+          <span className="text-sm font-black ml-1 text-foreground">{newLeadsThisMonth}</span>
         </div>
       </div>
 
       {/* ── Row 1: 4 KPI Cards ── */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        {/* Revenue */}
-        <Link to="/dashboard/invoices" className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all group border-b-4 hover:border-secondary">
-          <div className="flex items-start justify-between mb-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-[hsl(var(--secondary))] to-[hsl(38,95%,58%)] rounded-xl flex items-center justify-center text-white shadow-md">
-              <Banknote className="w-5 h-5" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+        {/* Monthly Revenue */}
+        <Link to="/dashboard/invoices" className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group border-b-4 hover:border-primary">
+          <div className="flex justify-between items-start mb-2">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Monthly Revenue</p>
+            <div className="w-8 h-8 rounded-full bg-secondary/10 text-secondary flex items-center justify-center">
+              <Wallet className="w-4 h-4" />
             </div>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${growthRate >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-              {growthRate >= 0 ? '↑' : '↓'} {Math.abs(growthRate)}%
-            </span>
           </div>
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Monthly Revenue</p>
-          <h3 className="text-xl font-black text-foreground group-hover:text-primary transition-colors truncate">
-            {stats.find(s => s.id === 'revenue')?.value}
+          <h3 className="text-2xl font-black text-foreground mb-4 group-hover:text-primary transition-colors">
+            {stats.find(s => s.id === 'revenue')?.value || formatCurrency(0)}
           </h3>
+          <div className="flex items-center gap-2">
+             <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${growthRate >= 0 ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'}`}>
+               {growthRate >= 0 ? '+' : ''}{growthRate}%
+             </span>
+             <span className="text-[10px] text-muted-foreground font-semibold">from last month</span>
+          </div>
         </Link>
 
         {/* Monthly Expenses */}
-        <Link to="/dashboard/expenses" className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all group border-b-4 hover:border-red-400">
-          <div className="flex items-start justify-between mb-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-rose-600 rounded-xl flex items-center justify-center text-white shadow-md">
-              <TrendingDown className="w-5 h-5" />
+        <Link to="/dashboard/expenses" className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group border-b-4 hover:border-primary">
+          <div className="flex justify-between items-start mb-2">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Monthly Expenses</p>
+            <div className="w-8 h-8 rounded-full bg-destructive/10 text-destructive flex items-center justify-center">
+              <TrendingDown className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Monthly Expenses</p>
-          <h3 className="text-xl font-black text-foreground group-hover:text-red-500 transition-colors truncate">
-            {formatCurrency(monthlyExpenses)}
-          </h3>
+          <h3 className="text-2xl font-black text-foreground mb-4 group-hover:text-primary transition-colors">{formatCurrency(monthlyExpenses)}</h3>
+          <div className="flex items-center gap-2">
+             <span className="text-[10px] text-muted-foreground font-semibold">Operating costs</span>
+          </div>
         </Link>
 
         {/* Net Profit */}
-        <Link to="/dashboard/invoices" className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all group border-b-4 ${netProfitValue >= 0 ? 'hover:border-primary' : 'hover:border-red-400'}`}>
-          <div className="flex items-start justify-between mb-3">
-            <div className={`w-10 h-10 bg-gradient-to-br ${netProfitValue >= 0 ? 'from-[hsl(var(--primary))] to-[hsl(260,45%,55%)]' : 'from-red-500 to-rose-600'} rounded-xl flex items-center justify-center text-white shadow-md`}>
-              <Coins className="w-5 h-5" />
+        <Link to="/dashboard/invoices" className={`${netProfitValue >= 0 ? 'bg-[hsl(140_35%_40%)]/5 border-[hsl(140_35%_40%)]/20' : 'bg-destructive/5 border-destructive/20'} hover:border-primary rounded-2xl p-5 border shadow-sm hover:shadow-md transition-all flex flex-col justify-between group border-b-4`}>
+          <div className="flex justify-between items-start mb-2">
+            <p className={`text-[10px] font-bold uppercase tracking-widest ${netProfitValue >= 0 ? 'text-[hsl(140_35%_40%)]' : 'text-destructive'}`}>Net Profit</p>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${netProfitValue >= 0 ? 'bg-[hsl(140_35%_40%)]/20 text-[hsl(140_35%_40%)]' : 'bg-destructive/20 text-destructive'}`}>
+              <Coins className="w-4 h-4" />
             </div>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${netProfitValue >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-              {profitMarginValue}% margin
-            </span>
           </div>
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Net Profit</p>
-          <h3 className={`text-xl font-black transition-colors truncate ${netProfitValue >= 0 ? 'text-foreground group-hover:text-primary' : 'text-red-500'}`}>
-            {formatCurrency(netProfitValue)}
+          <h3 className={`text-2xl font-black mb-4 transition-colors ${netProfitValue >= 0 ? 'text-[hsl(140_35%_40%)] group-hover:text-primary' : 'text-destructive group-hover:text-primary'}`}>
+            {netProfitValue >= 0 ? '' : '-'}{formatCurrency(Math.abs(netProfitValue))}
           </h3>
+          <div className="flex items-center gap-2">
+             <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${netProfitValue >= 0 ? 'bg-[hsl(140_35%_40%)]/20 text-[hsl(140_35%_40%)]' : 'bg-destructive/20 text-destructive'}`}>
+               {netProfitValue >= 0 ? '+' : '-'}{Math.abs(profitMarginValue)}% margin
+             </span>
+             <span className={`text-[10px] font-semibold ${netProfitValue >= 0 ? 'text-[hsl(140_35%_40%)]/70' : 'text-destructive/70'}`}>burn rate</span>
+          </div>
         </Link>
 
         {/* Outstanding Balance */}
-        <Link to="/dashboard/invoices" className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all group border-b-4 hover:border-secondary">
-          <div className="flex items-start justify-between mb-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-[hsl(var(--secondary))] to-[hsl(38,95%,58%)] rounded-xl flex items-center justify-center text-white shadow-md">
-              <CreditCard className="w-5 h-5" />
+        <Link to="/dashboard/invoices" className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group border-b-4 hover:border-primary">
+          <div className="flex justify-between items-start mb-2">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Outstanding</p>
+            <div className="w-8 h-8 rounded-full bg-secondary/10 text-secondary flex items-center justify-center">
+              <Clock className="w-4 h-4" />
             </div>
-            {receivables.length > 0 && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-600">
-                {receivables.length} unpaid
-              </span>
-            )}
           </div>
-          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Outstanding</p>
-          <h3 className="text-xl font-black text-foreground group-hover:text-secondary transition-colors truncate">
-            {stats.find(s => s.id === 'outstanding')?.value}
+          <h3 className="text-2xl font-black text-foreground mb-4 group-hover:text-primary transition-colors">
+            {stats.find(s => s.id === 'outstanding')?.value || formatCurrency(0)}
           </h3>
-        </Link>
-      </div>
-
-      {/* ── Secondary Metrics Strip ── */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-4 flex flex-wrap items-center gap-0 divide-x divide-border/50">
-        {/* Active MRR */}
-        <Link to="/dashboard/subscriptions" className="flex items-center gap-3 pr-6 hover:opacity-80 transition-opacity group">
-          <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center shrink-0">
-            <TrendingUp className="w-4 h-4 text-primary" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Active MRR</p>
-            <p className="text-base font-black text-foreground group-hover:text-primary transition-colors">{formatCurrency(activeMrr)}</p>
-          </div>
-        </Link>
-        {/* Active Clients */}
-        <Link to="/dashboard/clients" className="flex items-center gap-3 px-6 hover:opacity-80 transition-opacity group">
-          <div className="w-8 h-8 bg-secondary/10 rounded-lg flex items-center justify-center shrink-0">
-            <Users className="w-4 h-4 text-secondary" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Active Clients</p>
-            <p className="text-base font-black text-foreground group-hover:text-secondary transition-colors">{activeClientsCount}</p>
-          </div>
-        </Link>
-        {/* New Leads This Month */}
-        <Link to="/dashboard/leads" className="flex items-center gap-3 pl-6 hover:opacity-80 transition-opacity group">
-          <div className="w-8 h-8 bg-emerald-500/10 rounded-lg flex items-center justify-center shrink-0">
-            <Activity className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">New Leads · This Month</p>
-            <p className="text-base font-black text-foreground group-hover:text-emerald-600 transition-colors">{newLeadsThisMonth}</p>
+          <div className="flex items-center gap-2">
+             {receivables.length > 0 && (
+               <span className="bg-destructive/10 text-destructive text-[10px] font-bold px-2 py-0.5 rounded">{receivables.length} unpaid</span>
+             )}
+             <span className="text-[10px] text-muted-foreground font-semibold">invoices pending</span>
           </div>
         </Link>
       </div>
@@ -618,39 +623,27 @@ export default function DashboardOverview() {
 
         {/* Left: Revenue Trajectory (takes 2/3 width) */}
         <div className="xl:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
             <div>
               <h3 className="text-base font-bold text-foreground">Revenue & Expenses</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">Paid revenue vs recurring vs spending</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Financial performance over time</p>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Tabs value={trajectoryView} onValueChange={(v: any) => setTrajectoryView(v)}>
-                <TabsList className="h-8 p-1 bg-muted/50 rounded-lg">
-                  <TabsTrigger value="daily" className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Month</TabsTrigger>
-                  <TabsTrigger value="weekly" className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Weekly</TabsTrigger>
-                  <TabsTrigger value="monthly" className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Yearly</TabsTrigger>
-                  <TabsTrigger value="yearly" className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">All Time</TabsTrigger>
-                </TabsList>
-              </Tabs>
-              <div className="hidden sm:flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-primary" />
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase">Paid</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-secondary" />
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase">Recurring</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-destructive" />
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase">Expenses</span>
-                </div>
-              </div>
+            <div className="flex items-center gap-3">
+              <select 
+                className="text-[10px] font-bold uppercase tracking-wider bg-background border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary shadow-sm text-foreground"
+                value={trajectoryView}
+                onChange={(e) => setTrajectoryView(e.target.value as any)}
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
             </div>
           </div>
-          <div className="h-[280px] w-full">
+          <div className="h-[280px] w-full relative">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueTrend} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+              <AreaChart data={revenueTrend} margin={{ top: 5, right: 5, left: -20, bottom: 20 }}>
                 <defs>
                   <linearGradient id="mainGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.15} />
@@ -661,152 +654,156 @@ export default function DashboardOverview() {
                     <stop offset="100%" stopColor="hsl(var(--secondary))" stopOpacity={0} />
                   </linearGradient>
                   <linearGradient id="destGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--destructive))" stopOpacity={0.12} />
+                    <stop offset="0%" stopColor="hsl(var(--destructive))" stopOpacity={0.15} />
                     <stop offset="100%" stopColor="hsl(var(--destructive))" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} opacity={0.5} />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} dy={8} />
-                <YAxis tick={{ fontSize: 10, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `$${v / 1000}k` : `$${v}`} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} dy={10} />
+                <YAxis tick={{ fontSize: 10, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `${v / 1000}k` : `${v}`} />
                 <Tooltip
-                  contentStyle={{ borderRadius: "12px", border: "1px solid hsl(var(--border))", padding: '10px', background: 'hsl(var(--card))' }}
-                  itemStyle={{ fontWeight: 700, fontSize: '12px' }}
+                  contentStyle={{ borderRadius: "8px", border: "1px solid hsl(var(--border))", padding: '10px', background: 'hsl(var(--card))', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  itemStyle={{ fontWeight: 700, fontSize: '12px', color: 'hsl(var(--foreground))' }}
                   formatter={(v: number) => [formatCurrency(v), '']}
                 />
                 <Area type="monotone" dataKey="paid" name="Paid Revenue" stroke="hsl(var(--primary))" strokeWidth={2.5} fill="url(#mainGrad)" />
                 <Area type="monotone" dataKey="recurring" name="Recurring" stroke="hsl(var(--secondary))" strokeWidth={2} fill="url(#secGrad)" strokeDasharray="4 4" />
-                <Area type="monotone" dataKey="expenses" name="Expenses" stroke="hsl(var(--destructive))" strokeWidth={2} fill="url(#destGrad)" strokeDasharray="3 3" />
+                <Area type="monotone" dataKey="expenses" name="Expenses" stroke="hsl(var(--destructive))" strokeWidth={2} fill="url(#destGrad)" />
               </AreaChart>
             </ResponsiveContainer>
+            <div className="absolute -bottom-2 left-0 right-0 flex items-center justify-center gap-4">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-primary" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Paid Revenue</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-destructive" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Expenses</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-secondary" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Recurring</span>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Right: Receivables sidebar */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-2.5 mb-5">
-            <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
-            <h4 className="text-base font-bold text-foreground">Receivables</h4>
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-6">
+              <h4 className="text-base font-bold text-foreground">Receivables</h4>
+              <span className="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-0.5 rounded-full">{receivables.length}</span>
+            </div>
+            {receivables.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500 opacity-50 mb-2" />
+                <p className="text-sm font-bold text-emerald-600/70 italic">All clear — no outstanding invoices!</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {receivables.map(inv => {
+                  const isOverdue = inv.status === 'Overdue';
+                  return (
+                    <Link key={inv.id} to={inv.link} className="flex items-center justify-between group">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded flex items-center justify-center shrink-0 ${isOverdue ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'}`}>
+                           <FileText className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">{inv.client}</p>
+                          <p className={`text-[10px] font-semibold uppercase tracking-widest ${isOverdue ? 'text-destructive' : 'text-muted-foreground'}`}>Due {formatDate(inv.dueDate)}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-black text-foreground">{formatCurrency(parseCurrency(inv.amount))}</p>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${isOverdue ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'}`}>
+                          {inv.status}
+                        </span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          {receivables.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10 text-center">
-              <CheckCircle2 className="w-8 h-8 text-emerald-500 opacity-50 mb-2" />
-              <p className="text-sm font-bold text-emerald-600/70 italic">All clear — no outstanding invoices!</p>
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              {receivables.map(inv => {
-                const isOverdue = inv.status === 'Overdue';
-                return (
-                  <Link key={inv.id} to={inv.link} className={`block p-3.5 rounded-xl border transition-all ${isOverdue ? 'bg-destructive/5 border-destructive/20 hover:bg-destructive/10' : 'bg-muted/20 border-border hover:bg-primary/5'}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 ${isOverdue ? 'text-destructive' : 'text-primary'}`}>
-                        {isOverdue && <span className="h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />}
-                        {inv.status}
-                      </span>
-                      <span className="text-sm font-black text-foreground">{inv.amount}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold text-foreground truncate pr-2">{inv.client}</p>
-                      <p className="text-[10px] text-muted-foreground font-semibold shrink-0">Due {formatDate(inv.dueDate)}</p>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-          <div className="mt-4 pt-4 border-t border-dashed border-border/60">
-            <Button variant="outline" className="w-full text-xs font-bold uppercase tracking-wider h-9 gap-1.5 group" asChild>
-              <Link to="/dashboard/invoices">
-                View All Invoices <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-              </Link>
-            </Button>
+          <div className="mt-6 pt-4 border-t border-gray-100 flex justify-center">
+            <Link to="/dashboard/invoices" className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 group">
+              View All Invoices <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+            </Link>
           </div>
         </div>
       </div>
 
-      {/* ── Row 3: Expense Hub & Stacked Sidebar ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      {/* ── Row 3: 3 Column Layout ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        {/* Expense Hub (2/3 width) */}
-        <div className="xl:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col justify-between">
-          <Tabs defaultValue="breakdown" className="w-full space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
-              <div>
-                <h3 className="text-base font-bold text-foreground">Expense Hub</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">Analyze spending trends and category breakdown</p>
-              </div>
-              <TabsList className="h-8 p-1 bg-muted/50 rounded-lg">
-                <TabsTrigger value="breakdown" className="text-[10px] uppercase font-bold tracking-wider px-3 py-1 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Breakdown</TabsTrigger>
-                <TabsTrigger value="trends" className="text-[10px] uppercase font-bold tracking-wider px-3 py-1 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md transition-all">Trends</TabsTrigger>
+        {/* Col 1: Expense Hub */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col justify-between">
+          <Tabs defaultValue="breakdown" className="w-full h-full flex flex-col">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <h3 className="text-base font-bold text-foreground">Expense Hub</h3>
+              <TabsList className="h-7 p-0.5 bg-muted rounded-lg">
+                <TabsTrigger value="breakdown" className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition-all">Breakdown</TabsTrigger>
+                <TabsTrigger value="trends" className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition-all">Trends</TabsTrigger>
               </TabsList>
             </div>
 
-            {/* Breakdown Content */}
-            <TabsContent value="breakdown" className="mt-0 focus-visible:outline-none">
+            <TabsContent value="breakdown" className="mt-0 flex-1 flex flex-col justify-center focus-visible:outline-none">
               {expenseByCategoryData.length > 0 ? (
-                <div className="flex flex-col sm:flex-row items-center gap-8 py-2">
-                  <div className="w-[160px] h-[160px] shrink-0 mx-auto sm:mx-0">
+                <div className="flex flex-col items-center gap-6 py-2">
+                  <div className="w-[180px] h-[180px] shrink-0 mx-auto">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie data={expenseByCategoryData} cx="50%" cy="50%" innerRadius={48} outerRadius={68} paddingAngle={3} dataKey="value">
+                        <Pie data={expenseByCategoryData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={2} dataKey="value" stroke="none">
                           {expenseByCategoryData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(v: number) => [formatCurrency(v), '']} contentStyle={{ borderRadius: "8px", border: "1px solid hsl(var(--border))", padding: "8px", fontSize: '12px' }} />
+                        <Tooltip formatter={(v: number) => [formatCurrency(v), '']} contentStyle={{ borderRadius: "8px", border: "1px solid hsl(var(--border))", padding: "8px", fontSize: '12px', background: 'hsl(var(--card))' }} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
-                  <div className="flex-1 space-y-2.5 w-full">
-                    {expenseByCategoryData.slice(0, 5).map((item, index) => {
+                  <div className="w-full space-y-3">
+                    {expenseByCategoryData.slice(0, 3).map((item, index) => {
                       const total = expenseByCategoryData.reduce((a, c) => a + c.value, 0);
                       const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
-                      const CatIcon = item.icon || Tag;
                       return (
                         <div key={index} className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span
-                              className="p-1 rounded shrink-0"
-                              style={{ backgroundColor: item.color + "15", color: item.color }}
-                            >
-                              <CatIcon className="h-3.5 w-3.5" />
-                            </span>
-                            <span className="text-xs font-semibold text-muted-foreground truncate">{item.name}</span>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }}></div>
+                            <span className="text-xs font-semibold text-foreground truncate">{item.name}</span>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-4">
                             <span className="text-xs font-black text-foreground">{formatCurrency(item.value)}</span>
-                            <span className="text-[10px] font-bold text-muted-foreground/60 bg-muted px-1.5 py-0.5 rounded">{pct}%</span>
+                            <span className="text-[10px] font-bold text-muted-foreground w-6 text-right">{pct}%</span>
                           </div>
                         </div>
                       );
                     })}
-                    {expenseByCategoryData.length > 5 && (
-                      <p className="text-[10px] text-muted-foreground/70 font-bold italic">+{expenseByCategoryData.length - 5} more categories</p>
-                    )}
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground">
                   <TrendingDown className="w-8 h-8 opacity-20 mb-2" />
-                  <span className="text-sm font-semibold">No expense data in this period</span>
+                  <span className="text-sm font-semibold">No expense data</span>
                 </div>
               )}
             </TabsContent>
 
-            {/* Trends Content */}
-            <TabsContent value="trends" className="mt-0 focus-visible:outline-none">
-              <div className="h-[180px] w-full pt-2">
+            <TabsContent value="trends" className="mt-0 flex-1 focus-visible:outline-none">
+              <div className="h-[200px] w-full pt-4">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={revenueTrend} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} opacity={0.4} />
                     <XAxis dataKey="label" tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `$${v / 1000}k` : `$${v}`} />
                     <Tooltip
-                      contentStyle={{ borderRadius: "10px", border: "1px solid hsl(var(--border))", padding: '8px', background: 'hsl(var(--card))' }}
-                      itemStyle={{ fontWeight: 700, fontSize: '11px' }}
+                      contentStyle={{ borderRadius: "8px", border: "1px solid hsl(var(--border))", padding: '8px', background: 'hsl(var(--card))' }}
+                      itemStyle={{ fontWeight: 700, fontSize: '11px', color: 'hsl(var(--foreground))' }}
                       formatter={(v: number) => [formatCurrency(v), 'Expenses']}
                     />
-                    <Bar dataKey="expenses" fill="hsl(var(--destructive))" fillOpacity={0.8} radius={[4, 4, 0, 0]} maxBarSize={28} />
+                    <Bar dataKey="expenses" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} maxBarSize={28} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -814,118 +811,127 @@ export default function DashboardOverview() {
           </Tabs>
         </div>
 
-        {/* Project Pulse + Revenue Target stacked (1/3 width) */}
+        {/* Col 2: Project Pulse + Revenue Target stacked */}
         <div className="space-y-6">
           {/* Ops Pulse */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col justify-between min-h-[160px]">
             <div className="flex items-center justify-between mb-4">
-              <div>
-                <h4 className="text-sm font-bold text-foreground">Ops Pulse</h4>
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Project health</p>
-              </div>
               <div className="flex items-center gap-2">
-                <Badge className="bg-emerald-50 text-emerald-600 border-0 text-[9px] uppercase font-black px-2">Live</Badge>
-                <Button variant="outline" size="sm" asChild className="h-7 px-2.5 rounded-lg border-border text-xs font-bold">
-                  <Link to="/dashboard/projects">Manage</Link>
-                </Button>
+                 <h4 className="text-base font-bold text-foreground">Ops Pulse</h4>
+                 <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
               </div>
+              <Link to="/dashboard/projects" className="text-[10px] uppercase tracking-widest font-bold text-primary hover:text-primary/80">
+                 Manage Projects
+              </Link>
             </div>
+            
+            <div className="flex items-center gap-4 mb-4">
+               <div className="w-10 h-10 rounded bg-muted flex items-center justify-center border border-border">
+                 <Briefcase className="w-5 h-5 text-muted-foreground" />
+               </div>
+               <div>
+                  <h3 className="text-xl font-black text-foreground">{projectHealth.total}</h3>
+                  <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Active Projects</p>
+               </div>
+            </div>
+
             <div className="space-y-3">
               <div>
-                <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
-                  <span>On Track</span>
+                <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest mb-1">
+                  <span className="text-muted-foreground">On Track</span>
                   <span className="text-primary">{projectHealth.onTrack}%</span>
                 </div>
                 <Progress value={projectHealth.onTrack} className="h-1.5 bg-muted" indicatorClassName="bg-primary" />
               </div>
               <div>
-                <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
-                  <span>At Risk</span>
-                  <span className="text-secondary">{projectHealth.atRisk}%</span>
+                <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest mb-1">
+                  <span className="text-muted-foreground">At Risk</span>
+                  <span className="text-destructive">{projectHealth.atRisk}%</span>
                 </div>
-                <Progress value={projectHealth.atRisk} className="h-1.5 bg-muted" indicatorClassName="bg-secondary" />
+                <Progress value={projectHealth.atRisk} className="h-1.5 bg-muted" indicatorClassName="bg-destructive" />
               </div>
-            </div>
-            <div className="mt-3 pt-3 border-t border-dashed border-border/60 flex items-center gap-2">
-              <p className="text-2xl font-black text-foreground">{projectHealth.total}</p>
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">active projects</p>
             </div>
           </div>
 
           {/* Revenue Target */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Target className="w-4 h-4 text-secondary" />
-                <h4 className="text-sm font-bold text-foreground">Revenue Target</h4>
-              </div>
-              <span className="text-[10px] font-black text-muted-foreground uppercase">{quarterlyTarget.label}</span>
+          <div className="bg-primary rounded-2xl p-6 shadow-md border border-primary/20 relative overflow-hidden flex flex-col justify-between">
+            {/* decorative circle */}
+            <div className="absolute -right-6 -bottom-6 w-32 h-32 rounded-full border-4 border-white/10 opacity-50 pointer-events-none" />
+            <div className="absolute -right-12 -bottom-12 w-48 h-48 rounded-full border-4 border-white/10 opacity-50 pointer-events-none" />
+            <div className="absolute -right-20 -bottom-20 w-64 h-64 rounded-full border-4 border-white/10 opacity-50 pointer-events-none" />
+
+            <div className="flex items-center justify-between mb-4 relative z-10">
+              <h4 className="text-base font-bold text-primary-foreground">Q3 Revenue Target</h4>
+              <span className="text-[10px] font-bold bg-white/20 text-white px-2 py-0.5 rounded-full uppercase tracking-widest">{quarterlyTarget.label}</span>
             </div>
-            <div className="flex justify-between items-end mb-2">
-              <p className="text-2xl font-black text-foreground">{quarterlyTarget.progress}%</p>
-              <p className="text-xs font-bold text-muted-foreground">Target: {formatCurrency(quarterlyTarget.target)}</p>
+            
+            <div className="flex items-end gap-2 mb-2 relative z-10">
+              <p className="text-3xl font-black text-primary-foreground">{quarterlyTarget.progress}%</p>
+              <p className="text-[10px] font-bold text-primary-foreground/70 uppercase tracking-widest mb-1">of {formatCurrency(quarterlyTarget.target)}</p>
             </div>
-            <Progress value={quarterlyTarget.progress} className="h-2.5 bg-muted" indicatorClassName="bg-secondary" />
-            <p className="text-[10px] font-semibold text-muted-foreground mt-2 uppercase tracking-wide">{quarterlyTarget.trendText}</p>
+            <Progress value={quarterlyTarget.progress} className="h-1.5 bg-black/20 mb-4 relative z-10" indicatorClassName="bg-white shadow-[0_0_10px_rgba(255,255,255,0.5)]" />
+            
+            <p className="text-[10px] font-bold text-primary-foreground/80 relative z-10 max-w-[90%] leading-relaxed">{quarterlyTarget.trendText}</p>
           </div>
         </div>
 
-      </div>
+        {/* Col 3: Leads & Recent Activity Tabs */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col h-full">
+          <Tabs defaultValue="activity" className="w-full h-full flex flex-col">
+             <div className="flex gap-4 border-b border-border mb-4">
+                <TabsList className="h-auto p-0 bg-transparent gap-4 w-full justify-start">
+                   <TabsTrigger value="activity" className="text-[10px] uppercase tracking-widest font-bold bg-transparent shadow-none data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 text-muted-foreground">Recent Activity</TabsTrigger>
+                   <TabsTrigger value="leads" className="text-[10px] uppercase tracking-widest font-bold bg-transparent shadow-none data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 pb-2 text-muted-foreground">Lead Pipeline</TabsTrigger>
+                </TabsList>
+             </div>
 
-      {/* ── Row 4: Leads & Recent Activity ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-        {/* Lead Pipeline */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between mb-5">
-            <h4 className="text-base font-bold text-foreground">Lead Pipeline</h4>
-            <Button variant="ghost" size="sm" asChild className="text-xs font-bold text-primary uppercase tracking-wider h-auto p-0">
-              <Link to="/dashboard/leads">View all →</Link>
-            </Button>
-          </div>
-          <div className="space-y-3">
-            {recentLeads.length > 0 ? (
-              recentLeads.map((lead) => (
-                <Link key={lead.id} to="/dashboard/leads" className="flex items-center justify-between p-3 rounded-xl hover:bg-muted/30 transition-all border border-transparent hover:border-border group">
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-foreground truncate">{lead.email}</p>
-                    <p className="text-[10px] font-semibold text-muted-foreground">Received {formatDate(lead.createdAt)}</p>
-                  </div>
-                  <Badge variant="outline" className={`text-[9px] font-bold uppercase tracking-wider border-0 shrink-0 ml-2 ${lead.status.toLowerCase() === 'new' ? 'bg-emerald-50 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>
-                    {lead.status}
-                  </Badge>
-                </Link>
-              ))
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <Contact className="w-7 h-7 opacity-20 mx-auto mb-2" />
-                <p className="text-sm font-semibold">No recent leads</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <h4 className="text-base font-bold text-foreground mb-5">Recent Activity</h4>
-          <div className="space-y-3">
-            {activities.length > 0 ? activities.map((act, i) => (
-              <Link key={i} to={act.link} className="flex items-center gap-3 group p-2 rounded-xl hover:bg-muted/30 transition-all">
-                <div className={`w-9 h-9 rounded-xl ${act.colorType === 'primary' ? 'bg-primary/10 text-primary' : 'bg-secondary/10 text-secondary'} flex items-center justify-center shrink-0`}>
-                  <act.icon className="w-4 h-4" />
+             <TabsContent value="activity" className="mt-0 flex-1 focus-visible:outline-none">
+                <div className="space-y-4">
+                  {activities.length > 0 ? activities.map((act, i) => (
+                    <Link key={i} to={act.link} className="flex items-center gap-3 group">
+                      <div className={`w-8 h-8 rounded-full ${act.colorType === 'primary' ? 'bg-primary/10 text-primary' : 'bg-secondary/10 text-secondary'} flex items-center justify-center shrink-0`}>
+                        {act.colorType === 'primary' ? <Users className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-foreground truncate group-hover:text-primary transition-colors">{act.subject}</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{act.action}</p>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground shrink-0 font-bold uppercase tracking-widest">{formatDistanceToNow(act.time)} ago</span>
+                    </Link>
+                  )) : (
+                    <div className="text-center py-8 text-muted-foreground text-[10px] font-bold uppercase tracking-widest">
+                      No recent activity yet.
+                    </div>
+                  )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-foreground truncate">{act.subject}</p>
-                  <p className="text-[10px] font-semibold text-muted-foreground uppercase">{act.action} · {formatDistanceToNow(act.time)} ago</p>
+             </TabsContent>
+
+             <TabsContent value="leads" className="mt-0 flex-1 focus-visible:outline-none">
+                <div className="space-y-4">
+                  {recentLeads.length > 0 ? (
+                    recentLeads.map((lead) => (
+                      <Link key={lead.id} to="/dashboard/leads" className="flex items-center justify-between group">
+                        <div className="flex items-center gap-3">
+                           <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                              <Users className="w-4 h-4" />
+                           </div>
+                           <div className="min-w-0">
+                             <p className="text-sm font-bold text-foreground truncate group-hover:text-primary transition-colors">{lead.email || lead.name || 'Unknown'}</p>
+                             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">New lead onboarded</p>
+                           </div>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground shrink-0 font-bold uppercase tracking-widest">{formatDistanceToNow(new Date(lead.createdAt))} ago</span>
+                      </Link>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Contact className="w-7 h-7 opacity-20 mx-auto mb-2" />
+                      <p className="text-[10px] font-bold uppercase tracking-widest">No recent leads</p>
+                    </div>
+                  )}
                 </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-primary transition-colors shrink-0" />
-              </Link>
-            )) : (
-              <div className="text-center py-8 text-muted-foreground text-sm font-semibold">
-                No recent activity yet.
-              </div>
-            )}
-          </div>
+             </TabsContent>
+          </Tabs>
         </div>
       </div>
 

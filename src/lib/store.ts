@@ -356,6 +356,8 @@ export interface AgencySettings {
   enableRecaptcha: boolean;
   recaptchaSiteKey: string;
   recaptchaSecretKey: string;
+  googleAnalyticsEnabled: boolean;
+  googleAnalyticsMeasurementId: string;
   paymentMethods: PaymentMethod[];
   socialLinks: {
     facebook?: string;
@@ -369,6 +371,9 @@ export interface AgencySettings {
     billingAlerts: boolean;
   };
   openAiApiKey: string;
+  claudeApiKey: string;
+  geminiApiKey: string;
+  mainAiProvider: 'openai' | 'claude' | 'gemini';
   resendApiKey: string;
   emailFrom: string;
   mailerName: string;
@@ -510,6 +515,8 @@ const createDefaultSettings = (): AgencySettings => ({
   enableRecaptcha: false,
   recaptchaSiteKey: "",
   recaptchaSecretKey: "",
+  googleAnalyticsEnabled: false,
+  googleAnalyticsMeasurementId: "",
   paymentMethods: [],
   socialLinks: {
     linkedin: "",
@@ -523,6 +530,9 @@ const createDefaultSettings = (): AgencySettings => ({
     billingAlerts: true,
   },
   openAiApiKey: "",
+  claudeApiKey: "",
+  geminiApiKey: "",
+  mainAiProvider: "openai" as const,
   resendApiKey: "",
   emailFrom: "",
   mailerName: "",
@@ -532,94 +542,100 @@ const createDefaultSettings = (): AgencySettings => ({
   smtpEncryption: "tls",
   smtpDriver: "smtp",
   mailEnabled: false,
-  appVersion: "2.9.0",
+  appVersion: "2.10.0",
   versionHistory: [
+    {
+      version: "2.9.0",
+      description: "feat: add AI assistant page, landing page editor, plugins page, expanded AI integrations (OpenAI/Claude/Gemini), and connect landing page sections to dashboard settings",
+      author: "Antigravity",
+      date: "2026-07-15T01:48:00.000Z",
+    },
     {
       version: "2.8.0",
       description: "feat: implement recurring expenses, associate expenses with employees, and improve financial dashboard and expenses management UI",
       author: "Antigravity",
-      date: new Date().toISOString(),
+      date: "2026-07-13T12:38:52.000Z",
     },
     {
       version: "2.7.0",
       description: "feat: update dashboard layouts, support manual file transfer send actions, multi-file zipping and email sharing templates",
       author: "Antigravity",
-      date: new Date().toISOString(),
+      date: "2026-07-13T11:01:18.000Z",
     },
     {
       version: "2.5.0",
       description: "feat: WeTransfer-style file transfers, financial modules, employee pages, HR documents & security updates",
       author: "Antigravity",
-      date: new Date().toISOString(),
+      date: "2026-07-12T15:38:31.000Z",
     },
     {
       version: "2.1.1",
       description: "feat: setup custom short domain redirect for hirdan.cc and shorten routes to /f/",
       author: "Antigravity",
-      date: new Date().toISOString(),
+      date: "2026-07-12T16:37:34.000Z",
     },
     {
       version: "1.6.0",
       description: "feat: add HR Document Generator with Internship Accepted Certificate and Internship Letter templates, and support custom routing & schema updates",
       author: "Antigravity",
-      date: new Date().toISOString(),
+      date: "2026-07-09T10:56:16.000Z",
     },
     {
       version: "1.5.0",
       description: "feat: add quick expenses, receipt scan, and financial accounts management",
       author: "Antigravity",
-      date: new Date().toISOString(),
+      date: "2026-07-09T09:47:09.000Z",
     },
     {
       version: "1.2.13",
       description: "fix: update mail config to support custom recipient test email and remove restrictive API key requirements for saving SMTP settings",
       author: "Antigravity",
-      date: new Date().toISOString(),
+      date: "2026-07-07T10:00:00.000Z",
     },
     {
       version: "1.2.10",
       description: "refactor: reorganize settings page layout into a premium sidebar structure with grouped sections and mobile optimization",
       author: "Antigravity",
-      date: new Date().toISOString(),
+      date: "2026-07-06T10:00:00.000Z",
     },
     {
       version: "1.2.8",
       description: "fix: align proforma-to-invoice conversion in ProformaPage list view with ProformaDetailsPage and pass generated invoiceId",
       author: "System",
-      date: new Date().toISOString(),
+      date: "2026-07-05T10:00:00.000Z",
     },
     {
       version: "1.2.5",
       description: "feat: map clientId for subscriptions to support client-specific lookups and clean up unused imports in SocialMediaPlannerPage",
       author: "System",
-      date: new Date().toISOString(),
+      date: "2026-07-04T10:00:00.000Z",
     },
     {
       version: "1.2.4",
       description: "fix: proforma-to-invoice conversion — correct tax/discount calculation order to match server, fix missing dueDate fallback, and omit pre-computed amount to prevent server mismatch errors",
       author: "System",
-      date: new Date().toISOString(),
+      date: "2026-07-03T10:00:00.000Z",
     },
     {
       version: "1.2.3",
       description: "fix: update database schema to allow longer descriptions for invoice and proforma line items",
       author: "System",
-      date: new Date().toISOString(),
+      date: "2026-07-02T10:00:00.000Z",
     },
     {
       version: "1.1.0",
       description: "feat: replace arrow buttons with drag-handle reordering on invoice & proforma line items — supports drag-and-drop to any position instantly",
       author: "System",
-      date: new Date().toISOString(),
+      date: "2026-07-01T10:00:00.000Z",
     },
     {
       version: "1.0.0",
       description: "Initial release",
       author: "System",
-      date: new Date().toISOString(),
+      date: "2026-06-25T10:00:00.000Z",
     }
   ],
-  updatedAt: new Date().toISOString(),
+  updatedAt: "2026-07-15T01:48:00.000Z",
 });
 
 export const useAgencyStore = create<AgencyStore>()(

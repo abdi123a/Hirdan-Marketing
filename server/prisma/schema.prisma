@@ -426,7 +426,12 @@ model AgencySettings {
   enableRecaptcha     Boolean  @default(false) @map("enable_recaptcha")
   recaptchaSiteKey    String?  @map("recaptcha_site_key")
   recaptchaSecretKey  String?  @map("recaptcha_secret_key")
+  googleAnalyticsEnabled     Boolean  @default(false) @map("google_analytics_enabled")
+  googleAnalyticsMeasurementId String?  @map("google_analytics_measurement_id")
   openAiApiKey        String?  @map("open_ai_api_key")
+  claudeApiKey        String?  @map("claude_api_key")
+  geminiApiKey        String?  @map("gemini_api_key")
+  mainAiProvider      String   @default("openai") @map("main_ai_provider")
   resendApiKey        String?  @map("resend_api_key")
   emailFrom           String?  @map("email_from")
   mailerName          String?  @map("mailer_name")
@@ -1048,4 +1053,118 @@ model SharedFileEvent {
 
   @@index([fileId])
   @@map("shared_file_events")
+}
+
+model LandingPageContent {
+  id               String   @id @default("default")
+  
+  // Dynamic Images
+  heroImageUrl     String   @default("/assets/img/hero/digital-marketing-hero-img-min.png")
+  heroShapeImageUrl String  @default("/assets/img/hero/circle-musk.png")
+  heroBadgeImageUrl String  @default("/assets/img/bale.png")
+  aboutImageUrl    String   @default("/assets/img/about/digittal-about-img.png")
+  contactImageUrl  String   @default("/assets/img/contact.jpg")
+  trustImageUrl    String   @default("/assets/img/about/face-mans-2.png")
+  clientLogos      Json     @default("[]")
+
+  // Hero Section
+  heroSubtitle     String   @default("Social Media Marketing")
+  heroTitle        String   @default("Growth With High-Impact Social Media")
+  heroDescription  String?  @db.Text
+  heroBtn1Text     String   @default("Boost My Social Media")
+  heroBtn2Text     String   @default("Work Process")
+  heroAwardNumber  String   @default("2K+")
+  heroAwardLabel   String   @default("Happy Client")
+
+  // About Section
+  aboutSubtitle    String   @default("About SEOX")
+  aboutTitle       String   @default("Helping Business All Size Stay Ahead Social Media")
+  aboutDescription String?  @db.Text
+  aboutBullets     String?  @db.Text
+  aboutCampaigns   String   @default("500+")
+  aboutClients     String   @default("1200+")
+
+  // Process Section
+  processSubtitle  String   @default("Our Seamless Process")
+  processTitle     String   @default("Our Step-by-Step Approach")
+  process1Title    String   @default("Consultation Discovery")
+  process1Desc     String?  @db.Text
+  process2Title    String   @default("Design And Development")
+  process2Desc     String?  @db.Text
+  process3Title    String   @default("Continuous Improvement")
+  process3Desc     String?  @db.Text
+  process4Title    String   @default("Reporting")
+  process4Desc     String?  @db.Text
+
+  // CTA Section
+  ctaSubtitle      String   @default("tailored social strategies")
+  ctaTitle         String   @default("Results Driven Marketing For Your Social Business")
+  ctaDescription   String?  @db.Text
+
+  // SEO Settings
+  seoTitle         String   @default("SEOX - High-Impact Social Media Marketing Agency")
+  seoDescription   String?  @db.Text
+  seoKeywords      String?  @db.Text
+  seoImage         String   @default("")
+
+  // Dynamic Content & Inclusions (Hirdan Marketing default values stored inside Json fields)
+  servicesJson     Json     @default("[]") @map("services_json")
+  faqsJson         Json     @default("[]") @map("faqs_json")
+  packagesJson     Json     @default("[]") @map("packages_json")
+  footerTagline    String   @default("We grow your business with creative marketing that delivers real results.")
+
+  // About Page Mission & Stats
+  aboutMissionTitle  String   @default("Our Mission Is Simple")
+  aboutMissionDesc   String?  @db.Text
+  aboutMissionBullets String? @db.Text
+  aboutStatsJson     Json     @default("[]") @map("about_stats_json")
+
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@map("landing_page_contents")
+}
+
+model CaseStudy {
+  id          String   @id @default(uuid())
+  title       String
+  category    String
+  description String   @db.Text
+  imageUrl    String   @map("image_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("case_studies")
+}
+
+model Testimonial {
+  id          String   @id @default(uuid())
+  name        String
+  role        String
+  feedback    String   @db.Text
+  rating      Int      @default(5)
+  avatarUrl   String?  @map("avatar_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("testimonials")
+}
+
+model LandingPageProject {
+  id          String   @id @default(uuid())
+  title       String
+  category    String
+  description String   @db.Text
+  imageUrl    String   @map("image_url")
+  imageUrl2   String?  @map("image_url_2")
+  imageUrl3   String?  @map("image_url_3")
+  imageUrl4   String?  @map("image_url_4")
+  clientName  String?  @map("client_name")
+  projectDate String?  @map("project_date")
+  location    String?
+  duration    String?
+  sections    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("landing_page_projects")
 }

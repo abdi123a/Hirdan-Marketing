@@ -1,8 +1,8 @@
 import {
-  LayoutDashboard, Users, Briefcase, UserCircle,
+  LayoutDashboard, Users, Briefcase, UserCircle, LayoutGrid,
   Receipt, CreditCard, CalendarDays, Settings, LogOut, PanelLeftClose, PanelLeft,
   FileText, Package, Zap, Mail, Share2, Presentation, BarChart3, Wallet,
-  FolderHeart, UploadCloud
+  FolderHeart, UploadCloud, Puzzle, Sparkles
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
@@ -26,6 +26,7 @@ import {
 
 const mainItems = [
   { title: "Overview", url: "/dashboard", icon: LayoutDashboard },
+  { title: "AI Assistant", url: "/dashboard/ai-assistant", icon: Sparkles },
   { title: "Clients", url: "/dashboard/clients", icon: Users },
   { title: "Projects", url: "/dashboard/projects", icon: Briefcase },
   { title: "Team", url: "/dashboard/team", icon: UserCircle },
@@ -43,6 +44,7 @@ const mainItems = [
   { title: "Email List", url: "/dashboard/leads", icon: Mail },
   { title: "Calendar", url: "/dashboard/calendar", icon: CalendarDays },
 ];
+
 
 export function AppSidebar() {
   const { state, toggleSidebar, isMobile } = useSidebar();
@@ -120,24 +122,6 @@ export function AppSidebar() {
         <SidebarSeparator />
         <div className={collapsed ? "px-1.5 py-3" : "px-3 py-3"}>
           <SidebarMenu className={collapsed ? "items-center gap-1.5" : "gap-0.5"}>
-            {user?.role === 'admin' && (
-              <SidebarMenuItem className={collapsed ? "flex justify-center" : ""}>
-                <SidebarMenuButton asChild tooltip="System Users">
-                  <NavLink
-                    to="/dashboard/users"
-                    className={
-                      collapsed
-                        ? "flex items-center justify-center w-10 h-10 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
-                        : "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
-                    }
-                    activeClassName="text-sidebar-primary"
-                  >
-                    <Users className="h-[18px] w-[18px] shrink-0" />
-                    {!collapsed && <span className="text-[13px]">Users</span>}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
             <SidebarMenuItem className={collapsed ? "flex justify-center" : ""}>
               <SidebarMenuButton asChild tooltip="Settings">
                 <NavLink

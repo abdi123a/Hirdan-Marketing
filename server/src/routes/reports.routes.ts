@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { AppError } from '../lib/errors.js';
+import { callAI, resolveProviderKey } from '../lib/ai-provider.js';
 
 const router = Router();
 router.use(authenticate);
@@ -292,12 +293,9 @@ const normalizeSectionContent = (
   return merged;
 };
 
-const getAiApiKey = async () => {
+const getAiProviderKey = async () => {
   const settings = await prisma.agencySettings.findFirst();
-  if (!settings?.openAiApiKey) {
-    throw AppError.badRequest('OpenAI API key is not configured in Settings.');
-  }
-  return settings.openAiApiKey;
+  return resolveProviderKey(settings || {});
 };
 
 router.post('/monthly/preflight', validate({ body: preflightDto }), async (req: Request, res: Response, next) => {
@@ -332,7 +330,7 @@ router.post('/monthly/generate', validate({ body: generateDto }), async (req: Re
     });
     if (!client) throw AppError.notFound('Client not found');
 
-    const apiKey = await getAiApiKey();
+    const { provider, apiKey } = await getAiProviderKey();
 
     const normalizeSystemPrompt = `You transform monthly marketing notes into structured JSON facts.
 Return ONLY valid JSON.
@@ -360,31 +358,12 @@ Return JSON with this shape:
   "nextSteps": string[]
 }`;
 
-    const normalizeResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: normalizeSystemPrompt },
-          { role: 'user', content: normalizeUserPrompt },
-        ],
-        temperature: 0.1,
-        max_tokens: 3200,
-        response_format: { type: 'json_object' },
-      }),
-    });
+    const normalizeResponse = await callAI(provider, apiKey, [
+      { role: 'system', content: normalizeSystemPrompt },
+      { role: 'user', content: normalizeUserPrompt },
+    ]);
 
-    if (!normalizeResponse.ok) {
-      const errorData = await normalizeResponse.json().catch(() => ({})) as Record<string, any>;
-      throw AppError.badRequest(`OpenAI normalize error: ${errorData.error?.message || normalizeResponse.statusText}`);
-    }
-
-    const normalizeData = await normalizeResponse.json() as Record<string, any>;
-    const normalizedFacts = parseModelJson(normalizeData?.choices?.[0]?.message?.content);
+    const normalizedFacts = parseModelJson(normalizeResponse.content);
 
     const composeSystemPrompt = `You are preparing a polished monthly social media report.
 Use only given facts. Do not invent metrics.
@@ -404,31 +383,12 @@ Return:
 }
 Each section must have concise, presentation-ready text.`;
 
-    const composeResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: composeSystemPrompt },
-          { role: 'user', content: composeUserPrompt },
-        ],
-        temperature: 0.2,
-        max_tokens: 4000,
-        response_format: { type: 'json_object' },
-      }),
-    });
+    const composeResponse = await callAI(provider, apiKey, [
+      { role: 'system', content: composeSystemPrompt },
+      { role: 'user', content: composeUserPrompt },
+    ]);
 
-    if (!composeResponse.ok) {
-      const errorData = await composeResponse.json().catch(() => ({})) as Record<string, any>;
-      throw AppError.badRequest(`OpenAI compose error: ${errorData.error?.message || composeResponse.statusText}`);
-    }
-
-    const composeData = await composeResponse.json() as Record<string, any>;
-    const composed = parseModelJson(composeData?.choices?.[0]?.message?.content);
+    const composed = parseModelJson(composeResponse.content);
     const sectionsInput = Array.isArray(composed.sections) ? composed.sections : [];
 
     const keyedInput = new Map<string, unknown>();

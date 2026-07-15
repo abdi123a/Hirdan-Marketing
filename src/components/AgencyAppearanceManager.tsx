@@ -37,5 +37,50 @@ export const AgencyAppearanceManager = () => {
     }
   }, [settings.favicon, settings.agencyName, location.pathname]);
 
+  // Handle Google Analytics injection
+  useEffect(() => {
+    if (settings.googleAnalyticsEnabled && settings.googleAnalyticsMeasurementId) {
+      const measurementId = settings.googleAnalyticsMeasurementId.trim();
+      if (measurementId) {
+        const scriptId = 'google-analytics-gtag';
+        let script = document.getElementById(scriptId) as HTMLScriptElement;
+        if (!script) {
+          script = document.createElement('script');
+          script.id = scriptId;
+          script.async = true;
+          script.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`;
+          document.head.appendChild(script);
+
+          const inlineScript = document.createElement('script');
+          inlineScript.id = 'google-analytics-init';
+          inlineScript.innerHTML = `
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', '${measurementId}', { page_path: window.location.pathname });
+          `;
+          document.head.appendChild(inlineScript);
+        }
+      }
+    } else {
+      const script = document.getElementById('google-analytics-gtag');
+      const inlineScript = document.getElementById('google-analytics-init');
+      if (script) script.remove();
+      if (inlineScript) inlineScript.remove();
+    }
+  }, [settings.googleAnalyticsEnabled, settings.googleAnalyticsMeasurementId]);
+
+  // Track page views on location changes
+  useEffect(() => {
+    if (settings.googleAnalyticsEnabled && settings.googleAnalyticsMeasurementId) {
+      const measurementId = settings.googleAnalyticsMeasurementId.trim();
+      if (measurementId && (window as any).gtag) {
+        (window as any).gtag('config', measurementId, {
+          page_path: location.pathname + location.search
+        });
+      }
+    }
+  }, [location.pathname, location.search, settings.googleAnalyticsEnabled, settings.googleAnalyticsMeasurementId]);
+
   return null;
 };

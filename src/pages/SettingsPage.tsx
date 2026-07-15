@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { useNavigate } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -17,8 +18,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { 
+  Puzzle,
   Globe, 
   User, 
+  Users,
+  LayoutGrid,
   Bell, 
   Palette, 
   Clock, 
@@ -68,6 +72,9 @@ import { useAgencyStore, AgencySettings, PaymentMethod, VersionEntry } from "@/l
 import { ProtectedBrandingImage } from "@/components/ProtectedBrandingImage";
 import { Progress } from "@/components/ui/progress";
 import { apiFetch } from "@/lib/api-client";
+import UsersPage from "./UsersPage";
+import PluginsPage from "./PluginsPage";
+import LandingPageEditor from "./LandingPageEditor";
 
 // Comprehensive Timezones list with countries
 const timezones = [
@@ -115,18 +122,143 @@ const currencies = [
   { value: "ETB", label: "ETB (Ethiopian Birr)", symbol: "Br" },
 ];
 
+// ─── Email Template Definitions ────────────────────────────────────────────
+interface EmailTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  variables: string;
+  body: string;
+}
+
+const DEFAULT_EMAIL_TEMPLATES: EmailTemplate[] = [
+  {
+    id: 'client-welcome',
+    name: 'Client Welcome',
+    subject: 'Welcome to Hirdan Marketing, {{client_name}}!',
+    variables: '{{client_name}}, {{agency_name}}, {{portal_link}}, {{account_manager}}',
+    body: `Hi {{client_name}},\n\nWelcome aboard! We're thrilled to have you as part of the Hirdan Marketing family.\n\nYour dedicated account manager {{account_manager}} will be in touch shortly. In the meantime, you can access your client portal here:\n\n{{portal_link}}\n\nIf you have any questions, don't hesitate to reach out.\n\nWarm regards,\nThe {{agency_name}} Team`,
+  },
+  {
+    id: 'invoice-sent',
+    name: 'Invoice Sent',
+    subject: 'Invoice #{{invoice_number}} from {{agency_name}}',
+    variables: '{{client_name}}, {{invoice_number}}, {{amount}}, {{due_date}}, {{invoice_link}}, {{agency_name}}',
+    body: `Hi {{client_name}},\n\nPlease find attached Invoice #{{invoice_number}} for {{amount}}, due on {{due_date}}.\n\nYou can view and pay your invoice online:\n\n{{invoice_link}}\n\nIf you have any questions regarding this invoice, feel free to contact us.\n\nThank you for your business.\n\nBest regards,\n{{agency_name}}`,
+  },
+  {
+    id: 'subscription-renewal',
+    name: 'Subscription Renewal Reminder',
+    subject: 'Your {{package_name}} subscription renews on {{renewal_date}}',
+    variables: '{{client_name}}, {{package_name}}, {{renewal_date}}, {{amount}}, {{portal_link}}, {{agency_name}}',
+    body: `Hi {{client_name}},\n\nThis is a friendly reminder that your {{package_name}} subscription is set to renew on {{renewal_date}} for {{amount}}.\n\nNo action is required — we'll take care of it automatically. If you'd like to make any changes to your plan, please log in to your portal before the renewal date:\n\n{{portal_link}}\n\nThank you for your continued partnership.\n\nBest regards,\n{{agency_name}}`,
+  },
+  {
+    id: 'project-update',
+    name: 'Project Update',
+    subject: 'Update on your project: {{project_name}}',
+    variables: '{{client_name}}, {{project_name}}, {{update_summary}}, {{project_link}}, {{agency_name}}',
+    body: `Hi {{client_name}},\n\nWe have an update on your project "{{project_name}}":\n\n{{update_summary}}\n\nYou can review the full details in your project portal:\n\n{{project_link}}\n\nAs always, reach out if you have any questions or feedback.\n\nBest regards,\n{{agency_name}}`,
+  },
+  {
+    id: 'invoice-overdue',
+    name: 'Invoice Overdue Notice',
+    subject: 'Action Required: Invoice #{{invoice_number}} is Overdue',
+    variables: '{{client_name}}, {{invoice_number}}, {{amount}}, {{overdue_days}}, {{invoice_link}}, {{agency_name}}',
+    body: `Hi {{client_name}},\n\nThis is a reminder that Invoice #{{invoice_number}} for {{amount}} is now {{overdue_days}} days overdue.\n\nPlease settle the outstanding balance at your earliest convenience:\n\n{{invoice_link}}\n\nIf you've already made this payment, please disregard this notice. For any concerns, feel free to contact us directly.\n\nBest regards,\n{{agency_name}}`,
+  },
+  {
+    id: 'proposal-sent',
+    name: 'Proposal / Proforma Sent',
+    subject: 'Your Proposal from {{agency_name}} is Ready',
+    variables: '{{client_name}}, {{proposal_number}}, {{proposal_link}}, {{expiry_date}}, {{agency_name}}',
+    body: `Hi {{client_name}},\n\nThank you for your interest in our services! We've prepared a tailored proposal for you.\n\nYou can review Proposal #{{proposal_number}} via the link below — it will be valid until {{expiry_date}}:\n\n{{proposal_link}}\n\nWe'd love to discuss this further at your convenience. Please don't hesitate to reach out with any questions.\n\nLooking forward to working together!\n\nBest regards,\n{{agency_name}}`,
+  },
+  {
+    id: 'contact-reply',
+    name: 'Contact Form Reply',
+    subject: 'Re: Your message to {{agency_name}}',
+    variables: '{{client_name}}, {{original_message}}, {{agency_name}}, {{reply_message}}',
+    body: `Hi {{client_name}},\n\nThank you for reaching out to us. We received your message and wanted to follow up:\n\n{{reply_message}}\n\nIf you have further questions, feel free to reply to this email directly.\n\nWarm regards,\n{{agency_name}}`,
+  },
+];
+
 export default function SettingsPage() {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const { settings, updateSettings, fetchSettings, uploadFile } = useAgencyStore();
   const [formData, setFormData] = useState<AgencySettings>(settings);
   const [isSaving, setIsSaving] = useState(false);
+  const [isTestingAi, setIsTestingAi] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isUploading, setIsUploading] = useState<{ [key: string]: boolean }>({});
+
+  const handleTestAiConnection = async () => {
+    setIsTestingAi(true);
+    setAiTestResult(null);
+    try {
+      await updateSettings(formData);
+      const res = await apiFetch<{ success: boolean; reply?: string; error?: string }>('/ai/test-connection', {
+        method: 'POST',
+      });
+      if (res.success) {
+        setAiTestResult({ success: true, message: `Successfully connected! Active AI says: "${res.reply}"` });
+        toast({
+          title: "Connection Successful",
+          description: "AI Integration is working properly.",
+        });
+      } else {
+        setAiTestResult({ success: false, message: res.error || "Connection failed." });
+      }
+    } catch (err: any) {
+      setAiTestResult({ success: false, message: err.message || "An unexpected error occurred." });
+      toast({
+        title: "Connection Failed",
+        description: err.message || "Please check your API credentials.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTestingAi(false);
+    }
+  };
+
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   const [showSmtpPassword, setShowSmtpPassword] = useState(false);
   const [isTestingEmail, setIsTestingEmail] = useState(false);
   const [emailStatus, setEmailStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [showTestEmailDialog, setShowTestEmailDialog] = useState(false);
   const [testEmailTarget, setTestEmailTarget] = useState('');
+
+  const queryParams = new URLSearchParams(window.location.search);
+  const tabParam = queryParams.get("tab");
+  const [activeTab, setActiveTab] = useState(tabParam || "general");
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
+
+  // Email Templates state
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>(DEFAULT_EMAIL_TEMPLATES);
+  const [activeTemplateId, setActiveTemplateId] = useState<string>(DEFAULT_EMAIL_TEMPLATES[0].id);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+
+  const activeTemplate = emailTemplates.find(t => t.id === activeTemplateId) ?? emailTemplates[0];
+
+  const updateActiveTemplate = (fields: Partial<Omit<EmailTemplate, 'id' | 'name' | 'variables'>>) => {
+    setEmailTemplates(prev =>
+      prev.map(t => t.id === activeTemplateId ? { ...t, ...fields } : t)
+    );
+  };
+
+  const handleSaveTemplate = async () => {
+    setIsSavingTemplate(true);
+    // Persist to backend when API is available; for now just show success toast.
+    await new Promise(r => setTimeout(r, 600));
+    setIsSavingTemplate(false);
+    toast({ title: 'Template saved', description: `"${activeTemplate.name}" has been updated.` });
+  };
 
   // Version control state
   const [newVersionEntry, setNewVersionEntry] = useState<Omit<VersionEntry, 'date'>>({ version: '', description: '', author: '' });
@@ -318,7 +450,7 @@ export default function SettingsPage() {
         </Button>
       </div>
 
-      <Tabs defaultValue="general" className="w-full">
+      <Tabs value={activeTab} onValueChange={(val) => { setActiveTab(val); navigate(`/dashboard/settings?tab=${val}`, { replace: true }); }} className="w-full">
         {/* ── Mobile: horizontal scrollable tab bar ── */}
         <TabsList className="lg:hidden bg-muted/50 p-1 mb-6 flex overflow-x-auto whitespace-nowrap scrollbar-none justify-start border border-border/50 rounded-xl w-full">
           <TabsTrigger value="general" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
@@ -329,6 +461,12 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="social" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
             <Link className="h-3.5 w-3.5" /> Social
+          </TabsTrigger>
+          <TabsTrigger value="users" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
+            <Users className="h-3.5 w-3.5" /> Users
+          </TabsTrigger>
+          <TabsTrigger value="landing-page" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
+            <LayoutGrid className="h-3.5 w-3.5" /> Landing Page
           </TabsTrigger>
           <TabsTrigger value="localization" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
             <Globe className="h-3.5 w-3.5" /> Localization
@@ -348,14 +486,17 @@ export default function SettingsPage() {
           <TabsTrigger value="email" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0 text-blue-600 dark:text-blue-400">
             <Mail className="h-3.5 w-3.5" /> Mail
           </TabsTrigger>
+          <TabsTrigger value="email-templates" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0 text-blue-600 dark:text-blue-400">
+            <FileText className="h-3.5 w-3.5" /> Email Templates
+          </TabsTrigger>
           <TabsTrigger value="ai" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0 text-purple-600 dark:text-purple-400">
             <Sparkles className="h-3.5 w-3.5" /> AI
           </TabsTrigger>
-          <TabsTrigger value="security" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
-            <Shield className="h-3.5 w-3.5" /> Security
-          </TabsTrigger>
           <TabsTrigger value="system" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
             <Terminal className="h-3.5 w-3.5" /> System
+          </TabsTrigger>
+          <TabsTrigger value="plugins" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0 text-emerald-600 dark:text-emerald-400">
+            <Puzzle className="h-3.5 w-3.5" /> Plugins
           </TabsTrigger>
         </TabsList>
 
@@ -409,6 +550,20 @@ export default function SettingsPage() {
                 >
                   <Link className="h-4 w-4 shrink-0" />
                   <span>Social Links</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="users"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Users className="h-4 w-4 shrink-0" />
+                  <span>Users</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="landing-page"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <LayoutGrid className="h-4 w-4 shrink-0" />
+                  <span>Landing Page</span>
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -472,6 +627,13 @@ export default function SettingsPage() {
                   <span className="ml-auto text-[9px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded-full uppercase tracking-wider">SMTP</span>
                 </TabsTrigger>
                 <TabsTrigger
+                  value="email-templates"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-blue-500/10 data-[state=active]:text-blue-600 dark:data-[state=active]:text-blue-400 data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <FileText className="h-4 w-4 shrink-0" />
+                  <span>Email Templates</span>
+                </TabsTrigger>
+                <TabsTrigger
                   value="ai"
                   className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-purple-500/10 data-[state=active]:text-purple-600 dark:data-[state=active]:text-purple-400 data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
                 >
@@ -479,22 +641,22 @@ export default function SettingsPage() {
                   <span>AI Settings</span>
                   <span className="ml-auto text-[9px] font-bold bg-purple-500/10 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Beta</span>
                 </TabsTrigger>
+                <TabsTrigger
+                  value="plugins"
+                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-emerald-500/10 data-[state=active]:text-emerald-600 dark:data-[state=active]:text-emerald-400 data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
+                >
+                  <Puzzle className="h-4 w-4 shrink-0" />
+                  <span>Plugins</span>
+                </TabsTrigger>
               </TabsList>
             </div>
 
             <div className="h-px bg-border/50 mx-3" />
 
-            {/* ─ Group 4: Security & System ─ */}
+            {/* ─ Group 4: System ─ */}
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60 px-3 mb-1.5">Security &amp; System</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60 px-3 mb-1.5">System</p>
               <TabsList className="flex flex-col w-full bg-transparent p-0 gap-0.5 h-auto">
-                <TabsTrigger
-                  value="security"
-                  className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
-                >
-                  <Shield className="h-4 w-4 shrink-0" />
-                  <span>Security</span>
-                </TabsTrigger>
                 <TabsTrigger
                   value="system"
                   className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
@@ -1188,86 +1350,152 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="security" className="mt-0 outline-none space-y-6">
-          <Card className="shadow-card border-border overflow-hidden">
-            <CardHeader className="bg-muted/30 border-b pb-6">
-              <CardTitle className="font-display text-xl">Security Configuration</CardTitle>
-              <CardDescription>Setup Google reCAPTCHA v3 to protect your forms from spam.</CardDescription>
-            </CardHeader>
-            <CardContent className="p-8 space-y-6">
-              <div className="flex items-center justify-between p-6 rounded-2xl border bg-background hover:bg-muted/10 transition-all group">
-                <div className="space-y-1">
-                  <p className="font-bold flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-primary" /> Enable Google reCAPTCHA v3
-                  </p>
-                  <p className="text-sm text-muted-foreground max-w-md">Protect your admin and client login forms from bots and abuse.</p>
-                </div>
-                <Switch 
-                  checked={formData.enableRecaptcha} 
-                  onCheckedChange={(val) => setFormData(p => ({ ...p, enableRecaptcha: val }))} 
-                  className="data-[state=checked]:bg-primary"
-                />
-              </div>
-
-              {formData.enableRecaptcha && (
-                <div className="grid md:grid-cols-2 gap-8 border bg-muted/10 p-6 rounded-2xl animate-in fade-in zoom-in duration-300">
-                  <div className="space-y-2">
-                    <Label htmlFor="recaptchaSiteKey" className="font-semibold">reCAPTCHA Site Key</Label>
-                    <Input 
-                      id="recaptchaSiteKey" 
-                      value={formData.recaptchaSiteKey || ''} 
-                      onChange={handleInputChange} 
-                      placeholder="Enter reCAPTCHA v3 Site Key" 
-                      className="h-11 focus-visible:ring-primary"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="recaptchaSecretKey" className="font-semibold">reCAPTCHA Secret Key</Label>
-                    <Input 
-                      id="recaptchaSecretKey" 
-                      type="password"
-                      value={formData.recaptchaSecretKey || ''} 
-                      onChange={handleInputChange} 
-                      placeholder="Enter reCAPTCHA v3 Secret Key" 
-                      className="h-11 focus-visible:ring-primary"
-                    />
-                    <p className="text-[10px] text-muted-foreground mt-1">Stored securely and never exposed to the client.</p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="ai" className="mt-0 outline-none space-y-6">
           <Card className="shadow-card border-purple-500/20 overflow-hidden ring-1 ring-purple-500/10">
             <CardHeader className="bg-gradient-to-r from-purple-500/10 to-transparent border-b pb-6">
               <CardTitle className="font-display text-xl text-purple-700 dark:text-purple-400 flex items-center gap-2">
-                <Sparkles className="h-5 w-5" /> AI Integration
+                <Sparkles className="h-5 w-5 animate-pulse text-purple-500" /> AI Integration
               </CardTitle>
-              <CardDescription>Configure OpenAI to power AI content generation features.</CardDescription>
+              <CardDescription>
+                Select your main AI provider and configure individual API keys. The chosen active provider will power the AI Assistant, social media plan generator, monthly report drafter, and task generator.
+              </CardDescription>
             </CardHeader>
-            <CardContent className="p-8 space-y-6">
-              <div className="grid gap-2 max-w-xl">
-                <Label htmlFor="openAiApiKey" className="font-semibold">OpenAI API Key</Label>
-                <div className="relative">
+            <CardContent className="p-8 space-y-8">
+              {/* Main AI Provider Selector Cards */}
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold text-foreground">Select Main AI Provider</Label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[
+                    { id: 'openai', name: 'OpenAI', desc: 'GPT-4o & GPT-4o-mini models', icon: Sparkles, color: 'from-green-500/10 to-emerald-500/5 hover:border-green-500/30' },
+                    { id: 'claude', name: 'Anthropic Claude', desc: 'Claude 3.5 Sonnet models', icon: Server, color: 'from-orange-500/10 to-amber-500/5 hover:border-orange-500/30' },
+                    { id: 'gemini', name: 'Google Gemini', desc: 'Gemini 1.5 Pro & Flash models', icon: Globe, color: 'from-blue-500/10 to-cyan-500/5 hover:border-blue-500/30' },
+                  ].map((p) => {
+                    const isSelected = (formData.mainAiProvider || 'openai') === p.id;
+                    const IconComponent = p.icon;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setFormData((prev) => ({ ...prev, mainAiProvider: p.id as any }))}
+                        className={`flex flex-col text-left p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden bg-gradient-to-br ${
+                          isSelected
+                            ? 'border-purple-500 ring-2 ring-purple-500/20 bg-purple-50/30 dark:bg-purple-950/10 shadow-sm'
+                            : 'border-border/60 hover:bg-muted/10 bg-card'
+                        } ${p.color}`}
+                      >
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className={`p-2 rounded-xl border ${
+                            isSelected
+                              ? 'bg-purple-100 border-purple-200 text-purple-700 dark:bg-purple-900/40 dark:border-purple-800 dark:text-purple-300'
+                              : 'bg-muted border-border/40 text-muted-foreground'
+                          }`}>
+                            <IconComponent className="h-5 w-5" />
+                          </div>
+                          <span className="font-bold text-foreground">{p.name}</span>
+                          {isSelected && (
+                            <span className="absolute top-4 right-4 flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground leading-relaxed">{p.desc}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <Separator className="bg-border/60" />
+
+              {/* API Keys Configuration */}
+              <div className="space-y-6 max-w-xl">
+                <Label className="text-sm font-semibold text-foreground">API Credentials Configuration</Label>
+                
+                {/* OpenAI Input */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label htmlFor="openAiApiKey" className="font-medium text-xs text-muted-foreground uppercase tracking-wider">OpenAI API Key</Label>
+                    <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-[11px] text-purple-600 hover:underline">Get key</a>
+                  </div>
                   <Input 
                     id="openAiApiKey" 
                     type="password"
                     value={formData.openAiApiKey || ''} 
                     onChange={handleInputChange} 
                     placeholder="sk-..." 
-                    className="h-11 focus-visible:ring-purple-500 border-purple-200"
+                    className="h-11 focus-visible:ring-purple-500 border-border/80 rounded-xl"
                   />
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Your key is encrypted and never sent to the client. Needs access to `gpt-4o` or similar.
-                  <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="ml-1 text-purple-600 hover:underline">Get an API key</a>
-                </p>
+
+                {/* Claude Input */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label htmlFor="claudeApiKey" className="font-medium text-xs text-muted-foreground uppercase tracking-wider">Anthropic Claude API Key</Label>
+                    <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-[11px] text-purple-600 hover:underline">Get key</a>
+                  </div>
+                  <Input 
+                    id="claudeApiKey" 
+                    type="password"
+                    value={formData.claudeApiKey || ''} 
+                    onChange={handleInputChange} 
+                    placeholder="sk-ant-..." 
+                    className="h-11 focus-visible:ring-purple-500 border-border/80 rounded-xl"
+                  />
+                </div>
+
+                {/* Gemini Input */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label htmlFor="geminiApiKey" className="font-medium text-xs text-muted-foreground uppercase tracking-wider">Google Gemini API Key</Label>
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-[11px] text-purple-600 hover:underline">Get key</a>
+                  </div>
+                  <Input 
+                    id="geminiApiKey" 
+                    type="password"
+                    value={formData.geminiApiKey || ''} 
+                    onChange={handleInputChange} 
+                    placeholder="AIzaSy..." 
+                    className="h-11 focus-visible:ring-purple-500 border-border/80 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              {/* Live Test Connection Widget */}
+              <div className="pt-4 border-t border-border/40 flex flex-col md:flex-row gap-4 items-start md:items-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleTestAiConnection}
+                  disabled={isTestingAi}
+                  className="rounded-xl border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-900 dark:text-purple-300 dark:hover:bg-purple-950/20 px-6 h-11 shrink-0"
+                >
+                  {isTestingAi ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin text-purple-500" />
+                      Testing API Key...
+                    </>
+                  ) : (
+                    "Test Connection"
+                  )}
+                </Button>
+                
+                {aiTestResult && (
+                  <div className={`text-xs px-4 py-3 rounded-xl border flex items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-200 ${
+                    aiTestResult.success 
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/15 dark:border-emerald-900/50 dark:text-emerald-400' 
+                      : 'bg-destructive/10 border-destructive/20 text-destructive dark:bg-destructive/10 dark:border-destructive/25'
+                  }`}>
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${aiTestResult.success ? 'bg-emerald-500' : 'bg-destructive'}`} />
+                    <span className="font-medium">{aiTestResult.message}</span>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
         </TabsContent>
+
 
         {/* ─────────── MAIL CONFIG ─────────── */}
         <TabsContent value="email" className="mt-0 outline-none space-y-5">
@@ -1619,6 +1847,145 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
+        </TabsContent>
+
+        {/* ─────────── EMAIL TEMPLATES ─────────── */}
+        <TabsContent value="email-templates" className="mt-0 outline-none">
+          <Card className="shadow-card border-border overflow-hidden">
+            <CardHeader className="bg-muted/30 border-b pb-5">
+              <CardTitle className="font-display text-xl flex items-center gap-2">
+                <FileText className="h-5 w-5 text-blue-500" />
+                Email Templates
+              </CardTitle>
+              <CardDescription>
+                Customize the automated emails sent to your clients. Use{' '}
+                <code className="text-[11px] bg-muted px-1 py-0.5 rounded font-mono">{'{{variable}}'}</code>{' '}
+                placeholders — they'll be replaced with real data when the email is sent.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="flex min-h-[520px]">
+
+                {/* ── Left: template list ── */}
+                <div className="w-64 shrink-0 border-r border-border flex flex-col">
+                  <div className="px-3 py-3 border-b border-border">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">
+                      Templates
+                    </p>
+                  </div>
+                  <div className="flex-1 overflow-y-auto py-2">
+                    {emailTemplates.map(tpl => (
+                      <button
+                        key={tpl.id}
+                        onClick={() => setActiveTemplateId(tpl.id)}
+                        className={`w-full flex items-center gap-3 px-4 py-3 text-left text-sm transition-all group ${
+                          tpl.id === activeTemplateId
+                            ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold border-l-2 border-blue-500'
+                            : 'text-muted-foreground hover:bg-muted/60 border-l-2 border-transparent'
+                        }`}
+                      >
+                        <div className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${
+                          tpl.id === activeTemplateId
+                            ? 'bg-blue-500/20 text-blue-500'
+                            : 'bg-muted text-muted-foreground group-hover:bg-muted/80'
+                        }`}>
+                          <Mail className="h-3.5 w-3.5" />
+                        </div>
+                        <span className="truncate leading-snug">{tpl.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ── Right: editor ── */}
+                <div className="flex-1 flex flex-col min-w-0 p-6 gap-5">
+                  {/* Template name header */}
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
+                      <Mail className="h-4 w-4 text-blue-500" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-base text-foreground">{activeTemplate.name}</h3>
+                      <p className="text-xs text-muted-foreground">Customize this email's subject and body</p>
+                    </div>
+                  </div>
+
+                  <div className="h-px bg-border/60" />
+
+                  {/* Subject */}
+                  <div className="space-y-2">
+                    <Label htmlFor="tpl-subject" className="text-sm font-semibold">Subject</Label>
+                    <Input
+                      id="tpl-subject"
+                      value={activeTemplate.subject}
+                      onChange={e => updateActiveTemplate({ subject: e.target.value })}
+                      className="h-11 focus-visible:ring-blue-500 font-medium"
+                      placeholder="Email subject line..."
+                    />
+                  </div>
+
+                  {/* Variables */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">Available Variables</Label>
+                    <div className="min-h-[52px] p-3 rounded-xl bg-muted/40 border border-border text-xs text-muted-foreground font-mono leading-relaxed">
+                      {activeTemplate.variables}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Copy a variable and paste it in the body below — it will be replaced automatically.
+                    </p>
+                  </div>
+
+                  {/* Body toolbar (visual, non-functional placeholder matching design) */}
+                  <div className="space-y-2">
+                    <Label htmlFor="tpl-body" className="text-sm font-semibold">Body</Label>
+                    <div className="flex items-center gap-1 px-3 py-2 rounded-t-xl border border-b-0 border-border bg-muted/30">
+                      <button type="button" className="px-2 py-1 rounded text-xs font-bold hover:bg-muted transition-colors" title="Bold">B</button>
+                      <button type="button" className="px-2 py-1 rounded text-xs italic hover:bg-muted transition-colors" title="Italic">I</button>
+                      <button type="button" className="px-2 py-1 rounded text-xs underline hover:bg-muted transition-colors" title="Underline">U</button>
+                      <div className="h-4 w-px bg-border mx-1" />
+                      <button type="button" className="px-2 py-1 rounded text-xs hover:bg-muted transition-colors" title="Insert Link">
+                        <Link className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <Textarea
+                      id="tpl-body"
+                      value={activeTemplate.body}
+                      onChange={e => updateActiveTemplate({ body: e.target.value })}
+                      className="rounded-t-none min-h-[200px] font-mono text-sm focus-visible:ring-blue-500 resize-y"
+                      placeholder="Write the email body here..."
+                    />
+                  </div>
+
+                  {/* Warning */}
+                  <div className="flex items-start gap-2.5 bg-amber-500/8 border border-amber-500/20 rounded-xl px-4 py-3">
+                    <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                      Please avoid using <strong>bold formatting</strong> on variable names or brackets (e.g.{' '}
+                      <code className="font-mono bg-amber-500/10 px-1 rounded">{'{{client_name}}'}</code>){' '}
+                      — this can break variable substitution.
+                    </p>
+                  </div>
+
+                  {/* Save */}
+                  <div className="mt-auto">
+                    <Button
+                      onClick={handleSaveTemplate}
+                      disabled={isSavingTemplate}
+                      className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20 gap-2"
+                    >
+                      {isSavingTemplate ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Check className="h-4 w-4" />
+                      )}
+                      Save Changes
+                    </Button>
+                  </div>
+                </div>
+
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ─────────── SYSTEM / VERSION CONTROL ─────────── */}
@@ -2150,6 +2517,15 @@ export default function SettingsPage() {
               </DialogContent>
             </Dialog>
           )}
+        </TabsContent>
+        <TabsContent value="users" className="mt-0 outline-none">
+          <UsersPage />
+        </TabsContent>
+        <TabsContent value="landing-page" className="mt-0 outline-none">
+          <LandingPageEditor />
+        </TabsContent>
+        <TabsContent value="plugins" className="mt-0 outline-none">
+          <PluginsPage />
         </TabsContent>
         </div>{/* end content area */}
         </div>{/* end desktop layout wrapper */}

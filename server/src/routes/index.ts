@@ -31,6 +31,7 @@ import accountsRoutes from './accounts.routes.js';
 import expensesRoutes from './expenses.routes.js';
 import recurringExpensesRoutes from './recurring-expenses.routes.js';
 import hrRoutes from './hr.routes.js';
+import landingPageRoutes from './landing-page.routes.js';
 
 const router = Router();
 
@@ -67,6 +68,7 @@ router.use('/reports', reportsRoutes);
 // router.use('/files', fileRoutes); // Moved to /uploads in app.ts
 
 router.use('/transfer', transferRoutes);
+router.use('/landing-page', landingPageRoutes);
 
 export default router;
 

@@ -63,11 +63,11 @@ async function main() {
   if (!existingSettings) {
     await prisma.agencySettings.create({
       data: {
-        agencyName: 'Hirdan Marketing Management',
-        adminEmail: 'contact@hirdanmarketing.com',
-        phone: '+1 555-0101',
+        agencyName: 'Hirdan Marketing',
+        adminEmail: 'info@hirdanmarketing.com',
+        phone: '+253 77 64 61 59',
         website: 'https://hirdanmarketing.com',
-        address: '123 Tech Ave, San Francisco, CA 94105',
+        address: 'Cite Barwaqo, Republic of Djibouti',
         currency: 'DJF',
         timezone: 'Africa/Djibouti',
         primaryColor: '#504188',

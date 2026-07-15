@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
 import { uploadMedia, enforceMagicBytes } from '../lib/upload.js';
 import { parsePagination } from '../lib/pagination.js';
+import { callAI, resolveProviderKey } from '../lib/ai-provider.js';
 
 const router = Router();
 router.use(authenticate);
@@ -486,12 +487,9 @@ router.post(
       let tasksToCreate: any[] = [];
 
       if (useAi) {
-        // Fetch API key
+        // Resolve the active AI provider and API key from settings
         const agencySettings = await prisma.agencySettings.findFirst();
-        const apiKey = agencySettings?.openAiApiKey;
-        if (!apiKey) {
-          throw AppError.badRequest('OpenAI API key is not configured in Settings → Integrations. Please add it first.');
-        }
+        const { provider, apiKey } = resolveProviderKey(agencySettings || {});
 
         const client = subscription.client;
         const deliverablesDescription = deliverables.map(d =>
@@ -553,34 +551,15 @@ ${prompt?.trim() ? prompt.trim() : 'No extra instructions provided by user.'}
 
 Return only the required JSON object.`;
 
-        const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            max_tokens: 4000,
-            temperature: 0.3,
-            response_format: { type: 'json_object' },
-          }),
-        });
+        const aiResponse = await callAI(provider, apiKey, [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ]);
 
-        if (!openaiRes.ok) {
-          const errorData = await openaiRes.json().catch(() => ({})) as any;
-          console.error('OpenAI API Error:', errorData);
-          throw AppError.badRequest(`OpenAI API Error: ${errorData.error?.message || openaiRes.statusText}`);
-        }
-
-        const aiData = await openaiRes.json() as any;
+        const aiDataContent = aiResponse.content;
         let aiTasks: any[] = [];
         try {
-          const parsed = JSON.parse(aiData.choices[0].message.content);
+          const parsed = JSON.parse(aiDataContent);
           if (Array.isArray(parsed)) {
             aiTasks = parsed;
           } else if (parsed.tasks && Array.isArray(parsed.tasks)) {
@@ -591,9 +570,10 @@ Return only the required JSON object.`;
             else throw new Error('Could not find tasks array in AI response');
           }
         } catch (e) {
-          console.error('Failed to parse AI response:', aiData.choices?.[0]?.message?.content);
+          console.error('Failed to parse AI response:', aiDataContent);
           throw AppError.badRequest('Failed to parse AI response. Please try again.');
         }
+
 
         // Map AI results back to tasks, preserving deliverable structure
         for (const aiTask of aiTasks) {

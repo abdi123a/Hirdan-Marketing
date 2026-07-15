@@ -13,6 +13,7 @@ import fs from 'fs';
 
 import { PATHS } from '../lib/paths.js';
 import { sendEmail, maskApiKey, generateEmailHtml } from '../lib/email.js';
+import { enforceMagicBytes } from '../lib/upload.js';
 
 // Configure multer storage
 const storage = multer.diskStorage({
@@ -31,10 +32,12 @@ const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (_req: any, file: any, cb: any) => {
-    if (file.mimetype.startsWith('image/')) {
+    const allowedExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (file.mimetype.startsWith('image/') && allowedExtensions.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('Only images are allowed'));
+      cb(new Error('Only images are allowed (.png, .jpg, .jpeg, .webp, .gif)'));
     }
   }
 });
@@ -61,6 +64,8 @@ router.get('/public', async (req: Request, res: Response, next) => {
         primaryColor: settings.primaryColor,
         enableRecaptcha: settings.enableRecaptcha,
         recaptchaSiteKey: settings.recaptchaSiteKey,
+        googleAnalyticsEnabled: settings.googleAnalyticsEnabled,
+        googleAnalyticsMeasurementId: settings.googleAnalyticsMeasurementId,
       }
     });
   } catch (error) {
@@ -133,6 +138,8 @@ router.get('/', async (req: Request, res: Response, next) => {
           enableRecaptcha: settings.enableRecaptcha,
           recaptchaSiteKey: settings.recaptchaSiteKey,
           recaptchaSecretKey: settings.recaptchaSecretKey,
+          googleAnalyticsEnabled: settings.googleAnalyticsEnabled,
+          googleAnalyticsMeasurementId: settings.googleAnalyticsMeasurementId,
           socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
         },
       });
@@ -167,7 +174,12 @@ const settingsDtoSchema = z.object({
   enableRecaptcha: z.boolean().optional(),
   recaptchaSiteKey: z.string().optional().nullable(),
   recaptchaSecretKey: z.string().optional().nullable(),
+  googleAnalyticsEnabled: z.boolean().optional(),
+  googleAnalyticsMeasurementId: z.string().optional().nullable(),
   openAiApiKey: z.string().optional().nullable(),
+  claudeApiKey: z.string().optional().nullable(),
+  geminiApiKey: z.string().optional().nullable(),
+  mainAiProvider: z.enum(['openai', 'claude', 'gemini']).optional(),
   // Allow empty string (stored as null) — actual re_ check is done in /settings/email
   resendApiKey: z.preprocess((val) => val === '' ? null : val, z.string().optional().nullable()),
   // Coerce empty string → null, validate email format only when non-null
@@ -253,7 +265,7 @@ router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }
 
 // ─── POST /api/settings/upload ───────────────────────────────────
 
-router.post('/upload', authenticate, requireAdmin, upload.single('file'), async (req: Request, res: Response, next) => {
+router.post('/upload', authenticate, requireAdmin, upload.single('file'), enforceMagicBytes({ kind: 'media' }), async (req: Request, res: Response, next) => {
   try {
     if (!req.file) {
       throw AppError.badRequest('No file uploaded');
