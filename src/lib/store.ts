@@ -544,8 +544,26 @@ const createDefaultSettings = (): AgencySettings => ({
   smtpEncryption: "tls",
   smtpDriver: "smtp",
   mailEnabled: false,
-  appVersion: "2.11.2",
+  appVersion: "2.12.0",
   versionHistory: [
+    {
+      version: "2.11.2",
+      description: "feat: add ComingSoon page, fix landing page header/footer, expand AI providers, update settings/accounts routes, improve invoice and expense modals, and enhance dashboard overview",
+      author: "Abdihakim",
+      date: "2026-07-15T13:43:16.000Z",
+    },
+    {
+      version: "2.11.1",
+      description: "fix: build and deploy landing page to hirdanmarketing.com on every push",
+      author: "Abdihakim",
+      date: "2026-07-15T12:31:36.000Z",
+    },
+    {
+      version: "2.11.0",
+      description: "chore: add landing-page .gitignore to exclude .next build artifacts, and update landing-page routes",
+      author: "Abdihakim",
+      date: "2026-07-15T01:58:24.000Z",
+    },
     {
       version: "2.9.0",
       description: "feat: add AI assistant page, landing page editor, plugins page, expanded AI integrations (OpenAI/Claude/Gemini), and connect landing page sections to dashboard settings",
