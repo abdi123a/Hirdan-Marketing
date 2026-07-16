@@ -15,6 +15,8 @@ import { LoadingScreen } from "@/components/ui/LoadingScreen";
 import NotFound from "./pages/NotFound.tsx";
 import AdminLoginPage from "./pages/AdminLoginPage.tsx";
 import ClientLoginPage from "./pages/ClientLoginPage.tsx";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage.tsx";
+import ResetPasswordPage from "./pages/ResetPasswordPage.tsx";
 import DashboardLayout from "./components/DashboardLayout.tsx";
 import { AgencyAppearanceManager } from "./components/AgencyAppearanceManager.tsx";
 import { GlobalUploadProgress } from "./components/GlobalUploadProgress.tsx";
@@ -146,6 +148,8 @@ function AppRoutes() {
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<AdminLoginPage />} />
       <Route path="/client/login" element={<ClientLoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/verify/:token" element={<VerifyDocumentPage />} />
       <Route path="/share/:shareId" element={<ShareDownload />} />
       <Route path="/f/:shareId" element={<ShareDownload />} />

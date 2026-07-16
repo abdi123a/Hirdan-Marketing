@@ -107,6 +107,7 @@ const clientDtoSchema = z.object({
   invoiceGenerationDay: z.number().int().min(1).max(28).optional().nullable(),
   paymentReminderDelay: z.number().int().min(0).max(30).optional().nullable(),
   overdueNoticeDelay: z.number().int().min(0).max(60).optional().nullable(),
+  portalAccess: z.any().optional().nullable(),
 });
 
 const clientSelfUpdateSchema = z.object({
@@ -220,6 +221,22 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) =>
     next(error);
   }
 });
+
+// ─── PATCH /api/clients/:id/portal-access ─────────────────────────
+
+router.patch('/:id/portal-access', requireAdmin, validate({ body: z.object({ portalAccess: z.any() }) }), async (req: Request, res: Response, next) => {
+  try {
+    const id = req.params.id as string;
+    const client = await prisma.client.update({
+      where: { id },
+      data: { portalAccess: req.body.portalAccess },
+    });
+    res.json({ client });
+  } catch (error) {
+    next(error);
+  }
+});
+
 
 // ─── GET /api/clients/:id/invoices ────────────────────────────────
 

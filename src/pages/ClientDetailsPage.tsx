@@ -18,7 +18,7 @@ import {
   Plus, Layers, Eye, EyeOff, KeyRound, Copy, RefreshCw,
   Instagram, Facebook, Linkedin, Youtube, Twitter,
   Trash2, Pencil, Upload, Download, ExternalLink, Share2,
-  Loader2, Zap, Send, Image, Sparkles, ChevronDown, ChevronRight, Video, MoreVertical, AlertCircle
+  Loader2, Zap, Send, Image, Sparkles, ChevronDown, ChevronRight, Video, MoreVertical, AlertCircle, Home
 } from "lucide-react";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -527,10 +527,38 @@ export default function ClientDetailsPage() {
 
 function ClientPortalAccessCard({ client }: { client: any }) {
   const { toast } = useToast();
-  const { generatePortalAccess, fetchClients } = useAgencyStore();
+  const { generatePortalAccess, fetchClients, updateClientPortalAccess } = useAgencyStore();
   const [showPassword, setShowPassword] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const portalAccess = client.portalAccess || {
+    financials: true,
+    projects: true,
+    subscriptions: true,
+    social: true,
+    planner: true,
+    documents: true
+  };
+
+  const handleToggleAccess = async (section: string, checked: boolean) => {
+    try {
+      const newAccess = { ...portalAccess, [section]: checked };
+      await updateClientPortalAccess(client.id, newAccess);
+      toast({ title: 'Portal access updated' });
+    } catch (e) {
+      toast({ title: 'Error updating access', variant: 'destructive' });
+    }
+  };
+
+  const TOGGLES = [
+    { id: 'financials', label: 'Financials', icon: Receipt },
+    { id: 'projects', label: 'Projects', icon: Briefcase },
+    { id: 'subscriptions', label: 'Subscriptions', icon: Zap },
+    { id: 'social', label: 'Social Media', icon: Share2 },
+    { id: 'planner', label: 'Planner', icon: Calendar },
+    { id: 'documents', label: 'Documents', icon: FileText },
+  ];
 
   const hasAccess = !!client.userId;
 
@@ -667,6 +695,46 @@ function ClientPortalAccessCard({ client }: { client: any }) {
             )}
           </div>
         )}
+
+        {/* Portal Sections Toggles */}
+        <div className="mt-6 pt-5 border-t border-border/50">
+          <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <Layers className="h-4 w-4 text-muted-foreground" />
+            Portal Sections
+          </h4>
+          <p className="text-xs text-muted-foreground mb-4">
+            Toggle which sections this client can see in their portal.
+          </p>
+          <div className="space-y-3">
+            {TOGGLES.map((toggle) => (
+              <div key={toggle.id} className="flex items-center justify-between">
+                <Label htmlFor={`access-${toggle.id}`} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <toggle.icon className="h-4 w-4 text-muted-foreground" />
+                  {toggle.label}
+                </Label>
+                <Switch 
+                  id={`access-${toggle.id}`} 
+                  checked={portalAccess[toggle.id] !== false} 
+                  onCheckedChange={(checked) => handleToggleAccess(toggle.id, checked)}
+                />
+              </div>
+            ))}
+            <div className="flex items-center justify-between opacity-50 cursor-not-allowed">
+              <Label className="flex items-center gap-2 text-sm cursor-not-allowed">
+                <Home className="h-4 w-4 text-muted-foreground" />
+                Overview
+              </Label>
+              <Switch checked={true} disabled />
+            </div>
+            <div className="flex items-center justify-between opacity-50 cursor-not-allowed">
+              <Label className="flex items-center gap-2 text-sm cursor-not-allowed">
+                <User className="h-4 w-4 text-muted-foreground" />
+                Account
+              </Label>
+              <Switch checked={true} disabled />
+            </div>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

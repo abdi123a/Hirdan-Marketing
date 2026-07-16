@@ -45,8 +45,8 @@ export interface AiResponse {
 const DEFAULT_MODELS: Record<AiProvider, string> = {
   openai: 'gpt-4o',
   claude: 'claude-3-5-sonnet-20241022',
-  // gemini-2.5-flash-lite: highest free-tier quota, available to all users
-  gemini: 'gemini-2.5-flash-lite',
+  // gemini-3.5-flash: highest free-tier quota, available to all users
+  gemini: 'gemini-3.5-flash',
 };
 
 // ─── OpenAI ────────────────────────────────────────────────────────────────

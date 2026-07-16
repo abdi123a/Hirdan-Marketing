@@ -33,6 +33,7 @@ export interface Client {
   invoiceGenerationDay?: number | null;
   paymentReminderDelay?: number | null;
   overdueNoticeDelay?: number | null;
+  portalAccess?: Record<string, boolean> | null;
 }
 
 export interface Project {
@@ -438,6 +439,7 @@ interface AgencyStore {
 
   addClient: (client: Omit<Client, 'id' | 'createdAt'>) => Promise<Client>;
   updateClient: (id: string, client: Partial<Client>) => Promise<void>;
+  updateClientPortalAccess: (id: string, portalAccess: Record<string, boolean>) => Promise<void>;
   deleteClient: (id: string) => Promise<void>;
 
   addProject: (project: Omit<Project, 'id'>) => Promise<void>;
@@ -559,7 +561,7 @@ const createDefaultSettings = (): AgencySettings => ({
   googleDriveClientSecret: "",
   googleDriveRefreshToken: "",
   googleDriveEnabled: false,
-  appVersion: "2.16.0",
+  appVersion: "2.16.1",
   versionHistory: [
     {
       version: "2.14.0",
@@ -1142,6 +1144,23 @@ export const useAgencyStore = create<AgencyStore>()(
           } as Client;
         } catch (error) {
           console.error("Failed to add client:", error);
+          throw error;
+        }
+      },
+
+      updateClientPortalAccess: async (id, portalAccess) => {
+        try {
+          const res = await apiFetch<{ client: any }>(`/clients/${id}/portal-access`, {
+            method: 'PATCH',
+            body: JSON.stringify({ portalAccess }),
+          });
+          set((state) => ({
+            clients: state.clients.map((c) =>
+              c.id === id ? { ...c, portalAccess: res.client.portalAccess } : c
+            ),
+          }));
+        } catch (error) {
+          console.error("Failed to update client portal access:", error);
           throw error;
         }
       },

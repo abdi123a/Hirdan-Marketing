@@ -11,6 +11,7 @@ import { AppError } from '../lib/errors.js';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { auditLog } from '../lib/audit.js';
+import { sendEmail, generateEmailHtml } from '../lib/email.js';
 
 const router = Router();
 
@@ -28,6 +29,14 @@ const refreshLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20,
   message: { error: true, message: 'Too many refresh attempts, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // Max 5 reset requests per IP per hour
+  message: { error: true, message: 'Too many password reset requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -53,6 +62,16 @@ const clientLoginSchema = z.object({
 
 const clientChangePasswordSchema = z.object({
   currentPassword: z.string().min(1),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string().min(1),
+});
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
   newPassword: z.string().min(8, 'Password must be at least 8 characters'),
   confirmPassword: z.string().min(1),
 });
@@ -470,5 +489,130 @@ router.get('/me', authenticate, async (req: Request, res: Response, next) => {
     next(error);
   }
 });
+
+// ─── POST /api/auth/forgot-password ──────────────────────────────
+
+router.post(
+  '/forgot-password',
+  passwordResetLimiter,
+  validate({ body: forgotPasswordSchema }),
+  async (req: Request, res: Response, next) => {
+    try {
+      const { email } = req.body;
+
+      // Always return 200 — never reveal whether an email exists (prevents enumeration)
+      const user = await prisma.user.findUnique({ where: { email } });
+
+      if (user) {
+        // Generate a cryptographically secure random token
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const tokenHash = sha256Hex(rawToken);
+        const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+        // Store hashed token + expiry in DB
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            passwordResetToken: tokenHash,
+            passwordResetExpiry: expiry,
+          },
+        });
+
+        // Build reset URL using APP_URL env or fallback
+        const appUrl = process.env.APP_URL || process.env.FRONTEND_URL || 'https://app.hirdanmarketing.com';
+        const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
+
+        const contentHtml = `
+          <p style="margin: 0 0 16px 0;">Hi <strong>${user.name}</strong>,</p>
+          <p style="margin: 0 0 16px 0;">We received a request to reset the password for your account associated with <strong>${user.email}</strong>.</p>
+          <p style="margin: 0 0 16px 0;">Click the button below to set a new password. This link is valid for <strong>1 hour</strong>.</p>
+          <p style="margin: 0 0 16px 0;">If you did not request a password reset, you can safely ignore this email — your password will remain unchanged.</p>
+        `;
+
+        const html = await generateEmailHtml({
+          title: 'Reset Your Password',
+          preheader: 'You requested a password reset. Click to set a new password.',
+          contentHtml,
+          actionButton: {
+            label: 'Reset Password',
+            url: resetUrl,
+          },
+        });
+
+        await sendEmail({
+          to: user.email,
+          subject: 'Reset Your Password',
+          html,
+        });
+
+        auditLog({ action: 'auth.forgot_password', success: true, email: user.email });
+      }
+
+      // Always respond with the same message
+      res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ─── POST /api/auth/reset-password ───────────────────────────────
+
+router.post(
+  '/reset-password',
+  passwordResetLimiter,
+  validate({ body: resetPasswordSchema }),
+  async (req: Request, res: Response, next) => {
+    try {
+      const { token, newPassword, confirmPassword } = req.body;
+
+      if (newPassword !== confirmPassword) {
+        throw AppError.badRequest('Passwords do not match');
+      }
+
+      // Hash the incoming raw token to compare with stored hash
+      const tokenHash = sha256Hex(token);
+
+      const user = await prisma.user.findUnique({
+        where: { passwordResetToken: tokenHash },
+      });
+
+      if (!user) {
+        throw AppError.badRequest('Invalid or expired password reset link. Please request a new one.');
+      }
+
+      if (!user.passwordResetExpiry || user.passwordResetExpiry < new Date()) {
+        // Clear expired token
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { passwordResetToken: null, passwordResetExpiry: null },
+        });
+        throw AppError.badRequest('This password reset link has expired. Please request a new one.');
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+
+      // Update password and clear reset token atomically
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          mustChangePassword: false,
+          passwordResetToken: null,
+          passwordResetExpiry: null,
+        },
+      });
+
+      // Invalidate all existing sessions for security
+      await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+
+      auditLog({ action: 'auth.reset_password', success: true, userId: user.id, email: user.email });
+
+      res.json({ message: 'Your password has been reset successfully. Please log in with your new password.' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 export default router;

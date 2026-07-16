@@ -13,6 +13,8 @@ model User {
   username      String?        @unique
   passwordHash  String         @map("password_hash")
   mustChangePassword Boolean   @default(false) @map("must_change_password")
+  passwordResetToken  String?  @unique @map("password_reset_token") @db.VarChar(512)
+  passwordResetExpiry DateTime? @map("password_reset_expiry")
   role          UserRole       @default(CLIENT)
   name          String
   createdAt     DateTime       @default(now()) @map("created_at")
@@ -76,6 +78,8 @@ model Client {
   monthlyReports   MonthlyReport[]
   sharedFiles      SharedFile[]
 
+  portalAccess  Json?          @map("portal_access")
+  
   @@index([email])
   @@index([company])
   @@map("clients")

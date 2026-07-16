@@ -23,6 +23,7 @@ import { PremiumInvoice } from '@/components/PremiumInvoice';
 import { DocumentViewer } from '@/components/DocumentViewer';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ClientPortalTour } from '@/components/ClientPortalTour';
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { useToast } from "@/hooks/use-toast";
@@ -134,6 +135,21 @@ export default function ClientPortalPage() {
   const [plannerYear, setPlannerYear] = useState(today.getFullYear());
   const [plannerPosts, setPlannerPosts] = useState<any[]>([]);
   const [isPlannerLoading, setIsPlannerLoading] = useState(false);
+  const [uploadedDocument, setUploadedDocument] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [showTour, setShowTour] = useState(false);
+
+  useEffect(() => {
+    if (user?.clientId && !localStorage.getItem(`portal_tour_done_${user.clientId}`)) {
+      setShowTour(true);
+    }
+  }, [user?.clientId]);
+
+  useEffect(() => {
+    if (!allowedSections.includes(activeTab)) {
+      setActiveTab('overview');
+    }
+  }, [activeTab, allowedSections]);
 
   useEffect(() => {
     fetchAllData().finally(() => setIsInitialLoading(false));
@@ -454,7 +470,18 @@ export default function ClientPortalPage() {
     .toUpperCase()
     .slice(0, 2);
 
-  const navItems: NavItem[] = [
+  const portalAccess = displayClient?.portalAccess || {
+    financials: true,
+    projects: true,
+    subscriptions: true,
+    social: true,
+    planner: true,
+    documents: true
+  };
+
+  const allowedSections = ['overview', ...Object.entries(portalAccess).filter(([_, v]) => v !== false).map(([k]) => k), 'account'];
+
+  const allNavItems: NavItem[] = [
     { id: 'overview', label: 'Overview', icon: <Home className="h-4 w-4" />, value: 'overview', section: 'workspace' },
     { id: 'financials', label: 'Financials', icon: <Receipt className="h-4 w-4" />, value: 'financials', badge: clientInvoices.length, section: 'workspace' },
     { id: 'projects', label: 'Projects', icon: <Briefcase className="h-4 w-4" />, value: 'projects', badge: clientProjects.length, section: 'workspace' },
@@ -464,6 +491,9 @@ export default function ClientPortalPage() {
     { id: 'documents', label: 'Documents', icon: <FileText className="h-4 w-4" />, value: 'documents', badge: portalData?.documents.length || 0, section: 'resources' },
     { id: 'account', label: 'Account', icon: <User className="h-4 w-4" />, value: 'account', section: 'resources' },
   ];
+
+  const navItems = allNavItems.filter(item => allowedSections.includes(item.id));
+
   const workspaceNavItems = navItems.filter((item) => item.section === 'workspace');
   const resourcesNavItems = navItems.filter((item) => item.section === 'resources');
 
@@ -1221,6 +1251,18 @@ export default function ClientPortalPage() {
                 </div>
 
                 {!isForcedPasswordChange && (
+                  <div className="bg-card rounded-xl border border-border shadow-sm p-6 md:p-8 flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-display font-bold text-foreground">Portal Walkthrough</h3>
+                      <p className="text-sm text-muted-foreground mt-1">Re-launch the introductory tour to see how to use your portal.</p>
+                    </div>
+                    <Button variant="outline" onClick={() => setShowTour(true)}>
+                      Replay Tour
+                    </Button>
+                  </div>
+                )}
+
+                {!isForcedPasswordChange && (
                   <div className="bg-card rounded-xl border border-border shadow-sm p-6 md:p-8">
                     <h2 className="text-xl font-display font-bold text-foreground mb-6">
                       Change Password
@@ -1919,6 +1961,13 @@ export default function ClientPortalPage() {
           </div>
         )}
       </div>
+
+      <ClientPortalTour
+        clientId={user?.clientId || ''}
+        open={showTour}
+        onClose={() => setShowTour(false)}
+        allowedSections={allowedSections}
+      />
     </div>
   );
 }

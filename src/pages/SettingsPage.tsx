@@ -1794,7 +1794,7 @@ export default function SettingsPage() {
                   {[
                     { id: 'openai', name: 'OpenAI', desc: 'GPT-4o & GPT-4o-mini models', icon: Sparkles, color: 'from-green-500/10 to-emerald-500/5 hover:border-green-500/30' },
                     { id: 'claude', name: 'Anthropic Claude', desc: 'Claude 3.5 Sonnet models', icon: Server, color: 'from-orange-500/10 to-amber-500/5 hover:border-orange-500/30' },
-                    { id: 'gemini', name: 'Google Gemini', desc: 'Gemini 2.5 Flash Lite (Free tier)', icon: Globe, color: 'from-blue-500/10 to-cyan-500/5 hover:border-blue-500/30' },
+                    { id: 'gemini', name: 'Google Gemini', desc: 'Gemini 3.5 Flash (Free tier)', icon: Globe, color: 'from-blue-500/10 to-cyan-500/5 hover:border-blue-500/30' },
                   ].map((p) => {
                     const isSelected = (formData.mainAiProvider || 'openai') === p.id;
                     const IconComponent = p.icon;

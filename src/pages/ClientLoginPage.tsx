@@ -139,6 +139,16 @@ function ClientLoginForm() {
               </Button>
             </form>
 
+            {/* Forgot password link below signin */}
+            <div className="text-center mt-4">
+              <Link
+                to="/forgot-password"
+                className="text-xs text-muted-foreground hover:text-secondary transition-colors font-medium"
+              >
+                Forgot password?
+              </Link>
+            </div>
+
             {/* Divider */}
             <div className="relative my-6">
               <div className="absolute inset-0 flex items-center">

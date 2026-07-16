@@ -58,8 +58,8 @@ export async function runBillingCycle(): Promise<void> {
           // Generate invoice number
           const initials = client.initials || client.company.substring(0, 2).toUpperCase() || client.name.substring(0, 2).toUpperCase();
           const monthStr = String(currentMonth + 1).padStart(2, '0');
-          const uniqueId = sub.id.substring(0, 4).toUpperCase();
-          const invoiceNumber = `AUTO-${initials}-${currentYear}${monthStr}-${uniqueId}`;
+          const uniqueId = sub.id.substring(0, 3).toUpperCase();
+          const invoiceNumber = `A-${initials}-${currentYear}${monthStr}-${uniqueId}`;
 
           // Compute amount with tax
           const subtotal = sub.amount; // in cents
