@@ -359,6 +359,43 @@ export default function SettingsPage() {
   const isLandingEditor = activeTab === "landing-page";
 
   useEffect(() => {
+    const code = queryParams.get("code");
+    if (code) {
+      const exchangeCode = async () => {
+        try {
+          const res = await apiFetch<{ success: boolean }>('/settings/backups/gdrive-oauth-callback', {
+            method: 'POST',
+            body: JSON.stringify({
+              code,
+              redirectUri: window.location.origin + "/dashboard/settings"
+            })
+          });
+          if (res.success) {
+            toast({
+              title: "Google Drive Authorized",
+              description: "Successfully connected to Google Drive using your account!"
+            });
+            setActiveTab("plugins");
+            queryParams.delete("code");
+            queryParams.set("tab", "plugins");
+            window.history.replaceState({}, '', `${window.location.pathname}?${queryParams.toString()}`);
+            fetchSettings();
+          }
+        } catch (err: any) {
+          toast({
+            title: "Authorization Failed",
+            description: err.message || "Failed to exchange Google OAuth code.",
+            variant: "destructive"
+          });
+          queryParams.delete("code");
+          window.history.replaceState({}, '', `${window.location.pathname}?${queryParams.toString()}`);
+        }
+      };
+      exchangeCode();
+    }
+  }, []);
+
+  useEffect(() => {
     if (tabParam) {
       setActiveTab(tabParam);
     }

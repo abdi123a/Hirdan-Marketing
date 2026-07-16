@@ -59,6 +59,12 @@ export default function PluginsPage() {
   const [analyticsId, setAnalyticsId] = useState(settings.googleAnalyticsMeasurementId || "");
   const [googleDriveFolderId, setGoogleDriveFolderId] = useState(settings.googleDriveFolderId || "");
   const [googleDriveServiceAccountJson, setGoogleDriveServiceAccountJson] = useState(settings.googleDriveServiceAccountJson || "");
+  const [googleDriveClientId, setGoogleDriveClientId] = useState(settings.googleDriveClientId || "");
+  const [googleDriveClientSecret, setGoogleDriveClientSecret] = useState(settings.googleDriveClientSecret || "");
+  const [googleDriveAuthType, setGoogleDriveAuthType] = useState<"oauth" | "service_account">(
+    settings.googleDriveClientId ? "oauth" : "service_account"
+  );
+  const [isAuthorizingDrive, setIsAuthorizingDrive] = useState(false);
   const [isTestingDrive, setIsTestingDrive] = useState(false);
 
   // Sidebar settings links matching screenshot
@@ -99,14 +105,18 @@ export default function PluginsPage() {
         openEditModal("analytics");
         return;
       }
-      if (plugin === "gdrive" && !settings.googleDriveServiceAccountJson) {
-        toast({
-          title: "Configuration Required",
-          description: "Please paste your Google Service Account JSON key before enabling this plugin.",
-          variant: "destructive"
-        });
-        openEditModal("gdrive");
-        return;
+      if (plugin === "gdrive") {
+        const hasServiceAccount = !!settings.googleDriveServiceAccountJson;
+        const hasOAuth = !!(settings.googleDriveClientId && settings.googleDriveClientSecret && settings.googleDriveRefreshToken);
+        if (!hasServiceAccount && !hasOAuth) {
+          toast({
+            title: "Configuration Required",
+            description: "Please configure Google Drive integration (OAuth 2.0 or Service Account JSON) before enabling this plugin.",
+            variant: "destructive"
+          });
+          openEditModal("gdrive");
+          return;
+        }
       }
     }
 
@@ -151,7 +161,7 @@ export default function PluginsPage() {
       const res = await apiFetch<{ success: boolean; fileId: string }>('/settings/backups/gdrive-test', {
         method: 'POST',
         body: JSON.stringify({
-          serviceAccountJson: googleDriveServiceAccountJson,
+          serviceAccountJson: googleDriveAuthType === "service_account" ? googleDriveServiceAccountJson : null,
           folderId: googleDriveFolderId
         })
       });
@@ -194,11 +204,20 @@ export default function PluginsPage() {
           description: "Measurement ID (G-XXXXXXXXXX) has been updated successfully."
         });
       } else if (editingPlugin === "gdrive") {
-        await updateSettings({
+        const payload: any = {
           googleDriveFolderId,
-          googleDriveServiceAccountJson,
-          googleDriveEnabled: true // Enable by default when credentials are saved
-        });
+          googleDriveServiceAccountJson: googleDriveAuthType === "service_account" ? googleDriveServiceAccountJson : null,
+          googleDriveClientId: googleDriveAuthType === "oauth" ? googleDriveClientId : null,
+          googleDriveClientSecret: googleDriveAuthType === "oauth" ? googleDriveClientSecret : null,
+        };
+        // Auto-enable only if service account is set OR OAuth is fully authenticated (has refresh token)
+        const hasServiceAccount = googleDriveAuthType === "service_account" && !!googleDriveServiceAccountJson;
+        const hasOAuth = googleDriveAuthType === "oauth" && !!settings.googleDriveRefreshToken;
+        if (hasServiceAccount || hasOAuth) {
+          payload.googleDriveEnabled = true;
+        }
+
+        await updateSettings(payload);
         toast({
           title: "Google Drive Settings Saved",
           description: "Google Drive backup sync integration has been updated successfully."
@@ -216,6 +235,43 @@ export default function PluginsPage() {
     }
   };
 
+  const handleAuthorizeDrive = async () => {
+    if (!googleDriveClientId || !googleDriveClientSecret) {
+      toast({
+        title: "Credentials Required",
+        description: "Please enter your Google OAuth Client ID and Client Secret first.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsAuthorizingDrive(true);
+    try {
+      await updateSettings({
+        googleDriveFolderId,
+        googleDriveClientId,
+        googleDriveClientSecret,
+        googleDriveServiceAccountJson: null,
+      });
+
+      const redirectUri = window.location.origin + "/dashboard/settings";
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${googleDriveClientId}&redirect_uri=${encodeURIComponent(
+        redirectUri
+      )}&response_type=code&scope=${encodeURIComponent(
+        "https://www.googleapis.com/auth/drive.file"
+      )}&access_type=offline&prompt=consent`;
+
+      window.location.href = authUrl;
+    } catch (err: any) {
+      toast({
+        title: "Authorization Failed",
+        description: err.message || "Failed to initialize authorization.",
+        variant: "destructive"
+      });
+      setIsAuthorizingDrive(false);
+    }
+  };
+
   const openEditModal = (plugin: "recaptcha" | "analytics" | "gdrive") => {
     if (plugin === "recaptcha") {
       setRecaptchaSiteKey(settings.recaptchaSiteKey || "");
@@ -225,6 +281,9 @@ export default function PluginsPage() {
     } else if (plugin === "gdrive") {
       setGoogleDriveFolderId(settings.googleDriveFolderId || "");
       setGoogleDriveServiceAccountJson(settings.googleDriveServiceAccountJson || "");
+      setGoogleDriveClientId(settings.googleDriveClientId || "");
+      setGoogleDriveClientSecret(settings.googleDriveClientSecret || "");
+      setGoogleDriveAuthType(settings.googleDriveClientId ? "oauth" : "service_account");
     }
     setEditingPlugin(plugin);
   };
@@ -462,26 +521,108 @@ export default function PluginsPage() {
                   Target folder ID in Google Drive. If left empty, backups will be saved in the root directory.
                 </p>
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="gdrive-service-account" className="font-semibold text-sm">Google Service Account JSON Key</Label>
-                <textarea
-                  id="gdrive-service-account"
-                  value={googleDriveServiceAccountJson}
-                  onChange={(e) => setGoogleDriveServiceAccountJson(e.target.value)}
-                  placeholder='{ "type": "service_account", "project_id": ... }'
-                  className="flex min-h-[120px] w-full rounded-xl border border-input bg-transparent px-3 py-2 text-xs font-mono shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Paste the content of your Google Service Account credentials JSON file.
-                </p>
+                <Label className="font-semibold text-sm">Authentication Method</Label>
+                <div className="flex gap-6 pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-foreground">
+                    <input
+                      type="radio"
+                      name="auth_type"
+                      checked={googleDriveAuthType === "oauth"}
+                      onChange={() => setGoogleDriveAuthType("oauth")}
+                      className="h-4 w-4 rounded-full border-primary text-primary focus:ring-primary accent-primary"
+                    />
+                    Google Account (OAuth 2.0 - Recommended)
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-foreground">
+                    <input
+                      type="radio"
+                      name="auth_type"
+                      checked={googleDriveAuthType === "service_account"}
+                      onChange={() => setGoogleDriveAuthType("service_account")}
+                      className="h-4 w-4 rounded-full border-primary text-primary focus:ring-primary accent-primary"
+                    />
+                    Service Account JSON Key
+                  </label>
+                </div>
               </div>
+
+              {googleDriveAuthType === "oauth" ? (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="gdrive-client-id" className="font-semibold text-sm">OAuth Client ID</Label>
+                    <Input
+                      id="gdrive-client-id"
+                      value={googleDriveClientId}
+                      onChange={(e) => setGoogleDriveClientId(e.target.value)}
+                      placeholder="Enter Client ID"
+                      className="rounded-xl h-11 focus-visible:ring-primary font-mono text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="gdrive-client-secret" className="font-semibold text-sm">OAuth Client Secret</Label>
+                    <Input
+                      id="gdrive-client-secret"
+                      type="password"
+                      value={googleDriveClientSecret}
+                      onChange={(e) => setGoogleDriveClientSecret(e.target.value)}
+                      placeholder="Enter Client Secret"
+                      className="rounded-xl h-11 focus-visible:ring-primary font-mono text-xs"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2.5 p-4 border border-blue-500/10 bg-blue-500/5 rounded-xl text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-muted-foreground">Authorization Status:</span>
+                      {settings.googleDriveRefreshToken ? (
+                        <span className="text-green-600 dark:text-green-400 font-bold flex items-center gap-1">Authorized ✅</span>
+                      ) : (
+                        <span className="text-red-500 dark:text-red-400 font-bold flex items-center gap-1">Not Authorized ❌</span>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={handleAuthorizeDrive}
+                      disabled={isAuthorizingDrive || !googleDriveClientId || !googleDriveClientSecret}
+                      className="w-full mt-1 bg-blue-600 hover:bg-blue-700 text-white font-medium h-10 rounded-xl"
+                    >
+                      {isAuthorizingDrive ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Redirecting to Google...
+                        </>
+                      ) : (
+                        "Authorize Google Drive"
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="gdrive-service-account" className="font-semibold text-sm">Google Service Account JSON Key</Label>
+                  <textarea
+                    id="gdrive-service-account"
+                    value={googleDriveServiceAccountJson}
+                    onChange={(e) => setGoogleDriveServiceAccountJson(e.target.value)}
+                    placeholder='{ "type": "service_account", "project_id": ... }'
+                    className="flex min-h-[120px] w-full rounded-xl border border-input bg-transparent px-3 py-2 text-xs font-mono shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Paste the content of your Google Service Account credentials JSON file.
+                  </p>
+                </div>
+              )}
 
               <div className="flex justify-start">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={handleTestGDriveConnection}
-                  disabled={isTestingDrive || !googleDriveServiceAccountJson}
+                  disabled={
+                    isTestingDrive ||
+                    (googleDriveAuthType === "service_account" && !googleDriveServiceAccountJson) ||
+                    (googleDriveAuthType === "oauth" && !settings.googleDriveRefreshToken)
+                  }
                   className="h-10 px-5 text-xs rounded-xl"
                 >
                   {isTestingDrive ? (
@@ -498,13 +639,22 @@ export default function PluginsPage() {
               {/* Setup Guide */}
               <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/10 text-xs text-muted-foreground space-y-2 leading-relaxed">
                 <p className="font-semibold text-blue-700 dark:text-blue-400">📋 Setup Guide for Google Drive Integration:</p>
-                <ol className="list-decimal list-outside pl-4 space-y-1">
-                  <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline hover:text-blue-600">Google Cloud Console ↗</a>, create a project, and enable the <strong>Google Drive API</strong>.</li>
-                  <li>Create a <strong>Service Account</strong> under Credentials, generate a <strong>JSON Private Key</strong>, and download it.</li>
-                  <li>Paste the contents of that JSON key into the key field above.</li>
-                  <li>Create a folder in your Google Drive, and <strong>share it</strong> with the service account's client email (found in the JSON file) as Editor.</li>
-                  <li>Copy the folder's ID from the URL (the string after <code className="bg-muted px-1 py-0.5 rounded break-all">folders/</code>) and paste it into the Folder ID field above.</li>
-                </ol>
+                {googleDriveAuthType === "oauth" ? (
+                  <ol className="list-decimal list-outside pl-4 space-y-1">
+                    <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline hover:text-blue-600">Google Cloud Console ↗</a>, create a project, and enable the <strong>Google Drive API</strong>.</li>
+                    <li>Go to <strong>OAuth Consent Screen</strong>, configure it for external or internal users, and add the <code className="bg-muted px-1 py-0.5 rounded break-all">.../auth/drive.file</code> scope.</li>
+                    <li>Go to <strong>Credentials</strong>, click <strong>Create Credentials</strong> &rarr; <strong>OAuth Client ID</strong>, select <strong>Web Application</strong>.</li>
+                    <li>Add the redirect URI: <code className="bg-muted px-1 py-0.5 rounded break-all">{window.location.origin}/dashboard/settings</code> to the <strong>Authorized Redirect URIs</strong>.</li>
+                    <li>Copy the Client ID and Client Secret, paste them above, and click <strong>Authorize Google Drive</strong>.</li>
+                  </ol>
+                ) : (
+                  <ol className="list-decimal list-outside pl-4 space-y-1">
+                    <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline hover:text-blue-600">Google Cloud Console ↗</a>, create a project, and enable the <strong>Google Drive API</strong>.</li>
+                    <li>Create a <strong>Service Account</strong> under Credentials, generate a <strong>JSON Private Key</strong>, download it, and paste it above.</li>
+                    <li>Create a folder in a Google Workspace <strong>Shared Drive</strong> (since Service Accounts created after April 15, 2025 have 0 GB quota on My Drive), and share it with the service account client email as <strong>Content Manager</strong> or <strong>Contributor</strong>.</li>
+                    <li>Copy the folder's ID from the URL and paste it into the Folder ID field above.</li>
+                  </ol>
+                )}
               </div>
             </div>
           )}

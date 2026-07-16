@@ -393,6 +393,9 @@ export interface AgencySettings {
   mailEnabled: boolean;
   googleDriveFolderId: string;
   googleDriveServiceAccountJson: string;
+  googleDriveClientId: string;
+  googleDriveClientSecret: string;
+  googleDriveRefreshToken: string;
   googleDriveEnabled: boolean;
   appVersion: string;
   versionHistory: VersionEntry[];
@@ -552,9 +555,24 @@ const createDefaultSettings = (): AgencySettings => ({
   mailEnabled: false,
   googleDriveFolderId: "",
   googleDriveServiceAccountJson: "",
+  googleDriveClientId: "",
+  googleDriveClientSecret: "",
+  googleDriveRefreshToken: "",
   googleDriveEnabled: false,
-  appVersion: "2.13.0",
+  appVersion: "2.14.1",
   versionHistory: [
+    {
+      version: "2.14.0",
+      description: "feat: add Google Drive OAuth integration, support redirect URI authorization callback, resolve sidebar page flickering, and fix financial page crash",
+      author: "Antigravity",
+      date: "2026-07-16T00:36:00.000Z",
+    },
+    {
+      version: "2.13.0",
+      description: "feat: upgrade client subscription model with custom billing periods, pricing, and automated invoice generation",
+      author: "Abdihakim",
+      date: "2026-07-15T20:00:00.000Z",
+    },
     {
       version: "2.11.2",
       description: "feat: add ComingSoon page, fix landing page header/footer, expand AI providers, update settings/accounts routes, improve invoice and expense modals, and enhance dashboard overview",
@@ -1025,6 +1043,7 @@ export const useAgencyStore = create<AgencyStore>()(
               'resendApiKey', 'emailFrom', 'mailerName',
               'smtpHost', 'smtpPort', 'smtpUsername', 'smtpEncryption', 'smtpDriver',
               'mailEnabled', 'googleDriveFolderId', 'googleDriveServiceAccountJson', 'googleDriveEnabled',
+              'googleDriveClientId', 'googleDriveClientSecret', 'googleDriveRefreshToken',
             ];
 
             const merged: AgencySettings = {

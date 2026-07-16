@@ -92,7 +92,7 @@ interface CashFlowData {
 
 export default function FinancialReportPage() {
   const { toast } = useToast();
-  const { invoices, fetchInvoices } = useAgencyStore();
+  const { invoices, fetchInvoices, settings, fetchSettings } = useAgencyStore();
   const [activeTab, setActiveTab] = useState<string>("income-statement");
   const [preset, setPreset] = useState<string>("this-month");
   
@@ -179,7 +179,8 @@ export default function FinancialReportPage() {
 
   useEffect(() => {
     fetchInvoices();
-  }, [fetchInvoices]);
+    fetchSettings();
+  }, [fetchInvoices, fetchSettings]);
 
   const handlePrint = () => {
     window.print();
@@ -965,7 +966,7 @@ export default function FinancialReportPage() {
                           const amt = inv.status === 'Paid' ? parseAmountNumber(inv.amount) : (inv.deposit || 0);
                           return (
                             <div key={inv.id} className="grid grid-cols-5 p-3 items-center text-foreground hover:bg-muted/10 transition-colors">
-                              <div className="font-semibold text-primary">{inv.invoiceNumber}</div>
+                              <div className="font-semibold text-primary">{inv.id}</div>
                               <div className="truncate pr-2 font-medium">{inv.client}</div>
                               <div className="text-muted-foreground">{new Date(inv.date).toLocaleDateString()}</div>
                               <div>

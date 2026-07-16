@@ -7,7 +7,7 @@ import hirdanLogo from "@/assets/hirdan-logo.png";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthStore } from "@/lib/auth-store";
 import { useAgencyStore } from "@/lib/store";
@@ -134,7 +134,27 @@ export default function DashboardLayout() {
             </form>
           </header>}
           <main className={isLandingEditor ? "flex-1 overflow-auto min-w-0" : "flex-1 overflow-auto p-4 md:p-6 lg:p-8 min-w-0"}>
-            <Outlet />
+            <Suspense
+              fallback={
+                <div className="flex flex-col gap-6 animate-pulse w-full">
+                  {/* Header/Title Skeleton */}
+                  <div className="flex flex-col gap-2">
+                    <div className="h-8 w-48 bg-muted/60 rounded-lg" />
+                    <div className="h-4 w-80 bg-muted/40 rounded-lg" />
+                  </div>
+                  {/* Cards/Stats Grid Skeleton */}
+                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="h-32 bg-muted/50 rounded-xl" />
+                    <div className="h-32 bg-muted/50 rounded-xl" />
+                    <div className="h-32 bg-muted/50 rounded-xl" />
+                  </div>
+                  {/* Main Content Area Skeleton */}
+                  <div className="h-[300px] w-full bg-muted/40 rounded-xl" />
+                </div>
+              }
+            >
+              <Outlet />
+            </Suspense>
           </main>
         </div>
       </div>

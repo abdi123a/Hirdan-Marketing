@@ -224,6 +224,9 @@ const settingsDtoSchema = z.object({
   mailEnabled: z.boolean().optional(),
   googleDriveFolderId: z.string().optional().nullable(),
   googleDriveServiceAccountJson: z.string().optional().nullable(),
+  googleDriveClientId: z.string().optional().nullable(),
+  googleDriveClientSecret: z.string().optional().nullable(),
+  googleDriveRefreshToken: z.string().optional().nullable(),
   googleDriveEnabled: z.boolean().optional(),
   id: z.string().optional(),
   createdAt: z.string().optional(),
@@ -269,6 +272,8 @@ router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }
     const sensitiveKeys = [
       'openAiApiKey', 'claudeApiKey', 'geminiApiKey',
       'resendApiKey', 'emailFrom', 'mailerName',
+      'googleDriveClientId', 'googleDriveClientSecret', 'googleDriveRefreshToken',
+      'googleDriveServiceAccountJson'
     ] as const;
     for (const key of sensitiveKeys) {
       if (rest[key] === '') {
@@ -436,41 +441,79 @@ router.post('/email/test', authenticate, requireAdmin, async (req: Request, res:
 });
 
 // ─── GOOGLE DRIVE HELPER ──────────────────────────────────────────
-async function uploadToGoogleDrive(filePath: string, filename: string, serviceAccountJsonStr: string, folderId?: string) {
-  const credentials = JSON.parse(serviceAccountJsonStr);
-  const clientEmail = credentials.client_email;
-  const privateKey = credentials.private_key;
-
-  if (!clientEmail || !privateKey) {
-    throw new Error('Invalid Google Service Account JSON structure. Ensure client_email and private_key are present.');
+async function uploadToGoogleDrive(
+  filePath: string,
+  filename: string,
+  serviceAccountJsonStr: string | null | undefined,
+  folderId: string | null | undefined,
+  oauthConfig?: {
+    clientId?: string | null;
+    clientSecret?: string | null;
+    refreshToken?: string | null;
   }
+) {
+  let accessToken: string;
 
-  const payload = {
-    iss: clientEmail,
-    scope: 'https://www.googleapis.com/auth/drive.file',
-    aud: 'https://oauth2.googleapis.com/token',
-    exp: Math.floor(Date.now() / 1000) + 3600,
-    iat: Math.floor(Date.now() / 1000)
-  };
+  if (oauthConfig && oauthConfig.clientId && oauthConfig.clientSecret && oauthConfig.refreshToken) {
+    // OAuth 2.0 User Authentication Flow
+    const authResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: oauthConfig.clientId,
+        client_secret: oauthConfig.clientSecret,
+        refresh_token: oauthConfig.refreshToken,
+        grant_type: 'refresh_token'
+      })
+    });
 
-  const token = jwt.sign(payload, privateKey, { algorithm: 'RS256' });
+    if (!authResponse.ok) {
+      const errText = await authResponse.text();
+      throw new Error(`Google OAuth token refresh failed: ${errText}`);
+    }
 
-  const authResponse = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: token
-    })
-  });
+    const authData = await authResponse.json() as any;
+    accessToken = authData.access_token;
+  } else {
+    // Service Account Flow
+    if (!serviceAccountJsonStr) {
+      throw new Error('Google Drive integration is not configured. Configure OAuth 2.0 or Service Account first.');
+    }
+    const credentials = JSON.parse(serviceAccountJsonStr);
+    const clientEmail = credentials.client_email;
+    const privateKey = credentials.private_key;
 
-  if (!authResponse.ok) {
-    const errText = await authResponse.text();
-    throw new Error(`Google Auth failed: ${errText}`);
+    if (!clientEmail || !privateKey) {
+      throw new Error('Invalid Google Service Account JSON structure. Ensure client_email and private_key are present.');
+    }
+
+    const payload = {
+      iss: clientEmail,
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      aud: 'https://oauth2.googleapis.com/token',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      iat: Math.floor(Date.now() / 1000)
+    };
+
+    const token = jwt.sign(payload, privateKey, { algorithm: 'RS256' });
+
+    const authResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: token
+      })
+    });
+
+    if (!authResponse.ok) {
+      const errText = await authResponse.text();
+      throw new Error(`Google Auth failed: ${errText}`);
+    }
+
+    const authData = await authResponse.json() as any;
+    accessToken = authData.access_token;
   }
-
-  const authData = await authResponse.json() as any;
-  const accessToken = authData.access_token;
 
   const fileContent = fs.readFileSync(filePath);
   const metadata = {
@@ -489,7 +532,7 @@ async function uploadToGoogleDrive(filePath: string, filename: string, serviceAc
     Buffer.from(closeDelimiter)
   ]);
 
-  const uploadResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+  const uploadResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${accessToken}`,
@@ -574,14 +617,22 @@ router.post('/backups', authenticate, requireAdmin, async (req: Request, res: Re
     let gDriveFileId = undefined;
     let uploadError = undefined;
 
-    if (settings?.googleDriveEnabled && settings?.googleDriveServiceAccountJson) {
+    const hasServiceAccount = !!settings?.googleDriveServiceAccountJson;
+    const hasOAuth = !!(settings?.googleDriveClientId && settings?.googleDriveClientSecret && settings?.googleDriveRefreshToken);
+
+    if (settings?.googleDriveEnabled && (hasServiceAccount || hasOAuth)) {
       try {
         console.log('☁️ Auto-uploading backup to Google Drive...');
         gDriveFileId = await uploadToGoogleDrive(
           latestBackup.path,
           latestBackup.filename,
           settings.googleDriveServiceAccountJson,
-          settings.googleDriveFolderId || undefined
+          settings.googleDriveFolderId,
+          {
+            clientId: settings.googleDriveClientId,
+            clientSecret: settings.googleDriveClientSecret,
+            refreshToken: settings.googleDriveRefreshToken,
+          }
         );
         uploadedToGDrive = true;
       } catch (err: any) {
@@ -602,14 +653,72 @@ router.post('/backups', authenticate, requireAdmin, async (req: Request, res: Re
   }
 });
 
+// ─── POST /api/settings/backups/gdrive-oauth-callback ───────────────
+// Exchanges OAuth 2.0 authorization code for refresh token and saves it.
+router.post('/backups/gdrive-oauth-callback', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const { code, redirectUri } = req.body;
+    if (!code || !redirectUri) {
+      throw AppError.badRequest('Authorization code and redirect URI are required.');
+    }
+
+    const settings = await prisma.agencySettings.findFirst();
+    if (!settings?.googleDriveClientId || !settings?.googleDriveClientSecret) {
+      throw AppError.badRequest('Google Client ID and Client Secret must be configured first.');
+    }
+
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: settings.googleDriveClientId,
+        client_secret: settings.googleDriveClientSecret,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      const errText = await tokenResponse.text();
+      throw new Error(`Google token exchange failed: ${errText}`);
+    }
+
+    const tokenData = await tokenResponse.json() as any;
+    const { refresh_token } = tokenData;
+
+    if (!refresh_token) {
+      if (!settings.googleDriveRefreshToken) {
+        throw new Error('No refresh token returned by Google. Try revoking app access and authenticating again.');
+      }
+    }
+
+    await prisma.agencySettings.update({
+      where: { id: settings.id },
+      data: {
+        googleDriveRefreshToken: refresh_token || settings.googleDriveRefreshToken,
+        googleDriveEnabled: true
+      }
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
 // ─── POST /api/settings/backups/gdrive-test ───────────────────────
 // Tests Google Drive integration by uploading a small test file.
 router.post('/backups/gdrive-test', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
   try {
     const { serviceAccountJson, folderId } = req.body;
+    const settings = await prisma.agencySettings.findFirst();
 
-    if (!serviceAccountJson) {
-      throw AppError.badRequest('Google Service Account JSON is required.');
+    const hasServiceAccount = !!(serviceAccountJson || settings?.googleDriveServiceAccountJson);
+    const hasOAuth = !!(settings?.googleDriveClientId && settings?.googleDriveClientSecret && settings?.googleDriveRefreshToken);
+
+    if (!hasServiceAccount && !hasOAuth) {
+      throw AppError.badRequest('Google Drive integration is not configured. Configure OAuth 2.0 or Service Account JSON key first.');
     }
 
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -620,8 +729,13 @@ router.post('/backups/gdrive-test', authenticate, requireAdmin, async (req: Requ
       const gDriveFileId = await uploadToGoogleDrive(
         testFilePath,
         'connection_test.txt',
-        serviceAccountJson,
-        folderId || undefined
+        serviceAccountJson || settings?.googleDriveServiceAccountJson,
+        folderId || settings?.googleDriveFolderId,
+        {
+          clientId: settings?.googleDriveClientId,
+          clientSecret: settings?.googleDriveClientSecret,
+          refreshToken: settings?.googleDriveRefreshToken,
+        }
       );
 
       // Clean up local test file
@@ -680,15 +794,23 @@ router.post('/backups/:filename/upload-gdrive', authenticate, requireAdmin, asyn
     }
 
     const settings = await prisma.agencySettings.findFirst();
-    if (!settings?.googleDriveServiceAccountJson) {
-      throw AppError.badRequest('Google Drive integration is not configured. Add your Service Account JSON key first.');
+    const hasServiceAccount = !!settings?.googleDriveServiceAccountJson;
+    const hasOAuth = !!(settings?.googleDriveClientId && settings?.googleDriveClientSecret && settings?.googleDriveRefreshToken);
+
+    if (!hasServiceAccount && !hasOAuth) {
+      throw AppError.badRequest('Google Drive integration is not configured. Configure OAuth 2.0 or Service Account JSON key first.');
     }
 
     const fileId = await uploadToGoogleDrive(
       filePath,
       filename,
       settings.googleDriveServiceAccountJson,
-      settings.googleDriveFolderId || undefined
+      settings.googleDriveFolderId,
+      {
+        clientId: settings.googleDriveClientId,
+        clientSecret: settings.googleDriveClientSecret,
+        refreshToken: settings.googleDriveRefreshToken,
+      }
     );
 
     res.json({ success: true, fileId });

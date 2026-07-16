@@ -454,6 +454,9 @@ model AgencySettings {
   hrFallbackApproverId String?  @map("hr_fallback_approver_id")
   googleDriveFolderId        String?  @map("google_drive_folder_id")
   googleDriveServiceAccountJson String? @map("google_drive_service_account_json") @db.LongText
+  googleDriveClientId          String?  @map("google_drive_client_id")
+  googleDriveClientSecret      String?  @map("google_drive_client_secret") @db.LongText
+  googleDriveRefreshToken      String?  @map("google_drive_refresh_token") @db.LongText
   googleDriveEnabled         Boolean  @default(false) @map("google_drive_enabled")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
