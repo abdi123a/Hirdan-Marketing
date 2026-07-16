@@ -11,16 +11,30 @@ async function syncEmailEnvFromDb() {
     const settings = await prisma.agencySettings.findFirst({
       select: { resendApiKey: true, emailFrom: true },
     });
-    if (settings?.resendApiKey && !process.env.RESEND_API_KEY) {
-      process.env.RESEND_API_KEY = settings.resendApiKey;
-      console.log('📧 RESEND_API_KEY loaded from database');
+    
+    if (settings?.resendApiKey) {
+      const dbKey = settings.resendApiKey.trim();
+      const isDbKeyValid = dbKey && dbKey.startsWith('re_') && !dbKey.includes('xxx');
+      const isEnvPlaceholder = !process.env.RESEND_API_KEY || process.env.RESEND_API_KEY.includes('xxx') || process.env.RESEND_API_KEY.trim() === '';
+      
+      if (isDbKeyValid && (isEnvPlaceholder || process.env.RESEND_API_KEY !== dbKey)) {
+        process.env.RESEND_API_KEY = dbKey;
+        console.log('📧 RESEND_API_KEY loaded/synchronized from database');
+      }
     }
-    if (settings?.emailFrom && !process.env.EMAIL_FROM) {
-      process.env.EMAIL_FROM = settings.emailFrom;
+    
+    if (settings?.emailFrom) {
+      const dbEmail = settings.emailFrom.trim();
+      const isDbEmailValid = dbEmail && dbEmail.includes('@') && !dbEmail.includes('yourdomain.com');
+      const isEnvPlaceholder = !process.env.EMAIL_FROM || process.env.EMAIL_FROM.includes('yourdomain.com') || process.env.EMAIL_FROM.trim() === '';
+      
+      if (isDbEmailValid && (isEnvPlaceholder || process.env.EMAIL_FROM !== dbEmail)) {
+        process.env.EMAIL_FROM = dbEmail;
+      }
     }
-  } catch {
+  } catch (error) {
     // Non-fatal — email just won't work until configured via settings panel
-    console.warn('⚠️  Could not load email settings from database on startup');
+    console.warn('⚠️  Could not load email settings from database on startup:', error);
   }
 }
 

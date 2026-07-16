@@ -285,66 +285,53 @@ export async function generateWelcomeEmailHtml(options: WelcomeEmailOptions): Pr
   const website     = settings?.website     || 'hirdanmarketing.com';
 
   const portalUrl = options.portalUrl || `https://app.${website}`;
+  const colorHex = primaryColor.replace('#', '');
 
-  // Feature cards data
+  // Feature cards data with Icons8 names
   const features = [
     {
-      emoji: '💰',
+      icon: 'receipt',
       title: 'Financials',
       desc: 'View all your invoices, payment history, and outstanding balances in one place.',
     },
     {
-      emoji: '🚀',
+      icon: 'briefcase',
       title: 'Projects',
       desc: 'Track the real-time progress of all your active and completed projects.',
     },
     {
-      emoji: '🔄',
+      icon: 'repeat',
       title: 'Subscriptions',
       desc: 'Manage your service packages and subscription plans with full transparency.',
     },
     {
-      emoji: '📱',
+      icon: 'share--v1',
       title: 'Social Media',
       desc: 'Monitor your connected social accounts and campaign performance metrics.',
     },
     {
-      emoji: '📅',
+      icon: 'calendar--v1',
       title: 'Content Planner',
       desc: 'View and approve your scheduled content calendar across all platforms.',
     },
     {
-      emoji: '📂',
+      icon: 'opened-folder',
       title: 'Documents',
       desc: 'Securely access and download all shared contracts, reports, and files.',
     },
   ];
-
-  const featureCardsHtml = features.map(f => `
-    <td width="50%" style="padding: 8px; vertical-align: top;">
-      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8f7ff; border: 1px solid #e8e4f5; border-radius: 12px; overflow: hidden;">
-        <tr>
-          <td style="padding: 16px;">
-            <div style="font-size: 28px; margin-bottom: 8px; line-height: 1;">${f.emoji}</div>
-            <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #1e1b3a; letter-spacing: -0.2px;">${f.title}</p>
-            <p style="margin: 0; font-size: 12px; color: #6b7280; line-height: 1.5;">${f.desc}</p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  `).join('');
 
   // Build 3x2 grid of feature cards (2 per row)
   const featureRows: string[] = [];
   for (let i = 0; i < features.length; i += 2) {
     const cells = features.slice(i, i + 2).map(f => `
       <td width="50%" style="padding: 8px; vertical-align: top;">
-        <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8f7ff; border: 1px solid #e8e4f5; border-radius: 12px;">
+        <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 12px;">
           <tr>
-            <td style="padding: 16px;">
-              <div style="font-size: 26px; margin-bottom: 8px; line-height: 1;">${f.emoji}</div>
-              <p style="margin: 0 0 5px 0; font-size: 13px; font-weight: 700; color: #1e1b3a;">${f.title}</p>
-              <p style="margin: 0; font-size: 12px; color: #6b7280; line-height: 1.5;">${f.desc}</p>
+            <td style="padding: 20px;">
+              <img src="https://img.icons8.com/ios-filled/60/${colorHex}/${f.icon}.png" width="30" height="30" style="display: block; margin-bottom: 12px;" alt="${f.title}" />
+              <p style="margin: 0 0 5px 0; font-size: 14px; font-weight: 700; color: #0f172a;">${f.title}</p>
+              <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5; font-weight: 500;">${f.desc}</p>
             </td>
           </tr>
         </table>
@@ -363,65 +350,72 @@ export async function generateWelcomeEmailHtml(options: WelcomeEmailOptions): Pr
 
   const stepsHtml = steps.map(s => `
     <tr>
-      <td style="padding: 10px 0; vertical-align: top;">
+      <td style="padding: 12px 0; vertical-align: top;">
         <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
           <tr>
             <td width="40" style="vertical-align: top; padding-right: 14px;">
-              <div style="width: 32px; height: 32px; border-radius: 50%; background-color: ${primaryColor}; color: #ffffff; font-size: 13px; font-weight: 800; text-align: center; line-height: 32px;">${s.num}</div>
+              <div style="width: 30px; height: 30px; border-radius: 50%; background-color: ${primaryColor}; color: #ffffff; font-size: 13px; font-weight: 800; text-align: center; line-height: 30px;">${s.num}</div>
             </td>
-            <td style="vertical-align: top; padding-top: 5px;">
-              <p style="margin: 0 0 3px 0; font-size: 14px; font-weight: 700; color: #1e1b3a;">${s.title}</p>
-              <p style="margin: 0; font-size: 13px; color: #6b7280; line-height: 1.5;">${s.desc}</p>
+            <td style="vertical-align: top; padding-top: 3px;">
+              <p style="margin: 0 0 3px 0; font-size: 14px; font-weight: 700; color: #0f172a;">${s.title}</p>
+              <p style="margin: 0; font-size: 13px; color: #64748b; line-height: 1.5;">${s.desc}</p>
             </td>
           </tr>
         </table>
       </td>
     </tr>
-    <tr><td style="height: 1px; background-color: #f0eeff;"></td></tr>
+    <tr><td style="height: 1px; background-color: #f1f5f9;"></td></tr>
   `).join('');
 
   const contentHtml = `
     <!-- Hero Banner -->
-    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background: linear-gradient(135deg, ${primaryColor}15 0%, #f6b31715 100%); border-radius: 14px; margin-bottom: 28px; overflow: hidden;">
+    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 14px; margin-bottom: 28px; overflow: hidden;">
       <tr>
-        <td style="padding: 32px 28px; text-align: center;">
-          <div style="font-size: 44px; margin-bottom: 12px;">🎉</div>
-          <h1 style="margin: 0 0 10px 0; font-size: 26px; font-weight: 800; color: #1e1b3a; letter-spacing: -0.5px; line-height: 1.2;">
+        <td style="padding: 36px 28px; text-align: center;">
+          <img src="https://img.icons8.com/fluency/96/handshake.png" width="48" height="48" style="margin-bottom: 12px;" alt="Welcome" />
+          <h1 style="margin: 0 0 10px 0; font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; line-height: 1.2;">
             Welcome aboard, ${options.clientName}!
           </h1>
-          <p style="margin: 0; font-size: 15px; color: #4b5563; line-height: 1.6; max-width: 380px; margin: 0 auto;">
-            Your client portal is ready. We're thrilled to partner with you and can't wait to deliver exceptional results together.
+          <p style="margin: 0; font-size: 14px; color: #475569; line-height: 1.6; max-width: 420px; margin: 0 auto;">
+            We've set up your client portal. We're thrilled to partner with you and look forward to building something great together.
           </p>
         </td>
       </tr>
     </table>
 
     <!-- Intro -->
-    <p style="font-size: 15px; color: #374151; line-height: 1.7; margin: 0 0 24px 0;">
+    <p style="font-size: 15px; color: #334155; line-height: 1.7; margin: 0 0 24px 0;">
       Thank you for choosing <strong>${agencyName}</strong>. We've set up your personal client portal where you can track everything — from project progress and invoices to your content schedule and shared documents.
     </p>
 
     <!-- Credentials Box -->
-    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background: linear-gradient(135deg, #1e1b3a 0%, ${primaryColor} 100%); border-radius: 14px; margin-bottom: 28px; overflow: hidden;">
+    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid ${primaryColor}; border-radius: 12px; margin-bottom: 28px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
       <tr>
         <td style="padding: 24px 28px;">
-          <p style="margin: 0 0 16px 0; font-size: 11px; font-weight: 800; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 1.5px;">🔐 Your Login Credentials</p>
+          <p style="margin: 0 0 16px 0; font-size: 11px; font-weight: 800; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 1.5px; display: flex; align-items: center;">
+            <img src="https://img.icons8.com/ios-filled/30/${colorHex}/lock.png" width="12" height="12" style="margin-right: 6px; vertical-align: middle;" />
+            <span style="vertical-align: middle;">Your Login Credentials</span>
+          </p>
           <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
             <tr>
-              <td style="padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
-                <p style="margin: 0 0 3px 0; font-size: 10px; color: rgba(255,255,255,0.5); font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Email Address</p>
-                <p style="margin: 0; font-size: 15px; font-weight: 700; color: #ffffff; font-family: monospace;">${options.clientEmail}</p>
+              <td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9;">
+                <p style="margin: 0 0 4px 0; font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Email Address</p>
+                <p style="margin: 0; font-size: 15px; font-weight: 700; color: #0f172a; font-family: monospace;">
+                  <a href="mailto:${options.clientEmail}" style="color: ${primaryColor}; text-decoration: none;">${options.clientEmail}</a>
+                </p>
               </td>
             </tr>
             <tr>
-              <td style="padding: 10px 0;">
-                <p style="margin: 0 0 3px 0; font-size: 10px; color: rgba(255,255,255,0.5); font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Temporary Password</p>
-                <p style="margin: 0; font-size: 18px; font-weight: 800; color: #f6b317; font-family: monospace; letter-spacing: 2px;">${options.tempPassword}</p>
+              <td style="padding: 12px 0 0 0;">
+                <p style="margin: 0 0 4px 0; font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Temporary Password</p>
+                <span style="display: inline-block; background-color: #f8fafc; border: 1px dashed #cbd5e1; padding: 6px 12px; border-radius: 6px; font-size: 18px; font-weight: 800; color: #0f172a; font-family: monospace; letter-spacing: 1.5px;">
+                  ${options.tempPassword}
+                </span>
               </td>
             </tr>
           </table>
-          <p style="margin: 14px 0 0 0; font-size: 11px; color: rgba(255,255,255,0.5); line-height: 1.5;">
-            🔒 This is a temporary password. You will be asked to change it when you first log in.
+          <p style="margin: 14px 0 0 0; font-size: 11px; color: #64748b; line-height: 1.5;">
+            🔒 This is a temporary password. You will be prompted to change it when you first log in.
           </p>
         </td>
       </tr>
@@ -437,13 +431,13 @@ export async function generateWelcomeEmailHtml(options: WelcomeEmailOptions): Pr
     <!-- Divider -->
     <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; margin-bottom: 28px;">
       <tr>
-        <td style="height: 1px; background-color: #f0eeff;"></td>
+        <td style="height: 1px; background-color: #f1f5f9;"></td>
       </tr>
     </table>
 
     <!-- Features Heading -->
-    <h2 style="margin: 0 0 6px 0; font-size: 18px; font-weight: 800; color: #1e1b3a; letter-spacing: -0.3px;">What's inside your portal</h2>
-    <p style="margin: 0 0 18px 0; font-size: 13px; color: #6b7280; line-height: 1.5;">Everything you need to stay informed and in control, all in one secure place.</p>
+    <h2 style="margin: 0 0 6px 0; font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -0.3px;">What's inside your portal</h2>
+    <p style="margin: 0 0 18px 0; font-size: 13px; color: #64748b; line-height: 1.5;">Everything you need to stay informed and in control, all in one secure place.</p>
 
     <!-- Feature Cards Grid -->
     <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; margin-bottom: 32px;">
@@ -453,13 +447,13 @@ export async function generateWelcomeEmailHtml(options: WelcomeEmailOptions): Pr
     <!-- Divider -->
     <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; margin-bottom: 28px;">
       <tr>
-        <td style="height: 1px; background-color: #f0eeff;"></td>
+        <td style="height: 1px; background-color: #f1f5f9;"></td>
       </tr>
     </table>
 
     <!-- Getting Started Steps -->
-    <h2 style="margin: 0 0 6px 0; font-size: 18px; font-weight: 800; color: #1e1b3a; letter-spacing: -0.3px;">How to get started</h2>
-    <p style="margin: 0 0 18px 0; font-size: 13px; color: #6b7280;">Follow these quick steps to access your portal:</p>
+    <h2 style="margin: 0 0 6px 0; font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -0.3px;">How to get started</h2>
+    <p style="margin: 0 0 18px 0; font-size: 13px; color: #64748b;">Follow these quick steps to access your portal:</p>
     <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; margin-bottom: 32px;">
       ${stepsHtml}
     </table>
@@ -477,12 +471,12 @@ export async function generateWelcomeEmailHtml(options: WelcomeEmailOptions): Pr
     </table>
 
     <!-- Sign-off -->
-    <p style="font-size: 15px; color: #374151; line-height: 1.7; margin: 24px 0 0 0;">
+    <p style="font-size: 15px; color: #334155; line-height: 1.7; margin: 24px 0 0 0;">
       We're here every step of the way. Don't hesitate to reach out if you have any questions. We're excited to grow with you! 🚀
     </p>
-    <p style="font-size: 15px; color: #374151; margin: 8px 0 0 0;">
+    <p style="font-size: 15px; color: #334155; margin: 8px 0 0 0;">
       Warm regards,<br/>
-      <strong style="color: #1e1b3a;">${agencyName} Team</strong>
+      <strong style="color: #0f172a;">${agencyName} Team</strong>
     </p>
   `;
 
@@ -492,4 +486,5 @@ export async function generateWelcomeEmailHtml(options: WelcomeEmailOptions): Pr
     contentHtml,
   });
 }
+
 

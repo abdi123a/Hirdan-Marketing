@@ -268,18 +268,20 @@ router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }
       ...rest
     } = req.body;
 
-    // Safeguard: strip empty-string values for sensitive fields so a
+    // Safeguard: strip empty-string, null, or undefined values for sensitive fields so a
     // frontend that loaded defaults (because it received a guest/public
-    // response) doesn't accidentally wipe real API keys from the DB.
+    // response) doesn't accidentally wipe real API keys and credentials from the DB.
     // Sending `undefined` tells Prisma to skip updating the column.
     const sensitiveKeys = [
       'openAiApiKey', 'claudeApiKey', 'geminiApiKey',
       'resendApiKey', 'emailFrom', 'mailerName',
+      'smtpHost', 'smtpPort', 'smtpUsername', 'smtpEncryption', 'smtpDriver',
+      'googleDriveFolderId', 'googleDriveServiceAccountJson',
       'googleDriveClientId', 'googleDriveClientSecret', 'googleDriveRefreshToken',
-      'googleDriveServiceAccountJson', 'oneSignalApiKey'
+      'oneSignalAppId', 'oneSignalApiKey', 'recaptchaSecretKey'
     ] as const;
     for (const key of sensitiveKeys) {
-      if (rest[key] === '') {
+      if (rest[key] === '' || rest[key] === null || rest[key] === undefined) {
         rest[key] = undefined;
       }
     }
