@@ -2672,6 +2672,8 @@ export default function ClientPortalPage() {
         open={showTour}
         onClose={() => setShowTour(false)}
         allowedSections={allowedSections}
+        logo={settings.logo}
+        agencyName={settings.agencyName}
       />
     </div>
   );

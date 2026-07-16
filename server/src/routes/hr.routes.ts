@@ -325,7 +325,7 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: createHrDocum
         category: 'ACTION_REQUIRED',
         entityType: 'EMPLOYEE',
         entityId: employeeId,
-        actionUrl: `/dashboard/team/${employeeId}`,
+        actionUrl: `/dashboard/team/view/${employeeId}`,
       });
     }
 
@@ -450,7 +450,7 @@ router.post('/:id/approve', async (req: Request, res: Response, next) => {
       category: 'SUCCESS',
       entityType: 'EMPLOYEE',
       entityId: employee.id,
-      actionUrl: `/dashboard/team/${employee.id}`,
+      actionUrl: `/dashboard/team/view/${employee.id}`,
     });
     res.json({ document: updatedDoc });
   } catch (error) {

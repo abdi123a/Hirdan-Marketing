@@ -39,13 +39,10 @@ import { apiFetch } from "@/lib/api-client";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
-const generateInvoiceId = () => `INV-${Math.floor(Math.random() * 9000 + 1000)}`;
-
-
 export default function ProformaDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { proformas, clients, settings, addInvoice, updateProforma, getVerificationToken, fetchProformas, fetchClients } = useAgencyStore();
+  const { proformas, clients, settings, updateProforma, getVerificationToken, fetchProformas, fetchClients } = useAgencyStore();
   const { toast } = useToast();
   const [verificationToken, setVerificationToken] = useState<string>("");
   const [loadingToken, setLoadingToken] = useState(false);
@@ -104,59 +101,19 @@ export default function ProformaDetailsPage() {
     if (!proforma) return;
     setIsConverting(true);
     try {
-      const subtotal = proforma.items?.length
-        ? sumItems(proforma.items)
-        : parseAmountNumber(proforma.amount);
-
-      const taxRate = proforma.taxRate ?? settings.taxRate ?? 0;
-      const discount = proforma.discount ?? 0;
-      const discountType = proforma.discountType || 'fixed';
-
-      // Match server calculation order: apply discount first, then tax on the discounted amount
-      const discountAmount = discountType === 'percentage'
-        ? subtotal * discount / 100
-        : discount;
-      const discountedSubtotal = subtotal - discountAmount;
-      const taxAmount = discountedSubtotal * taxRate / 100;
-      const finalTotal = discountedSubtotal + taxAmount;
-
-      // Ensure dueDate always has a value (server requires it)
-      const dueDate = proforma.dueDate || new Date(Date.now() + 14 * 864e5).toISOString().split("T")[0];
-
-      const newInvoice = {
-        client: proforma.client,
-        clientId: proforma.clientId,
-        clientEmail: proforma.clientEmail || client?.email,
-        clientAddress: client?.address,
-        // Do not pass amount — let the server compute it from items to avoid mismatch errors
-        amount: undefined as unknown as string,
-        status: 'Pending' as const,
-        date: new Date().toISOString().split("T")[0],
-        dueDate,
-        items: proforma.items?.length
-          ? proforma.items
-          : [{ description: "Services rendered", quantity: 1, unitPrice: subtotal }],
-        notes: proforma.notes,
-        taxRate,
-        discount,
-        discountType,
-        deposit: proforma.deposit,
-        deliveryNoteEnabled: proforma.deliveryNoteEnabled,
-        deliveryNoteTitle: proforma.deliveryNoteTitle,
-        deliveryNoteContent: proforma.deliveryNoteContent,
-        createdAt: new Date().toISOString(),
-      };
-
-      const invoiceId = generateInvoiceId();
-      await addInvoice({ ...newInvoice, id: invoiceId });
-      await updateProforma(proforma.id, { status: 'Accepted' });
+      const res = await updateProforma(proforma.id, { status: 'Accepted' });
+      const invoiceId = res?.invoiceId || res?.invoiceNumber;
 
       toast({
         title: "Converted to Invoice",
         description: `Proforma ${proforma.id} has been moved to invoices.`,
       });
 
-      navigate(`/dashboard/invoices/view/${invoiceId}`);
+      if (invoiceId) {
+        navigate(`/dashboard/invoices/view/${invoiceId}`);
+      } else {
+        navigate('/dashboard/invoices');
+      }
     } catch (error) {
       console.error("Conversion failed:", error);
       const errMsg = error instanceof Error ? error.message : "Failed to convert proforma to invoice.";

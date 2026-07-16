@@ -4,6 +4,7 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 import { sendEmail, generateEmailHtml } from '../lib/email.js';
 import { createNotification } from '../lib/notifications.js';
+import { auditLog } from '../lib/audit.js';
 
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
@@ -174,6 +175,7 @@ router.put('/:id', validate({ body: proformaDtoSchema.partial() }), async (req: 
       },
     });
 
+    let createdInvoice: any = null;
     if (statusChangedToAccepted) {
       const clientName = (proforma as any).client?.company || (proforma as any).client?.name || 'Unknown';
       createNotification({
@@ -183,11 +185,123 @@ router.put('/:id', validate({ body: proformaDtoSchema.partial() }), async (req: 
         category: 'SUCCESS',
         entityType: 'PROFORMA',
         entityId: proforma.proformaNumber || proforma.id,
-        actionUrl: `/dashboard/proformas/${proforma.proformaNumber || proforma.id}`,
+        actionUrl: `/dashboard/proforma/view/${proforma.proformaNumber || proforma.id}`,
       });
+
+      // Automatically generate a unique short invoice number
+      let invoiceNumber = '';
+      while (true) {
+        const num = Math.floor(Math.random() * 9000 + 1000);
+        invoiceNumber = `INV-${num}`;
+        const existing = await prisma.invoice.findUnique({
+          where: { invoiceNumber }
+        });
+        if (!existing) {
+          break;
+        }
+      }
+
+      // Map proforma items to invoice items
+      const invoiceItems = proforma.items.map(item => ({
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        position: item.position,
+      }));
+
+      const finalItems = invoiceItems.length > 0
+        ? invoiceItems
+        : [{ description: "Services rendered", quantity: 1, unitPrice: proforma.amount, position: 0 }];
+
+      // Compute total invoice amount
+      const subtotal = finalItems.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
+      let computedAmount = subtotal;
+      if (proforma.discount != null && proforma.discountType) {
+        if (proforma.discountType === 'FIXED') {
+          computedAmount -= Math.round(proforma.discount);
+        } else {
+          computedAmount -= Math.round(computedAmount * (proforma.discount / 100));
+        }
+      }
+      if (proforma.taxRate != null) {
+        computedAmount += Math.round(computedAmount * (proforma.taxRate / 100));
+      }
+      if (computedAmount < 0) computedAmount = 0;
+
+      // Set due date to 14 days from now if not specified
+      const dueDate = proforma.dueDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+
+      // Create the invoice
+      createdInvoice = await prisma.invoice.create({
+        data: {
+          invoiceNumber,
+          clientId: proforma.clientId,
+          amount: computedAmount,
+          status: 'PENDING',
+          date: new Date(),
+          dueDate,
+          notes: proforma.notes,
+          taxRate: proforma.taxRate,
+          discount: proforma.discount,
+          discountType: proforma.discountType,
+          deposit: proforma.deposit,
+          showSignature: proforma.showSignature,
+          showStamp: proforma.showStamp,
+          deliveryNoteEnabled: proforma.deliveryNoteEnabled,
+          deliveryNoteTitle: proforma.deliveryNoteTitle,
+          deliveryNoteContent: proforma.deliveryNoteContent,
+          items: {
+            create: finalItems
+          }
+        },
+        include: {
+          client: { select: { name: true, company: true, userId: true } }
+        }
+      });
+
+      // Audit Log the invoice creation
+      const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
+      auditLog({
+        action: 'invoice.create',
+        success: true,
+        userId: req.user!.userId,
+        invoiceId: createdInvoice.id,
+        clientId: createdInvoice.clientId,
+        ip
+      });
+
+      // Notify Admin/Staff of the new invoice
+      createNotification({
+        title: 'New Invoice Created',
+        message: `Invoice ${invoiceNumber} for ${clientName} has been created from Proforma ${proforma.proformaNumber}.`,
+        type: 'INVOICE_CREATED',
+        category: 'INFORMATION',
+        entityType: 'INVOICE',
+        entityId: invoiceNumber,
+        actionUrl: `/dashboard/invoices/view/${createdInvoice.id}`,
+      });
+
+      // Notify Client of the new invoice
+      const clientUser = (createdInvoice as any).client;
+      if (clientUser?.userId) {
+        createNotification({
+          title: 'New Invoice Issued 🧾',
+          message: `Invoice ${invoiceNumber} has been issued for your account.`,
+          type: 'INVOICE_CREATED',
+          category: 'ACTION_REQUIRED',
+          entityType: 'INVOICE',
+          entityId: invoiceNumber,
+          userId: clientUser.userId,
+          actionUrl: `/portal?tab=financials`,
+        });
+      }
     }
 
-    res.json({ proforma });
+    res.json({
+      proforma,
+      invoiceId: createdInvoice?.id,
+      invoiceNumber: createdInvoice?.invoiceNumber
+    });
   } catch (error) {
     next(error);
   }

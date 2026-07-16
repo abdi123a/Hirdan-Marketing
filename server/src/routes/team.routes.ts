@@ -126,7 +126,7 @@ router.post('/', validate({ body: teamDtoSchema }), async (req: Request, res: Re
       category: 'INFORMATION',
       entityType: 'EMPLOYEE',
       entityId: member.id,
-      actionUrl: `/dashboard/team/${member.id}`,
+      actionUrl: `/dashboard/team/view/${member.id}`,
     });
 
     res.status(201).json({ member });

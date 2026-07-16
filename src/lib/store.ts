@@ -490,7 +490,7 @@ interface AgencyStore {
   deleteSubscription: (id: string) => Promise<void>;
 
   addProforma: (proforma: Omit<Proforma, 'id'> & { id?: string }) => Promise<void>;
-  updateProforma: (id: string, proforma: Partial<Proforma>) => Promise<void>;
+  updateProforma: (id: string, proforma: Partial<Proforma>) => Promise<any>;
   deleteProforma: (id: string) => Promise<void>;
 
   addPackage: (pkg: Omit<Package, 'id'>) => Promise<void>;
@@ -580,8 +580,14 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.18.0",
+  appVersion: "2.19.0",
   versionHistory: [
+    {
+      version: "2.19.0",
+      description: "feat: implement centralized notification system, update brand assets, update client portal dashboard, update invoice numbering and PDF layouts, add client meetings section, and general bug fixes",
+      author: "Abdihakim",
+      date: "2026-07-16T16:43:00.000Z",
+    },
     {
       version: "2.14.0",
       description: "feat: add Google Drive OAuth integration, support redirect URI authorization callback, resolve sidebar page flickering, and fix financial page crash",
@@ -1827,11 +1833,12 @@ export const useAgencyStore = create<AgencyStore>()(
           const allProformas = get().proformas;
           const found = allProformas.find((p: any) => p.id === id || p._dbId === id);
           const dbId = (found as any)?._dbId || id;
-          await apiFetch(`/proformas/${dbId}`, {
+          const res = await apiFetch<any>(`/proformas/${dbId}`, {
             method: 'PUT',
             body: JSON.stringify(payload),
           });
           await get().fetchProformas();
+          return res;
         } catch (error) {
           console.error("Failed to update proforma:", error);
           throw error;

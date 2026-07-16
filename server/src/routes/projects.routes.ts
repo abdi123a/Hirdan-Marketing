@@ -93,7 +93,7 @@ router.post('/', requireAdmin, validate({ body: projectDtoSchema }), async (req:
       category: 'ACTION_REQUIRED',
       entityType: 'PROJECT',
       entityId: project.id,
-      actionUrl: `/dashboard/projects/${project.id}`,
+      actionUrl: `/dashboard/projects/view/${project.id}`,
     });
     res.status(201).json({ project });
   } catch (error) {
@@ -120,7 +120,7 @@ router.put('/:id', requireAdmin, validate({ body: projectDtoSchema.partial() }),
           category: 'SUCCESS',
           entityType: 'PROJECT',
           entityId: project.id,
-          actionUrl: `/dashboard/projects/${project.id}`,
+          actionUrl: `/dashboard/projects/view/${project.id}`,
         });
       } else if (req.body.status === 'ARCHIVED') {
         createNotification({
@@ -130,7 +130,7 @@ router.put('/:id', requireAdmin, validate({ body: projectDtoSchema.partial() }),
           category: 'INFORMATION',
           entityType: 'PROJECT',
           entityId: project.id,
-          actionUrl: `/dashboard/projects/${project.id}`,
+          actionUrl: `/dashboard/projects/view/${project.id}`,
         });
       } else if (req.body.status === 'ON_HOLD') {
         createNotification({
@@ -140,7 +140,7 @@ router.put('/:id', requireAdmin, validate({ body: projectDtoSchema.partial() }),
           category: 'WARNING',
           entityType: 'PROJECT',
           entityId: project.id,
-          actionUrl: `/dashboard/projects/${project.id}`,
+          actionUrl: `/dashboard/projects/view/${project.id}`,
         });
       }
     }

@@ -475,7 +475,7 @@ Each section must have concise, presentation-ready text.`;
       category: 'INFORMATION',
       entityType: 'REPORT',
       entityId: report.id,
-      actionUrl: `/dashboard/reports/${report.id}`,
+      actionUrl: `/dashboard/reports/monthly`,
     });
 
     res.status(201).json({
@@ -595,7 +595,7 @@ router.put(
           category: 'SUCCESS',
           entityType: 'REPORT',
           entityId: updated.id,
-          actionUrl: `/dashboard/reports/${updated.id}`,
+          actionUrl: `/dashboard/reports/monthly`,
         });
       }
 

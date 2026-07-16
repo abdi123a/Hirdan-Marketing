@@ -227,7 +227,7 @@ export function NotificationCenter() {
     const isClient = user?.role === "client";
 
     if (isClient) {
-      if (url.includes("/invoices") || url.includes("/proformas")) {
+      if (url.includes("/invoices") || url.includes("/proformas") || url.includes("/proforma")) {
         navigate("/client/portal?tab=financials");
       } else if (url.includes("/projects")) {
         navigate("/client/portal?tab=projects");
@@ -239,7 +239,45 @@ export function NotificationCenter() {
         navigate("/client/portal?tab=overview");
       }
     } else {
-      navigate(url);
+      let targetUrl = url;
+
+      // Handle reports redirecting to monthly studio
+      if (targetUrl.includes("/dashboard/reports/")) {
+        targetUrl = "/dashboard/reports/monthly";
+      }
+
+      // Convert proformas plural to proforma singular
+      if (targetUrl.includes("/dashboard/proformas/")) {
+        targetUrl = targetUrl.replace("/dashboard/proformas/", "/dashboard/proforma/");
+      }
+
+      // Standardize views that need /view/ between dashboard section and ID
+      const viewPatterns = [
+        { key: "/dashboard/invoices/", replacement: "/dashboard/invoices/view/" },
+        { key: "/dashboard/projects/", replacement: "/dashboard/projects/view/" },
+        { key: "/dashboard/subscriptions/", replacement: "/dashboard/subscriptions/view/" },
+        { key: "/dashboard/team/", replacement: "/dashboard/team/view/" },
+        { key: "/dashboard/clients/", replacement: "/dashboard/clients/view/" },
+        { key: "/dashboard/packages/", replacement: "/dashboard/packages/view/" },
+        { key: "/dashboard/services/", replacement: "/dashboard/services/view/" },
+        { key: "/dashboard/proforma/", replacement: "/dashboard/proforma/view/" },
+      ];
+
+      for (const pattern of viewPatterns) {
+        if (targetUrl.includes(pattern.key) && !targetUrl.includes(pattern.replacement)) {
+          const parts = targetUrl.split(pattern.key);
+          if (parts.length === 2 && parts[1]) {
+            const subPath = parts[1];
+            // Ensure we don't rewrite list pages or other actions like edit/add
+            if (!subPath.startsWith("view/") && !subPath.startsWith("edit/") && !subPath.startsWith("add")) {
+              targetUrl = `${parts[0]}${pattern.replacement}${subPath}`;
+              break;
+            }
+          }
+        }
+      }
+
+      navigate(targetUrl);
     }
   };
 

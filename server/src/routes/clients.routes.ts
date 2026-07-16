@@ -7,6 +7,8 @@ import { AppError } from '../lib/errors.js';
 import bcrypt from 'bcryptjs';
 import { parsePagination } from '../lib/pagination.js';
 import { createNotification } from '../lib/notifications.js';
+import { sendEmail, generateWelcomeEmailHtml } from '../lib/email.js';
+
 
 const router = Router();
 
@@ -221,7 +223,7 @@ router.post('/', requireAdmin, validate({ body: clientDtoSchema }), async (req: 
       category: 'INFORMATION',
       entityType: 'CLIENT',
       entityId: client.id,
-      actionUrl: `/dashboard/clients/${client.id}`,
+      actionUrl: `/dashboard/clients/view/${client.id}`,
     });
     res.status(201).json({ client });
   } catch (error) {
@@ -374,6 +376,49 @@ router.post('/:id/portal-access', requireAdmin, async (req: Request, res: Respon
     }
 
     res.json({ tempPassword, message: 'Portal access generated successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── POST /api/clients/:id/send-welcome-email ──────────────────────
+
+router.post('/:id/send-welcome-email', requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const id = req.params.id as string;
+    const { tempPassword } = req.body as { tempPassword?: string };
+
+    const client = await prisma.client.findUnique({ where: { id } });
+    if (!client) throw AppError.notFound('Client not found');
+
+    if (!client.email) {
+      throw AppError.badRequest('Client must have an email address to receive a welcome email');
+    }
+
+    const settings = await prisma.agencySettings.findFirst();
+    const website = settings?.website || 'hirdanmarketing.com';
+    const frontendUrl = process.env.FRONTEND_URL || `https://app.${website}`;
+
+    const emailHtml = await generateWelcomeEmailHtml({
+      clientName: client.name,
+      clientEmail: client.email,
+      tempPassword: tempPassword || '(see your admin for credentials)',
+      portalUrl: frontendUrl,
+    });
+
+    const agencyName = settings?.agencyName || 'Hirdan Marketing';
+
+    const result = await sendEmail({
+      to: client.email,
+      subject: `Welcome to ${agencyName} — Your Client Portal is Ready 🎉`,
+      html: emailHtml,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to send email');
+    }
+
+    res.json({ success: true, message: 'Welcome email sent successfully' });
   } catch (error) {
     next(error);
   }

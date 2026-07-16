@@ -107,7 +107,7 @@ export async function runBillingCycle(): Promise<void> {
             category: 'INFORMATION',
             entityType: 'INVOICE',
             entityId: invoiceNumber,
-            actionUrl: `/dashboard/invoices/${invoiceNumber}`,
+            actionUrl: `/dashboard/invoices/view/${invoiceNumber}`,
           });
           console.log(`Successfully generated invoice ${invoiceNumber} for client ${client.name}`);
         }
@@ -263,7 +263,7 @@ export async function runBillingCycle(): Promise<void> {
             category: 'ACTION_REQUIRED',
             entityType: 'INVOICE',
             entityId: inv.invoiceNumber || inv.id,
-            actionUrl: `/dashboard/invoices/${inv.invoiceNumber || inv.id}`,
+            actionUrl: `/dashboard/invoices/view/${inv.invoiceNumber || inv.id}`,
           });
           console.log(`Successfully sent overdue notice and marked invoice ${inv.invoiceNumber} as OVERDUE`);
         } else {
@@ -296,7 +296,7 @@ export async function runBillingCycle(): Promise<void> {
         category: 'WARNING',
         entityType: 'INVOICE',
         entityId: inv.invoiceNumber || inv.id,
-        actionUrl: `/dashboard/invoices/${inv.invoiceNumber || inv.id}`,
+        actionUrl: `/dashboard/invoices/view/${inv.invoiceNumber || inv.id}`,
       });
       await prisma.invoice.update({
         where: { id: inv.id },
@@ -327,7 +327,7 @@ export async function runBillingCycle(): Promise<void> {
         category: 'WARNING',
         entityType: 'SUBSCRIPTION',
         entityId: sub.id,
-        actionUrl: `/dashboard/subscriptions/${sub.id}`,
+        actionUrl: `/dashboard/subscriptions/view/${sub.id}`,
       });
     }
 

@@ -167,7 +167,7 @@ router.post('/', requireAdmin, validate({ body: invoiceDtoSchema }), async (req:
       category: 'INFORMATION',
       entityType: 'INVOICE',
       entityId: invoice.invoiceNumber || invoice.id,
-      actionUrl: `/dashboard/invoices/${invoice.invoiceNumber || invoice.id}`,
+      actionUrl: `/dashboard/invoices/view/${invoice.invoiceNumber || invoice.id}`,
     });
 
     // 2. Notify Client
@@ -273,7 +273,7 @@ router.put('/:id', validate({ body: invoiceDtoSchema.partial() }), async (req: R
         category: 'SUCCESS',
         entityType: 'INVOICE',
         entityId: invoice.invoiceNumber || invoice.id,
-        actionUrl: `/dashboard/invoices/${invoice.invoiceNumber || invoice.id}`,
+        actionUrl: `/dashboard/invoices/view/${invoice.invoiceNumber || invoice.id}`,
       });
     }
 
@@ -287,7 +287,7 @@ router.put('/:id', validate({ body: invoiceDtoSchema.partial() }), async (req: R
           category: 'ACTION_REQUIRED',
           entityType: 'INVOICE',
           entityId: invoice.invoiceNumber || invoice.id,
-          actionUrl: `/dashboard/invoices/${invoice.invoiceNumber || invoice.id}`,
+          actionUrl: `/dashboard/invoices/view/${invoice.invoiceNumber || invoice.id}`,
         });
       } else if (newStatus === 'OVERDUE') {
         createNotification({
@@ -297,7 +297,7 @@ router.put('/:id', validate({ body: invoiceDtoSchema.partial() }), async (req: R
           category: 'ACTION_REQUIRED',
           entityType: 'INVOICE',
           entityId: invoice.invoiceNumber || invoice.id,
-          actionUrl: `/dashboard/invoices/${invoice.invoiceNumber || invoice.id}`,
+          actionUrl: `/dashboard/invoices/view/${invoice.invoiceNumber || invoice.id}`,
         });
       }
     }

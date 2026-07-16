@@ -811,6 +811,31 @@ function ClientPortalAccessCard({ client }: { client: any }) {
   const [showPassword, setShowPassword] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+
+  const handleSendWelcomeEmail = async (password?: string) => {
+    try {
+      setIsSendingEmail(true);
+      const body: Record<string, string> = {};
+      if (password) body.tempPassword = password;
+      await apiFetch(`/clients/${client.id}/send-welcome-email`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      toast({
+        title: '✅ Welcome email sent!',
+        description: `Login credentials and portal guide sent to ${client.email}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Failed to send email',
+        description: error?.message || 'Please check your email settings in the agency configuration.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
 
   const portalAccess = client.portalAccess || {
     financials: true,
@@ -929,6 +954,21 @@ function ClientPortalAccessCard({ client }: { client: any }) {
             <p className="text-[10px] text-amber-600 bg-amber-500/5 p-2 rounded-lg border border-amber-500/10 font-medium leading-relaxed">
               For security, this temporary password is shown only once. Ask the client to log in and change it from their portal account.
             </p>
+            {/* Send Welcome Email Button */}
+            <Button
+              variant="hero"
+              size="sm"
+              className="w-full h-10 text-xs font-bold gap-2 shadow-premium mt-1"
+              onClick={() => handleSendWelcomeEmail(tempPassword ?? undefined)}
+              disabled={isSendingEmail || !client.email}
+            >
+              {isSendingEmail ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Mail className="w-3.5 h-3.5" />
+              )}
+              {isSendingEmail ? 'Sending Email...' : 'Send Welcome Email'}
+            </Button>
           </div>
         ) : (
           <div className="text-center py-4">
@@ -950,6 +990,21 @@ function ClientPortalAccessCard({ client }: { client: any }) {
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
                   {isLoading ? 'Resetting...' : 'Reset Password'}
+                </Button>
+                {/* Resend Welcome Email */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-9 text-xs font-bold gap-1.5 border-primary/30 text-primary hover:bg-primary/5"
+                  onClick={() => handleSendWelcomeEmail()}
+                  disabled={isSendingEmail || !client.email}
+                >
+                  {isSendingEmail ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Mail className="w-3.5 h-3.5" />
+                  )}
+                  {isSendingEmail ? 'Sending...' : 'Resend Welcome Email'}
                 </Button>
               </div>
             ) : (

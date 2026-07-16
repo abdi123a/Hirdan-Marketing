@@ -115,7 +115,7 @@ router.post('/', requireAdmin, validate({ body: subscriptionDtoSchema }), async 
       category: 'SUCCESS',
       entityType: 'SUBSCRIPTION',
       entityId: subscription.id,
-      actionUrl: `/dashboard/subscriptions/${subscription.id}`,
+      actionUrl: `/dashboard/subscriptions/view/${subscription.id}`,
     });
     res.status(201).json({ subscription });
   } catch (error) {
@@ -141,7 +141,7 @@ router.put('/:id', requireAdmin, validate({ body: subscriptionDtoSchema.partial(
           category: 'ACTION_REQUIRED',
           entityType: 'SUBSCRIPTION',
           entityId: subscription.id,
-          actionUrl: `/dashboard/subscriptions/${subscription.id}`,
+          actionUrl: `/dashboard/subscriptions/view/${subscription.id}`,
         });
       }
     }
