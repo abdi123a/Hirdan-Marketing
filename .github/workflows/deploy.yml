@@ -58,6 +58,28 @@ jobs:
         id: runner_ip
         run: echo "ip=$(curl -s https://api.ipify.org)" >> $GITHUB_OUTPUT
 
+      - name: Debug SSH Connection
+        run: |
+          echo "=== SSH DEBUG INFO ==="
+          echo "Runner Public IP: ${{ steps.runner_ip.outputs.ip }}"
+          
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then
+            echo "❌ ERROR: secrets.SSH_HOST is empty!"
+            exit 1
+          fi
+          
+          echo "Resolving secrets.SSH_HOST..."
+          # Resolve using host, nslookup, or dig
+          RESOLVED_IP=$(nslookup "${{ secrets.SSH_HOST }}" | awk '/^Address: / { print $2 }' | tail -n1)
+          echo "Resolved IP: $RESOLVED_IP"
+          
+          echo "Checking port 22 on resolved host..."
+          nc -zv -w 5 "${{ secrets.SSH_HOST }}" ${{ env.SSH_PORT }} || echo "❌ nc connection to port ${{ env.SSH_PORT }} failed"
+          
+          echo "Testing traceroute to resolved host..."
+          traceroute -m 15 "${{ secrets.SSH_HOST }}" || echo "Traceroute failed"
+          echo "======================"
+
       - name: Temporarily allow runner IP through VPS firewall
         run: |
           RUNNER_IP="${{ steps.runner_ip.outputs.ip }}"
@@ -92,7 +114,7 @@ jobs:
           echo "📁 Copying Backend compiled files to api.hirdanmarketing.com..."
           rsync -avz \
             -e "ssh -p ${{ env.SSH_PORT }} -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30 -i ~/.ssh/id_ed25519" \
-            server/dist server/package.json server/package-lock.json server/prisma \
+            server/dist server/package.json server/package-lock.json server/prisma server/scripts \
             root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
 
       # Step 6: Run server commands (dependencies install & restart service)
