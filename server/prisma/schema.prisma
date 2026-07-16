@@ -28,6 +28,7 @@ model User {
   hrDocumentsApproved    HrDocument[]           @relation("HrDocumentApprovedBy")
   hrDocumentApprovals    HrDocumentApproval[]   @relation("HrDocumentApprovals")
   sharedFiles            SharedFile[]           @relation("SharedFileUploadedBy")
+  notifications          Notification[]
 
   @@map("users")
 }
@@ -77,12 +78,29 @@ model Client {
   contentPosts     ContentPost[]
   monthlyReports   MonthlyReport[]
   sharedFiles      SharedFile[]
+  meetings         ClientMeeting[]
 
   portalAccess  Json?          @map("portal_access")
   
   @@index([email])
   @@index([company])
   @@map("clients")
+}
+
+model ClientMeeting {
+  id          String   @id @default(uuid())
+  clientId    String   @map("client_id")
+  title       String
+  date        DateTime
+  location    String?
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([date])
+  @@map("client_meetings")
 }
 
 enum ClientType {
@@ -260,6 +278,7 @@ model Invoice {
   paymentConfirmationSentAt DateTime?       @map("payment_confirmation_sent_at")
   reminderSentAt        DateTime?           @map("reminder_sent_at")
   overdueSentAt         DateTime?           @map("overdue_sent_at")
+  dueSoonNotifiedAt     DateTime?           @map("due_soon_notified_at")
   client             Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
   verificationTokens VerificationToken[]
 
@@ -462,6 +481,9 @@ model AgencySettings {
   googleDriveClientSecret      String?  @map("google_drive_client_secret") @db.LongText
   googleDriveRefreshToken      String?  @map("google_drive_refresh_token") @db.LongText
   googleDriveEnabled         Boolean  @default(false) @map("google_drive_enabled")
+  oneSignalAppId      String?  @map("one_signal_app_id")
+  oneSignalApiKey     String?  @map("one_signal_api_key")
+  oneSignalEnabled    Boolean  @default(false) @map("one_signal_enabled")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -1207,4 +1229,30 @@ model LandingPageProject {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("landing_page_projects")
+}
+
+enum NotificationCategory {
+  ACTION_REQUIRED
+  INFORMATION
+  SUCCESS
+  WARNING
+}
+
+model Notification {
+  id         String               @id @default(uuid())
+  userId     String?              @map("user_id")
+  title      String
+  message    String
+  type       String               // e.g. "INVOICE_PAID", "PROJECT_OVERDUE"
+  category   NotificationCategory @default(INFORMATION)
+  entityType String?              @map("entity_type") // "INVOICE" | "PROJECT" | "CLIENT" | "EMPLOYEE" | "SUBSCRIPTION"
+  entityId   String?              @map("entity_id")
+  actionUrl  String?              @map("action_url")
+  read       Boolean              @default(false)
+  createdAt  DateTime             @default(now()) @map("created_at")
+
+  user       User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notifications")
 }

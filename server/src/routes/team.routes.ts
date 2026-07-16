@@ -118,6 +118,17 @@ router.post('/', validate({ body: teamDtoSchema }), async (req: Request, res: Re
       },
     });
 
+    const { createNotification } = await import('../lib/notifications.js');
+    createNotification({
+      title: 'New Employee Added',
+      message: `${member.name} has been added to the team (${member.role}).`,
+      type: 'EMPLOYEE_CREATED',
+      category: 'INFORMATION',
+      entityType: 'EMPLOYEE',
+      entityId: member.id,
+      actionUrl: `/dashboard/team/${member.id}`,
+    });
+
     res.status(201).json({ member });
   } catch (error) {
     next(error);

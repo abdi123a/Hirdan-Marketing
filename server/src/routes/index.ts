@@ -16,6 +16,7 @@ import leadsRoutes from './leads.routes.js';
 import usersRoutes from './users.routes.js';
 import aiRoutes from './ai.routes.js';
 import transferRoutes from './transfer.routes.js';
+import notificationsRoutes from './notifications.routes.js';
 
 // Social Media Module
 import socialProfilesRoutes from './social-profiles.routes.js';
@@ -32,6 +33,7 @@ import expensesRoutes from './expenses.routes.js';
 import recurringExpensesRoutes from './recurring-expenses.routes.js';
 import hrRoutes from './hr.routes.js';
 import landingPageRoutes from './landing-page.routes.js';
+import meetingsRoutes from './meetings.routes.js';
 
 const router = Router();
 
@@ -56,11 +58,13 @@ router.use('/financial', financialRoutes);
 router.use('/accounts', accountsRoutes);
 router.use('/expenses', expensesRoutes);
 router.use('/recurring-expenses', recurringExpensesRoutes);
+router.use('/notifications', notificationsRoutes);
 
 // Social Media Module — nested under existing resource paths
 router.use('/clients', socialProfilesRoutes);
 router.use('/clients', clientDocumentsRoutes);
 router.use('/clients', contentPostsRoutes);
+router.use('/clients', meetingsRoutes);
 router.use('/packages', packageDeliverablesRoutes);
 router.use('/tasks', tasksRoutes);
 router.use('/portal/social', portalSocialRoutes);

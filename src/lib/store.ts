@@ -398,9 +398,25 @@ export interface AgencySettings {
   googleDriveClientSecret: string;
   googleDriveRefreshToken: string;
   googleDriveEnabled: boolean;
+  oneSignalAppId: string;
+  oneSignalApiKey: string;
+  oneSignalEnabled: boolean;
   appVersion: string;
   versionHistory: VersionEntry[];
   updatedAt: string;
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  category: 'ACTION_REQUIRED' | 'INFORMATION' | 'SUCCESS' | 'WARNING';
+  entityType?: string;
+  entityId?: string;
+  actionUrl?: string;
+  read: boolean;
+  createdAt: string;
 }
 
 export interface TaskAnalytics {
@@ -561,7 +577,10 @@ const createDefaultSettings = (): AgencySettings => ({
   googleDriveClientSecret: "",
   googleDriveRefreshToken: "",
   googleDriveEnabled: false,
-  appVersion: "2.17.0",
+  oneSignalAppId: "",
+  oneSignalApiKey: "",
+  oneSignalEnabled: false,
+  appVersion: "2.17.1",
   versionHistory: [
     {
       version: "2.14.0",

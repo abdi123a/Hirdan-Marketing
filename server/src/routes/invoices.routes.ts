@@ -4,9 +4,11 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { sendEmail, generateEmailHtml } from '../lib/email.js';
 import { z } from 'zod';
+import { generateInvoicePdf } from '../lib/pdf.js';
 import { AppError } from '../lib/errors.js';
 import { parsePagination } from '../lib/pagination.js';
 import { auditLog } from '../lib/audit.js';
+import { createNotification } from '../lib/notifications.js';
 
 const router = Router();
 router.use(authenticate);
@@ -149,9 +151,40 @@ router.post('/', requireAdmin, validate({ body: invoiceDtoSchema }), async (req:
         amount: computedAmount,
         items: itemsWithPosition ? { create: itemsWithPosition } : undefined,
       },
-      include: { items: { orderBy: { position: 'asc' } } },
+      include: {
+        client: { select: { name: true, company: true, userId: true } },
+        items: { orderBy: { position: 'asc' } },
+      },
     });
+    const clientName = (invoice as any).client?.company || (invoice as any).client?.name || 'Unknown';
     auditLog({ action: 'invoice.create', success: true, userId: req.user!.userId, invoiceId: invoice.id, clientId: invoice.clientId, ip });
+    
+    // 1. Notify Admin/Staff (Global)
+    createNotification({
+      title: 'New Invoice Created',
+      message: `Invoice ${invoice.invoiceNumber} for ${clientName} has been created.`,
+      type: 'INVOICE_CREATED',
+      category: 'INFORMATION',
+      entityType: 'INVOICE',
+      entityId: invoice.invoiceNumber || invoice.id,
+      actionUrl: `/dashboard/invoices/${invoice.invoiceNumber || invoice.id}`,
+    });
+
+    // 2. Notify Client
+    const clientUser = (invoice as any).client;
+    if (clientUser?.userId) {
+      createNotification({
+        title: 'New Invoice Issued 🧾',
+        message: `Invoice ${invoice.invoiceNumber} has been issued for your account.`,
+        type: 'INVOICE_CREATED',
+        category: 'ACTION_REQUIRED',
+        entityType: 'INVOICE',
+        entityId: invoice.invoiceNumber || invoice.id,
+        actionUrl: `/client/portal?tab=financials`,
+        userId: clientUser.userId,
+      });
+    }
+
     res.status(201).json({ invoice });
   } catch (error) {
     auditLog({ action: 'invoice.create', success: false, userId: req.user!.userId, ip: req.ip });
@@ -159,8 +192,15 @@ router.post('/', requireAdmin, validate({ body: invoiceDtoSchema }), async (req:
   }
 });
 
-router.put('/:id', requireAdmin, validate({ body: invoiceDtoSchema.partial() }), async (req: Request, res: Response, next) => {
+router.put('/:id', validate({ body: invoiceDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
+    const isClient = req.user!.role === 'CLIENT';
+    const isAdmin = req.user!.role === 'ADMIN' || req.user!.role === 'MANAGER' || req.user!.role === 'STAFF';
+    
+    if (!isAdmin && !isClient) {
+      throw AppError.forbidden('Insufficient permissions');
+    }
+
     // Find the invoice first to get the real UUID if an invoiceNumber was provided
     const targetInvoice = await prisma.invoice.findFirst({
       where: {
@@ -172,6 +212,16 @@ router.put('/:id', requireAdmin, validate({ body: invoiceDtoSchema.partial() }),
     });
 
     if (!targetInvoice) throw AppError.notFound('Invoice not found');
+
+    if (isClient) {
+      const client = await prisma.client.findUnique({ where: { userId: req.user!.userId } });
+      if (!client || targetInvoice.clientId !== client.id) {
+        throw AppError.forbidden('You do not have access to this invoice');
+      }
+      const sanitized: any = {};
+      if (req.body.notes !== undefined) sanitized.notes = req.body.notes;
+      req.body = sanitized;
+    }
 
     const { items, ...invoiceData } = req.body;
     const itemsWithPosition = items?.map((item: any, index: number) => ({
@@ -216,6 +266,40 @@ router.put('/:id', requireAdmin, validate({ body: invoiceDtoSchema.partial() }),
       sendPaymentConfirmationEmail(invoice.id).catch(err => {
         console.error('Error sending automatic payment confirmation email:', err);
       });
+      createNotification({
+        title: 'Invoice Paid ✅',
+        message: `Invoice ${invoice.invoiceNumber} has been marked as paid.`,
+        type: 'INVOICE_PAID',
+        category: 'SUCCESS',
+        entityType: 'INVOICE',
+        entityId: invoice.invoiceNumber || invoice.id,
+        actionUrl: `/dashboard/invoices/${invoice.invoiceNumber || invoice.id}`,
+      });
+    }
+
+    const newStatus = (req.body as any).status;
+    if (newStatus && targetInvoice.status !== newStatus) {
+      if (newStatus === 'PARTIALLY_PAID') {
+        createNotification({
+          title: 'Invoice Partially Paid',
+          message: `Invoice ${invoice.invoiceNumber} has received a partial payment.`,
+          type: 'INVOICE_PARTIALLY_PAID',
+          category: 'ACTION_REQUIRED',
+          entityType: 'INVOICE',
+          entityId: invoice.invoiceNumber || invoice.id,
+          actionUrl: `/dashboard/invoices/${invoice.invoiceNumber || invoice.id}`,
+        });
+      } else if (newStatus === 'OVERDUE') {
+        createNotification({
+          title: 'Invoice Overdue ⚠️',
+          message: `Invoice ${invoice.invoiceNumber} is now overdue.`,
+          type: 'INVOICE_OVERDUE',
+          category: 'ACTION_REQUIRED',
+          entityType: 'INVOICE',
+          entityId: invoice.invoiceNumber || invoice.id,
+          actionUrl: `/dashboard/invoices/${invoice.invoiceNumber || invoice.id}`,
+        });
+      }
     }
 
     res.json({ invoice });
@@ -324,6 +408,9 @@ async function sendPaymentConfirmationEmail(invoiceId: string) {
 
     const subject = `Payment Confirmed: Invoice ${inv.invoiceNumber}`;
 
+    const paymentDate = new Date();
+    const monthPaid = paymentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+
     let itemsRows = '';
     const items = inv.items || [];
     for (const item of items) {
@@ -348,6 +435,10 @@ async function sendPaymentConfirmationEmail(invoiceId: string) {
           <tr>
             <td style="color: #64748b; font-size: 14px; padding-bottom: 8px;"><strong>Invoice Date:</strong></td>
             <td style="color: #334155; font-size: 14px; padding-bottom: 8px; text-align: right;">${inv.date.toISOString().split('T')[0]}</td>
+          </tr>
+          <tr>
+            <td style="color: #64748b; font-size: 14px; padding-bottom: 8px;"><strong>Month Paid:</strong></td>
+            <td style="color: #334155; font-size: 14px; padding-bottom: 8px; text-align: right;">${monthPaid}</td>
           </tr>
           <tr>
             <td style="color: #64748b; font-size: 14px;"><strong>Payment Method:</strong></td>
@@ -375,7 +466,7 @@ async function sendPaymentConfirmationEmail(invoiceId: string) {
         </tbody>
       </table>
       <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
-        A copy of your official PDF receipt is available for download at any time by logging in to your Client Portal.
+        A copy of your official PDF receipt has been attached to this email and is available for download at any time by logging in to your Client Portal.
       </p>
     `;
 
@@ -390,10 +481,20 @@ async function sendPaymentConfirmationEmail(invoiceId: string) {
       }
     });
 
+    // Generate PDF receipt attachment
+    const pdfBuffer = await generateInvoicePdf(inv, inv.client, settings, monthPaid);
+
     const result = await sendEmail({
       to: inv.client.email,
       subject,
       html: emailHtml,
+      attachments: [
+        {
+          content: pdfBuffer,
+          filename: `Invoice_${inv.invoiceNumber || inv.id}.pdf`,
+          contentType: 'application/pdf',
+        }
+      ]
     });
 
     if (result.success) {

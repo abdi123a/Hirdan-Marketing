@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { parsePagination } from '../lib/pagination.js';
+import { createNotification } from '../lib/notifications.js';
 
 const router = Router();
 
@@ -32,6 +33,19 @@ router.post(
       update: { status: 'PENDING' }, // Re-activate if they submit again
       create: { email },
     });
+
+    // Fire notification only on first capture (not re-submissions)
+    if (lead.createdAt.getTime() === lead.updatedAt.getTime() || Math.abs(lead.createdAt.getTime() - new Date().getTime()) < 5000) {
+      createNotification({
+        title: 'New Lead Captured 🎯',
+        message: `A new lead signed up: ${email}`,
+        type: 'LEAD_CAPTURED',
+        category: 'INFORMATION',
+        entityType: 'LEAD',
+        entityId: lead.id,
+        actionUrl: '/dashboard/leads',
+      });
+    }
 
     res.status(201).json({ lead, message: 'Thank you for your interest!' });
   } catch (error) {

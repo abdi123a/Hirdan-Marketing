@@ -228,6 +228,9 @@ const settingsDtoSchema = z.object({
   googleDriveClientSecret: z.string().optional().nullable(),
   googleDriveRefreshToken: z.string().optional().nullable(),
   googleDriveEnabled: z.boolean().optional(),
+  oneSignalAppId: z.string().optional().nullable(),
+  oneSignalApiKey: z.string().optional().nullable(),
+  oneSignalEnabled: z.boolean().optional(),
   id: z.string().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
@@ -273,7 +276,7 @@ router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }
       'openAiApiKey', 'claudeApiKey', 'geminiApiKey',
       'resendApiKey', 'emailFrom', 'mailerName',
       'googleDriveClientId', 'googleDriveClientSecret', 'googleDriveRefreshToken',
-      'googleDriveServiceAccountJson'
+      'googleDriveServiceAccountJson', 'oneSignalApiKey'
     ] as const;
     for (const key of sensitiveKeys) {
       if (rest[key] === '') {

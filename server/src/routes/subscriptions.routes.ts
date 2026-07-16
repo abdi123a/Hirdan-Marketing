@@ -3,7 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 import { runBillingCycle } from '../lib/subscription-billing.js';
-
+import { createNotification } from '../lib/notifications.js';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { parsePagination } from '../lib/pagination.js';
@@ -103,7 +103,20 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 router.post('/', requireAdmin, validate({ body: subscriptionDtoSchema }), async (req: Request, res: Response, next) => {
   try {
-    const subscription = await prisma.subscription.create({ data: req.body });
+    const subscription = await prisma.subscription.create({
+      data: req.body,
+      include: { client: { select: { name: true, company: true } } },
+    });
+    const clientName = (subscription as any).client?.company || (subscription as any).client?.name || 'Unknown';
+    createNotification({
+      title: 'Subscription Activated 🎉',
+      message: `Subscription "${subscription.plan}" for ${clientName} has been activated.`,
+      type: 'SUBSCRIPTION_ACTIVATED',
+      category: 'SUCCESS',
+      entityType: 'SUBSCRIPTION',
+      entityId: subscription.id,
+      actionUrl: `/dashboard/subscriptions/${subscription.id}`,
+    });
     res.status(201).json({ subscription });
   } catch (error) {
     next(error);
@@ -114,10 +127,24 @@ router.post('/', requireAdmin, validate({ body: subscriptionDtoSchema }), async 
 
 router.put('/:id', requireAdmin, validate({ body: subscriptionDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
+    const prev = await prisma.subscription.findUnique({ where: { id: req.params.id as string } });
     const subscription = await prisma.subscription.update({
       where: { id: req.params.id as string },
       data: req.body,
     });
+    if (prev && req.body.status && prev.status !== req.body.status) {
+      if (req.body.status === 'CANCELLED') {
+        createNotification({
+          title: 'Subscription Cancelled',
+          message: `Subscription "${subscription.plan}" has been cancelled.`,
+          type: 'SUBSCRIPTION_CANCELLED',
+          category: 'ACTION_REQUIRED',
+          entityType: 'SUBSCRIPTION',
+          entityId: subscription.id,
+          actionUrl: `/dashboard/subscriptions/${subscription.id}`,
+        });
+      }
+    }
     res.json({ subscription });
   } catch (error) {
     next(error);

@@ -51,7 +51,7 @@ export default function PluginsPage() {
   const { settings, updateSettings } = useAgencyStore();
   
   const [isSaving, setIsSaving] = useState(false);
-  const [editingPlugin, setEditingPlugin] = useState<"recaptcha" | "analytics" | "gdrive" | null>(null);
+  const [editingPlugin, setEditingPlugin] = useState<"recaptcha" | "analytics" | "gdrive" | "onesignal" | null>(null);
 
   // Modal form states
   const [recaptchaSiteKey, setRecaptchaSiteKey] = useState(settings.recaptchaSiteKey || "");
@@ -66,6 +66,10 @@ export default function PluginsPage() {
   );
   const [isAuthorizingDrive, setIsAuthorizingDrive] = useState(false);
   const [isTestingDrive, setIsTestingDrive] = useState(false);
+
+  const [oneSignalAppId, setOneSignalAppId] = useState(settings.oneSignalAppId || "");
+  const [oneSignalApiKey, setOneSignalApiKey] = useState(settings.oneSignalApiKey || "");
+
 
   // Sidebar settings links matching screenshot
   const sidebarItems = [
@@ -85,7 +89,7 @@ export default function PluginsPage() {
     { label: "Plugins", url: "/dashboard/plugins", active: true, icon: Puzzle }
   ];
 
-  const handleTogglePlugin = async (plugin: "recaptcha" | "analytics" | "gdrive", enabled: boolean) => {
+  const handleTogglePlugin = async (plugin: "recaptcha" | "analytics" | "gdrive" | "onesignal", enabled: boolean) => {
     if (enabled) {
       if (plugin === "recaptcha" && (!settings.recaptchaSiteKey || !settings.recaptchaSecretKey)) {
         toast({
@@ -118,6 +122,15 @@ export default function PluginsPage() {
           return;
         }
       }
+      if (plugin === "onesignal" && (!settings.oneSignalAppId || !settings.oneSignalApiKey)) {
+        toast({
+          title: "Configuration Required",
+          description: "Please configure your OneSignal App ID and API Key before enabling this plugin.",
+          variant: "destructive"
+        });
+        openEditModal("onesignal");
+        return;
+      }
     }
 
     try {
@@ -144,6 +157,14 @@ export default function PluginsPage() {
           description: enabled
             ? "Database backups will now sync automatically to Google Drive."
             : "Google Drive backup sync has been deactivated."
+        });
+      } else if (plugin === "onesignal") {
+        await updateSettings({ oneSignalEnabled: enabled });
+        toast({
+          title: enabled ? "OneSignal Notifications Enabled" : "OneSignal Notifications Disabled",
+          description: enabled
+            ? "Push notifications are now active for external clients."
+            : "Push notifications have been disabled."
         });
       }
     } catch (error) {
@@ -222,6 +243,16 @@ export default function PluginsPage() {
           title: "Google Drive Settings Saved",
           description: "Google Drive backup sync integration has been updated successfully."
         });
+      } else if (editingPlugin === "onesignal") {
+        await updateSettings({
+          oneSignalAppId,
+          oneSignalApiKey,
+          oneSignalEnabled: !!(oneSignalAppId && oneSignalApiKey)
+        });
+        toast({
+          title: "OneSignal Config Saved",
+          description: "OneSignal Push Notification keys have been updated successfully."
+        });
       }
       setEditingPlugin(null);
     } catch (error) {
@@ -272,7 +303,7 @@ export default function PluginsPage() {
     }
   };
 
-  const openEditModal = (plugin: "recaptcha" | "analytics" | "gdrive") => {
+  const openEditModal = (plugin: "recaptcha" | "analytics" | "gdrive" | "onesignal") => {
     if (plugin === "recaptcha") {
       setRecaptchaSiteKey(settings.recaptchaSiteKey || "");
       setRecaptchaSecretKey(settings.recaptchaSecretKey || "");
@@ -284,6 +315,9 @@ export default function PluginsPage() {
       setGoogleDriveClientId(settings.googleDriveClientId || "");
       setGoogleDriveClientSecret(settings.googleDriveClientSecret || "");
       setGoogleDriveAuthType(settings.googleDriveClientId ? "oauth" : "service_account");
+    } else if (plugin === "onesignal") {
+      setOneSignalAppId(settings.oneSignalAppId || "");
+      setOneSignalApiKey(settings.oneSignalApiKey || "");
     }
     setEditingPlugin(plugin);
   };
@@ -429,6 +463,49 @@ export default function PluginsPage() {
                       </div>
                     </td>
                   </tr>
+
+                  {/* OneSignal Push Notifications Row */}
+                  <tr className="hover:bg-muted/5 transition-colors">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-orange-500/10 flex items-center justify-center border border-orange-200 shadow-sm shrink-0">
+                          <Bell className="h-5 w-5 text-orange-500" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground text-sm">OneSignal Push Notifications</p>
+                          <p className="text-xs text-muted-foreground">Deliver browser push notifications to clients even when offline</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      {settings.oneSignalEnabled ? (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                          Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-100 font-medium">
+                          Disable
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center justify-end gap-4">
+                        <Switch
+                          checked={settings.oneSignalEnabled}
+                          onCheckedChange={(val) => handleTogglePlugin("onesignal", val)}
+                          className="data-[state=checked]:bg-primary"
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditModal("onesignal")}
+                          className="h-8 w-8 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground shadow-sm"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -457,11 +534,18 @@ export default function PluginsPage() {
                   Google Drive Backup Sync Config
                 </>
               )}
+              {editingPlugin === "onesignal" && (
+                <>
+                  <Bell className="h-6 w-6 text-orange-500" />
+                  OneSignal Push Notifications Config
+                </>
+              )}
             </DialogTitle>
             <DialogDescription>
               {editingPlugin === "recaptcha" && "Enter your Google reCAPTCHA v3 keys. These protect your login screens from bots."}
               {editingPlugin === "analytics" && "Enter your Google Analytics 4 Measurement ID. Format is usually G-XXXXXXXXXX."}
               {editingPlugin === "gdrive" && "Configure your Google Service Account credentials to upload backups automatically to Google Drive."}
+              {editingPlugin === "onesignal" && "Configure your OneSignal credentials to send browser push notifications directly to your clients."}
             </DialogDescription>
           </DialogHeader>
 
@@ -655,6 +739,43 @@ export default function PluginsPage() {
                     <li>Copy the folder's ID from the URL and paste it into the Folder ID field above.</li>
                   </ol>
                 )}
+              </div>
+            </div>
+          )}
+
+          {editingPlugin === "onesignal" && (
+            <div className="space-y-4 py-3">
+              <div className="space-y-2">
+                <Label htmlFor="onesignal-app-id" className="font-semibold text-sm">OneSignal App ID</Label>
+                <Input
+                  id="onesignal-app-id"
+                  value={oneSignalAppId}
+                  onChange={(e) => setOneSignalAppId(e.target.value)}
+                  placeholder="Enter OneSignal App ID"
+                  className="rounded-xl h-11 focus-visible:ring-primary font-mono text-xs"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="onesignal-api-key" className="font-semibold text-sm">REST API Key</Label>
+                <Input
+                  id="onesignal-api-key"
+                  type="password"
+                  value={oneSignalApiKey}
+                  onChange={(e) => setOneSignalApiKey(e.target.value)}
+                  placeholder={settings.oneSignalApiKey ? "••••••••••••••••" : "Enter REST API Key"}
+                  className="rounded-xl h-11 focus-visible:ring-primary font-mono text-xs"
+                />
+              </div>
+
+              {/* Setup Guide */}
+              <div className="p-4 rounded-xl bg-orange-500/5 border border-orange-500/10 text-xs text-muted-foreground space-y-2 leading-relaxed">
+                <p className="font-semibold text-orange-700 dark:text-orange-400">📋 Setup Guide for OneSignal Push Notifications:</p>
+                <ol className="list-decimal list-outside pl-4 space-y-1">
+                  <li>Go to the <a href="https://onesignal.com/" target="_blank" rel="noopener noreferrer" className="text-orange-500 underline hover:text-orange-600">OneSignal Dashboard ↗</a> and create a new Web Push app.</li>
+                  <li>In your App Settings under <strong>Keys & IDs</strong>, copy the <strong>OneSignal App ID</strong> and paste it above.</li>
+                  <li>Copy the <strong>REST API Key</strong> and paste it above.</li>
+                  <li>This enables sending automatic server-side push alerts to clients using browser push technology.</li>
+                </ol>
               </div>
             </div>
           )}

@@ -9,6 +9,7 @@ import { parsePagination } from '../lib/pagination.js';
 import fs from 'fs';
 import path from 'path';
 import { PATHS } from '../lib/paths.js';
+import { createNotification } from '../lib/notifications.js';
 
 const router = Router();
 router.use(authenticate);
@@ -315,6 +316,19 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: createHrDocum
       },
     });
 
+    // Notify if pending approval
+    if (initialStatus === 'PENDING_APPROVAL') {
+      createNotification({
+        title: 'HR Document Awaiting Approval',
+        message: `${docType.replace(/_/g, ' ')} for ${employee.name} requires approval.`,
+        type: 'HR_DOCUMENT_PENDING_APPROVAL',
+        category: 'ACTION_REQUIRED',
+        entityType: 'EMPLOYEE',
+        entityId: employeeId,
+        actionUrl: `/dashboard/team/${employeeId}`,
+      });
+    }
+
     res.status(201).json({ document });
   } catch (error) {
     next(error);
@@ -428,11 +442,22 @@ router.post('/:id/approve', async (req: Request, res: Response, next) => {
       })
     ]);
 
+
+    createNotification({
+      title: 'HR Document Approved ✅',
+      message: `${document.docType.replace(/_/g, ' ')} (${document.docNumber}) for ${employee.name} has been approved.`,
+      type: 'HR_DOCUMENT_APPROVED',
+      category: 'SUCCESS',
+      entityType: 'EMPLOYEE',
+      entityId: employee.id,
+      actionUrl: `/dashboard/team/${employee.id}`,
+    });
     res.json({ document: updatedDoc });
   } catch (error) {
     next(error);
   }
 });
+
 
 // ─── POST /api/hr/documents/:id/reject ───────────────────────────
 router.post('/:id/reject', async (req: Request, res: Response, next) => {

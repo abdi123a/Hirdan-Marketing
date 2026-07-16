@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
-
+import { createNotification } from '../lib/notifications.js';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { parsePagination } from '../lib/pagination.js';
@@ -83,6 +83,17 @@ router.post('/', requireAdmin, validate({ body: projectDtoSchema }), async (req:
   try {
     const project = await prisma.project.create({
       data: req.body,
+      include: { client: { select: { name: true, company: true } } },
+    });
+    const clientName = (project as any).client?.company || (project as any).client?.name || 'Unknown Client';
+    createNotification({
+      title: 'New Project Assigned',
+      message: `Project "${project.name}" for ${clientName} has been created.`,
+      type: 'PROJECT_CREATED',
+      category: 'ACTION_REQUIRED',
+      entityType: 'PROJECT',
+      entityId: project.id,
+      actionUrl: `/dashboard/projects/${project.id}`,
     });
     res.status(201).json({ project });
   } catch (error) {
@@ -94,10 +105,45 @@ router.post('/', requireAdmin, validate({ body: projectDtoSchema }), async (req:
 
 router.put('/:id', requireAdmin, validate({ body: projectDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
+    const prev = await prisma.project.findUnique({ where: { id: req.params.id as string } });
     const project = await prisma.project.update({
       where: { id: req.params.id as string },
       data: req.body,
     });
+    // Notify on status changes
+    if (prev && req.body.status && prev.status !== req.body.status) {
+      if (req.body.status === 'COMPLETED') {
+        createNotification({
+          title: 'Project Completed 🎉',
+          message: `Project "${project.name}" has been marked as completed.`,
+          type: 'PROJECT_COMPLETED',
+          category: 'SUCCESS',
+          entityType: 'PROJECT',
+          entityId: project.id,
+          actionUrl: `/dashboard/projects/${project.id}`,
+        });
+      } else if (req.body.status === 'ARCHIVED') {
+        createNotification({
+          title: 'Project Archived',
+          message: `Project "${project.name}" has been archived.`,
+          type: 'PROJECT_ARCHIVED',
+          category: 'INFORMATION',
+          entityType: 'PROJECT',
+          entityId: project.id,
+          actionUrl: `/dashboard/projects/${project.id}`,
+        });
+      } else if (req.body.status === 'ON_HOLD') {
+        createNotification({
+          title: 'Project On Hold',
+          message: `Project "${project.name}" has been placed on hold.`,
+          type: 'PROJECT_ON_HOLD',
+          category: 'WARNING',
+          entityType: 'PROJECT',
+          entityId: project.id,
+          actionUrl: `/dashboard/projects/${project.id}`,
+        });
+      }
+    }
     res.json({ project });
   } catch (error) {
     next(error);

@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 import { sendEmail, generateEmailHtml } from '../lib/email.js';
+import { createNotification } from '../lib/notifications.js';
 
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
@@ -118,8 +119,15 @@ router.post('/', requireAdmin, validate({ body: proformaDtoSchema }), async (req
 
 // ─── PUT /api/proformas/:id ──────────────────────────────────────
 
-router.put('/:id', requireAdmin, validate({ body: proformaDtoSchema.partial() }), async (req: Request, res: Response, next) => {
+router.put('/:id', validate({ body: proformaDtoSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
+    const isClient = req.user!.role === 'CLIENT';
+    const isAdmin = req.user!.role === 'ADMIN' || req.user!.role === 'MANAGER' || req.user!.role === 'STAFF';
+    
+    if (!isAdmin && !isClient) {
+      throw AppError.forbidden('Insufficient permissions');
+    }
+
     // Find the proforma first to get the real UUID if a proformaNumber was provided
     const targetProforma = await prisma.proforma.findFirst({
       where: {
@@ -132,6 +140,17 @@ router.put('/:id', requireAdmin, validate({ body: proformaDtoSchema.partial() })
 
     if (!targetProforma) throw AppError.notFound('Proforma not found');
 
+    if (isClient) {
+      const client = await prisma.client.findUnique({ where: { userId: req.user!.userId } });
+      if (!client || targetProforma.clientId !== client.id) {
+        throw AppError.forbidden('You do not have access to this proforma');
+      }
+      const sanitized: any = {};
+      if (req.body.notes !== undefined) sanitized.notes = req.body.notes;
+      if (req.body.status !== undefined) sanitized.status = req.body.status;
+      req.body = sanitized;
+    }
+
     const { items, ...proformaData } = req.body;
     const itemsWithPosition = items?.map((item: any, index: number) => ({
       description: item.description,
@@ -142,14 +161,32 @@ router.put('/:id', requireAdmin, validate({ body: proformaDtoSchema.partial() })
     if (items) {
       await prisma.proformaItem.deleteMany({ where: { proformaId: targetProforma.id } });
     }
+    const statusChangedToAccepted = targetProforma.status !== 'ACCEPTED' && proformaData.status === 'ACCEPTED';
     const proforma = await prisma.proforma.update({
       where: { id: targetProforma.id },
       data: {
         ...proformaData,
         items: itemsWithPosition ? { create: itemsWithPosition } : undefined,
       },
-      include: { items: { orderBy: { position: 'asc' } } },
+      include: {
+        client: { select: { name: true, company: true } },
+        items: { orderBy: { position: 'asc' } },
+      },
     });
+
+    if (statusChangedToAccepted) {
+      const clientName = (proforma as any).client?.company || (proforma as any).client?.name || 'Unknown';
+      createNotification({
+        title: 'Proposal Accepted 🎉',
+        message: `Proforma ${proforma.proformaNumber} has been accepted by ${clientName}.`,
+        type: 'PROFORMA_ACCEPTED',
+        category: 'SUCCESS',
+        entityType: 'PROFORMA',
+        entityId: proforma.proformaNumber || proforma.id,
+        actionUrl: `/dashboard/proformas/${proforma.proformaNumber || proforma.id}`,
+      });
+    }
+
     res.json({ proforma });
   } catch (error) {
     next(error);

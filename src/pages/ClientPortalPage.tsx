@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuthStore, type ClientUser } from '@/lib/auth-store';
 import { useAgencyStore } from '@/lib/store';
+import { NotificationCenter } from '@/components/NotificationCenter';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +14,8 @@ import {
   Globe, MapPin, Download, Eye, Calendar, Clock,
   ChevronLeft, ChevronRight, X, Printer, Loader2, Share2, ExternalLink, Image, Video,
   Zap, Package, CheckCircle2, Briefcase, Layers, Home, TrendingUp, Settings,
-  AlertCircle
+  AlertCircle, Check, ThumbsUp, MessageSquare, CreditCard, Play, ArrowRight,
+  Instagram, Facebook, Linkedin, Youtube, Twitter, Send, Sparkles
 } from 'lucide-react';
 import { apiFetch, apiUpload, downloadProtectedFile } from '@/lib/api-client';
 import hirdanLogo from '@/assets/hirdan-logo.png';
@@ -39,6 +41,18 @@ const fadeIn = {
 
 /** Benchmark uplift vs. your invoices — frames “typical agency” pricing for the same scope (client-facing estimate). */
 const ESTIMATED_AGENCY_MARKET_MULTIPLIER = 1.35;
+
+const PLATFORM_CONFIG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
+  INSTAGRAM: { icon: Instagram, color: "text-[#E1306C]", bg: "bg-[#E1306C]/10 border-[#E1306C]/25", label: "Instagram" },
+  FACEBOOK:  { icon: Facebook,  color: "text-[#1877F2]", bg: "bg-[#1877F2]/10 border-[#1877F2]/25", label: "Facebook" },
+  TIKTOK:    { icon: Zap,       color: "text-cyan-500",  bg: "bg-cyan-500/10 border-cyan-400/30",  label: "TikTok" },
+  LINKEDIN:  { icon: Linkedin,  color: "text-[#0A66C2]", bg: "bg-[#0A66C2]/10 border-[#0A66C2]/25", label: "LinkedIn" },
+  X:         { icon: Twitter,   color: "text-foreground",  bg: "bg-foreground/5 border-border",     label: "X" },
+  SNAPCHAT:  { icon: Send,      color: "text-yellow-500", bg: "bg-yellow-500/10 border-yellow-400/25", label: "Snapchat" },
+  YOUTUBE:   { icon: Youtube,   color: "text-[#FF0000]", bg: "bg-[#FF0000]/10 border-[#FF0000]/25", label: "YouTube" },
+  PINTEREST: { icon: Image,     color: "text-[#BD081C]", bg: "bg-[#BD081C]/10 border-[#BD081C]/25", label: "Pinterest" },
+  OTHER:     { icon: Sparkles,  color: "text-muted-foreground", bg: "bg-muted border-border/40", label: "Other" },
+};
 
 interface NavItem {
   id: string;
@@ -70,7 +84,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function ClientPortalPage() {
   const { user, logout, setToken, setClientPasswordChangeRequired } = useAuthStore();
-  const { clients, invoices, proformas, settings, subscriptions, projects, fetchAllData } = useAgencyStore();
+  const { clients, invoices, proformas, settings, subscriptions, projects, fetchAllData, updateProforma, updateInvoice } = useAgencyStore();
   const isMobile = useIsMobile();
   const prefersReducedMotion = useReducedMotion();
 
@@ -116,7 +130,11 @@ export default function ClientPortalPage() {
 
   const allowedSections = ['overview', ...Object.entries(portalAccess).filter(([_, v]) => v !== false).map(([k]) => k), 'account'];
 
-  const [activeTab, setActiveTab] = useState('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'overview';
+  const setActiveTab = (tab: string) => {
+    setSearchParams({ tab });
+  };
   const [selectedPreviewDoc, setSelectedPreviewDoc] = useState<{ title: string, fileUrl: string, type?: string } | null>(null);
   const downloadRef = useRef<HTMLDivElement>(null);
   const [activeDownloadDocument, setActiveDownloadDocument] = useState<{ type: 'Invoice' | 'Proforma', data: any } | null>(null);
@@ -165,15 +183,140 @@ export default function ClientPortalPage() {
   const [plannerYear, setPlannerYear] = useState(today.getFullYear());
   const [plannerPosts, setPlannerPosts] = useState<any[]>([]);
   const [isPlannerLoading, setIsPlannerLoading] = useState(false);
+
+  const groupedPlannerPosts = useMemo(() => {
+    const groups: Record<string, any> = {};
+
+    plannerPosts.forEach(post => {
+      const key = `${post.title}_${post.shootingDate}_${post.publishDate}`;
+      if (!groups[key]) {
+        groups[key] = {
+          id: post.id,
+          title: post.title,
+          status: post.status,
+          shootingDate: post.shootingDate,
+          publishDate: post.publishDate,
+          notes: post.notes,
+          platforms: [post.platform],
+          postIds: [post.id],
+        };
+      } else {
+        if (!groups[key].platforms.includes(post.platform)) {
+          groups[key].platforms.push(post.platform);
+        }
+        if (!groups[key].postIds.includes(post.id)) {
+          groups[key].postIds.push(post.id);
+        }
+        const statusOrder = ["DRAFT", "SCHEDULED", "FILMED", "PUBLISHED", "DELAYED"];
+        const currentIdx = statusOrder.indexOf(post.status);
+        const groupIdx = statusOrder.indexOf(groups[key].status);
+        if (currentIdx > groupIdx) {
+          groups[key].status = post.status;
+        }
+      }
+    });
+
+    return Object.values(groups).sort((a: any, b: any) => {
+      const da = a.publishDate || a.shootingDate || "";
+      const db = b.publishDate || b.shootingDate || "";
+      return new Date(da).getTime() - new Date(db).getTime();
+    });
+  }, [plannerPosts]);
   const [uploadedDocument, setUploadedDocument] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [showTour, setShowTour] = useState(false);
+  const [nextMeeting, setNextMeeting] = useState<{ id: string; title: string; date: string; location?: string | null; notes?: string | null } | null>(null);
+
+  const [viewingDoc, setViewingDoc] = useState<{ type: 'Invoice' | 'Proforma'; data: any } | null>(null);
+  const [actionType, setActionType] = useState<'accept' | 'reject' | null>(null);
+  const [actionComment, setActionComment] = useState('');
+  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
+
+  const handleDocActionSubmit = async () => {
+    if (!viewingDoc || !actionType) return;
+    if (actionType === 'reject' && !actionComment.trim()) {
+      toast({
+        title: "Comment required",
+        description: "Please specify why you are requesting revisions/disputing.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsSubmittingAction(true);
+    try {
+      const { type, data } = viewingDoc;
+      const formattedDate = new Date().toLocaleDateString();
+      const statusLabel = actionType === 'accept' ? 'Client Approved' : 'Client Requested Revision';
+      const commentSnippet = `\n[${statusLabel} - ${formattedDate}]: "${actionComment}"`;
+      
+      const newNotes = ((data.notes || '') + commentSnippet).trim();
+
+      if (type === 'Proforma') {
+        const newStatus = actionType === 'accept' ? 'Accepted' : 'Draft';
+        await updateProforma(data.id, {
+          status: newStatus as any,
+          notes: newNotes
+        });
+        toast({
+          title: actionType === 'accept' ? "Estimate Approved" : "Revision Requested",
+          description: actionType === 'accept' 
+            ? "You have accepted the cost estimate." 
+            : "Your feedback has been sent back to the team.",
+        });
+      } else {
+        await updateInvoice(data.id, {
+          notes: newNotes
+        });
+        toast({
+          title: actionType === 'accept' ? "Invoice Confirmed" : "Invoice Disputed",
+          description: actionType === 'accept' 
+            ? "Your confirmation has been saved." 
+            : "The team has been notified of your dispute.",
+        });
+      }
+
+      // Trigger Backend Notification for admin dashboard
+      try {
+        await apiFetch('/notifications', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: type === 'Proforma' 
+              ? `Cost Estimate (Proforma) ${actionType === 'accept' ? 'Approved' : 'Revision Requested'}`
+              : `Invoice ${actionType === 'accept' ? 'Acknowledged' : 'Disputed'}`,
+            message: type === 'Proforma'
+              ? `Client "${data.client}" has ${actionType === 'accept' ? 'approved' : 'requested revision on'} Proforma #${data.id}. Comment: "${actionComment}"`
+              : `Client "${data.client}" has ${actionType === 'accept' ? 'acknowledged' : 'disputed'} Invoice #${data.id}. Comment: "${actionComment}"`,
+            type: type === 'Proforma'
+              ? (actionType === 'accept' ? 'PROFORMA_ACCEPTED' : 'PROFORMA_REVISION')
+              : (actionType === 'accept' ? 'INVOICE_CONFIRMED' : 'INVOICE_DISPUTED')
+          })
+        });
+      } catch (notifErr) {
+        console.error("Failed to send system notification:", notifErr);
+      }
+
+      await fetchAllData();
+      setViewingDoc(null);
+      setActionType(null);
+      setActionComment('');
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Action failed",
+        description: "Please try again later.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmittingAction(false);
+    }
+  };
 
   useEffect(() => {
-    if (clientUser?.clientId && !localStorage.getItem(`portal_tour_done_${clientUser.clientId}`)) {
+    if (clientUser?.clientId && !isForcedPasswordChange && !localStorage.getItem(`portal_tour_done_${clientUser.clientId}`)) {
       setShowTour(true);
     }
-  }, [clientUser?.clientId]);
+  }, [clientUser?.clientId, isForcedPasswordChange]);
 
   useEffect(() => {
     if (!allowedSections.includes(activeTab)) {
@@ -194,6 +337,10 @@ export default function ClientPortalPage() {
           completedVisible,
         }));
       })
+      .catch(console.error);
+
+    apiFetch<{ meeting: any }>('/clients/portal/next-meeting')
+      .then((res) => setNextMeeting(res.meeting ?? null))
       .catch(console.error);
 
     apiFetch<{ subscription: any | null; cycle: any | null; progress: { total: number; completed: number; percentage: number } | null }>('/portal/social/summary')
@@ -467,12 +614,58 @@ export default function ClientPortalPage() {
     { label: 'In progress', value: String(taskStats.inProgress), tab: 'social' },
     { label: 'Awaiting your review', value: String(taskStats.waitingApproval), tab: 'social' },
     { label: 'Planned tasks', value: String(taskStats.planned), tab: 'planner' },
-    { label: 'Posts this month', value: String(plannerPosts.length), tab: 'planner' },
-    { label: 'Projects', value: String(clientProjects.length), tab: 'projects' },
-    { label: 'Subscriptions', value: String(clientSubscriptions.length), tab: 'subscriptions' },
-    { label: 'Documents', value: String(documentCount), tab: 'documents' },
-    { label: 'Social profiles', value: String(profileCount), tab: 'social' },
   ];
+
+  const getRecentActivities = () => {
+    const activities: { id: string; type: string; title: string; time: Date; icon: React.ReactNode; color: string }[] = [];
+
+    clientInvoices.forEach(inv => {
+      activities.push({
+        id: `invoice-${inv.id}`,
+        type: 'invoice',
+        title: `Invoice ${inv.id} - ${inv.status}`,
+        time: new Date(inv.date),
+        icon: <Receipt className="h-3 w-3" />,
+        color: inv.status === 'Paid' ? 'text-emerald-500 bg-emerald-500/10' : 'text-blue-500 bg-blue-500/10',
+      });
+    });
+
+    clientProformas.forEach(prof => {
+      activities.push({
+        id: `proforma-${prof.id}`,
+        type: 'proforma',
+        title: `Proforma ${prof.id} - ${prof.status}`,
+        time: new Date(prof.date),
+        icon: <FileText className="h-3 w-3" />,
+        color: prof.status === 'Accepted' ? 'text-emerald-500 bg-emerald-500/10' : 'text-amber-500 bg-amber-500/10',
+      });
+    });
+
+    (portalData?.tasks || []).forEach(task => {
+      const date = new Date(task.postedAt || task.createdAt || today);
+      activities.push({
+        id: `task-${task.id}`,
+        type: 'task',
+        title: `Deliverable: "${task.title}" mark ${task.status === 'WAITING_APPROVAL' ? 'pending' : 'completed'}`,
+        time: date,
+        icon: <CheckCircle2 className="h-3 w-3" />,
+        color: task.status === 'WAITING_APPROVAL' ? 'text-purple-500 bg-purple-500/10' : 'text-emerald-500 bg-emerald-500/10',
+      });
+    });
+
+    (portalData?.documents || []).forEach(doc => {
+      activities.push({
+        id: `doc-${doc.id}`,
+        type: 'document',
+        title: `Shared: "${doc.title}"`,
+        time: new Date(doc.createdAt),
+        icon: <FileText className="h-3 w-3" />,
+        color: 'text-indigo-500 bg-indigo-500/10',
+      });
+    });
+
+    return activities.sort((a, b) => b.time.getTime() - a.time.getTime()).slice(0, 5);
+  };
 
   const initials = displayClient.name
     .split(' ')
@@ -480,6 +673,11 @@ export default function ClientPortalPage() {
     .join('')
     .toUpperCase()
     .slice(0, 2);
+
+  const pendingInvoices = clientInvoices.filter(inv => inv.status === 'Pending' || inv.status === 'Overdue' || inv.status === 'Partially Paid');
+  const pendingProformas = clientProformas.filter(pro => pro.status === 'Sent');
+  const pendingTasks = (portalData?.tasks || []).filter(t => t.status === 'WAITING_APPROVAL');
+  const totalNeedsAction = pendingInvoices.length + pendingProformas.length + pendingTasks.length;
 
   const allNavItems: NavItem[] = [
     { id: 'overview', label: 'Overview', icon: <Home className="h-4 w-4" />, value: 'overview', section: 'workspace' },
@@ -489,7 +687,6 @@ export default function ClientPortalPage() {
     { id: 'social', label: 'Social Media', icon: <Share2 className="h-4 w-4" />, value: 'social', section: 'resources' },
     { id: 'planner', label: 'Planner', icon: <Calendar className="h-4 w-4" />, value: 'planner', section: 'resources' },
     { id: 'documents', label: 'Documents', icon: <FileText className="h-4 w-4" />, value: 'documents', badge: portalData?.documents.length || 0, section: 'resources' },
-    { id: 'account', label: 'Account', icon: <User className="h-4 w-4" />, value: 'account', section: 'resources' },
   ];
 
   const navItems = allNavItems.filter(item => allowedSections.includes(item.id));
@@ -498,7 +695,7 @@ export default function ClientPortalPage() {
   const resourcesNavItems = navItems.filter((item) => item.section === 'resources');
 
   return (
-    <div className="min-h-screen bg-background flex min-w-0">
+    <div className="h-screen overflow-hidden bg-background flex min-w-0">
       {/* Sidebar Navigation */}
       <AnimatePresence>
         {/* Collapsed Icon-Only Sidebar (Desktop) */}
@@ -508,7 +705,7 @@ export default function ClientPortalPage() {
             animate={{ x: 0 }}
             exit={{ x: -72 }}
             transition={sidebarTransition}
-            className="z-50 w-[72px] h-screen sticky top-0 self-start bg-card border-r border-border shadow-[4px_0_32px_-16px_rgba(0,0,0,0.08)] dark:shadow-[4px_0_40px_-12px_rgba(0,0,0,0.35)] flex flex-col items-center overflow-hidden"
+            className="z-50 w-[72px] h-full shrink-0 bg-card border-r border-border shadow-[4px_0_32px_-16px_rgba(0,0,0,0.08)] dark:shadow-[4px_0_40px_-12px_rgba(0,0,0,0.35)] flex flex-col items-center overflow-hidden"
           >
             {/* Collapsed Header — logo mark */}
             <div className="w-full flex items-center justify-center h-[65px] border-b border-border shrink-0 px-2">
@@ -643,7 +840,7 @@ export default function ClientPortalPage() {
               animate={{ x: 0 }}
               exit={{ x: isMobile ? -288 : 0 }}
               transition={sidebarTransition}
-              className={`${isMobile ? 'fixed' : 'sticky top-0 self-start'} z-50 w-72 h-screen bg-card border-r border-border shadow-[4px_0_40px_-12px_rgba(0,0,0,0.18)] dark:shadow-[4px_0_48px_-12px_rgba(0,0,0,0.45)] md:shadow-[4px_0_32px_-16px_rgba(0,0,0,0.08)] dark:md:shadow-[4px_0_40px_-12px_rgba(0,0,0,0.35)] overflow-y-auto flex flex-col`}
+              className={`${isMobile ? 'fixed inset-y-0 left-0' : 'h-full shrink-0'} z-50 w-72 bg-card border-r border-border shadow-[4px_0_40px_-12px_rgba(0,0,0,0.18)] dark:shadow-[4px_0_48px_-12px_rgba(0,0,0,0.45)] md:shadow-[4px_0_32px_-16px_rgba(0,0,0,0.08)] dark:md:shadow-[4px_0_40px_-12px_rgba(0,0,0,0.35)] overflow-y-auto flex flex-col`}
             >
               {/* Sidebar Header - Desktop only logo */}
               <div className="p-6 border-b border-border hidden md:flex items-center justify-between">
@@ -866,6 +1063,7 @@ export default function ClientPortalPage() {
                   {displayClient.status}
                 </Badge>
               )}
+              <NotificationCenter />
             </div>
           </div>
         </header>
@@ -899,8 +1097,139 @@ export default function ClientPortalPage() {
                 transition={{ duration: 0.4 }}
                 className="space-y-8"
               >
+                {/* 1. Needs Your Action Banner Section */}
+                {totalNeedsAction > 0 && (
+                  <div className="rounded-2xl border-l-4 border-amber-500 bg-amber-500/[0.04] p-5 md:p-6 shadow-sm border border-y-border border-r-border">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-2 bg-amber-500/10 rounded-lg text-amber-600">
+                        <AlertCircle className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h2 className="text-base font-display font-bold text-foreground">Needs your attention</h2>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          You have {totalNeedsAction} item{totalNeedsAction > 1 ? 's' : ''} waiting for your action.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      {pendingInvoices.map((inv) => (
+                        <div 
+                          key={inv.id} 
+                          onClick={() => setViewingDoc({ type: 'Invoice', data: inv })}
+                          className="cursor-pointer flex items-center justify-between p-4 rounded-xl bg-card border border-border/60 hover:border-amber-500/35 transition-all flex-col sm:flex-row gap-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-lg bg-red-500/10 flex items-center justify-center shrink-0">
+                              <Receipt className="h-4 w-4 text-red-500" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">Invoice {inv.id}</p>
+                              <p className="text-xs text-muted-foreground">Due: {formatDate(inv.dueDate)} · Status: <span className="text-red-500 font-medium">{inv.status}</span></p>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0">
+                            <span className="text-base font-display font-black text-foreground mr-1 sm:mr-3">{formatCurrency(inv.amount)}</span>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs gap-1"
+                                onClick={(e) => { e.stopPropagation(); handleDownloadDirect({ type: 'Invoice', data: inv }); }}
+                              >
+                                <Download className="h-3.5 w-3.5" /> Download PDF
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs gap-1 bg-amber-500 hover:bg-amber-600 text-white border-0"
+                                onClick={() => setViewingDoc({ type: 'Invoice', data: inv })}
+                              >
+                                <Eye className="h-3.5 w-3.5" /> View
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      {pendingProformas.map((pro) => (
+                        <div 
+                          key={pro.id} 
+                          onClick={() => setViewingDoc({ type: 'Proforma', data: pro })}
+                          className="cursor-pointer flex items-center justify-between p-4 rounded-xl bg-card border border-border/60 hover:border-amber-500/35 transition-all flex-col sm:flex-row gap-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+                              <FileText className="h-4 w-4 text-blue-500" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">Cost Estimate / Proforma {pro.id}</p>
+                              <p className="text-xs text-muted-foreground">Requires spend authorization · {formatDate(pro.date)}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0">
+                            <span className="text-base font-display font-black text-foreground mr-1 sm:mr-3">{formatCurrency(pro.amount)}</span>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs gap-1"
+                                onClick={(e) => { e.stopPropagation(); handleDownloadDirect({ type: 'Proforma', data: pro }); }}
+                              >
+                                <Download className="h-3.5 w-3.5" /> Download PDF
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs gap-1 bg-amber-500 hover:bg-amber-600 text-white border-0"
+                                onClick={() => setViewingDoc({ type: 'Proforma', data: pro })}
+                              >
+                                <Eye className="h-3.5 w-3.5" /> View
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      {pendingTasks.map((t) => (
+                        <div key={t.id} className="flex items-center justify-between p-4 rounded-xl bg-card border border-border/60 hover:border-amber-500/35 transition-all flex-col sm:flex-row gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0">
+                              <Share2 className="h-4 w-4 text-purple-500" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">{t.title}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[9px] uppercase bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-1 rounded font-bold">Content Approval</span>
+                                <span className="text-[10px] text-muted-foreground">Added {new Date(t.createdAt).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0">
+                            {t.proofUrl && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs gap-1 flex-1 sm:flex-none"
+                                onClick={() => setSelectedPreviewDoc({ title: t.title, fileUrl: t.proofUrl! })}
+                              >
+                                <Eye className="h-3.5 w-3.5" /> Proof
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              className="h-8 text-xs gap-1 bg-purple-600 hover:bg-purple-700 text-white border-0 flex-1 sm:flex-none"
+                              onClick={() => setActiveTab('social')}
+                            >
+                              <ArrowRight className="h-3.5 w-3.5" /> Review
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. At a glance row */}
                 <div className="rounded-2xl border border-border bg-card p-6 md:p-8 shadow-sm">
-                  <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6 md:mb-8">
+                  <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
                     <div>
                       <h2 className="text-lg md:text-xl font-display font-semibold text-foreground">At a glance</h2>
                       <p className="text-sm text-muted-foreground mt-1">
@@ -909,7 +1238,7 @@ export default function ClientPortalPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-3 md:gap-4">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
                     {overviewStatTiles.map((tile) => (
                       <button
                         key={tile.label}
@@ -928,8 +1257,9 @@ export default function ClientPortalPage() {
                   </div>
                 </div>
 
-                {/* Main Dashboard Grid */}
+                {/* 3. Main Dashboard Grid */}
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                  {/* Left Column (Timeline, Savings, Previews) */}
                   <div className="xl:col-span-2 space-y-6">
                     <div className="bg-card rounded-xl border border-border shadow-sm p-6 md:p-7">
                       <div className="flex items-center justify-between gap-3 mb-6">
@@ -992,7 +1322,13 @@ export default function ClientPortalPage() {
                                 />
                               </div>
                               <p className="text-xs text-muted-foreground mt-2 tabular-nums">
-                                {portalSummary.progress.completed} completed · {portalSummary.progress.total} total
+                                {portalSummary.progress.percentage === 0 ? (
+                                  <span>Just started — cycle began {portalSummary.cycle?.cycleStart ? formatDate(portalSummary.cycle.cycleStart) : 'recently'}</span>
+                                ) : portalSummary.progress.percentage === 100 ? (
+                                  <span>All tasks completed ✓</span>
+                                ) : (
+                                  <span>{portalSummary.progress.completed} completed · {portalSummary.progress.total} total</span>
+                                )}
                               </p>
                             </div>
                           )}
@@ -1023,8 +1359,9 @@ export default function ClientPortalPage() {
                       )}
                     </div>
 
+                    {/* Simplified Value & Savings Card */}
                     <div>
-                      <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-6 md:mb-8">
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-4">
                         Value &amp; savings
                       </h3>
                       {clientInvoices.length === 0 ? (
@@ -1032,77 +1369,141 @@ export default function ClientPortalPage() {
                           <p className="text-sm text-muted-foreground">Your summary will show here once billing starts.</p>
                         </div>
                       ) : (
-                        <div className="space-y-5 md:space-y-6">
-                          <motion.div
-                            initial={{ opacity: 0, y: 12 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.35, ease: 'easeOut' }}
-                            className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] dark:bg-emerald-500/[0.09] px-8 py-12 md:px-12 md:py-14 text-center shadow-[0_1px_0_0_rgba(16,185,129,0.06)_inset]"
-                          >
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-400 mb-5">
-                              You saved
+                        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] dark:bg-emerald-500/[0.07] p-6 md:p-8 flex flex-col items-center justify-center text-center shadow-sm">
+                          <p className="text-[10px] md:text-[11px] font-bold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400 mb-3">
+                            You saved
+                          </p>
+                          <p className="text-4xl sm:text-5xl md:text-6xl font-display font-black text-emerald-600 dark:text-emerald-300 tracking-tight leading-none">
+                            {formatCurrency(totalSaved)}
+                          </p>
+                          {savingsPercentOfMarket > 0 && (
+                            <p className="mt-3">
+                              <span className="inline-flex rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                                {savingsPercentOfMarket}% below typical market
+                              </span>
                             </p>
-                            <p className="text-5xl sm:text-6xl md:text-7xl font-display font-bold text-emerald-600 dark:text-emerald-300 tracking-tight tabular-nums leading-none">
-                              {formatCurrency(totalSaved)}
-                            </p>
-                            {savingsPercentOfMarket > 0 && (
-                              <p className="mt-6">
-                                <span className="inline-flex rounded-full bg-emerald-500/15 px-3.5 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-300 tabular-nums">
-                                  {savingsPercentOfMarket}% below typical market
-                                </span>
-                              </p>
-                            )}
-                          </motion.div>
-
-                          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6">
-                            <motion.div
-                              initial={{ opacity: 0, y: 12 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ duration: 0.35, delay: 0.05, ease: 'easeOut' }}
-                              className="rounded-2xl border border-border/70 bg-card px-8 py-10 md:py-11"
-                            >
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-4">
-                                Your investment
-                              </p>
-                              <p className="text-3xl sm:text-4xl font-display font-bold text-foreground tabular-nums tracking-tight">
-                                {formatCurrency(yourInvestment)}
-                              </p>
-                            </motion.div>
-                            <motion.div
-                              initial={{ opacity: 0, y: 12 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ duration: 0.35, delay: 0.1, ease: 'easeOut' }}
-                              className="rounded-2xl border border-border/70 bg-card px-8 py-10 md:py-11"
-                            >
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-4">
-                                Market value
-                              </p>
-                              <p className="text-3xl sm:text-4xl font-display font-bold text-foreground tabular-nums tracking-tight">
-                                {formatCurrency(estimatedMarketValue)}
-                              </p>
-                            </motion.div>
+                          )}
+                          <div className="w-full mt-6 pt-5 border-t border-border/60 flex items-center justify-around text-xs text-muted-foreground gap-4 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-foreground uppercase tracking-wider text-[10px]">Your investment:</span>
+                              <span className="tabular-nums font-medium text-foreground">{formatCurrency(yourInvestment)}</span>
+                            </div>
+                            <div className="h-4 w-px bg-border/60 hidden sm:block" />
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-foreground uppercase tracking-wider text-[10px]">Market value:</span>
+                              <span className="tabular-nums font-medium text-foreground">{formatCurrency(estimatedMarketValue)}</span>
+                            </div>
                           </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Content Preview Strip */}
+                    <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+                      <h3 className="text-lg font-display font-semibold text-foreground mb-4">Content Preview Strip</h3>
+                      {(portalData?.tasks || []).filter(t => t.proofUrl).length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground">
+                          No published content previews available yet.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                          {(portalData?.tasks || []).filter(t => t.proofUrl).slice(0, 4).map((task) => (
+                            <div
+                              key={task.id}
+                              onClick={() => setSelectedPreviewDoc({ title: task.title, fileUrl: task.proofUrl! })}
+                              className="group cursor-pointer rounded-lg overflow-hidden border border-border/60 bg-muted/10 hover:border-primary/20 transition-all flex flex-col h-32 relative"
+                            >
+                              {task.proofUrl?.match(/\.(jpeg|jpg|gif|png|webp)/i) ? (
+                                <img
+                                  src={task.proofUrl}
+                                  alt={task.title}
+                                  className="w-full h-20 object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="w-full h-20 bg-primary/5 flex items-center justify-center text-primary group-hover:bg-primary/10 transition-colors">
+                                  {task.proofUrl?.match(/\.(mp4|webm|mov)/i) ? (
+                                    <Video className="h-6 w-6" />
+                                  ) : (
+                                    <Image className="h-6 w-6" />
+                                  )}
+                                </div>
+                              )}
+                              <div className="p-2 flex-1 min-w-0 flex flex-col justify-center">
+                                <p className="text-[10px] font-semibold text-foreground truncate leading-tight mb-0.5">{task.title}</p>
+                                <div className="flex items-center gap-1.5">
+                                  {task.platforms?.slice(0, 1).map((p: any, i: number) => (
+                                    <span key={i} className="text-[8px] uppercase tracking-wider text-muted-foreground font-bold">{p.platform}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
                   </div>
 
+                  {/* Right Column (Meeting, Activity, Social Summary) */}
                   <div className="space-y-6">
+                    {/* Next Meeting Widget — only shown if a meeting is scheduled */}
+                    {nextMeeting && (() => {
+                      const meetingDate = new Date(nextMeeting.date);
+                      const now = new Date();
+                      const diffMs = meetingDate.getTime() - now.getTime();
+                      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                      let dateLabel = '';
+                      if (diffDays === 0) dateLabel = `Today at ${meetingDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                      else if (diffDays === 1) dateLabel = `Tomorrow at ${meetingDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                      else dateLabel = meetingDate.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }) + ` at ${meetingDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                      return (
+                        <div className="bg-card rounded-xl border border-border shadow-sm p-6 relative overflow-hidden group">
+                          <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform">
+                            <Calendar className="w-16 h-16 text-primary" />
+                          </div>
+                          <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                            <Clock className="h-4 w-4 text-primary animate-pulse" /> Next Meeting
+                          </h3>
+                          <p className="text-base font-bold text-foreground mb-1">{nextMeeting.title}</p>
+                          <p className="text-xs text-muted-foreground mb-3">{dateLabel}</p>
+                          {nextMeeting.location && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                              <MapPin className="h-3.5 w-3.5 text-primary/70" /> {nextMeeting.location}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Recent Activity Widget */}
+                    <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+                      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Recent Activity</h3>
+                      {getRecentActivities().length === 0 ? (
+                        <p className="text-xs text-muted-foreground italic">No recent activity</p>
+                      ) : (
+                        <div className="space-y-4">
+                          {getRecentActivities().map((act) => (
+                            <div key={act.id} className="flex gap-3 text-xs items-start">
+                              <div className={cn("p-1.5 rounded-lg shrink-0", act.color)}>
+                                {act.icon}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-foreground leading-normal">{act.title}</p>
+                                <p className="text-[10px] text-muted-foreground mt-0.5">
+                                  {act.time.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Social & Content Summary Card */}
                     <div className="bg-card rounded-xl border border-border shadow-sm p-6">
                       <h3 className="text-lg font-display font-semibold text-foreground mb-4">Social &amp; content</h3>
                       <div className="space-y-3">
                         {(
                           [
-                            {
-                              label: 'Profiles connected',
-                              value: profileCount,
-                              tab: 'social' as const,
-                            },
-                            {
-                              label: 'Posts planned (this month)',
-                              value: plannerPosts.length,
-                              tab: 'planner' as const,
-                            },
                             {
                               label: 'Deliverables completed',
                               value: taskStats.completedVisible,
@@ -1129,33 +1530,8 @@ export default function ClientPortalPage() {
                         ))}
                       </div>
                     </div>
-
-                    <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-                      <h3 className="text-lg font-display font-semibold text-foreground mb-4">Quick Access</h3>
-                      <div className="grid grid-cols-2 gap-3">
-                        {[
-                          { label: 'Projects', icon: <Briefcase className="h-4 w-4" />, tab: 'projects' },
-                          { label: 'Subscriptions', icon: <Zap className="h-4 w-4" />, tab: 'subscriptions' },
-                          { label: 'Social', icon: <Share2 className="h-4 w-4" />, tab: 'social' },
-                          { label: 'Financials', icon: <Receipt className="h-4 w-4" />, tab: 'financials' },
-                          { label: 'Documents', icon: <FileText className="h-4 w-4" />, tab: 'documents' },
-                          { label: 'Planner', icon: <Calendar className="h-4 w-4" />, tab: 'planner' },
-                        ].map((item) => (
-                          <button
-                            key={item.label}
-                            type="button"
-                            onClick={() => setActiveTab(item.tab)}
-                            className="p-3 rounded-lg border border-border/50 bg-muted/10 hover:bg-primary/10 hover:border-primary/20 transition-colors text-sm font-medium text-foreground flex items-center gap-2"
-                          >
-                            {item.icon}
-                            {item.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
                   </div>
                 </div>
-
               </motion.div>
             )}
             {/* Account Tab */}
@@ -1340,7 +1716,7 @@ export default function ClientPortalPage() {
                             initial="hidden"
                             animate="visible"
                             custom={i}
-                            onClick={() => handleDownloadDirect({ type: 'Invoice', data: invoice })}
+                            onClick={() => setViewingDoc({ type: 'Invoice', data: invoice })}
                             className="bg-card cursor-pointer rounded-xl border border-border shadow-sm hover:shadow-md hover:border-primary/20 transition-all duration-300 overflow-hidden group"
                           >
                             <div className="p-5 md:p-6">
@@ -1411,7 +1787,7 @@ export default function ClientPortalPage() {
                             initial="hidden"
                             animate="visible"
                             custom={i}
-                            onClick={() => handleDownloadDirect({ type: 'Proforma', data: proforma })}
+                            onClick={() => setViewingDoc({ type: 'Proforma', data: proforma })}
                             className="bg-card cursor-pointer rounded-xl border border-border shadow-sm hover:shadow-md hover:border-secondary/20 transition-all duration-300 overflow-hidden group"
                           >
                             <div className="p-5 md:p-6">
@@ -1759,20 +2135,35 @@ export default function ClientPortalPage() {
                       <div className="py-12 flex justify-center">
                         <Loader2 className="h-6 w-6 animate-spin text-primary" />
                       </div>
-                    ) : plannerPosts.length === 0 ? (
+                    ) : groupedPlannerPosts.length === 0 ? (
                       <div className="text-center py-12 border-2 border-dashed border-border/50 rounded-lg">
                         <Calendar className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                         <p className="text-sm font-medium text-muted-foreground">No planned posts for this month.</p>
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {plannerPosts.map((post) => (
+                        {groupedPlannerPosts.map((post) => (
                           <div key={post.id} className="p-4 rounded-lg border border-border/50 bg-muted/10 hover:bg-muted/30 transition-colors">
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                               <div className="flex-1">
                                 <p className="text-sm font-bold text-foreground">{post.title}</p>
                                 <div className="flex flex-wrap items-center gap-2 mt-2">
-                                  <Badge variant="outline" className="text-[10px] uppercase font-bold">{post.platform}</Badge>
+                                  <div className="flex flex-wrap gap-1">
+                                    {post.platforms.map((pl: string) => {
+                                      const pc = PLATFORM_CONFIG[pl] || PLATFORM_CONFIG.OTHER;
+                                      const PIcon = pc.icon;
+                                      return (
+                                        <div
+                                          key={pl}
+                                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[9px] font-bold ${pc.bg}`}
+                                          title={pc.label}
+                                        >
+                                          <PIcon className={`h-2.5 w-2.5 ${pc.color}`} />
+                                          <span className={pc.color}>{pc.label}</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
                                   <Badge variant="secondary" className="text-[10px] uppercase font-bold">{post.status}</Badge>
                                 </div>
                               </div>
@@ -1942,6 +2333,320 @@ export default function ClientPortalPage() {
       </Dialog>
 
       {/* Preview modal removed as per user request */}
+
+      {/* Accept/Reject Comment Dialog */}
+      <Dialog
+        open={actionType !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setActionType(null);
+            setActionComment('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {actionType === 'accept' ? 'Approve & Confirm' : 'Request Revision / Dispute'}
+            </DialogTitle>
+            <DialogDescription>
+              {actionType === 'accept'
+                ? 'Confirm your authorization. You can add a comment for the team below.'
+                : 'Please specify the changes or reasons for this request so the team can address them.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Comments / Notes {actionType === 'reject' && <span className="text-destructive">*</span>}
+              </label>
+              <textarea
+                value={actionComment}
+                onChange={(e) => setActionComment(e.target.value)}
+                placeholder={actionType === 'accept' ? "Add any notes (optional)..." : "Describe changes needed (required)..."}
+                className="w-full min-h-[100px] text-sm p-3 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setActionType(null);
+                  setActionComment('');
+                }}
+                disabled={isSubmittingAction}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className={cn(
+                  "text-white border-0",
+                  actionType === 'accept' ? "bg-emerald-500 hover:bg-emerald-600" : "bg-destructive hover:bg-destructive/90"
+                )}
+                onClick={handleDocActionSubmit}
+                disabled={isSubmittingAction}
+              >
+                {isSubmittingAction ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                Submit
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Responsive Document Viewer Dialog */}
+      <Dialog
+        open={viewingDoc !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setViewingDoc(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto p-6 md:p-8">
+          {viewingDoc && (
+            <div className="space-y-6 text-foreground font-sans">
+              {/* Header */}
+              <div className="flex flex-col md:flex-row md:justify-between md:items-start border-b border-border/80 pb-6 gap-6">
+                <div>
+                  <h2 className="text-xl md:text-2xl font-display font-black tracking-tight text-gradient-gold uppercase">
+                    {viewingDoc.type === 'Invoice' ? 'Invoice' : 'Cost Estimate'}
+                  </h2>
+                  <p className="text-sm font-semibold text-muted-foreground mt-1">
+                    #{viewingDoc.data.id}
+                  </p>
+                  <div className="mt-2">
+                    <span className={cn(
+                      "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border",
+                      viewingDoc.data.status === 'Paid' || viewingDoc.data.status === 'Accepted'
+                        ? "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800"
+                        : viewingDoc.data.status === 'Pending' || viewingDoc.data.status === 'Sent'
+                          ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800"
+                          : "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800"
+                    )}>
+                      {viewingDoc.data.status}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 text-xs text-muted-foreground">
+                  <p><span className="font-semibold text-foreground">Issue Date:</span> {formatDate(viewingDoc.data.date)}</p>
+                  <p><span className="font-semibold text-foreground">Due Date:</span> {formatDate(viewingDoc.data.dueDate)}</p>
+                </div>
+              </div>
+
+              {/* Bill From / To */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-wider font-bold text-muted-foreground">From</p>
+                  <p className="font-bold text-foreground">{settings.agencyName}</p>
+                  {settings.address && <p className="text-muted-foreground whitespace-pre-wrap">{settings.address}</p>}
+                  {settings.phone && <p className="text-muted-foreground">Tel: {settings.phone}</p>}
+                  {settings.adminEmail && <p className="text-muted-foreground">Email: {settings.adminEmail}</p>}
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-wider font-bold text-muted-foreground">To</p>
+                  <p className="font-bold text-foreground">{viewingDoc.data.client}</p>
+                  {viewingDoc.data.clientAddress && <p className="text-muted-foreground whitespace-pre-wrap">{viewingDoc.data.clientAddress}</p>}
+                  {viewingDoc.data.clientEmail && <p className="text-muted-foreground">Email: {viewingDoc.data.clientEmail}</p>}
+                </div>
+              </div>
+
+              {/* Responsive Items */}
+              <div>
+                <p className="text-xs uppercase tracking-wider font-bold text-muted-foreground mb-3">Line Items</p>
+                
+                {/* Desktop view (sm and up) */}
+                <div className="hidden sm:block overflow-x-auto border border-border/80 rounded-lg">
+                  <table className="w-full text-left text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-muted/40 border-b border-border/80">
+                        <th className="p-3 font-semibold text-muted-foreground">Description</th>
+                        <th className="p-3 font-semibold text-muted-foreground text-center">Qty</th>
+                        <th className="p-3 font-semibold text-muted-foreground text-right">Unit Price</th>
+                        <th className="p-3 font-semibold text-muted-foreground text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/60">
+                      {(viewingDoc.data.items || []).map((item: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-muted/10 transition-colors">
+                          <td className="p-3 text-foreground font-medium">{item.description}</td>
+                          <td className="p-3 text-center text-muted-foreground tabular-nums">{item.quantity}</td>
+                          <td className="p-3 text-right text-muted-foreground tabular-nums">{formatCurrency(item.unitPrice)}</td>
+                          <td className="p-3 text-right text-foreground font-medium tabular-nums">{formatCurrency(item.quantity * item.unitPrice)}</td>
+                        </tr>
+                      ))}
+                      {(!viewingDoc.data.items || viewingDoc.data.items.length === 0) && (
+                        <tr>
+                          <td className="p-3 text-foreground font-medium">Services rendered</td>
+                          <td className="p-3 text-center text-muted-foreground tabular-nums">1</td>
+                          <td className="p-3 text-right text-muted-foreground tabular-nums">{formatCurrency(viewingDoc.data.amount || 0)}</td>
+                          <td className="p-3 text-right text-foreground font-medium tabular-nums">{formatCurrency(viewingDoc.data.amount || 0)}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile view (stack cards) */}
+                <div className="block sm:hidden space-y-3">
+                  {(viewingDoc.data.items || []).map((item: any, idx: number) => (
+                    <div key={idx} className="p-4 rounded-lg border border-border/80 bg-muted/5 space-y-2">
+                      <p className="font-semibold text-foreground text-sm">{item.description}</p>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-muted-foreground">{item.quantity} × {formatCurrency(item.unitPrice)}</span>
+                        <span className="font-bold text-foreground tabular-nums">{formatCurrency(item.quantity * item.unitPrice)}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {(!viewingDoc.data.items || viewingDoc.data.items.length === 0) && (
+                    <div className="p-4 rounded-lg border border-border/80 bg-muted/5 space-y-2">
+                      <p className="font-semibold text-foreground text-sm">Services rendered</p>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-muted-foreground">1 × {formatCurrency(viewingDoc.data.amount || 0)}</span>
+                        <span className="font-bold text-foreground tabular-nums">{formatCurrency(viewingDoc.data.amount || 0)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Totals */}
+              <div className="flex flex-col items-end pt-4 border-t border-border/80 gap-2.5 text-sm">
+                <div className="w-full sm:w-80 space-y-2">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal</span>
+                    <span className="tabular-nums font-medium text-foreground">{formatCurrency(
+                      (viewingDoc.data.items || []).reduce((sum: number, i: any) => sum + (i.quantity * i.unitPrice), 0) || parseFloat(viewingDoc.data.amount || '0')
+                    )}</span>
+                  </div>
+                  {viewingDoc.data.discount > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Discount ({viewingDoc.data.discountType === 'percentage' ? `${viewingDoc.data.discount}%` : 'Fixed'})</span>
+                      <span className="tabular-nums font-medium text-destructive">
+                        -{formatCurrency(
+                          viewingDoc.data.discountType === 'percentage'
+                            ? (((viewingDoc.data.items || []).reduce((sum: number, i: any) => sum + (i.quantity * i.unitPrice), 0) || parseFloat(viewingDoc.data.amount || '0')) * viewingDoc.data.discount) / 100
+                            : viewingDoc.data.discount
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {viewingDoc.data.taxRate > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Tax ({viewingDoc.data.taxRate}%)</span>
+                      <span className="tabular-nums font-medium text-foreground">
+                        {formatCurrency(
+                          (((viewingDoc.data.items || []).reduce((sum: number, i: any) => sum + (i.quantity * i.unitPrice), 0) || parseFloat(viewingDoc.data.amount || '0')) * viewingDoc.data.taxRate) / 100
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold text-foreground border-t border-border/60 pt-2 text-base">
+                    <span>Total</span>
+                    <span className="tabular-nums text-primary">
+                      {formatCurrency(
+                        // Calculated total
+                        (() => {
+                          const sub = (viewingDoc.data.items || []).reduce((sum: number, i: any) => sum + (i.quantity * i.unitPrice), 0) || parseFloat(viewingDoc.data.amount || '0');
+                          const disc = viewingDoc.data.discount > 0
+                            ? (viewingDoc.data.discountType === 'percentage' ? (sub * viewingDoc.data.discount) / 100 : viewingDoc.data.discount)
+                            : 0;
+                          const tax = viewingDoc.data.taxRate > 0 ? (sub * viewingDoc.data.taxRate) / 100 : 0;
+                          return sub - disc + tax;
+                        })()
+                      )}
+                    </span>
+                  </div>
+                  {viewingDoc.data.deposit > 0 && (
+                    <>
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Deposit Paid</span>
+                        <span className="tabular-nums font-medium text-emerald-600">-{formatCurrency(viewingDoc.data.deposit)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-foreground border-t border-border/60 pt-2 text-base">
+                        <span>Balance Due</span>
+                        <span className="tabular-nums text-primary">
+                          {formatCurrency(
+                            (() => {
+                              const sub = (viewingDoc.data.items || []).reduce((sum: number, i: any) => sum + (i.quantity * i.unitPrice), 0) || parseFloat(viewingDoc.data.amount || '0');
+                              const disc = viewingDoc.data.discount > 0
+                                ? (viewingDoc.data.discountType === 'percentage' ? (sub * viewingDoc.data.discount) / 100 : viewingDoc.data.discount)
+                                : 0;
+                              const tax = viewingDoc.data.taxRate > 0 ? (sub * viewingDoc.data.taxRate) / 100 : 0;
+                              return sub - disc + tax - viewingDoc.data.deposit;
+                            })()
+                          )}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Notes */}
+              {viewingDoc.data.notes && (
+                <div className="pt-4 border-t border-border/80 space-y-1">
+                  <p className="text-xs uppercase tracking-wider font-bold text-muted-foreground">Notes &amp; History</p>
+                  <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed bg-muted/20 p-3 rounded-lg border border-border/40">
+                    {viewingDoc.data.notes}
+                  </p>
+                </div>
+              )}
+
+              {/* Actions Footer */}
+              <div className="flex flex-wrap items-center justify-between border-t border-border/80 pt-6 gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setViewingDoc(null)}
+                >
+                  Close
+                </Button>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 flex-1 sm:flex-none"
+                    onClick={() => handleDownloadDirect({ type: viewingDoc.type, data: viewingDoc.data })}
+                  >
+                    <Download className="h-4 w-4" /> Download PDF
+                  </Button>
+                  
+                  {/* Approval / Dispute actions if pending */}
+                  {(viewingDoc.data.status === 'Sent' || viewingDoc.data.status === 'Pending' || viewingDoc.data.status === 'Overdue' || viewingDoc.data.status === 'Partially Paid') && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:bg-destructive/5 gap-1.5 flex-1 sm:flex-none"
+                        onClick={() => {
+                          setActionType('reject');
+                        }}
+                      >
+                        <X className="h-4 w-4" /> 
+                        {viewingDoc.type === 'Proforma' ? 'Request Revision' : 'Dispute'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1.5 flex-1 sm:flex-none border-0"
+                        onClick={() => {
+                          setActionType('accept');
+                        }}
+                      >
+                        <Check className="h-4 w-4" /> 
+                        {viewingDoc.type === 'Proforma' ? 'Approve' : 'Confirm'}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* General Document Viewer */}
       <DocumentViewer

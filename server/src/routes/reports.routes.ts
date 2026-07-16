@@ -6,6 +6,7 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { AppError } from '../lib/errors.js';
 import { callAI, resolveProviderKey } from '../lib/ai-provider.js';
+import { createNotification } from '../lib/notifications.js';
 
 const router = Router();
 router.use(authenticate);
@@ -467,6 +468,16 @@ Each section must have concise, presentation-ready text.`;
       },
     });
 
+    createNotification({
+      title: 'Monthly Report Generated',
+      message: `Monthly report "${report.title}" has been successfully generated.`,
+      type: 'MONTHLY_REPORT_GENERATED',
+      category: 'INFORMATION',
+      entityType: 'REPORT',
+      entityId: report.id,
+      actionUrl: `/dashboard/reports/${report.id}`,
+    });
+
     res.status(201).json({
       report,
       preflight: {
@@ -575,6 +586,18 @@ router.put(
           } as Prisma.InputJsonValue,
         },
       });
+
+      if (updated.status === 'FINALIZED') {
+        createNotification({
+          title: 'Monthly Report Approved ✅',
+          message: `Monthly report "${updated.title}" has been finalized & approved.`,
+          type: 'MONTHLY_REPORT_FINALIZED',
+          category: 'SUCCESS',
+          entityType: 'REPORT',
+          entityId: updated.id,
+          actionUrl: `/dashboard/reports/${updated.id}`,
+        });
+      }
 
       res.json({ report: updated });
     } catch (error) {

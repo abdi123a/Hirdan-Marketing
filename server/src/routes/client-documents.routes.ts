@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
 import { uploadDocument, enforceMagicBytes } from '../lib/upload.js';
 import { auditLog } from '../lib/audit.js';
+import { createNotification } from '../lib/notifications.js';
 
 const router = Router();
 router.use(authenticate);
@@ -82,6 +83,18 @@ router.post(
       });
 
       auditLog({ action: 'document.upload', success: true, userId: req.user!.userId, clientId, documentId: document.id, ip });
+      if (client.userId) {
+        createNotification({
+          title: 'New Document Uploaded 📁',
+          message: `A new document "${parsed.title}" is available for you to view.`,
+          type: 'CLIENT_DOCUMENT_UPLOADED',
+          category: 'INFORMATION',
+          entityType: 'CLIENT',
+          entityId: clientId,
+          actionUrl: `/client/portal?tab=documents`,
+          userId: client.userId,
+        });
+      }
       res.status(201).json({ document });
     } catch (error) {
       auditLog({ action: 'document.upload', success: false, userId: req.user!.userId, clientId: req.params.clientId as string, ip: req.ip });

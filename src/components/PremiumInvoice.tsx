@@ -129,6 +129,11 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
     // #endregion
   }, [settings.phone, type]);
 
+  // Clean client approval/revision comments from notes for the official invoice document layout
+  const cleanedNotes = data.notes
+    ? data.notes.replace(/(?:\r?\n)?\[Client\s+[^\]]+\]\s*:\s*"[\s\S]*?"/gi, '').trim()
+    : '';
+
   // Brand Colors
   const primaryColor = settings.primaryColor || '#504188'; // Default Deep Purple
   const accentColor = '#f6b317';  // Gold/Yellow
@@ -380,7 +385,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
               </div>
 
               <div style={{ fontSize: '12px', color: secondary, lineHeight: 1.7, fontWeight: 500, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {data.notes || settings.defaultInvoiceNotes || "Bank Transfer, Credit Card. Please make payment by the due date. Thank you for your business!"}
+                {cleanedNotes || settings.defaultInvoiceNotes || "Bank Transfer, Credit Card. Please make payment by the due date. Thank you for your business!"}
                 {data.paymentMethod && <div style={{ marginTop: '8px', fontWeight: 700, color: primaryColor }}>Paid via: {data.paymentMethod}</div>}
               </div>
 

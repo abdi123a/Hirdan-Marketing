@@ -20,7 +20,7 @@ import {
   Trash2, Pencil, Upload, Download, ExternalLink, Share2,
   Loader2, Zap, Send, Image, Sparkles, ChevronDown, ChevronRight, Video, MoreVertical, AlertCircle, Home
 } from "lucide-react";
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -30,11 +30,27 @@ import { DocumentViewer } from "@/components/DocumentViewer";
 import { Progress } from "@/components/ui/progress";
 import { ClientMonthlyPlannerTab } from "@/pages/SocialMediaPlannerPage";
 
+interface ClientMeeting {
+  id: string;
+  title: string;
+  date: string;
+  location?: string | null;
+  notes?: string | null;
+}
+
 export default function ClientDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { clients, projects, invoices, proformas, subscriptions, fetchAllData } = useAgencyStore();
+  const { toast } = useToast();
   const [selectedPreviewDoc, setSelectedPreviewDoc] = useState<{ title: string, fileUrl: string, type?: string } | null>(null);
+  const [meetings, setMeetings] = useState<ClientMeeting[]>([]);
+  const [meetingsLoading, setMeetingsLoading] = useState(false);
+  const [meetingDialogOpen, setMeetingDialogOpen] = useState(false);
+  const [editingMeeting, setEditingMeeting] = useState<ClientMeeting | null>(null);
+  const [meetingForm, setMeetingForm] = useState({ title: '', date: '', time: '', location: '', notes: '' });
+  const [isSavingMeeting, setIsSavingMeeting] = useState(false);
+  const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (clients.length === 0) {
@@ -43,6 +59,21 @@ export default function ClientDetailsPage() {
   }, [clients.length, fetchAllData]);
 
   const client = useMemo(() => clients.find((c) => c.id === id), [clients, id]);
+
+  const fetchMeetings = useCallback(async () => {
+    if (!id) return;
+    setMeetingsLoading(true);
+    try {
+      const res = await apiFetch<{ meetings: ClientMeeting[] }>(`/clients/${id}/meetings`);
+      setMeetings(res.meetings || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setMeetingsLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => { fetchMeetings(); }, [fetchMeetings]);
 
   // Auto-navigate back to clients list when client is deleted (no longer in store)
   useEffect(() => {
@@ -181,6 +212,7 @@ export default function ClientDetailsPage() {
               <TabsTrigger value="social" className="rounded-lg text-xs font-semibold tracking-tight gap-1"><Share2 className="h-3 w-3" /> Social</TabsTrigger>
               <TabsTrigger value="planner" className="rounded-lg text-xs font-semibold tracking-tight gap-1"><Calendar className="h-3 w-3" /> Planner</TabsTrigger>
               <TabsTrigger value="documents" className="rounded-lg text-xs font-semibold tracking-tight gap-1"><FileText className="h-3 w-3" /> Documents</TabsTrigger>
+              <TabsTrigger value="meetings" className="rounded-lg text-xs font-semibold tracking-tight gap-1"><Calendar className="h-3 w-3" /> Meetings {meetings.length > 0 && `(${meetings.length})`}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="mt-6 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -439,6 +471,254 @@ export default function ClientDetailsPage() {
             {/* Documents Tab */}
             <TabsContent value="documents" className="mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <ClientDocumentsTab clientId={client.id} setPreviewDoc={setSelectedPreviewDoc} />
+            </TabsContent>
+
+            {/* Meetings Tab */}
+            <TabsContent value="meetings" className="mt-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <Card className="border-border/50 shadow-sm overflow-hidden">
+                <CardHeader className="pb-3 border-b border-border/40 bg-muted/10">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-base font-display flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-primary" /> Meetings
+                      </CardTitle>
+                      <CardDescription className="text-xs">Face-to-face meetings with this client</CardDescription>
+                    </div>
+                    <Button
+                      variant="hero"
+                      size="sm"
+                      className="h-8 text-xs font-bold gap-1.5"
+                      onClick={() => {
+                        setEditingMeeting(null);
+                        setMeetingForm({ title: '', date: '', time: '09:00', location: '', notes: '' });
+                        setMeetingDialogOpen(true);
+                      }}
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Schedule Meeting
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {meetingsLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : meetings.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center px-8">
+                      <div className="w-14 h-14 rounded-full bg-primary/5 flex items-center justify-center mb-4">
+                        <Calendar className="h-6 w-6 text-primary/40" />
+                      </div>
+                      <p className="text-sm font-semibold text-foreground mb-1">No meetings scheduled</p>
+                      <p className="text-xs text-muted-foreground mb-4">Schedule a face-to-face meeting with this client.</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 text-xs"
+                        onClick={() => {
+                          setEditingMeeting(null);
+                          setMeetingForm({ title: '', date: '', time: '09:00', location: '', notes: '' });
+                          setMeetingDialogOpen(true);
+                        }}
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Schedule First Meeting
+                      </Button>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader className="bg-muted/20">
+                        <TableRow>
+                          <TableHead className="font-bold text-xs uppercase tracking-tight">Title</TableHead>
+                          <TableHead className="font-bold text-xs uppercase tracking-tight">Date & Time</TableHead>
+                          <TableHead className="font-bold text-xs uppercase tracking-tight">Location</TableHead>
+                          <TableHead className="font-bold text-xs uppercase tracking-tight">Notes</TableHead>
+                          <TableHead className="text-right font-bold text-xs uppercase tracking-tight">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {meetings
+                          .slice()
+                          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                          .map((meeting) => {
+                            const d = new Date(meeting.date);
+                            const isPast = d < new Date();
+                            return (
+                              <TableRow key={meeting.id} className={isPast ? 'opacity-50' : ''}>
+                                <TableCell className="font-semibold text-sm">
+                                  {meeting.title}
+                                  {!isPast && (
+                                    <Badge className="ml-2 text-[9px] bg-emerald-50 text-emerald-600 border-0 font-bold uppercase">Upcoming</Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  <span className="font-medium text-foreground">{d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                  <br />
+                                  {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {meeting.location ? (
+                                    <span className="flex items-center gap-1">
+                                      <MapPin className="h-3 w-3 text-muted-foreground/60" /> {meeting.location}
+                                    </span>
+                                  ) : <span className="text-muted-foreground/40">—</span>}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground max-w-[160px] truncate">
+                                  {meeting.notes || <span className="text-muted-foreground/40">—</span>}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-muted-foreground hover:text-primary"
+                                      onClick={() => {
+                                        setEditingMeeting(meeting);
+                                        const dt = new Date(meeting.date);
+                                        const dateStr = dt.toISOString().split('T')[0];
+                                        const timeStr = dt.toTimeString().slice(0, 5);
+                                        setMeetingForm({
+                                          title: meeting.title,
+                                          date: dateStr,
+                                          time: timeStr,
+                                          location: meeting.location || '',
+                                          notes: meeting.notes || '',
+                                        });
+                                        setMeetingDialogOpen(true);
+                                      }}
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                      disabled={deletingMeetingId === meeting.id}
+                                      onClick={async () => {
+                                        setDeletingMeetingId(meeting.id);
+                                        try {
+                                          await apiFetch(`/clients/${id}/meetings/${meeting.id}`, { method: 'DELETE' });
+                                          await fetchMeetings();
+                                          toast({ title: 'Meeting deleted' });
+                                        } catch {
+                                          toast({ title: 'Failed to delete', variant: 'destructive' });
+                                        } finally {
+                                          setDeletingMeetingId(null);
+                                        }
+                                      }}
+                                    >
+                                      {deletingMeetingId === meeting.id
+                                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        : <Trash2 className="h-3.5 w-3.5" />}
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Add / Edit Meeting Dialog */}
+              <Dialog open={meetingDialogOpen} onOpenChange={setMeetingDialogOpen}>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="font-display">{editingMeeting ? 'Edit Meeting' : 'Schedule Meeting'}</DialogTitle>
+                    <DialogDescription>Face-to-face meeting with {client.company || client.name}</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold uppercase tracking-wider">Meeting Title</Label>
+                      <Input
+                        placeholder="e.g. Monthly Review"
+                        value={meetingForm.title}
+                        onChange={(e) => setMeetingForm((p) => ({ ...p, title: e.target.value }))}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold uppercase tracking-wider">Date</Label>
+                        <Input
+                          type="date"
+                          value={meetingForm.date}
+                          onChange={(e) => setMeetingForm((p) => ({ ...p, date: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold uppercase tracking-wider">Time</Label>
+                        <Input
+                          type="time"
+                          value={meetingForm.time}
+                          onChange={(e) => setMeetingForm((p) => ({ ...p, time: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold uppercase tracking-wider">Location (optional)</Label>
+                      <Input
+                        placeholder="e.g. Office, Café name, address"
+                        value={meetingForm.location}
+                        onChange={(e) => setMeetingForm((p) => ({ ...p, location: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold uppercase tracking-wider">Notes (optional)</Label>
+                      <Textarea
+                        placeholder="Agenda, talking points…"
+                        rows={3}
+                        value={meetingForm.notes}
+                        onChange={(e) => setMeetingForm((p) => ({ ...p, notes: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setMeetingDialogOpen(false)}>Cancel</Button>
+                    <Button
+                      disabled={isSavingMeeting || !meetingForm.title || !meetingForm.date}
+                      onClick={async () => {
+                        if (!meetingForm.title || !meetingForm.date) return;
+                        setIsSavingMeeting(true);
+                        try {
+                          const isoDate = new Date(`${meetingForm.date}T${meetingForm.time || '09:00'}:00`).toISOString();
+                          if (editingMeeting) {
+                            await apiFetch(`/clients/${id}/meetings/${editingMeeting.id}`, {
+                              method: 'PUT',
+                              body: JSON.stringify({
+                                title: meetingForm.title,
+                                date: isoDate,
+                                location: meetingForm.location || null,
+                                notes: meetingForm.notes || null,
+                              }),
+                            });
+                            toast({ title: 'Meeting updated' });
+                          } else {
+                            await apiFetch(`/clients/${id}/meetings`, {
+                              method: 'POST',
+                              body: JSON.stringify({
+                                title: meetingForm.title,
+                                date: isoDate,
+                                location: meetingForm.location || null,
+                                notes: meetingForm.notes || null,
+                              }),
+                            });
+                            toast({ title: 'Meeting scheduled' });
+                          }
+                          await fetchMeetings();
+                          setMeetingDialogOpen(false);
+                        } catch {
+                          toast({ title: 'Failed to save meeting', variant: 'destructive' });
+                        } finally {
+                          setIsSavingMeeting(false);
+                        }
+                      }}
+                    >
+                      {isSavingMeeting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      {isSavingMeeting ? 'Saving…' : (editingMeeting ? 'Update Meeting' : 'Schedule Meeting')}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </TabsContent>
           </Tabs>
 

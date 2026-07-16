@@ -571,7 +571,7 @@ export default function LandingPageEditor() {
             Settings
           </Button>
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-[#5C30FD] px-2.5 py-1 bg-[#5C30FD]/10 rounded-md">Live CMS Suite</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[#504289] px-2.5 py-1 bg-[#504289]/10 rounded-md">Live CMS Suite</span>
             <h1 className="text-2xl md:text-3xl font-extrabold font-display tracking-tight text-foreground mt-2 flex items-center gap-2">
               Landing Page Customizer
             </h1>
@@ -620,7 +620,7 @@ export default function LandingPageEditor() {
                         }}
                         className={`w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold rounded-xl transition-all ${
                           isActive 
-                            ? "bg-[#5C30FD] text-white shadow-sm shadow-[#5C30FD]/20 scale-[1.01]" 
+                            ? "bg-[#504289] text-white shadow-sm shadow-[#504289]/20 scale-[1.01]" 
                             : "text-muted-foreground hover:bg-muted hover:text-foreground"
                         }`}
                       >
@@ -638,7 +638,7 @@ export default function LandingPageEditor() {
           {/* Quick Help Card */}
           <Card className="border border-border shadow-xs bg-muted/30 p-4 rounded-2xl hidden lg:block">
             <div className="flex gap-3">
-              <HelpIcon className="w-5 h-5 text-[#5C30FD] shrink-0" />
+              <HelpIcon className="w-5 h-5 text-[#504289] shrink-0" />
               <div>
                 <h4 className="text-xs font-bold text-foreground">Interactive Mockup</h4>
                 <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
@@ -658,7 +658,7 @@ export default function LandingPageEditor() {
               <Card className="border border-border shadow-sm rounded-2xl">
                 <CardHeader className="pb-4">
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-[#5C30FD]" /> Hero Banner
+                    <Sparkles className="w-5 h-5 text-[#504289]" /> Hero Banner
                   </CardTitle>
                   <CardDescription>Setup layout content, background structures, and primary client call-to-actions.</CardDescription>
                 </CardHeader>
@@ -775,7 +775,7 @@ export default function LandingPageEditor() {
                   </div>
                 </CardContent>
                 <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
-                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#504289] hover:bg-[#FFC107] text-white">
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     Save Hero Section
                   </Button>
@@ -790,7 +790,7 @@ export default function LandingPageEditor() {
               <Card className="border border-border shadow-sm rounded-2xl">
                 <CardHeader>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
-                    <Compass className="w-5 h-5 text-[#5C30FD]" /> About & Mission
+                    <Compass className="w-5 h-5 text-[#504289]" /> About & Mission
                   </CardTitle>
                   <CardDescription>Configure brand details, checkboxes bullet checklist, and statistics charts.</CardDescription>
                 </CardHeader>
@@ -915,7 +915,7 @@ export default function LandingPageEditor() {
                   </div>
                 </CardContent>
                 <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
-                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#504289] hover:bg-[#FFC107] text-white">
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     Save About Settings
                   </Button>
@@ -930,7 +930,7 @@ export default function LandingPageEditor() {
               <Card className="border border-border shadow-sm rounded-2xl">
                 <CardHeader>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
-                    <Layers className="w-5 h-5 text-[#5C30FD]" /> Services Cards
+                    <Layers className="w-5 h-5 text-[#504289]" /> Services Cards
                   </CardTitle>
                   <CardDescription>Manage the grid items that display your key service offerings.</CardDescription>
                 </CardHeader>
@@ -939,7 +939,7 @@ export default function LandingPageEditor() {
                     {Array.isArray(staticContent.servicesJson) && staticContent.servicesJson.map((service: any, idx: number) => (
                       <div key={idx} className="p-4 border border-border rounded-xl bg-muted/20 relative space-y-3 shadow-xs">
                         <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-bold text-[#5C30FD] px-2 py-0.5 bg-[#5C30FD]/10 rounded-md">Service #{idx + 1}</span>
+                          <span className="text-[10px] font-bold text-[#504289] px-2 py-0.5 bg-[#504289]/10 rounded-md">Service #{idx + 1}</span>
                           <button
                             type="button"
                             className="text-xs text-destructive hover:underline flex items-center gap-1"
@@ -1012,7 +1012,7 @@ export default function LandingPageEditor() {
                   </Button>
                 </CardContent>
                 <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
-                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#504289] hover:bg-[#FFC107] text-white">
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     Save Services Settings
                   </Button>
@@ -1027,7 +1027,7 @@ export default function LandingPageEditor() {
               <Card className="border border-border shadow-sm rounded-2xl">
                 <CardHeader>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
-                    <Play className="w-5 h-5 text-[#5C30FD]" /> Roadmap Process & CTA Forms
+                    <Play className="w-5 h-5 text-[#504289]" /> Roadmap Process & CTA Forms
                   </CardTitle>
                   <CardDescription>Setup the step-by-step roadmap items and the lead capture backdrop.</CardDescription>
                 </CardHeader>
@@ -1125,7 +1125,7 @@ export default function LandingPageEditor() {
                   </div>
                 </CardContent>
                 <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
-                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#504289] hover:bg-[#FFC107] text-white">
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     Save Timeline Settings
                   </Button>
@@ -1140,7 +1140,7 @@ export default function LandingPageEditor() {
               <Card className="border border-border shadow-sm rounded-2xl">
                 <CardHeader>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
-                    <Award className="w-5 h-5 text-[#5C30FD]" /> Client Logos Slider
+                    <Award className="w-5 h-5 text-[#504289]" /> Client Logos Slider
                   </CardTitle>
                   <CardDescription>Upload customer brand logos displayed in the scrolling marquee banner.</CardDescription>
                 </CardHeader>
@@ -1220,7 +1220,7 @@ export default function LandingPageEditor() {
                   )}
                 </CardContent>
                 <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
-                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#504289] hover:bg-[#FFC107] text-white">
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     Save Client Logos
                   </Button>
@@ -1235,7 +1235,7 @@ export default function LandingPageEditor() {
               <Card className="border border-border shadow-sm rounded-2xl">
                 <CardHeader>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
-                    <DollarSign className="w-5 h-5 text-[#5C30FD]" /> Pricing Packages
+                    <DollarSign className="w-5 h-5 text-[#504289]" /> Pricing Packages
                   </CardTitle>
                   <CardDescription>Setup agency subscriptions and packages shown to prospects.</CardDescription>
                 </CardHeader>
@@ -1332,7 +1332,7 @@ export default function LandingPageEditor() {
                   </Button>
                 </CardContent>
                 <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
-                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#504289] hover:bg-[#FFC107] text-white">
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     Save Packages Settings
                   </Button>
@@ -1347,7 +1347,7 @@ export default function LandingPageEditor() {
               <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
                 <div>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
-                    <FileText className="w-5 h-5 text-[#5C30FD]" /> Case Studies Portfolio
+                    <FileText className="w-5 h-5 text-[#504289]" /> Case Studies Portfolio
                   </CardTitle>
                   <CardDescription>Showcase your visual success stories, views generated, ROAS etc.</CardDescription>
                 </div>
@@ -1395,7 +1395,7 @@ export default function LandingPageEditor() {
               <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
                 <div>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
-                    <Folder className="w-5 h-5 text-[#5C30FD]" /> Portfolio Projects
+                    <Folder className="w-5 h-5 text-[#504289]" /> Portfolio Projects
                   </CardTitle>
                   <CardDescription>Manage the detailed case/project profiles displayed on your showcases.</CardDescription>
                 </div>
@@ -1443,7 +1443,7 @@ export default function LandingPageEditor() {
               <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
                 <div>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
-                    <ThumbsUp className="w-5 h-5 text-[#5C30FD]" /> Client Reviews
+                    <ThumbsUp className="w-5 h-5 text-[#504289]" /> Client Reviews
                   </CardTitle>
                   <CardDescription>Manage user feedback testimonials and star ratings.</CardDescription>
                 </div>
@@ -1499,7 +1499,7 @@ export default function LandingPageEditor() {
               <Card className="border border-border shadow-sm rounded-2xl">
                 <CardHeader>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
-                    <HelpIcon className="w-5 h-5 text-[#5C30FD]" /> FAQ Accordions
+                    <HelpIcon className="w-5 h-5 text-[#504289]" /> FAQ Accordions
                   </CardTitle>
                   <CardDescription>Setup questions and answers listed on your sales page footer.</CardDescription>
                 </CardHeader>
@@ -1508,7 +1508,7 @@ export default function LandingPageEditor() {
                     {Array.isArray(staticContent.faqsJson) && staticContent.faqsJson.map((faq: any, idx: number) => (
                       <div key={idx} className="p-4 border border-border rounded-xl bg-muted/20 relative space-y-3">
                         <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-bold text-[#5C30FD] px-2 py-0.5 bg-[#5C30FD]/10 rounded-md">FAQ #{idx + 1}</span>
+                          <span className="text-[10px] font-bold text-[#504289] px-2 py-0.5 bg-[#504289]/10 rounded-md">FAQ #{idx + 1}</span>
                           <button
                             type="button"
                             className="text-xs text-destructive hover:underline flex items-center gap-1"
@@ -1567,7 +1567,7 @@ export default function LandingPageEditor() {
                   </Button>
                 </CardContent>
                 <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
-                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#504289] hover:bg-[#FFC107] text-white">
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     Save FAQs Settings
                   </Button>
@@ -1582,7 +1582,7 @@ export default function LandingPageEditor() {
               <Card className="border border-border shadow-sm rounded-2xl">
                 <CardHeader>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
-                    <Settings className="w-5 h-5 text-[#5C30FD]" /> SEO & Taglines
+                    <Settings className="w-5 h-5 text-[#504289]" /> SEO & Taglines
                   </CardTitle>
                   <CardDescription>Tune landing page titles, keywords, description tags, and social graphic previews.</CardDescription>
                 </CardHeader>
@@ -1638,7 +1638,7 @@ export default function LandingPageEditor() {
                   </div>
                 </CardContent>
                 <div className="p-6 border-t border-border flex justify-end bg-muted/20 rounded-b-2xl">
-                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#5C30FD] hover:bg-[#FFC107] text-white">
+                  <Button type="submit" disabled={isSaving} className="gap-2 rounded-xl bg-[#504289] hover:bg-[#FFC107] text-white">
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     Save SEO Settings
                   </Button>
@@ -1667,14 +1667,14 @@ export default function LandingPageEditor() {
               <div className="flex items-center gap-1.5 bg-slate-900/80 px-2 py-0.5 rounded-lg border border-slate-700">
                 <button 
                   onClick={() => setPreviewMode("desktop")}
-                  className={`p-1 rounded transition-colors ${previewMode === "desktop" ? "bg-[#5C30FD] text-white" : "text-slate-400 hover:text-white"}`}
+                  className={`p-1 rounded transition-colors ${previewMode === "desktop" ? "bg-[#504289] text-white" : "text-slate-400 hover:text-white"}`}
                   title="Desktop View"
                 >
                   <MonitorIcon className="w-3.5 h-3.5" />
                 </button>
                 <button 
                   onClick={() => setPreviewMode("mobile")}
-                  className={`p-1 rounded transition-colors ${previewMode === "mobile" ? "bg-[#5C30FD] text-white" : "text-slate-400 hover:text-white"}`}
+                  className={`p-1 rounded transition-colors ${previewMode === "mobile" ? "bg-[#504289] text-white" : "text-slate-400 hover:text-white"}`}
                   title="Mobile View"
                 >
                   <Smartphone className="w-3.5 h-3.5" />
@@ -1692,12 +1692,12 @@ export default function LandingPageEditor() {
               {/* Header Navigation Mockup */}
               <div className="bg-[#101828] text-white px-5 py-4 flex items-center justify-between border-b border-slate-800">
                 <div className="flex items-center gap-1">
-                  <span className="font-extrabold text-sm tracking-tight text-white">Hirdan<span className="text-[#5C30FD]">Marketing</span></span>
+                  <span className="font-extrabold text-sm tracking-tight text-white">Hirdan<span className="text-[#504289]">Marketing</span></span>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] text-slate-300 hover:text-white font-medium cursor-pointer hidden md:inline">Services</span>
                   <span className="text-[10px] text-slate-300 hover:text-white font-medium cursor-pointer hidden md:inline">About</span>
-                  <span className="bg-[#5C30FD] text-white font-bold text-[9px] px-3 py-1.5 rounded-[10px] hover:bg-[#FFC107] transition-all cursor-pointer">
+                  <span className="bg-[#504289] text-white font-bold text-[9px] px-3 py-1.5 rounded-[10px] hover:bg-[#FFC107] transition-all cursor-pointer">
                     Get Quote
                   </span>
                 </div>
@@ -1707,20 +1707,20 @@ export default function LandingPageEditor() {
               <div 
                 id="mock-section-hero"
                 className={`p-6 bg-white transition-all relative border-b border-slate-100 ${
-                  activeTab === 'hero' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                  activeTab === 'hero' ? 'bg-[#504289]/5 ring-2 ring-[#504289] ring-inset' : ''
                 }`}
               >
                 {activeTab === 'hero' && (
-                  <span className="absolute top-2 right-2 text-[9px] font-extrabold uppercase bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Hero Edit</span>
+                  <span className="absolute top-2 right-2 text-[9px] font-extrabold uppercase bg-[#504289] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Hero Edit</span>
                 )}
                 
                 <div className="flex flex-col gap-4">
                   <div className="space-y-3">
-                    <span className="inline-flex items-center gap-1 bg-[#5C30FD]/10 text-[#5C30FD] text-[10px] font-bold px-2.5 py-1 rounded-full">
+                    <span className="inline-flex items-center gap-1 bg-[#504289]/10 text-[#504289] text-[10px] font-bold px-2.5 py-1 rounded-full">
                       {staticContent.heroBadgeImageUrl ? (
                         <img src={staticContent.heroBadgeImageUrl} alt="icon" className="h-3 object-contain" />
                       ) : (
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#5C30FD]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#504289]" />
                       )}
                       {staticContent.heroSubtitle || "Digital Marketing Agency"}
                     </span>
@@ -1732,7 +1732,7 @@ export default function LandingPageEditor() {
                     </p>
                     
                     <div className="flex flex-wrap items-center gap-3 pt-2">
-                      <span className="bg-[#5C30FD] text-white font-bold text-[10px] px-5 py-2.5 rounded-[14px] hover:bg-[#FFC107] transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-[#5C30FD]/15">
+                      <span className="bg-[#504289] text-white font-bold text-[10px] px-5 py-2.5 rounded-[14px] hover:bg-[#FFC107] transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-[#504289]/15">
                         {staticContent.heroBtn1Text || "Get A Quote"}
                         <ChevronRight className="w-3.5 h-3.5" />
                       </span>
@@ -1750,7 +1750,7 @@ export default function LandingPageEditor() {
                       {staticContent.trustImageUrl ? (
                         <img src={staticContent.trustImageUrl} alt="trust" className="w-full h-full object-cover" />
                       ) : (
-                        <Award className="w-5 h-5 text-[#5C30FD]" />
+                        <Award className="w-5 h-5 text-[#504289]" />
                       )}
                     </div>
                     <div className="text-[9px] text-[#101828] font-bold leading-tight">
@@ -1767,11 +1767,11 @@ export default function LandingPageEditor() {
               <div 
                 id="mock-section-clientlogos"
                 className={`py-4 bg-[#FAF9FF] border-y border-[#E6E6E6] transition-all relative ${
-                  activeTab === 'clientlogos' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                  activeTab === 'clientlogos' ? 'bg-[#504289]/5 ring-2 ring-[#504289] ring-inset' : ''
                 }`}
               >
                 {activeTab === 'clientlogos' && (
-                  <span className="absolute top-1 right-2 text-[8px] font-bold bg-[#5C30FD] text-white px-1.5 py-0.5 rounded shadow-sm animate-pulse z-10">Logos</span>
+                  <span className="absolute top-1 right-2 text-[8px] font-bold bg-[#504289] text-white px-1.5 py-0.5 rounded shadow-sm animate-pulse z-10">Logos</span>
                 )}
                 <span className="text-[9px] font-extrabold uppercase text-[#696969] tracking-wider text-center block mb-2 opacity-80">
                   Brands We've Worked With
@@ -1795,11 +1795,11 @@ export default function LandingPageEditor() {
               <div 
                 id="mock-section-about"
                 className={`p-6 bg-white transition-all relative border-b border-slate-100 ${
-                  activeTab === 'about' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                  activeTab === 'about' ? 'bg-[#504289]/5 ring-2 ring-[#504289] ring-inset' : ''
                 }`}
               >
                 {activeTab === 'about' && (
-                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">About</span>
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#504289] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">About</span>
                 )}
                 
                 <div className="flex flex-col gap-4">
@@ -1815,7 +1815,7 @@ export default function LandingPageEditor() {
                   </div>
 
                   <div className="space-y-2">
-                    <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-[#5C30FD] uppercase tracking-wider">
+                    <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-[#504289] uppercase tracking-wider">
                       <img src="assets/img/bale.png" alt="bale" className="h-2.5" onerror="this.style.display='none'" />
                       {staticContent.aboutSubtitle || "Who We Are"}
                     </span>
@@ -1830,7 +1830,7 @@ export default function LandingPageEditor() {
                       {staticContent.aboutBullets ? (
                         staticContent.aboutBullets.split(",").map((bullet: string, i: number) => (
                           <div key={i} className="flex items-center gap-2 text-[10px] font-medium text-[#101828]">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-[#5C30FD] shrink-0" />
+                            <CheckCircle2 className="w-3.5 h-3.5 text-[#504289] shrink-0" />
                             <span>{bullet.trim()}</span>
                           </div>
                         ))
@@ -1844,11 +1844,11 @@ export default function LandingPageEditor() {
 
                     <div className="flex gap-4 pt-4 border-t border-slate-100 grid grid-cols-2">
                       <div className="bg-[#FAF9FF] p-2.5 rounded-xl border border-slate-100">
-                        <span className="text-xs font-black text-[#5C30FD] block">{staticContent.aboutCampaigns || "240+"}</span>
+                        <span className="text-xs font-black text-[#504289] block">{staticContent.aboutCampaigns || "240+"}</span>
                         <span className="text-[8px] text-[#696969] block mt-0.5">Campaigns Run</span>
                       </div>
                       <div className="bg-[#FAF9FF] p-2.5 rounded-xl border border-slate-100">
-                        <span className="text-xs font-black text-[#5C30FD] block">{staticContent.aboutClients || "15+"}</span>
+                        <span className="text-xs font-black text-[#504289] block">{staticContent.aboutClients || "15+"}</span>
                         <span className="text-[8px] text-[#696969] block mt-0.5">Active Clients</span>
                       </div>
                     </div>
@@ -1860,14 +1860,14 @@ export default function LandingPageEditor() {
               <div 
                 id="mock-section-services"
                 className={`p-6 bg-[#101828] text-white transition-all relative border-b border-slate-900 ${
-                  activeTab === 'services' ? 'bg-[#5C30FD]/15 ring-2 ring-[#5C30FD] ring-inset' : ''
+                  activeTab === 'services' ? 'bg-[#504289]/15 ring-2 ring-[#504289] ring-inset' : ''
                 }`}
               >
                 {activeTab === 'services' && (
-                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Services</span>
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#504289] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Services</span>
                 )}
                 
-                <span className="text-[#5C30FD] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
+                <span className="text-[#504289] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
                   Popular Services
                 </span>
                 <h3 className="text-sm font-bold text-white text-center mb-4 leading-snug">
@@ -1883,7 +1883,7 @@ export default function LandingPageEditor() {
                           key={idx} 
                           className={`p-3.5 rounded-xl border transition-all ${
                             isActive 
-                              ? "bg-[#5C30FD] border-transparent text-white shadow-md shadow-[#5C30FD]/10 scale-[1.01]" 
+                              ? "bg-[#504289] border-transparent text-white shadow-md shadow-[#504289]/10 scale-[1.01]" 
                               : "bg-slate-900/50 border-slate-800 text-slate-300"
                           }`}
                         >
@@ -1909,14 +1909,14 @@ export default function LandingPageEditor() {
               <div 
                 id="mock-section-process"
                 className={`p-6 bg-white transition-all relative border-b border-slate-100 ${
-                  activeTab === 'process' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                  activeTab === 'process' ? 'bg-[#504289]/5 ring-2 ring-[#504289] ring-inset' : ''
                 }`}
               >
                 {activeTab === 'process' && (
-                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Roadmap</span>
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#504289] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Roadmap</span>
                 )}
                 
-                <span className="text-[#5C30FD] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
+                <span className="text-[#504289] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
                   {staticContent.processSubtitle || "How We Work"}
                 </span>
                 <h3 className="text-sm font-bold text-[#101828] text-center mb-5">
@@ -1933,7 +1933,7 @@ export default function LandingPageEditor() {
                           isEven ? 'bg-[#FAF9FF]' : 'bg-white'
                         }`}
                       >
-                        <div className="w-8 h-8 rounded-full bg-[#5C30FD]/10 text-[#5C30FD] font-black text-xs flex items-center justify-center shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-[#504289]/10 text-[#504289] font-black text-xs flex items-center justify-center shrink-0">
                           {num}
                         </div>
                         <div className="flex-grow text-left">
@@ -1951,14 +1951,14 @@ export default function LandingPageEditor() {
               <div 
                 id="mock-section-packages"
                 className={`p-6 bg-[#FAF9FF] transition-all relative border-b border-slate-100 ${
-                  activeTab === 'packages' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                  activeTab === 'packages' ? 'bg-[#504289]/5 ring-2 ring-[#504289] ring-inset' : ''
                 }`}
               >
                 {activeTab === 'packages' && (
-                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Pricing</span>
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#504289] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Pricing</span>
                 )}
                 
-                <span className="text-[#5C30FD] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
+                <span className="text-[#504289] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
                   Pricing Package
                 </span>
                 <h3 className="text-sm font-bold text-[#101828] text-center mb-5">
@@ -1974,12 +1974,12 @@ export default function LandingPageEditor() {
                           key={idx} 
                           className={`p-4 rounded-xl border bg-white transition-all relative overflow-hidden ${
                             isActive 
-                              ? "border-[#5C30FD] ring-1 ring-[#5C30FD] shadow-md" 
+                              ? "border-[#504289] ring-1 ring-[#504289] shadow-md" 
                               : "border-slate-200"
                           }`}
                         >
                           {isActive && (
-                            <div className="absolute top-0 right-0 bg-[#5C30FD] text-white font-bold text-[7px] uppercase px-2 py-0.5 rounded-bl">
+                            <div className="absolute top-0 right-0 bg-[#504289] text-white font-bold text-[7px] uppercase px-2 py-0.5 rounded-bl">
                               Popular
                             </div>
                           )}
@@ -2007,13 +2007,13 @@ export default function LandingPageEditor() {
               <div 
                 id="mock-section-projects"
                 className={`p-6 bg-white transition-all relative border-b border-slate-100 ${
-                  activeTab === 'projects' || activeTab === 'casestudies' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                  activeTab === 'projects' || activeTab === 'casestudies' ? 'bg-[#504289]/5 ring-2 ring-[#504289] ring-inset' : ''
                 }`}
               >
                 {(activeTab === 'projects' || activeTab === 'casestudies') && (
-                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Showcase</span>
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#504289] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Showcase</span>
                 )}
-                <span className="text-[#5C30FD] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
+                <span className="text-[#504289] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
                   Our Work
                 </span>
                 <h3 className="text-sm font-bold text-[#101828] text-center mb-4">
@@ -2027,7 +2027,7 @@ export default function LandingPageEditor() {
                         <img src={p.imageUrl} alt={p.title} className="w-full h-full object-cover" />
                       </div>
                       <div className="p-2">
-                        <span className="text-[7px] font-bold text-[#5C30FD] uppercase">{p.category}</span>
+                        <span className="text-[7px] font-bold text-[#504289] uppercase">{p.category}</span>
                         <h4 className="text-[9px] font-bold text-[#101828] truncate mt-0.5">{p.title}</h4>
                       </div>
                     </div>
@@ -2039,13 +2039,13 @@ export default function LandingPageEditor() {
               <div 
                 id="mock-section-testimonials"
                 className={`p-6 bg-[#101828] text-white transition-all relative border-b border-slate-900 ${
-                  activeTab === 'testimonials' ? 'bg-[#5C30FD]/15 ring-2 ring-[#5C30FD] ring-inset' : ''
+                  activeTab === 'testimonials' ? 'bg-[#504289]/15 ring-2 ring-[#504289] ring-inset' : ''
                 }`}
               >
                 {activeTab === 'testimonials' && (
-                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Reviews</span>
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#504289] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">Reviews</span>
                 )}
-                <span className="text-[#5C30FD] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
+                <span className="text-[#504289] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
                   Testimonials
                 </span>
                 <h3 className="text-sm font-bold text-white text-center mb-4">
@@ -2079,13 +2079,13 @@ export default function LandingPageEditor() {
               <div 
                 id="mock-section-faqs"
                 className={`p-6 bg-white transition-all relative border-b border-slate-100 ${
-                  activeTab === 'faqs' ? 'bg-[#5C30FD]/5 ring-2 ring-[#5C30FD] ring-inset' : ''
+                  activeTab === 'faqs' ? 'bg-[#504289]/5 ring-2 ring-[#504289] ring-inset' : ''
                 }`}
               >
                 {activeTab === 'faqs' && (
-                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#5C30FD] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">FAQ</span>
+                  <span className="absolute top-2 right-2 text-[9px] font-bold bg-[#504289] text-white px-2 py-0.5 rounded shadow-sm animate-pulse z-10">FAQ</span>
                 )}
-                <span className="text-[#5C30FD] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
+                <span className="text-[#504289] text-[9px] font-extrabold uppercase tracking-widest text-center block mb-1">
                   Some Questions
                 </span>
                 <h3 className="text-sm font-bold text-[#101828] text-center mb-4">
@@ -2103,7 +2103,7 @@ export default function LandingPageEditor() {
                           className="w-full p-2.5 flex items-center justify-between text-left text-[9px] font-bold text-[#101828] hover:bg-slate-50 transition-colors"
                         >
                           <span>{faq.question || "FAQ Question"}</span>
-                          <span className={`transition-transform duration-200 text-[#5C30FD] ${isExpanded ? 'rotate-180' : ''}`}>
+                          <span className={`transition-transform duration-200 text-[#504289] ${isExpanded ? 'rotate-180' : ''}`}>
                             <ChevronDown className="w-3.5 h-3.5" />
                           </span>
                         </button>
@@ -2121,7 +2121,7 @@ export default function LandingPageEditor() {
               {/* Footer Mockup */}
               <div className="bg-[#101828] text-white p-6 space-y-4">
                 <div className="flex justify-between items-center">
-                  <span className="font-black text-xs text-white">Hirdan<span className="text-[#5C30FD]">Marketing</span></span>
+                  <span className="font-black text-xs text-white">Hirdan<span className="text-[#504289]">Marketing</span></span>
                   <span className="text-[7px] text-slate-400">© 2026 Hirdan Marketing</span>
                 </div>
                 <p className="text-[9px] text-slate-400 max-w-xs leading-relaxed">
@@ -2191,7 +2191,7 @@ export default function LandingPageEditor() {
           </div>
           <DialogFooter className="bg-muted/10 p-4 border-t border-border -mx-6 -mb-6 rounded-b-2xl">
             <Button variant="outline" className="rounded-xl text-xs" onClick={() => setCsDialogOpen(false)}>Cancel</Button>
-            <Button className="rounded-xl text-xs bg-[#5C30FD] text-white hover:bg-[#FFC107]" onClick={handleSaveCs}>Save Case Study</Button>
+            <Button className="rounded-xl text-xs bg-[#504289] text-white hover:bg-[#FFC107]" onClick={handleSaveCs}>Save Case Study</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2272,7 +2272,7 @@ export default function LandingPageEditor() {
           </div>
           <DialogFooter className="bg-muted/10 p-4 border-t border-border -mx-6 -mb-6 rounded-b-2xl">
             <Button variant="outline" className="rounded-xl text-xs" onClick={() => setTDialogOpen(false)}>Cancel</Button>
-            <Button className="rounded-xl text-xs bg-[#5C30FD] text-white hover:bg-[#FFC107]" onClick={handleSaveT}>Save Testimonial</Button>
+            <Button className="rounded-xl text-xs bg-[#504289] text-white hover:bg-[#FFC107]" onClick={handleSaveT}>Save Testimonial</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2282,7 +2282,7 @@ export default function LandingPageEditor() {
         <DialogContent className="max-w-3xl rounded-2xl border-border p-0 overflow-hidden shadow-2xl max-h-[85vh] flex flex-col">
           <DialogHeader className="p-6 pb-4 bg-muted/20 border-b border-border flex-shrink-0">
             <DialogTitle className="font-display font-bold text-xl flex items-center gap-2">
-              <Folder className="w-5 h-5 text-[#5C30FD]" />
+              <Folder className="w-5 h-5 text-[#504289]" />
               {pEditingId ? "Modify Portfolio Project" : "Create Portfolio Project"}
             </DialogTitle>
             <DialogDescription className="text-sm">
@@ -2410,7 +2410,7 @@ export default function LandingPageEditor() {
           
           <DialogFooter className="p-4 border-t border-border bg-muted/20 flex-shrink-0">
             <Button variant="outline" onClick={() => setPDialogOpen(false)} className="h-9 font-bold text-xs rounded-xl">Cancel</Button>
-            <Button onClick={handleSaveP} className="h-9 font-bold text-xs rounded-xl gap-1 bg-[#5C30FD] text-white hover:bg-[#FFC107]">
+            <Button onClick={handleSaveP} className="h-9 font-bold text-xs rounded-xl gap-1 bg-[#504289] text-white hover:bg-[#FFC107]">
               <Save className="w-3.5 h-3.5" /> {pEditingId ? "Save Project" : "Create Project"}
             </Button>
           </DialogFooter>

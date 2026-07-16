@@ -1,7 +1,7 @@
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { Bell, Search, LogOut } from "lucide-react";
+import { Search, LogOut } from "lucide-react";
 import { SidebarMobileTrigger } from "@/components/ui/sidebar";
 import hirdanLogo from "@/assets/hirdan-logo.png";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { apiFetch } from "@/lib/api-client";
+import { NotificationCenter } from "./NotificationCenter";
 
 export default function DashboardLayout() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -86,10 +88,7 @@ export default function DashboardLayout() {
                 </form>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-xl hover:bg-muted transition-colors">
-                  <Bell className="h-[18px] w-[18px] text-muted-foreground" />
-                  <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-secondary ring-2 ring-card" />
-                </Button>
+                <NotificationCenter />
                 <div className="w-px h-6 bg-border mx-1" />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>

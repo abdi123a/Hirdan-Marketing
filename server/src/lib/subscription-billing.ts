@@ -1,5 +1,6 @@
 import { prisma } from './prisma.js';
 import { sendEmail, generateEmailHtml } from './email.js';
+import { createNotification } from './notifications.js';
 
 const INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -55,11 +56,18 @@ export async function runBillingCycle(): Promise<void> {
         if (!existingInvoice) {
           console.log(`Generating monthly invoice for subscription ${sub.id} (Client: ${client.name})`);
           
-          // Generate invoice number
-          const initials = client.initials || client.company.substring(0, 2).toUpperCase() || client.name.substring(0, 2).toUpperCase();
-          const monthStr = String(currentMonth + 1).padStart(2, '0');
-          const uniqueId = sub.id.substring(0, 3).toUpperCase();
-          const invoiceNumber = `A-${initials}-${currentYear}${monthStr}-${uniqueId}`;
+          // Generate unique short invoice number
+          let invoiceNumber = '';
+          while (true) {
+            const num = Math.floor(Math.random() * 9000 + 1000);
+            invoiceNumber = `INV-${num}`;
+            const existing = await prisma.invoice.findUnique({
+              where: { invoiceNumber }
+            });
+            if (!existing) {
+              break;
+            }
+          }
 
           // Compute amount with tax
           const subtotal = sub.amount; // in cents
@@ -85,12 +93,21 @@ export async function runBillingCycle(): Promise<void> {
                   {
                     description: `Monthly subscription - ${sub.plan}`,
                     quantity: 1,
-                    unitPrice: sub.amount, // item unitPrice is in cents
+                    unitPrice: sub.amount,
                     position: 0,
                   },
                 ],
               },
             },
+          });
+          createNotification({
+            title: 'Auto-Invoice Generated',
+            message: `Invoice ${invoiceNumber} generated for ${client.company || client.name} (${sub.plan}).`,
+            type: 'INVOICE_AUTO_GENERATED',
+            category: 'INFORMATION',
+            entityType: 'INVOICE',
+            entityId: invoiceNumber,
+            actionUrl: `/dashboard/invoices/${invoiceNumber}`,
           });
           console.log(`Successfully generated invoice ${invoiceNumber} for client ${client.name}`);
         }
@@ -239,11 +256,79 @@ export async function runBillingCycle(): Promise<void> {
               overdueSentAt: now,
             },
           });
+          createNotification({
+            title: 'Invoice Overdue ⚠️',
+            message: `Invoice ${inv.invoiceNumber} for ${client.company || client.name} is now overdue.`,
+            type: 'INVOICE_OVERDUE_BILLING',
+            category: 'ACTION_REQUIRED',
+            entityType: 'INVOICE',
+            entityId: inv.invoiceNumber || inv.id,
+            actionUrl: `/dashboard/invoices/${inv.invoiceNumber || inv.id}`,
+          });
           console.log(`Successfully sent overdue notice and marked invoice ${inv.invoiceNumber} as OVERDUE`);
         } else {
           console.error(`Failed to send overdue notice for invoice ${inv.invoiceNumber}: ${result.error}`);
         }
       }
+    }
+
+    // 4. Warning: Invoices due in 3 days (deduplicated — only fire once per invoice)
+    const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    const dueSoonInvoices = await prisma.invoice.findMany({
+      where: {
+        status: 'PENDING',
+        dueDate: {
+          gte: now,
+          lte: threeDaysFromNow,
+        },
+        dueSoonNotifiedAt: null,
+      },
+      include: { client: true },
+    });
+
+    for (const inv of dueSoonInvoices) {
+      const client = inv.client;
+      const daysLeft = Math.ceil((inv.dueDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+      createNotification({
+        title: 'Invoice Due Soon 🔔',
+        message: `Invoice ${inv.invoiceNumber} for ${client.company || client.name} is due in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`,
+        type: 'INVOICE_DUE_SOON',
+        category: 'WARNING',
+        entityType: 'INVOICE',
+        entityId: inv.invoiceNumber || inv.id,
+        actionUrl: `/dashboard/invoices/${inv.invoiceNumber || inv.id}`,
+      });
+      await prisma.invoice.update({
+        where: { id: inv.id },
+        data: { dueSoonNotifiedAt: now } as any,
+      });
+    }
+
+    // 5. Warning: Subscriptions expiring in 7 days
+    const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const expiringSubs = await prisma.subscription.findMany({
+      where: {
+        status: 'ACTIVE',
+        endDate: {
+          gte: now,
+          lte: sevenDaysFromNow,
+        },
+      },
+      include: { client: true },
+    });
+
+    for (const sub of expiringSubs) {
+      const client = sub.client;
+      const daysLeft = Math.ceil((sub.endDate!.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+      createNotification({
+        title: 'Subscription Expiring Soon',
+        message: `Subscription "${sub.plan}" for ${client.company || client.name} expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`,
+        type: 'SUBSCRIPTION_EXPIRING_SOON',
+        category: 'WARNING',
+        entityType: 'SUBSCRIPTION',
+        entityId: sub.id,
+        actionUrl: `/dashboard/subscriptions/${sub.id}`,
+      });
     }
 
   } catch (error) {

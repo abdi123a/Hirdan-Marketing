@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
 import bcrypt from 'bcryptjs';
 import { parsePagination } from '../lib/pagination.js';
+import { createNotification } from '../lib/notifications.js';
 
 const router = Router();
 
@@ -56,6 +57,30 @@ router.get('/', async (req: Request, res: Response, next) => {
     });
 
     res.json({ clients: clientsWithRevenue });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── GET /api/clients/portal/next-meeting (client portal) ────────────────────
+// Returns the next upcoming meeting for the authenticated client
+router.get('/portal/next-meeting', async (req: Request, res: Response, next) => {
+  try {
+    if (req.user!.role !== 'CLIENT') throw AppError.forbidden('Clients only');
+
+    const client = await prisma.client.findUnique({ where: { userId: req.user!.userId } });
+    if (!client) throw AppError.notFound('Client not found');
+
+    const now = new Date();
+    const meeting = await prisma.clientMeeting.findFirst({
+      where: {
+        clientId: client.id,
+        date: { gte: now },
+      },
+      orderBy: { date: 'asc' },
+    });
+
+    res.json({ meeting: meeting ?? null });
   } catch (error) {
     next(error);
   }
@@ -188,6 +213,15 @@ router.post('/', requireAdmin, validate({ body: clientDtoSchema }), async (req: 
   try {
     const client = await prisma.client.create({
       data: req.body,
+    });
+    createNotification({
+      title: 'New Client Added',
+      message: `${client.company || client.name} has been added as a new client.`,
+      type: 'CLIENT_CREATED',
+      category: 'INFORMATION',
+      entityType: 'CLIENT',
+      entityId: client.id,
+      actionUrl: `/dashboard/clients/${client.id}`,
     });
     res.status(201).json({ client });
   } catch (error) {

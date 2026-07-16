@@ -138,6 +138,33 @@ function AppRoutes() {
     initializeApp();
   }, [fetchSettings, logout]);
 
+  const { settings } = useAgencyStore();
+
+  useEffect(() => {
+    if (settings?.oneSignalEnabled && settings?.oneSignalAppId) {
+      if (!document.getElementById('onesignal-sdk')) {
+        const script = document.createElement('script');
+        script.id = 'onesignal-sdk';
+        script.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
+        script.defer = true;
+        script.onload = () => {
+          const w = window as any;
+          if (w.OneSignal) {
+            w.OneSignal.init({
+              appId: settings.oneSignalAppId,
+              allowLocalhostAsSecureOrigin: true,
+            }).then(() => {
+              console.log('[OneSignal] Initialized successfully');
+            }).catch((err: any) => {
+              console.warn('[OneSignal] Initialization error:', err);
+            });
+          }
+        };
+        document.head.appendChild(script);
+      }
+    }
+  }, [settings?.oneSignalEnabled, settings?.oneSignalAppId]);
+
   if (showLoader) {
     return <LoadingScreen fadeOut={!isInitializing} />;
   }

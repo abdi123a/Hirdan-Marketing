@@ -425,6 +425,22 @@ export default function InvoiceDetailsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Notes & History */}
+          {invoice.notes && (
+            <Card className="shadow-card border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" /> Notes &amp; History
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed bg-muted/20 p-3 rounded-lg border border-border/40">
+                  {invoice.notes}
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
