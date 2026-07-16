@@ -53,44 +53,16 @@ jobs:
           # Pre-trust the VPS host key to avoid interactive prompt
           ssh-keyscan -p ${{ env.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      # Step 4: Open VPS firewall for this runner's IP, deploy, then close it
-      - name: Get GitHub Actions runner IP
-        id: runner_ip
-        run: echo "ip=$(curl -s https://api.ipify.org)" >> $GITHUB_OUTPUT
-
-      - name: Debug SSH Connection
+      # Step 4: Verify SSH connectivity before deploying
+      - name: Test SSH Connection
         run: |
-          echo "=== SSH DEBUG INFO ==="
-          echo "Runner Public IP: ${{ steps.runner_ip.outputs.ip }}"
-          
-          if [ -z "${{ secrets.SSH_HOST }}" ]; then
-            echo "❌ ERROR: secrets.SSH_HOST is empty!"
-            exit 1
-          fi
-          
-          echo "Resolving secrets.SSH_HOST..."
-          # Resolve using host, nslookup, or dig
-          RESOLVED_IP=$(nslookup "${{ secrets.SSH_HOST }}" | awk '/^Address: / { print $2 }' | tail -n1)
-          echo "Resolved IP: $RESOLVED_IP"
-          
-          echo "Checking port 22 on resolved host..."
-          nc -zv -w 5 "${{ secrets.SSH_HOST }}" ${{ env.SSH_PORT }} || echo "❌ nc connection to port ${{ env.SSH_PORT }} failed"
-          
-          echo "Testing traceroute to resolved host..."
-          traceroute -m 15 "${{ secrets.SSH_HOST }}" || echo "Traceroute failed"
-          echo "======================"
-
-      - name: Temporarily allow runner IP through VPS firewall
-        run: |
-          RUNNER_IP="${{ steps.runner_ip.outputs.ip }}"
-          echo "🔓 Allowing runner IP $RUNNER_IP on port ${{ env.SSH_PORT }}..."
+          echo "🔌 Testing SSH connection to VPS..."
           ssh -p ${{ env.SSH_PORT }} \
             -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=10 \
+            -o ConnectTimeout=15 \
             -i ~/.ssh/id_ed25519 \
             root@${{ secrets.SSH_HOST }} \
-            "ufw allow from $RUNNER_IP to any port ${{ env.SSH_PORT }} proto tcp comment 'github-actions-runner' || true" 2>/dev/null || \
-          echo "⚠️  ufw rule not added (firewall may not be enabled or already open — continuing)"
+            "echo '✅ SSH connection successful'"
 
       # Step 5: Deploy pre-compiled files via Rsync
       - name: Deploy Frontend files to VPS
@@ -168,19 +140,3 @@ jobs:
             sudo -u hirdanmarketing-api pm2 restart api || pm2 restart api || pm2 restart all || echo "Restart command failed, manual intervention needed."
 
             echo "✅ Deployment completed successfully!"
-
-      # Step 7: Revoke the temporary firewall rule (always runs, even on failure)
-      - name: Revoke temporary runner IP from VPS firewall
-        if: always()
-        run: |
-          RUNNER_IP="${{ steps.runner_ip.outputs.ip }}"
-          echo "🔒 Removing runner IP $RUNNER_IP from VPS firewall..."
-          ssh -p ${{ env.SSH_PORT }} \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=10 \
-            -i ~/.ssh/id_ed25519 \
-            root@${{ secrets.SSH_HOST }} \
-            "ufw delete allow from $RUNNER_IP to any port ${{ env.SSH_PORT }} proto tcp || true" 2>/dev/null || \
-          echo "⚠️  Could not remove ufw rule (may not have been added)"
-
-          
