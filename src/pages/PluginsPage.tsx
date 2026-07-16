@@ -45,6 +45,10 @@ const GoogleDriveLogo = ({ className = "h-5 w-5" }: { className?: string }) => (
   <img src="/google-drive.png" alt="Google Drive" className={`${className} object-contain`} />
 );
 
+const OneSignalLogo = ({ className = "h-5 w-5" }: { className?: string }) => (
+  <img src="/onesignal.png" alt="OneSignal" className={`${className} object-contain`} />
+);
+
 export default function PluginsPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -468,8 +472,8 @@ export default function PluginsPage() {
                   <tr className="hover:bg-muted/5 transition-colors">
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-xl bg-orange-500/10 flex items-center justify-center border border-orange-200 shadow-sm shrink-0">
-                          <Bell className="h-5 w-5 text-orange-500" />
+                        <div className="h-10 w-10 rounded-xl bg-orange-50 flex items-center justify-center border border-orange-100 shadow-sm shrink-0">
+                          <OneSignalLogo className="h-5 w-5" />
                         </div>
                         <div>
                           <p className="font-semibold text-foreground text-sm">OneSignal Push Notifications</p>
@@ -536,7 +540,7 @@ export default function PluginsPage() {
               )}
               {editingPlugin === "onesignal" && (
                 <>
-                  <Bell className="h-6 w-6 text-orange-500" />
+                  <OneSignalLogo className="h-6 w-6" />
                   OneSignal Push Notifications Config
                 </>
               )}
