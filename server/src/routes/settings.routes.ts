@@ -819,6 +819,35 @@ router.post('/backups/:filename/upload-gdrive', authenticate, requireAdmin, asyn
   }
 });
 
+// ─── POST /api/settings/backups/:filename/restore ─────────────────
+// Restores the database from a local backup file.
+router.post('/backups/:filename/restore', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const filename = req.params.filename as string;
+
+    // Security check: Prevent path traversal
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      throw AppError.badRequest('Invalid backup filename.');
+    }
+
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const filePath = path.resolve(__dirname, '../../backups', filename);
+
+    if (!fs.existsSync(filePath)) {
+      throw AppError.notFound('Backup file not found.');
+    }
+
+    const scriptPath = path.resolve(__dirname, '../../scripts/restore.cjs');
+
+    console.log(`⚡ Triggering database restore script for ${filename}...`);
+    execSync(`node "${scriptPath}" "${filename}"`, { stdio: 'inherit' });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
 // ─── DELETE /api/settings/backups/:filename ───────────────────────
 // Deletes a local backup file.
 router.delete('/backups/:filename', authenticate, requireAdmin, async (req: Request, res: Response, next) => {

@@ -19,7 +19,8 @@ const envContent = fs.readFileSync(envPath, 'utf-8');
 let databaseUrl = '';
 for (const line of envContent.split('\n')) {
   if (line.startsWith('DATABASE_URL=')) {
-    databaseUrl = line.split('=')[1].trim().replace(/^['"]|['"]$/g, '');
+    const index = line.indexOf('=');
+    databaseUrl = line.substring(index + 1).trim().replace(/^['"]|['"]$/g, '');
     break;
   }
 }
@@ -54,7 +55,7 @@ try {
   console.log(`🗄️  Backing up database "${database}" to ${backupPath}...`);
 
   // Build command using environment variable for password to avoid exposure in process lists
-  const command = `mysqldump -h "${hostname}" -P "${port}" -u "${username}" "${database}" > "${backupPath}"`;
+  const command = `mysqldump --no-tablespaces -h "${hostname}" -P "${port}" -u "${username}" "${database}" > "${backupPath}"`;
   
   execSync(command, {
     env: {

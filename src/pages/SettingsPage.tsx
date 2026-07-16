@@ -242,6 +242,7 @@ export default function SettingsPage() {
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isTestingDrive, setIsTestingDrive] = useState(false);
   const [isUploadingToDrive, setIsUploadingToDrive] = useState<string | null>(null);
+  const [isRestoring, setIsRestoring] = useState<string | null>(null);
 
   const fetchBackups = async () => {
     setLoadingBackups(true);
@@ -326,6 +327,35 @@ export default function SettingsPage() {
     }
   };
 
+  const handleRestoreBackup = async (filename: string) => {
+    const confirmRestore = window.confirm(
+      "⚠️ WARNING: Restoring this backup will completely overwrite your current database. This action cannot be undone. Are you sure you want to continue?"
+    );
+    if (!confirmRestore) return;
+
+    setIsRestoring(filename);
+    try {
+      const res = await apiFetch<{ success: boolean }>(`/settings/backups/${filename}/restore`, {
+        method: 'POST'
+      });
+      if (res.success) {
+        toast({
+          title: "Restore Complete ✓",
+          description: `Database successfully restored from backup ${filename}.`
+        });
+        fetchSettings();
+      }
+    } catch (err: any) {
+      toast({
+        title: "Restore Failed",
+        description: err.message || "Could not restore database from backup.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsRestoring(null);
+    }
+  };
+
   const handleTestGDriveConnection = async () => {
     setIsTestingDrive(true);
     try {
@@ -402,7 +432,7 @@ export default function SettingsPage() {
   }, [tabParam]);
 
   useEffect(() => {
-    if (activeTab === 'system') {
+    if (activeTab === 'backups') {
       fetchBackups();
     }
   }, [activeTab]);
@@ -3206,7 +3236,7 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="p-8 space-y-6">
               {/* Google Drive Status Banner */}
-              {settings.googleDriveEnabled && settings.googleDriveServiceAccountJson ? (
+              {settings.googleDriveEnabled && (settings.googleDriveServiceAccountJson || settings.googleDriveRefreshToken) ? (
                 <div className="flex items-center gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/20 text-sm text-green-700 dark:text-green-400">
                   <Cloud className="h-5 w-5" />
                   <div>
@@ -3298,17 +3328,18 @@ export default function SettingsPage() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => downloadProtectedFile(`/settings/backups/${backup.filename}/download`, backup.filename)}
+                                disabled={isRestoring !== null || isUploadingToDrive !== null}
                                 className="h-8 w-8 p-0 rounded-lg text-muted-foreground hover:text-blue-500 hover:bg-blue-500/5"
                                 title="Download SQL Backup File"
                               >
                                 <Download className="h-4 w-4" />
                               </Button>
-                              {formData.googleDriveServiceAccountJson && (
+                              {(formData.googleDriveServiceAccountJson || formData.googleDriveRefreshToken) && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => handleUploadBackupToGDrive(backup.filename)}
-                                  disabled={isUploadingToDrive !== null}
+                                  disabled={isUploadingToDrive !== null || isRestoring !== null}
                                   className="h-8 w-8 p-0 rounded-lg text-muted-foreground hover:text-green-600 hover:bg-green-50"
                                   title="Upload Backup to Google Drive"
                                 >
@@ -3322,7 +3353,22 @@ export default function SettingsPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                onClick={() => handleRestoreBackup(backup.filename)}
+                                disabled={isRestoring !== null || isUploadingToDrive !== null}
+                                className="h-8 w-8 p-0 rounded-lg text-muted-foreground hover:text-orange-500 hover:bg-orange-500/5"
+                                title="Restore Database from Backup"
+                              >
+                                {isRestoring === backup.filename ? (
+                                  <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                                ) : (
+                                  <RotateCcw className="h-4 w-4 text-orange-500" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
                                 onClick={() => handleDeleteBackup(backup.filename)}
+                                disabled={isRestoring !== null || isUploadingToDrive !== null}
                                 className="h-8 w-8 p-0 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/5"
                                 title="Delete Local Backup"
                               >

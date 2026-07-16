@@ -30,7 +30,7 @@ rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
    
 echo "🚀 Copying Backend compiled files to api.hirdanmarketing.com..."
 rsync -avz -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
-  server/dist server/package.json server/package-lock.json server/prisma \
+  server/dist server/package.json server/package-lock.json server/prisma server/scripts \
   root@72.61.192.11:/home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
 
 echo "⚙️ Finalizing Server Setup..."

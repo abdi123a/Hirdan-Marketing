@@ -559,7 +559,7 @@ const createDefaultSettings = (): AgencySettings => ({
   googleDriveClientSecret: "",
   googleDriveRefreshToken: "",
   googleDriveEnabled: false,
-  appVersion: "2.15.1",
+  appVersion: "2.15.2",
   versionHistory: [
     {
       version: "2.14.0",
