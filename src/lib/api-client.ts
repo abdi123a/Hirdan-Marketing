@@ -36,6 +36,8 @@ function getFullUrl(endpoint: string): string {
   return `${base}${path}`;
 }
 
+let refreshPromise: Promise<string | null> | null = null;
+
 export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const store = useAuthStore.getState();
   const token = store.token;
@@ -60,27 +62,44 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   if (response.status === 401 && store.isAuthenticated && !endpoint.includes('/auth/refresh')) {
     // Attempt to refresh token using HttpOnly cookie
     try {
-      const refreshRes = await fetch(getFullUrl('/auth/refresh'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      });
+      if (!refreshPromise) {
+        refreshPromise = (async () => {
+          try {
+            const refreshRes = await fetch(getFullUrl('/auth/refresh'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+            });
 
-      if (refreshRes.ok) {
-        const data = await refreshRes.json();
-        store.setToken(data.accessToken);
-        
-        // Retry original request with new token
-        headers['Authorization'] = `Bearer ${data.accessToken}`;
-        response = await fetch(url, {
-          ...options,
-          headers,
-          credentials: 'include',
-        });
-      } else {
-        store.logout();
+            if (refreshRes.ok) {
+              const data = await refreshRes.json();
+              store.setToken(data.accessToken);
+              return data.accessToken as string;
+            } else {
+              store.logout();
+              return null;
+            }
+          } catch (e) {
+            store.logout();
+            return null;
+          } finally {
+            refreshPromise = null;
+          }
+        })();
+      }
+
+      const newToken = await refreshPromise;
+      if (!newToken) {
         throw new Error('Session expired. Please log in again.');
       }
+
+      // Retry original request with new token
+      headers['Authorization'] = `Bearer ${newToken}`;
+      response = await fetch(url, {
+        ...options,
+        headers,
+        credentials: 'include',
+      });
     } catch (refreshError) {
       store.logout();
       throw refreshError;
@@ -120,26 +139,43 @@ export async function apiFetchBlob(endpoint: string, options: RequestInit = {}):
 
   if (response.status === 401 && store.isAuthenticated && !endpoint.includes('/auth/refresh')) {
     try {
-      const refreshRes = await fetch(getFullUrl('/auth/refresh'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      });
+      if (!refreshPromise) {
+        refreshPromise = (async () => {
+          try {
+            const refreshRes = await fetch(getFullUrl('/auth/refresh'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+            });
 
-      if (refreshRes.ok) {
-        const data = await refreshRes.json();
-        store.setToken(data.accessToken);
-        
-        headers['Authorization'] = `Bearer ${data.accessToken}`;
-        response = await fetch(url, {
-          ...options,
-          headers,
-          credentials: 'include',
-        });
-      } else {
-        store.logout();
+            if (refreshRes.ok) {
+              const data = await refreshRes.json();
+              store.setToken(data.accessToken);
+              return data.accessToken as string;
+            } else {
+              store.logout();
+              return null;
+            }
+          } catch (e) {
+            store.logout();
+            return null;
+          } finally {
+            refreshPromise = null;
+          }
+        })();
+      }
+
+      const newToken = await refreshPromise;
+      if (!newToken) {
         throw new Error('Session expired');
       }
+
+      headers['Authorization'] = `Bearer ${newToken}`;
+      response = await fetch(url, {
+        ...options,
+        headers,
+        credentials: 'include',
+      });
     } catch (refreshError) {
       store.logout();
       throw refreshError;
