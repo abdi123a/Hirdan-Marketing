@@ -86,6 +86,36 @@ export default function ClientPortalPage() {
   const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const navigate = useNavigate();
+  const clientUser = user as ClientUser;
+  const isForcedPasswordChange = !!clientUser?.requiresPasswordChange;
+  const client = clients.find((c) => c.id === clientUser?.clientId);
+  const fallbackClient = clientUser?.clientId
+    ? ({
+      id: clientUser.clientId,
+      name: clientUser.name || 'Client',
+      company: clientUser.company || '',
+      email: clientUser.email || '',
+      phone: '',
+      website: '',
+      address: '',
+      city: '',
+      country: '',
+      status: 'Active',
+    } as any)
+    : null;
+  const displayClient = client || fallbackClient;
+
+  const portalAccess = displayClient?.portalAccess || {
+    financials: true,
+    projects: true,
+    subscriptions: true,
+    social: true,
+    planner: true,
+    documents: true
+  };
+
+  const allowedSections = ['overview', ...Object.entries(portalAccess).filter(([_, v]) => v !== false).map(([k]) => k), 'account'];
+
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedPreviewDoc, setSelectedPreviewDoc] = useState<{ title: string, fileUrl: string, type?: string } | null>(null);
   const downloadRef = useRef<HTMLDivElement>(null);
@@ -140,10 +170,10 @@ export default function ClientPortalPage() {
   const [showTour, setShowTour] = useState(false);
 
   useEffect(() => {
-    if (user?.clientId && !localStorage.getItem(`portal_tour_done_${user.clientId}`)) {
+    if (clientUser?.clientId && !localStorage.getItem(`portal_tour_done_${clientUser.clientId}`)) {
       setShowTour(true);
     }
-  }, [user?.clientId]);
+  }, [clientUser?.clientId]);
 
   useEffect(() => {
     if (!allowedSections.includes(activeTab)) {
@@ -286,25 +316,6 @@ export default function ClientPortalPage() {
       }
     }, 1200);
   };
-
-  const clientUser = user as ClientUser;
-  const isForcedPasswordChange = !!clientUser?.requiresPasswordChange;
-  const client = clients.find((c) => c.id === clientUser.clientId);
-  const fallbackClient = clientUser?.clientId
-    ? ({
-      id: clientUser.clientId,
-      name: clientUser.name || 'Client',
-      company: clientUser.company || '',
-      email: clientUser.email || '',
-      phone: '',
-      website: '',
-      address: '',
-      city: '',
-      country: '',
-      status: 'Active',
-    } as any)
-    : null;
-  const displayClient = client || fallbackClient;
 
   useEffect(() => {
     if (!displayClient) return;
@@ -469,17 +480,6 @@ export default function ClientPortalPage() {
     .join('')
     .toUpperCase()
     .slice(0, 2);
-
-  const portalAccess = displayClient?.portalAccess || {
-    financials: true,
-    projects: true,
-    subscriptions: true,
-    social: true,
-    planner: true,
-    documents: true
-  };
-
-  const allowedSections = ['overview', ...Object.entries(portalAccess).filter(([_, v]) => v !== false).map(([k]) => k), 'account'];
 
   const allNavItems: NavItem[] = [
     { id: 'overview', label: 'Overview', icon: <Home className="h-4 w-4" />, value: 'overview', section: 'workspace' },
@@ -1963,7 +1963,7 @@ export default function ClientPortalPage() {
       </div>
 
       <ClientPortalTour
-        clientId={user?.clientId || ''}
+        clientId={clientUser?.clientId || ''}
         open={showTour}
         onClose={() => setShowTour(false)}
         allowedSections={allowedSections}
