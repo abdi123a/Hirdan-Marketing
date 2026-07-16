@@ -4,12 +4,14 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { sendEmail, generateEmailHtml } from '../lib/email.js';
 import { z } from 'zod';
-import { generateInvoicePdf } from '../lib/pdf.js';
 import { AppError } from '../lib/errors.js';
 import { parsePagination } from '../lib/pagination.js';
 import { auditLog } from '../lib/audit.js';
 import { createNotification } from '../lib/notifications.js';
 import { syncInvoiceDeposit } from '../lib/deposit-sync.js';
+import fs from 'fs';
+import path from 'path';
+import { PATHS } from '../lib/paths.js';
 
 const router = Router();
 router.use(authenticate);
@@ -364,6 +366,14 @@ router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response,
     const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
 
+    // Save PDF to system filesystem
+    const pdfPath = path.resolve(PATHS.DOCUMENTS, `Invoice_${targetInvoice.id}.pdf`);
+    try {
+      fs.writeFileSync(pdfPath, buffer);
+    } catch (fsErr) {
+      console.error('[Email] Failed to save invoice PDF to system:', fsErr);
+    }
+
     // Generate styled branding HTML
     const emailHtml = await generateEmailHtml({
       title: subject,
@@ -425,6 +435,27 @@ async function sendPaymentConfirmationEmail(invoiceId: string) {
     const paymentDate = new Date();
     const monthPaid = paymentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
 
+    // Check if the PDF file exists in the system filesystem
+    const pdfPath = path.resolve(PATHS.DOCUMENTS, `Invoice_${inv.id}.pdf`);
+    let pdfBuffer: Buffer | null = null;
+    if (fs.existsSync(pdfPath)) {
+      try {
+        pdfBuffer = fs.readFileSync(pdfPath);
+      } catch (err) {
+        console.error(`[Email] Failed to read invoice PDF from system at ${pdfPath}:`, err);
+      }
+    } else {
+      console.warn(`[Email] Invoice PDF not found in system at ${pdfPath}. Sending email without attachment.`);
+    }
+
+    const attachmentText = pdfBuffer
+      ? `<p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
+        A copy of your official PDF invoice has been attached to this email and is available for download at any time by logging in to your Client Portal.
+      </p>`
+      : `<p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
+        A copy of your official PDF invoice is available for download at any time by logging in to your Client Portal.
+      </p>`;
+
     let itemsRows = '';
     const items = inv.items || [];
     for (const item of items) {
@@ -479,9 +510,7 @@ async function sendPaymentConfirmationEmail(invoiceId: string) {
           </tr>
         </tbody>
       </table>
-      <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
-        A copy of your official PDF invoice has been attached to this email and is available for download at any time by logging in to your Client Portal.
-      </p>
+      ${attachmentText}
     `;
 
     const appUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -495,20 +524,17 @@ async function sendPaymentConfirmationEmail(invoiceId: string) {
       }
     });
 
-    // Generate PDF invoice attachment
-    const pdfBuffer = await generateInvoicePdf(inv, inv.client, settings, monthPaid);
-
     const result = await sendEmail({
       to: inv.client.email,
       subject,
       html: emailHtml,
-      attachments: [
+      attachments: pdfBuffer ? [
         {
           content: pdfBuffer,
           filename: `Invoice_${inv.invoiceNumber || inv.id}.pdf`,
           contentType: 'application/pdf',
         }
-      ]
+      ] : undefined
     });
 
     if (result.success) {
