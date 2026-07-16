@@ -55,7 +55,7 @@ export async function runBillingCycle(): Promise<void> {
 
         if (!existingInvoice) {
           console.log(`Generating monthly invoice for subscription ${sub.id} (Client: ${client.name})`);
-          
+
           // Generate unique short invoice number
           let invoiceNumber = '';
           while (true) {
@@ -139,7 +139,7 @@ export async function runBillingCycle(): Promise<void> {
 
       if (now >= dueDateWithGrace) {
         console.log(`Sending payment reminder for invoice ${inv.invoiceNumber} to ${client.email}`);
-        
+
         const amountFormatted = `${currencySymbol} ${(inv.amount / 100).toFixed(2)}`;
         const dueDateFormatted = inv.dueDate.toISOString().split('T')[0];
 

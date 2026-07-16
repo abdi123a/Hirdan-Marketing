@@ -83,7 +83,7 @@ export function generateInvoicePdf(
     doc.fillColor('#0f172a')
        .fontSize(20)
        .font('Helvetica-Bold')
-       .text('PAYMENT RECEIPT', docWidth - 250, 35, { width: 200, align: 'right' });
+       .text('INVOICE', docWidth - 250, 35, { width: 200, align: 'right' });
 
     // Spacer
     doc.moveDown(2);
@@ -116,7 +116,7 @@ export function generateInvoicePdf(
     doc.fontSize(10)
        .fillColor('#64748b')
        .font('Helvetica-Bold')
-       .text('RECEIPT DETAILS', rightColX, metadataY);
+       .text('INVOICE DETAILS', rightColX, metadataY);
 
     let infoY = doc.y + 5;
     const addInfoRow = (label: string, value: string, isHighlighted = false) => {
@@ -135,7 +135,6 @@ export function generateInvoicePdf(
     addInfoRow('Invoice Number:', invoice.invoiceNumber);
     addInfoRow('Invoice Date:', formatDate(invoice.date));
     addInfoRow('Due Date:', formatDate(invoice.dueDate));
-    addInfoRow('Month Paid:', monthPaid, true);
     addInfoRow('Payment Status:', 'PAID', true);
 
     // Adjust Y position after the column info

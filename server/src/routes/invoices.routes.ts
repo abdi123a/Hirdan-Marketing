@@ -9,6 +9,7 @@ import { AppError } from '../lib/errors.js';
 import { parsePagination } from '../lib/pagination.js';
 import { auditLog } from '../lib/audit.js';
 import { createNotification } from '../lib/notifications.js';
+import { syncInvoiceDeposit } from '../lib/deposit-sync.js';
 
 const router = Router();
 router.use(authenticate);
@@ -184,6 +185,8 @@ router.post('/', requireAdmin, validate({ body: invoiceDtoSchema }), async (req:
         userId: clientUser.userId,
       });
     }
+    
+    await syncInvoiceDeposit(invoice.id);
 
     res.status(201).json({ invoice });
   } catch (error) {
@@ -301,6 +304,8 @@ router.put('/:id', validate({ body: invoiceDtoSchema.partial() }), async (req: R
         });
       }
     }
+    
+    await syncInvoiceDeposit(invoice.id);
 
     res.json({ invoice });
   } catch (error) {
@@ -321,6 +326,15 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) =>
       }
     });
     if (!targetInvoice) throw AppError.notFound('Invoice not found');
+
+    // Delete corresponding deposit(s) if any
+    await prisma.deposit.deleteMany({
+      where: {
+        description: {
+          contains: `(ID: ${targetInvoice.id})`,
+        },
+      },
+    });
 
     await prisma.invoice.delete({ where: { id: targetInvoice.id } });
     res.json({ message: 'Invoice deleted' });
@@ -466,7 +480,7 @@ async function sendPaymentConfirmationEmail(invoiceId: string) {
         </tbody>
       </table>
       <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
-        A copy of your official PDF receipt has been attached to this email and is available for download at any time by logging in to your Client Portal.
+        A copy of your official PDF invoice has been attached to this email and is available for download at any time by logging in to your Client Portal.
       </p>
     `;
 
@@ -481,7 +495,7 @@ async function sendPaymentConfirmationEmail(invoiceId: string) {
       }
     });
 
-    // Generate PDF receipt attachment
+    // Generate PDF invoice attachment
     const pdfBuffer = await generateInvoicePdf(inv, inv.client, settings, monthPaid);
 
     const result = await sendEmail({
