@@ -183,8 +183,8 @@ export async function syncAccount(accountId: string): Promise<void> {
   });
   if (!account) return;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
 
   let metrics = { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
   let isMock = false;
@@ -283,9 +283,9 @@ export async function syncAccount(accountId: string): Promise<void> {
     const growth = dailyGrowth[platform] || 10;
 
     for (let i = 30; i >= 1; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      date.setHours(0, 0, 0, 0);
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
 
       const dailyFollowers = base - i * growth + Math.floor(Math.random() * 20 - 10);
       const reach = growth * 100 + Math.floor(Math.random() * 1500);

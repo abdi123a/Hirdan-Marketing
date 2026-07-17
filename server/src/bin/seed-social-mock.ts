@@ -99,8 +99,9 @@ async function seed() {
 
   console.log('📈 Seeding 30 days of metric history...');
   for (let i = 30; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
 
     for (const acc of accounts) {
       const base = baseFollowers[acc.platform] || 5000;

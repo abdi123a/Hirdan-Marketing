@@ -21,8 +21,11 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     const contentTypeFilter = req.query.contentType as string;
 
     const now = new Date();
-    const since = new Date(now); since.setDate(since.getDate() - days); since.setHours(0, 0, 0, 0);
-    const prevSince = new Date(since); prevSince.setDate(prevSince.getDate() - days);
+    const todayUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const since = new Date(todayUTC);
+    since.setUTCDate(since.getUTCDate() - days);
+    const prevSince = new Date(since);
+    prevSince.setUTCDate(prevSince.getUTCDate() - days);
 
     // ── Accounts ──
     const accWhere: any = { clientId, isActive: true };
@@ -313,7 +316,10 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
     const days = parseInt(req.query.days as string) || 30;
     const skip = (page - 1) * limit;
 
-    const since = new Date(); since.setDate(since.getDate() - days); since.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const todayUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const since = new Date(todayUTC);
+    since.setUTCDate(since.getUTCDate() - days);
 
     const where: any = { clientId, status: 'PUBLISHED' };
     if (contentType && contentType !== 'ALL') where.mediaType = contentType;
