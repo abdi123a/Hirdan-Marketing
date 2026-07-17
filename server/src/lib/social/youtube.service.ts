@@ -141,10 +141,31 @@ export async function publishToYouTube({
 }
 
 export async function getYouTubeInsights(accessToken: string): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number }> {
-  return {
-    followers: 0,
-    reach: 0,
-    impressions: 0,
-    profileVisits: 0,
-  };
+  try {
+    const { data } = await axios.get('https://www.googleapis.com/youtube/v3/channels', {
+      params: {
+        part: 'statistics',
+        mine: true,
+      },
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    const channel = data?.items?.[0];
+    if (!channel) {
+      return { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
+    }
+
+    const followers = parseInt(channel.statistics?.subscriberCount, 10) || 0;
+    const views = parseInt(channel.statistics?.viewCount, 10) || 0;
+
+    return {
+      followers,
+      reach: views,
+      impressions: views,
+      profileVisits: 0,
+    };
+  } catch (err: any) {
+    console.error('Failed to fetch YouTube insights:', err.message);
+    throw err;
+  }
 }

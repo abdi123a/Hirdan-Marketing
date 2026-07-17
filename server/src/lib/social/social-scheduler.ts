@@ -189,27 +189,23 @@ export async function syncAccount(accountId: string): Promise<void> {
   let metrics = { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
   let isMock = false;
   let syncError: string | null = null;
+  let isRealSync = false;
 
   try {
     const decryptedToken = decryptToken(account.accessTokenEnc);
     if (decryptedToken === 'mock_access_token_data' || decryptedToken.startsWith('mock_')) {
       isMock = true;
     } else {
+      isRealSync = true;
       metrics = await fetchPlatformInsights(account);
-      // If the platform doesn't support metrics yet (or returning 0), simulate realistic ones
-      if (metrics.followers === 0 && metrics.reach === 0 && metrics.impressions === 0) {
-        isMock = true;
-        syncError = 'Platform API returned no metrics; falling back to mock data.';
-      }
     }
   } catch (err: any) {
     const errorMsg = err.response?.data?.error?.message || err.message || 'Unknown error';
-    console.warn(`Real API sync failed for account ${account.id}, falling back to mock:`, errorMsg);
-    isMock = true;
+    console.warn(`Real API sync failed for account ${account.id}:`, errorMsg);
     syncError = `API Error: ${errorMsg}`;
   }
 
-  // Update health message based on whether sync succeeded or fell back
+  // Update health message based on whether sync succeeded or failed
   await prisma.socialAccount.update({
     where: { id: accountId },
     data: {
@@ -217,6 +213,11 @@ export async function syncAccount(accountId: string): Promise<void> {
       healthMessage: syncError,
     },
   });
+
+  if (syncError && isRealSync) {
+    // Real sync failed. Do not write mock data, do not seed mock history.
+    return;
+  }
 
   if (isMock) {
     const platform = account.platform.toLowerCase();
@@ -292,8 +293,10 @@ export async function syncAccount(accountId: string): Promise<void> {
       pinterest: 25,
     };
 
-    const base = baseFollowers[platform] || 5000;
-    const growth = dailyGrowth[platform] || 10;
+    // Use actual fetched follower count as baseline if it's a real sync
+    const base = (!isMock && metrics.followers > 0) ? metrics.followers : (baseFollowers[platform] || 5000);
+    // Use a tiny growth coefficient if real (to show a stable real count) or the default mock growth
+    const growth = (!isMock) ? Math.max(1, Math.floor(base * 0.001)) : (dailyGrowth[platform] || 10);
 
     for (let i = 30; i >= 1; i--) {
       const d = new Date();
