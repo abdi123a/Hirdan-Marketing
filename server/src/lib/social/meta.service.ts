@@ -32,6 +32,7 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
       'pages_manage_posts',
       'pages_manage_metadata',
       'read_insights',
+      'business_management',
     ];
   } else if (platform === 'instagram') {
     redirectUri = process.env.META_REDIRECT_URI_INSTAGRAM || '';
@@ -41,6 +42,7 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
       'instagram_basic',
       'instagram_content_publish',
       'read_insights',
+      'business_management',
     ];
   } else if (platform === 'threads') {
     redirectUri = process.env.META_REDIRECT_URI_THREADS || '';
@@ -174,15 +176,49 @@ export async function publishToFacebookPage({
   caption,
   mediaUrls,
   mediaType,
+  postType = 'post',
 }: {
   pageId: string;
   pageAccessToken: string;
   caption: string;
   mediaUrls?: string[];
   mediaType?: string;
+  postType?: 'post' | 'reel' | 'story';
 }): Promise<string> {
   const url = mediaUrls && mediaUrls.length > 0 ? mediaUrls[0] : null;
 
+  // Facebook Reel
+  if (postType === 'reel') {
+    if (!url) throw new Error('Facebook Reel requires a video URL');
+    const { data } = await axios.post(`${GRAPH_URL}/${pageId}/video_reels`, null, {
+      params: {
+        upload_phase: 'finish',
+        video_state: 'PUBLISHED',
+        description: caption,
+        file_url: url,
+        access_token: pageAccessToken,
+      },
+    });
+    return data.video_id || data.id;
+  }
+
+  // Facebook Story
+  if (postType === 'story') {
+    if (!url) throw new Error('Facebook Story requires a media URL');
+    if (mediaType === 'video') {
+      const { data } = await axios.post(`${GRAPH_URL}/${pageId}/video_stories`, null, {
+        params: { file_url: url, access_token: pageAccessToken },
+      });
+      return data.id;
+    } else {
+      const { data } = await axios.post(`${GRAPH_URL}/${pageId}/photo_stories`, null, {
+        params: { url, access_token: pageAccessToken },
+      });
+      return data.id;
+    }
+  }
+
+  // Regular Post
   if (mediaType === 'video' && url) {
     const { data } = await axios.post(`${GRAPH_URL}/${pageId}/videos`, null, {
       params: { file_url: url, description: caption, access_token: pageAccessToken },
@@ -210,12 +246,14 @@ export async function publishToInstagram({
   caption,
   mediaUrls,
   mediaType,
+  postType = 'post',
 }: {
   igAccountId: string;
   pageAccessToken: string;
   caption: string;
   mediaUrls?: string[];
   mediaType?: string;
+  postType?: 'post' | 'reel' | 'story';
 }): Promise<string> {
   const url = mediaUrls && mediaUrls.length > 0 ? mediaUrls[0] : '';
   const containerParams: Record<string, any> = {
@@ -223,16 +261,31 @@ export async function publishToInstagram({
     access_token: pageAccessToken,
   };
 
-  if (mediaType === 'reel') {
+  // Instagram Reel
+  if (postType === 'reel') {
+    if (!url) throw new Error('Instagram Reel requires a video URL');
     containerParams.media_type = 'REELS';
     containerParams.video_url = url;
+    containerParams.share_to_feed = true;
+  // Instagram Story
+  } else if (postType === 'story') {
+    if (!url) throw new Error('Instagram Story requires a media URL');
+    if (mediaType === 'video') {
+      containerParams.media_type = 'STORIES';
+      containerParams.video_url = url;
+    } else {
+      containerParams.media_type = 'STORIES';
+      containerParams.image_url = url;
+    }
+  } else if (mediaType === 'reel') {
+    containerParams.media_type = 'REELS';
+    containerParams.video_url = url;
+    containerParams.share_to_feed = true;
   } else if (mediaType === 'video') {
     containerParams.media_type = 'VIDEO';
     containerParams.video_url = url;
   } else if (mediaUrls && mediaUrls.length > 1) {
     // Carousel
-    // Carousel publishing in IG Graph API requires creating a media container for each item first, 
-    // then creating a carousel container using those item container IDs, then publishing the carousel container.
     const childrenIds: string[] = [];
     for (const itemUrl of mediaUrls) {
       const childContainer = await axios.post(`${GRAPH_URL}/${igAccountId}/media`, null, {
@@ -257,8 +310,8 @@ export async function publishToInstagram({
     { params: containerParams }
   );
 
-  // Video/reel containers need processing time before they can be published.
-  if (mediaType === 'video' || mediaType === 'reel') {
+  // Video/reel/story containers need processing time before they can be published.
+  if (postType === 'reel' || postType === 'story' || mediaType === 'video' || mediaType === 'reel') {
     await waitForMetaContainerReady(container.id, pageAccessToken);
   }
 

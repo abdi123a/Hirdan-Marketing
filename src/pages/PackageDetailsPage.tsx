@@ -13,6 +13,7 @@ import {
 import { useMemo, useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { DetailPageSkeleton } from "@/components/ui/PageSkeleton";
 
 export default function PackageDetailsPage() {
   const { id } = useParams<{ id: string }>();
@@ -52,11 +53,7 @@ export default function PackageDetailsPage() {
   }, [pkg, services]);
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 text-primary animate-spin" />
-      </div>
-    );
+    return <DetailPageSkeleton />;
   }
 
   if (!pkg) {

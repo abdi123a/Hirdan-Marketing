@@ -23,6 +23,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { InlineTableSkeleton } from "@/components/ui/PageSkeleton";
 import { Textarea } from "@/components/ui/textarea";
 
 const getDocTypeLabel = (docType: string) => {
@@ -447,9 +448,7 @@ export default function HrDocumentsPage() {
             </CardHeader>
             <CardContent className="p-0">
               {loading ? (
-                <div className="p-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" /> Loading documents...
-                </div>
+                <InlineTableSkeleton rows={5} />
               ) : filteredDocs.length === 0 ? (
                 <div className="p-12 text-center text-xs text-muted-foreground italic">No generated documents found.</div>
               ) : (
@@ -570,9 +569,7 @@ export default function HrDocumentsPage() {
             </CardHeader>
             <CardContent className="p-0">
               {loading ? (
-                <div className="p-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" /> Loading queue...
-                </div>
+                <InlineTableSkeleton rows={3} />
               ) : filteredDocs.length === 0 ? (
                 <div className="p-12 text-center text-xs text-muted-foreground italic">No warning certificates pending approval.</div>
               ) : (

@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { DeliveryNoteEditor } from "@/components/DeliveryNoteEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { FormPageSkeleton } from "@/components/ui/PageSkeleton";
 
 export default function EditInvoicePage() {
   const { id } = useParams();
@@ -149,11 +150,7 @@ export default function EditInvoicePage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px]">
-        <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
-      </div>
-    );
+    return <FormPageSkeleton />;
   }
 
   if (!form.id) {

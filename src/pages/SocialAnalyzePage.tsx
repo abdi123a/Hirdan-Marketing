@@ -1,502 +1,1315 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { apiFetch } from "@/lib/api-client";
 import { Input } from "@/components/ui/input";
-import { 
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Legend
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip,
+  CartesianGrid, BarChart, Bar, Legend, PieChart, Pie, Cell,
+  LineChart, Line, ComposedChart,
 } from "recharts";
-import { 
-  Facebook, Instagram, Linkedin, Youtube, Twitter, Pin, Music, MessageCircle,
-  Users, Eye, TrendingUp, UserPlus, RefreshCw, BarChart2, ShieldAlert, CheckCircle2, Heart, MessageSquare, Share2, Search, Calendar, Filter
+import {
+  Users, Eye, TrendingUp, UserPlus, RefreshCw, BarChart2, Heart, MessageSquare,
+  Share2, Search, Calendar, Filter, Download, Bookmark, Play, ThumbsUp, ThumbsDown,
+  ArrowUp, ArrowDown, Minus, ChevronLeft, ChevronRight, Activity, Zap, Target,
+  Globe, Clock, CheckCircle2, XCircle, AlertCircle, FileText, Repeat2, LayoutGrid,
+  Image, Video, Film, BookOpen, Layers, List, BarChart3, Cpu, Sparkles, Send,
+  MapPin, Hash, MousePointer, TrendingDown, SortDesc,
 } from "lucide-react";
 
-interface AnalyticsData {
-  accounts: Array<{
-    id: string;
-    platform: string;
-    displayName: string;
-    healthStatus: string;
-    latestMetrics: {
-      followers: number;
-      reach: number;
-      impressions: number;
-      profileVisits: number;
-    };
-  }>;
-  chartData: Array<{
-    date: string;
-    followers: number;
-    reach: number;
-    impressions: number;
-    profileVisits: number;
-  }>;
-  totals: {
-    followers: number;
-    reach: number;
-    impressions: number;
-    profileVisits: number;
+// ─────────────────────────── Types ───────────────────────────────────────────
+interface KPI {
+  current: number;
+  previous: number;
+  change: number;
+  growth: number;
+}
+
+interface FullAnalytics {
+  kpis: {
+    followers: KPI;
+    reach: KPI;
+    impressions: KPI;
+    profileVisits: KPI;
+    engagementRate: { current: number; previous: number; change: number };
+    engagement: { likes: number; comments: number; shares: number; saved: number; views: number; total: number };
+    publishing: { published: number; scheduled: number; draft: number; failed: number; pendingApproval: number };
   };
+  chartData: any[];
+  engagementTrend: any[];
+  contentTypePerformance: any[];
+  bestTimes: any[];
+  platformComparison: any[];
+  platformBreakdown: any[];
+  topPosts: TopPost[];
+  publishing: { published: number; scheduled: number; draft: number; failed: number; pendingApproval: number; successRate: number; weeklyActivity: any[] };
+  accounts: AccountRow[];
+  monthlyComparison: { current: any; previous: any };
+  aiInsights: string[];
 }
 
 interface TopPost {
-  id: string;
-  caption: string;
-  mediaUrls: any;
-  publishedAt: string | null;
-  likes: number;
-  comments: number;
-  shares: number;
-  engagement: number;
-  destinations: Array<{ platform: string }>;
+  id: string; caption: string; mediaUrls: any; mediaType: string | null;
+  publishedAt: string | null; destinations: any[];
+  likes: number; comments: number; shares: number; saved: number;
+  views: number; reach: number; impressions: number; engagement: number; engagementRate: number;
 }
 
-interface Client {
-  id: string;
-  name: string;
-  company: string;
+interface AccountRow {
+  id: string; platform: string; displayName: string; platformUsername: string;
+  avatarUrl: string | null; healthStatus: string; updatedAt: string;
+  latestMetrics: { followers: number; reach: number; impressions: number; profileVisits: number; engagementRate: number; date: string } | null;
 }
 
+interface Client { id: string; name: string; company: string }
+
+// ─────────────────────────── Constants ───────────────────────────────────────
+const PLATFORM_COLORS: Record<string, string> = {
+  facebook: "#1877F2", instagram: "#E1306C", tiktok: "#010101",
+  youtube: "#FF0000", linkedin: "#0A66C2", x: "#14171A",
+  twitter: "#1DA1F2", threads: "#313131",
+};
+
+const PIE_PALETTE = ["#6366f1","#10b981","#f59e0b","#ef4444","#3b82f6","#8b5cf6","#ec4899","#14b8a6"];
+const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const DAYS_FULL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const CONTENT_TYPE_ICONS: Record<string,any> = {
+  image: Image, video: Video, reel: Film, short: Film, story: BookOpen,
+  carousel: Layers, text: FileText,
+};
+
+const TABS = [
+  { id: "overview",    label: "Overview",     icon: LayoutGrid },
+  { id: "engagement",  label: "Engagement",   icon: Activity },
+  { id: "followers",   label: "Followers",    icon: Users },
+  { id: "reach",       label: "Reach",        icon: Eye },
+  { id: "content",     label: "Content",      icon: BarChart3 },
+  { id: "video",       label: "Video & Story",icon: Play },
+  { id: "audience",    label: "Audience",     icon: Globe },
+  { id: "besttime",    label: "Best Time",    icon: Clock },
+  { id: "platforms",   label: "Platforms",    icon: BarChart2 },
+  { id: "publishing",  label: "Publishing",   icon: Send },
+  { id: "accounts",    label: "Accounts",     icon: List },
+  { id: "ai",          label: "AI Insights",  icon: Sparkles },
+  { id: "export",      label: "Export",       icon: Download },
+];
+
+// ─────────────────────────── Utilities ───────────────────────────────────────
+const fmtN = (n: number) => {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
+  return n?.toLocaleString() ?? "0";
+};
+
+const getPlatformIcon = (platform: string, cls = "h-4 w-4 rounded-sm object-contain") => {
+  const map: Record<string, string> = {
+    facebook: "/social-icons/Facebook.png", instagram: "/social-icons/instagram.png",
+    threads: "/social-icons/Threads.png", tiktok: "/social-icons/tiktok.png",
+    linkedin: "/social-icons/linkedin.png", youtube: "/social-icons/youtube.png",
+    x: "/social-icons/twitter.png", twitter: "/social-icons/twitter.png",
+    pinterest: "/social-icons/pinterest.png",
+  };
+  const src = map[platform?.toLowerCase()];
+  return src ? <img src={src} className={cls} alt={platform} /> : <BarChart2 className={cls} />;
+};
+
+const Delta = ({ value, suffix = "%" }: { value: number; suffix?: string }) => {
+  if (value > 0) return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full"><ArrowUp size={9}/>{Math.abs(value).toFixed(1)}{suffix}</span>;
+  if (value < 0) return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-red-500 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded-full"><ArrowDown size={9}/>{Math.abs(value).toFixed(1)}{suffix}</span>;
+  return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-400 bg-neutral-50 border border-neutral-200 px-1.5 py-0.5 rounded-full"><Minus size={9}/>0{suffix}</span>;
+};
+
+const NoData = ({ msg = "Sync metrics to see data" }: { msg?: string }) => (
+  <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+    <BarChart2 className="h-10 w-10 opacity-30" />
+    <p className="text-sm font-medium">{msg}</p>
+  </div>
+);
+
+const SectionLock = ({ title, desc }: { title: string; desc: string }) => (
+  <Card className="rounded-2xl border-dashed border-2 border-border/50">
+    <CardContent className="flex flex-col items-center justify-center py-16 text-center gap-3">
+      <div className="h-12 w-12 rounded-2xl bg-amber-50 flex items-center justify-center border border-amber-100">
+        <AlertCircle className="h-5 w-5 text-amber-500" />
+      </div>
+      <h3 className="font-semibold text-sm">{title}</h3>
+      <p className="text-xs text-muted-foreground max-w-xs">{desc}</p>
+    </CardContent>
+  </Card>
+);
+
+// ─────────────────────────── KPI Card ────────────────────────────────────────
+const KPICard = ({ label, value, growth, icon: Icon, color, isRate = false, suffix = "" }: any) => {
+  const colors: Record<string, string> = {
+    blue: "bg-blue-50 text-blue-600 border-blue-100",
+    emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
+    purple: "bg-purple-50 text-purple-600 border-purple-100",
+    amber: "bg-amber-50 text-amber-600 border-amber-100",
+    rose: "bg-rose-50 text-rose-600 border-rose-100",
+    indigo: "bg-indigo-50 text-indigo-600 border-indigo-100",
+    teal: "bg-teal-50 text-teal-600 border-teal-100",
+  };
+  return (
+    <Card className="rounded-2xl shadow-sm border border-border/80 hover:shadow-md transition-all duration-200 cursor-default group">
+      <CardContent className="p-5 space-y-3">
+        <div className="flex items-start justify-between">
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider leading-tight">{label}</p>
+          <div className={`h-8 w-8 rounded-xl flex items-center justify-center border shadow-sm shrink-0 ${colors[color] || colors.blue}`}>
+            <Icon className="h-3.5 w-3.5" />
+          </div>
+        </div>
+        <h3 className="text-2xl font-black text-foreground tracking-tight leading-none">
+          {isRate ? `${Number(value).toFixed(1)}%` : fmtN(value)}{suffix}
+        </h3>
+        {growth !== undefined && <Delta value={growth} />}
+      </CardContent>
+    </Card>
+  );
+};
+
+// ─────────────────────────── Chart tooltip ───────────────────────────────────
+const ChartTip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-card border border-border rounded-xl shadow-lg p-3 text-xs min-w-[120px]">
+      <p className="font-bold text-foreground mb-1.5">{label}</p>
+      {payload.map((p: any) => (
+        <div key={p.dataKey} className="flex items-center gap-1.5 text-muted-foreground">
+          <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
+          <span className="capitalize">{p.name}:</span>
+          <span className="font-semibold text-foreground ml-auto pl-4">{fmtN(Number(p.value))}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ─────────────────────────── Monthly comparison row ──────────────────────────
+const CompareRow = ({ label, curr, prev }: { label: string; curr: number; prev: number }) => {
+  const diff = curr - prev;
+  const g = prev > 0 ? (diff / prev) * 100 : 0;
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-border/40 last:border-0 gap-4">
+      <span className="text-sm font-medium text-muted-foreground w-28 shrink-0">{label}</span>
+      <div className="flex items-center gap-3 flex-1">
+        <span className="text-xs text-muted-foreground tabular-nums w-20 text-right">{fmtN(prev)}</span>
+        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+          <div className="h-full bg-primary/30 rounded-full" style={{ width: `${prev > 0 ? Math.min((curr / Math.max(curr, prev)) * 100, 100) : 0}%` }} />
+        </div>
+        <span className="text-sm font-bold text-foreground tabular-nums w-20">{fmtN(curr)}</span>
+      </div>
+      <Delta value={parseFloat(g.toFixed(1))} />
+    </div>
+  );
+};
+
+// ─────────────────────────── Main Component ──────────────────────────────────
 export default function SocialAnalyzePage() {
   const { toast } = useToast();
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedClient, setSelectedClient] = useState("");
-  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
-  const [topPosts, setTopPosts] = useState<TopPost[]>([]);
+  const [analytics, setAnalytics] = useState<FullAnalytics | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Filter States
-  const [dateRange, setDateRange] = useState<7 | 30 | 90>(30);
-  const [selectedPlatform, setSelectedPlatform] = useState<string>("ALL");
-  const [contentSearch, setContentSearch] = useState<string>("");
+  // Posts pagination state
+  const [posts, setPosts] = useState<TopPost[]>([]);
+  const [postsTotal, setPostsTotal] = useState(0);
+  const [postPage, setPostPage] = useState(1);
+  const [postSort, setPostSort] = useState<"engagement"|"likes"|"views"|"newest"|"oldest">("engagement");
+  const [postsLoading, setPostsLoading] = useState(false);
+  const POST_LIMIT = 10;
+
+  // Global filters
+  const [activeTab, setActiveTab] = useState("overview");
+  const [dateRange, setDateRange] = useState<7|30|90>(30);
+  const [platformFilter, setPlatformFilter] = useState("ALL");
+  const [contentTypeFilter, setContentTypeFilter] = useState("ALL");
+  const [postSearch, setPostSearch] = useState("");
+  const [chartMetric, setChartMetric] = useState<"followers"|"reach"|"impressions"|"engagementRate">("followers");
 
   useEffect(() => {
-    // Load clients first
-    apiFetch<{ clients: Client[] }>("/clients")
-      .then((res) => {
-        const clientsList = res.clients || [];
-        setClients(clientsList);
-        if (clientsList.length > 0) {
-          setSelectedClient(clientsList[0].id);
-        }
-      })
-      .catch(() => {});
+    apiFetch<any>("/clients")
+      .then(r => {
+        const list = Array.isArray(r) ? r : (r.clients || []);
+        setClients(list);
+        if (list.length > 0) setSelectedClient(list[0].id);
+      }).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (selectedClient) {
-      fetchAnalytics();
-    } else {
-      setAnalytics(null);
-      setTopPosts([]);
-    }
-  }, [selectedClient]);
-
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = useCallback(async () => {
+    if (!selectedClient) return;
     setIsLoading(true);
     try {
-      const [metricsRes, postsRes] = await Promise.all([
-        apiFetch<AnalyticsData>(`/social/analytics/${selectedClient}`),
-        apiFetch<{ posts: TopPost[] }>(`/social/analytics/${selectedClient}/posts?limit=50`),
-      ]);
-      setAnalytics(metricsRes);
-      setTopPosts(postsRes.posts || []);
+      const res = await apiFetch<FullAnalytics>(
+        `/social/analytics/${selectedClient}/full?days=${dateRange}&platform=${platformFilter}&contentType=${contentTypeFilter}`
+      );
+      setAnalytics(res);
     } catch (err: any) {
-      toast({
-        title: "Error loading analytics",
-        description: err.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error loading analytics", description: err.message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedClient, dateRange, platformFilter, contentTypeFilter]);
+
+  const fetchPosts = useCallback(async () => {
+    if (!selectedClient) return;
+    setPostsLoading(true);
+    try {
+      const res = await apiFetch<any>(
+        `/social/analytics/${selectedClient}/posts?page=${postPage}&limit=${POST_LIMIT}&sortBy=${postSort}&platform=${platformFilter}&contentType=${contentTypeFilter}&search=${postSearch}&days=${dateRange}`
+      );
+      setPosts(res.posts || []);
+      setPostsTotal(res.total || 0);
+    } catch { /* handled */ } finally {
+      setPostsLoading(false);
+    }
+  }, [selectedClient, postPage, postSort, platformFilter, contentTypeFilter, postSearch, dateRange]);
+
+  useEffect(() => {
+    if (selectedClient) { fetchAnalytics(); setPostPage(1); }
+    else { setAnalytics(null); setPosts([]); }
+  }, [selectedClient, dateRange, platformFilter, contentTypeFilter]);
+
+  useEffect(() => {
+    if (selectedClient) fetchPosts();
+  }, [selectedClient, postPage, postSort, platformFilter, contentTypeFilter, postSearch, dateRange]);
 
   const handleRefresh = async () => {
-    if (!selectedClient) return;
+    if (!selectedClient || isRefreshing) return;
     setIsRefreshing(true);
     try {
       await apiFetch<any>(`/social/analytics/${selectedClient}/refresh`, { method: "POST" });
-      toast({
-        title: "Metrics Synced",
-        description: "Latest insights retrieved from platform API servers",
-      });
+      toast({ title: "✅ Metrics Synced", description: "Fresh data pulled from platform APIs." });
       fetchAnalytics();
     } catch (err: any) {
-      toast({
-        title: "Sync Failed",
-        description: err.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsRefreshing(false);
-    }
+      toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
+    } finally { setIsRefreshing(false); }
   };
 
-  const getPlatformIcon = (platform: string, className = "h-4 w-4 rounded-sm object-contain") => {
-    switch (platform.toLowerCase()) {
-      case "facebook": return <img src="/social-icons/Facebook.png" className={className} alt="Facebook" />;
-      case "instagram": return <img src="/social-icons/instagram.png" className={className} alt="Instagram" />;
-      case "threads": return <img src="/social-icons/Threads.png" className={className} alt="Threads" />;
-      case "tiktok": return <img src="/social-icons/tiktok.png" className={className} alt="TikTok" />;
-      case "linkedin": return <img src="/social-icons/linkedin.png" className={className} alt="LinkedIn" />;
-      case "youtube": return <img src="/social-icons/youtube.png" className={className} alt="YouTube" />;
-      case "x": 
-      case "twitter": return <img src="/social-icons/twitter.png" className={className} alt="Twitter" />;
-      default: return <BarChart2 className={className} />;
-    }
-  };
-
-  // ----------------------------------------------------
-  // Apply interactive filtering (Platform + Date Range)
-  // ----------------------------------------------------
-  
-  // 1. Filtered Chart Data based on Date Range
-  const getFilteredChartData = () => {
-    if (!analytics || !analytics.chartData) return [];
-    
-    // Sort and grab recent days matching selection
-    const sorted = [...analytics.chartData].sort((a, b) => a.date.localeCompare(b.date));
-    return sorted.slice(-dateRange);
-  };
-
-  // 2. Filtered Totals based on Selected Platform
-  const getFilteredTotals = () => {
-    if (!analytics) return { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
-    if (selectedPlatform === "ALL") return analytics.totals;
-
-    // Aggregate only accounts matching selected platform
-    const platformAccounts = analytics.accounts.filter(
-      acc => acc.platform.toUpperCase() === selectedPlatform.toUpperCase()
-    );
-
-    return platformAccounts.reduce(
-      (sum, acc) => {
-        sum.followers += acc.latestMetrics?.followers || 0;
-        sum.reach += acc.latestMetrics?.reach || 0;
-        sum.impressions += acc.latestMetrics?.impressions || 0;
-        sum.profileVisits += acc.latestMetrics?.profileVisits || 0;
-        return sum;
-      },
-      { followers: 0, reach: 0, impressions: 0, profileVisits: 0 }
-    );
-  };
-
-  // 3. Filtered Top Posts based on Keyword and Platform selection
-  const getFilteredTopPosts = () => {
-    return topPosts.filter(post => {
-      const matchesKeyword = post.caption?.toLowerCase().includes(contentSearch.toLowerCase());
-      const matchesPlatform = selectedPlatform === "ALL" || 
-        post.destinations.some(d => d.platform.toUpperCase() === selectedPlatform.toUpperCase());
-      return matchesKeyword && matchesPlatform;
+  const exportCSV = () => {
+    if (!posts.length) return;
+    const hdr = "Caption,Platform(s),Date,Type,Likes,Comments,Shares,Saved,Views,Reach,Impressions,Engagement,ER%\n";
+    const rows = posts.map(p => [
+      `"${(p.caption||"").replace(/"/g,"'")}"`,
+      (p.destinations||[]).map((d:any)=>d.platform).join("|"),
+      p.publishedAt ? new Date(p.publishedAt).toLocaleDateString() : "",
+      p.mediaType || "text",
+      p.likes, p.comments, p.shares, p.saved, p.views, p.reach, p.impressions, p.engagement, p.engagementRate,
+    ].join(",")).join("\n");
+    const a = Object.assign(document.createElement("a"), {
+      href: URL.createObjectURL(new Blob([hdr+rows], { type:"text/csv" })),
+      download: `analytics_${new Date().toISOString().split("T")[0]}.csv`,
     });
+    a.click();
   };
 
-  const filteredChartData = getFilteredChartData();
-  const totals = getFilteredTotals();
-  const filteredTopPosts = getFilteredTopPosts();
+  // Derived values
+  const kpis = analytics?.kpis;
+  const connectedPlatforms = useMemo(
+    () => Array.from(new Set((analytics?.accounts||[]).map(a => a.platform.toLowerCase()))),
+    [analytics]
+  );
+  const chartData = analytics?.chartData || [];
+  const pieData = (analytics?.platformBreakdown||[]).filter(p => p.followers > 0 || p.reach > 0)
+    .map(p => ({ name: p.platform, value: p.followers || p.reach || 1 }));
 
+  // Heatmap data
+  const heatmapGrid = useMemo(() => {
+    const grid: number[][] = Array(7).fill(null).map(() => Array(24).fill(0));
+    for (const t of (analytics?.bestTimes||[])) {
+      grid[t.day][t.hour] = t.engagement;
+    }
+    const maxVal = Math.max(...grid.flat(), 1);
+    return { grid, maxVal };
+  }, [analytics]);
+
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border/40 pb-5">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Analytics Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Track followers, reach, engagement, and post metrics per client.</p>
+    <div className="min-h-screen space-y-0">
+      {/* ── Top bar ── */}
+      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur border-b border-border/50 px-6 py-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-foreground">Analytics Dashboard</h1>
+            <p className="text-xs text-muted-foreground">Social media performance across all connected platforms</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={selectedClient || "none"} onValueChange={val => {
+              setSelectedClient(val === "none" ? "" : val);
+              setPostPage(1);
+            }}>
+              <SelectTrigger className="border border-border bg-background rounded-xl px-3 py-2 h-9 text-sm font-semibold shadow-sm w-48 focus:ring-2 focus:ring-primary/20">
+                <SelectValue placeholder="Select Client" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                <SelectItem value="none">-- Select Client --</SelectItem>
+                {clients.map(c => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.company || c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedClient && (
+              <>
+                <Button variant="outline" disabled={isRefreshing||isLoading} onClick={handleRefresh} className="rounded-xl h-9 px-3 gap-1.5 text-sm">
+                  <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing?"animate-spin":""}`} />
+                  Sync Metrics
+                </Button>
+                <Button variant="outline" onClick={exportCSV} className="rounded-xl h-9 px-3 gap-1.5 text-sm">
+                  <Download className="h-3.5 w-3.5" /> Export CSV
+                </Button>
+              </>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <select
-            value={selectedClient}
-            onChange={(e) => setSelectedClient(e.target.value)}
-            className="border border-border bg-background rounded-xl p-2.5 text-sm font-semibold shadow-sm w-full md:w-56 focus:ring-2 focus:ring-primary/20 outline-none"
-          >
-            <option value="">-- Choose Client --</option>
-            {clients.map(c => <option key={c.id} value={c.id}>{c.company}</option>)}
-          </select>
-          {selectedClient && (
-            <Button
-              variant="outline"
-              disabled={isRefreshing || isLoading}
-              onClick={handleRefresh}
-              className="rounded-xl border border-border bg-card shadow-sm gap-2 shrink-0 h-[38px] px-3.5 hover:bg-muted/50 transition-colors"
-            >
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Sync Metrics</span>
-            </Button>
-          )}
-        </div>
-      </div>
 
-      {!selectedClient ? (
-        <Card className="border-dashed py-16 text-center text-muted-foreground rounded-2xl">
-          Select a client company at the top right to analyze their social media accounts.
-        </Card>
-      ) : isLoading ? (
-        <div className="flex justify-center items-center py-24 text-muted-foreground gap-2">
-          <RefreshCw className="h-5 w-5 animate-spin text-primary" />
-          <span>Loading analytics metrics...</span>
-        </div>
-      ) : !analytics || analytics.accounts.length === 0 ? (
-        <Card className="border-dashed py-16 flex flex-col items-center justify-center text-center rounded-2xl">
-          <BarChart2 className="h-10 w-10 text-muted-foreground mb-3" />
-          <h3 className="font-semibold text-base">No Accounts Connected</h3>
-          <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-            This client has no active social media accounts connected. Connect accounts under Accounts page first.
-          </p>
-        </Card>
-      ) : (
-        <div className="space-y-6">
-          
-          {/* Controls toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-4 bg-muted/20 p-4 rounded-2xl border border-border/80">
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Date Filter selector */}
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs font-bold text-muted-foreground uppercase">Date Range:</span>
-              </div>
-              <div className="flex bg-background border rounded-lg p-0.5 shadow-sm">
-                {[
-                  { label: "7D", val: 7 },
-                  { label: "30D", val: 30 },
-                  { label: "90D", val: 90 },
-                ].map(r => (
-                  <button
-                    key={r.val}
-                    onClick={() => setDateRange(r.val as any)}
-                    className={`px-3 py-1 rounded text-xs font-bold transition-all ${
-                      dateRange === r.val ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {r.label}
+        {/* Global Filters */}
+        {selectedClient && !isLoading && analytics && (
+          <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-border/40">
+            {/* Date range */}
+            <div className="flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+              <div className="flex bg-muted/30 border border-border rounded-lg p-0.5 gap-0.5">
+                {([7,30,90] as const).map(d => (
+                  <button key={d} onClick={() => setDateRange(d)}
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${dateRange===d?"bg-primary text-primary-foreground shadow":"text-muted-foreground hover:text-foreground"}`}>
+                    {d}D
                   </button>
                 ))}
               </div>
-
-              {/* Platform selector */}
-              <div className="flex items-center gap-2 ml-2">
-                <Filter className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs font-bold text-muted-foreground uppercase">Platform:</span>
+            </div>
+            {/* Platform */}
+            <div className="flex items-center gap-1.5">
+              <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+              <div className="flex bg-muted/30 border border-border rounded-lg p-0.5 gap-0.5 flex-wrap">
+                <button onClick={() => setPlatformFilter("ALL")}
+                  className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${platformFilter==="ALL"?"bg-primary text-primary-foreground shadow":"text-muted-foreground hover:text-foreground"}`}>All</button>
+                {connectedPlatforms.map(p => (
+                  <button key={p} onClick={() => setPlatformFilter(p.toUpperCase())}
+                    className={`px-2 py-1 rounded text-xs font-bold transition-all flex items-center gap-1 ${platformFilter===p.toUpperCase()?"bg-primary text-primary-foreground shadow":"text-muted-foreground hover:text-foreground"}`}>
+                    {getPlatformIcon(p, "h-3 w-3 object-contain")}
+                    <span className="capitalize">{p}</span>
+                  </button>
+                ))}
               </div>
-              <select
-                value={selectedPlatform}
-                onChange={(e) => setSelectedPlatform(e.target.value)}
-                className="border border-border bg-background rounded-lg px-2.5 py-1 text-xs font-semibold shadow-sm outline-none focus:ring-1 focus:ring-primary/20"
-              >
-                <option value="ALL">All Platforms</option>
-                <option value="FACEBOOK">Facebook</option>
-                <option value="INSTAGRAM">Instagram</option>
-                <option value="LINKEDIN">LinkedIn</option>
-                <option value="YOUTUBE">YouTube</option>
-              </select>
             </div>
-
-            {/* Keyword Content filter */}
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Filter by caption text..."
-                value={contentSearch}
-                onChange={(e) => setContentSearch(e.target.value)}
-                className="pl-9 text-xs rounded-xl h-9 bg-background focus-visible:ring-primary/20"
-              />
-            </div>
+            {/* Content type */}
+            <Select value={contentTypeFilter} onValueChange={setContentTypeFilter}>
+              <SelectTrigger className="border border-border bg-background rounded-lg px-2 py-1 h-7 text-xs font-semibold outline-none w-28">
+                <SelectValue placeholder="All Types" />
+              </SelectTrigger>
+              <SelectContent className="rounded-lg">
+                <SelectItem value="ALL">All Types</SelectItem>
+                {["image","video","reel","story","short","carousel","text"].map(t =>
+                  <SelectItem key={t} value={t} className="capitalize">{t.charAt(0).toUpperCase()+t.slice(1)}</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
           </div>
+        )}
+      </div>
 
-          {/* Large Stat Cards */}
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Card className="rounded-2xl shadow-sm border border-border/80 hover:shadow transition-shadow">
-              <CardContent className="p-6 flex items-center justify-between">
+      {/* ── No client / Loading / Empty ── */}
+      {!selectedClient ? (
+        <div className="p-6"><Card className="border-dashed py-24 text-center rounded-2xl"><Target className="h-10 w-10 mx-auto mb-3 text-muted-foreground/30"/><p className="font-medium text-muted-foreground">Select a client to view analytics</p></Card></div>
+      ) : isLoading ? (
+        <div className="flex justify-center items-center py-40 gap-2 text-muted-foreground">
+          <RefreshCw className="h-5 w-5 animate-spin text-primary"/><span>Loading analytics...</span>
+        </div>
+      ) : !analytics || (analytics as any).empty ? (
+        <div className="p-6"><Card className="border-dashed py-24 flex flex-col items-center justify-center text-center rounded-2xl">
+          <BarChart2 className="h-10 w-10 text-muted-foreground mb-3"/>
+          <h3 className="font-semibold">No Connected Accounts</h3>
+          <p className="text-sm text-muted-foreground mt-1 max-w-xs">Connect social media accounts for this client, then click Sync Metrics.</p>
+        </Card></div>
+      ) : (
+        <div className="flex h-full">
+          {/* ── Sidebar Tabs ── */}
+          <nav className="w-44 shrink-0 border-r border-border/50 bg-muted/10 flex flex-col gap-0.5 py-4 px-2 sticky top-[145px] h-[calc(100vh-145px)] overflow-y-auto">
+            {TABS.map(t => {
+              const Icon = t.icon;
+              return (
+                <button key={t.id} onClick={() => setActiveTab(t.id)}
+                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${activeTab===t.id?"bg-primary text-primary-foreground shadow-sm":"text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}>
+                  <Icon className="h-3.5 w-3.5 shrink-0"/>
+                  {t.label}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* ── Content Area ── */}
+          <div className="flex-1 overflow-x-hidden p-6 space-y-6 min-w-0">
+
+            {/* ══════════════ OVERVIEW ══════════════ */}
+            {activeTab === "overview" && (
+              <div className="space-y-6">
                 <div>
-                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Total Followers</p>
-                  <h3 className="text-3xl font-black mt-2 text-foreground tracking-tight">{totals.followers.toLocaleString()}</h3>
+                  <h2 className="text-lg font-bold">Overview</h2>
+                  <p className="text-xs text-muted-foreground">Key performance indicators for the last {dateRange} days</p>
                 </div>
-                <div className="h-12 w-12 rounded-2xl bg-blue-50/60 flex items-center justify-center text-blue-600 border border-blue-100/50 shadow-sm">
-                  <Users className="h-5.5 w-5.5" />
+                {/* 6 KPI cards */}
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+                  <KPICard label="Total Followers" value={kpis!.followers.current} growth={kpis!.followers.growth} icon={Users} color="blue"/>
+                  <KPICard label="Total Reach" value={kpis!.reach.current} growth={kpis!.reach.growth} icon={TrendingUp} color="emerald"/>
+                  <KPICard label="Impressions" value={kpis!.impressions.current} growth={kpis!.impressions.growth} icon={Eye} color="purple"/>
+                  <KPICard label="Profile Visits" value={kpis!.profileVisits.current} growth={kpis!.profileVisits.growth} icon={UserPlus} color="amber"/>
+                  <KPICard label="Engagement Rate" value={kpis!.engagementRate.current} growth={kpis!.engagementRate.change} icon={Activity} color="rose" isRate/>
+                  <KPICard label="Posts Published" value={kpis!.publishing.published} icon={Zap} color="indigo"/>
                 </div>
-              </CardContent>
-            </Card>
 
-            <Card className="rounded-2xl shadow-sm border border-border/80 hover:shadow transition-shadow">
-              <CardContent className="p-6 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Impressions</p>
-                  <h3 className="text-3xl font-black mt-2 text-foreground tracking-tight">{totals.impressions.toLocaleString()}</h3>
-                </div>
-                <div className="h-12 w-12 rounded-2xl bg-purple-50/60 flex items-center justify-center text-purple-600 border border-purple-100/50 shadow-sm">
-                  <Eye className="h-5.5 w-5.5" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl shadow-sm border border-border/80 hover:shadow transition-shadow">
-              <CardContent className="p-6 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Total Reach</p>
-                  <h3 className="text-3xl font-black mt-2 text-foreground tracking-tight">{totals.reach.toLocaleString()}</h3>
-                </div>
-                <div className="h-12 w-12 rounded-2xl bg-emerald-50/60 flex items-center justify-center text-emerald-600 border border-emerald-100/50 shadow-sm">
-                  <TrendingUp className="h-5.5 w-5.5" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl shadow-sm border border-border/80 hover:shadow transition-shadow">
-              <CardContent className="p-6 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Profile Visits</p>
-                  <h3 className="text-3xl font-black mt-2 text-foreground tracking-tight">{totals.profileVisits.toLocaleString()}</h3>
-                </div>
-                <div className="h-12 w-12 rounded-2xl bg-amber-50/60 flex items-center justify-center text-amber-600 border border-amber-100/50 shadow-sm">
-                  <UserPlus className="h-5.5 w-5.5" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Chart Section */}
-          <div className="grid md:grid-cols-3 gap-6">
-            <Card className="md:col-span-2 rounded-2xl shadow-sm border border-border/80 overflow-hidden bg-card">
-              <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
-                <CardTitle className="text-sm font-bold flex items-center gap-1.5">
-                  <TrendingUp className="h-4 w-4 text-primary" />
-                  <span>Audience Growth Trend</span>
-                </CardTitle>
-                <CardDescription className="text-xs">Followers progression rate over last {dateRange} days</CardDescription>
-              </CardHeader>
-              <CardContent className="p-6">
-                <div className="h-80 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={filteredChartData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorFollowers" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.25}/>
-                          <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(var(--border), 0.15)" />
-                      <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} />
-                      <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
-                      <Tooltip contentStyle={{ borderRadius: "12px", border: "1px solid rgba(var(--border), 0.3)" }} />
-                      <Area type="monotone" dataKey="followers" stroke="hsl(var(--primary))" strokeWidth={2.5} fillOpacity={1} fill="url(#colorFollowers)" name="Followers" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl shadow-sm border border-border/80 overflow-hidden bg-card">
-              <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
-                <CardTitle className="text-sm font-bold flex items-center gap-1.5">
-                  <Eye className="h-4 w-4 text-emerald-600" />
-                  <span>Reach vs Impressions</span>
-                </CardTitle>
-                <CardDescription className="text-xs">Daily views performance metrics</CardDescription>
-              </CardHeader>
-              <CardContent className="p-6">
-                <div className="h-80 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={filteredChartData.slice(-7)} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(var(--border), 0.15)" />
-                      <XAxis dataKey="date" fontSize={9} tickLine={false} />
-                      <YAxis fontSize={9} tickLine={false} axisLine={false} />
-                      <Tooltip contentStyle={{ borderRadius: "12px", border: "1px solid rgba(var(--border), 0.3)" }} />
-                      <Legend iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
-                      <Bar dataKey="reach" fill="#10b981" radius={[4, 4, 0, 0]} name="Reach" />
-                      <Bar dataKey="impressions" fill="#6366f1" radius={[4, 4, 0, 0]} name="Impressions" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Accounts status list + Top posts grid */}
-          <div className="grid lg:grid-cols-3 gap-6">
-            
-            {/* Account List */}
-            <Card className="lg:col-span-1 rounded-2xl shadow-sm border border-border/80 overflow-hidden flex flex-col justify-between bg-card">
-              <div>
-                <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
-                  <CardTitle className="text-sm font-bold">Linked Accounts</CardTitle>
-                </CardHeader>
-                <div className="divide-y divide-border/40 max-h-96 overflow-y-auto">
-                  {analytics.accounts
-                    .filter(acc => selectedPlatform === "ALL" || acc.platform.toUpperCase() === selectedPlatform.toUpperCase())
-                    .map((acc) => (
-                      <div key={acc.id} className="p-4 flex items-center justify-between hover:bg-muted/5 transition-all">
-                        <div className="flex items-center gap-2.5">
-                          {getPlatformIcon(acc.platform)}
-                          <div>
-                            <p className="font-bold text-sm leading-none text-foreground">{acc.displayName}</p>
-                            <p className="text-xs text-muted-foreground mt-1 capitalize">{acc.platform}</p>
-                          </div>
+                {/* Chart + Pie */}
+                <div className="grid lg:grid-cols-3 gap-6">
+                  <Card className="lg:col-span-2 rounded-2xl shadow-sm border border-border/80 overflow-hidden">
+                    <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div>
+                          <CardTitle className="text-sm font-bold flex items-center gap-1.5"><TrendingUp className="h-4 w-4 text-primary"/>Performance Over Time</CardTitle>
+                          <CardDescription className="text-xs">Last {dateRange} days</CardDescription>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-black text-foreground">{acc.latestMetrics?.followers?.toLocaleString() || 0}</p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">Followers</p>
+                        <div className="flex gap-1 flex-wrap">
+                          {(["followers","reach","impressions","engagementRate"] as const).map(m => (
+                            <button key={m} onClick={() => setChartMetric(m)}
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all ${chartMetric===m?"bg-primary text-primary-foreground border-primary":"border-border text-muted-foreground hover:border-primary/50"}`}>
+                              {m==="engagementRate"?"Eng.Rate":m.charAt(0).toUpperCase()+m.slice(1)}
+                            </button>
+                          ))}
                         </div>
                       </div>
-                    ))}
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <div className="h-64 w-full">
+                        {chartData.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={chartData} margin={{ top:5,right:5,left:-20,bottom:0 }}>
+                              <defs>
+                                <linearGradient id="gArea" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
+                              <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>v.slice(5)}/>
+                              <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
+                              <Tooltip content={<ChartTip/>}/>
+                              <Area type="monotone" dataKey={chartMetric} stroke="hsl(var(--primary))" strokeWidth={2.5} fillOpacity={1} fill="url(#gArea)" dot={false} activeDot={{r:5}}/>
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        ) : <NoData/>}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Platform Pie */}
+                  <Card className="rounded-2xl shadow-sm border border-border/80 overflow-hidden">
+                    <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                      <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Target className="h-4 w-4 text-indigo-500"/>Audience Split</CardTitle>
+                      <CardDescription className="text-xs">Follower distribution by platform</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6 flex flex-col items-center gap-4">
+                      {pieData.length > 0 ? (
+                        <>
+                          <div className="h-40 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value">
+                                  {pieData.map((e,i) => <Cell key={e.name} fill={PLATFORM_COLORS[e.name]||PIE_PALETTE[i%PIE_PALETTE.length]}/>)}
+                                </Pie>
+                                <Tooltip formatter={(v:any)=>fmtN(Number(v))} contentStyle={{borderRadius:"10px",fontSize:12}}/>
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div className="w-full space-y-1.5">
+                            {pieData.map((e,i) => {
+                              const tot = pieData.reduce((s,x)=>s+x.value,0);
+                              const pp = tot>0?((e.value/tot)*100).toFixed(1):"0";
+                              const col = PLATFORM_COLORS[e.name]||PIE_PALETTE[i%PIE_PALETTE.length];
+                              return (
+                                <div key={e.name} className="flex items-center justify-between text-xs">
+                                  <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{background:col}}/><span className="capitalize font-medium">{e.name}</span></div>
+                                  <div className="flex items-center gap-2"><span className="text-muted-foreground">{fmtN(e.value)}</span><span className="font-bold">{pp}%</span></div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      ) : <NoData msg="No follower data yet — sync metrics"/>}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Monthly Comparison */}
+                <Card className="rounded-2xl shadow-sm border border-border/80">
+                  <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                    <CardTitle className="text-sm font-bold flex items-center gap-1.5"><BarChart3 className="h-4 w-4 text-violet-500"/>Period Comparison</CardTitle>
+                    <CardDescription className="text-xs">Current {dateRange}D vs. previous {dateRange}D</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    {analytics.monthlyComparison ? (
+                      <div className="space-y-0">
+                        <CompareRow label="Followers" curr={analytics.monthlyComparison.current.followers} prev={analytics.monthlyComparison.previous.followers}/>
+                        <CompareRow label="Reach" curr={analytics.monthlyComparison.current.reach} prev={analytics.monthlyComparison.previous.reach}/>
+                        <CompareRow label="Impressions" curr={analytics.monthlyComparison.current.impressions} prev={analytics.monthlyComparison.previous.impressions}/>
+                        <CompareRow label="Engagement" curr={analytics.monthlyComparison.current.engagement} prev={analytics.monthlyComparison.previous.engagement}/>
+                        <CompareRow label="Posts" curr={analytics.monthlyComparison.current.posts} prev={analytics.monthlyComparison.previous.posts}/>
+                        <CompareRow label="Video Views" curr={analytics.monthlyComparison.current.views} prev={analytics.monthlyComparison.previous.views}/>
+                      </div>
+                    ) : <NoData/>}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* ══════════════ ENGAGEMENT ══════════════ */}
+            {activeTab === "engagement" && (
+              <div className="space-y-6">
+                <div><h2 className="text-lg font-bold">Engagement Analytics</h2><p className="text-xs text-muted-foreground">All user interactions with your content</p></div>
+
+                {/* Breakdown cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+                  {[
+                    { label:"Likes", value:kpis!.engagement.likes, icon:Heart, color:"rose" },
+                    { label:"Comments", value:kpis!.engagement.comments, icon:MessageSquare, color:"blue" },
+                    { label:"Shares", value:kpis!.engagement.shares, icon:Share2, color:"emerald" },
+                    { label:"Saves", value:kpis!.engagement.saved, icon:Bookmark, color:"amber" },
+                    { label:"Video Views", value:kpis!.engagement.views, icon:Play, color:"purple" },
+                    { label:"Total Engaged", value:kpis!.engagement.total, icon:Activity, color:"indigo" },
+                  ].map(c => <KPICard key={c.label} {...c} growth={undefined}/>)}
+                </div>
+
+                {/* Engagement trend */}
+                <Card className="rounded-2xl shadow-sm border border-border/80">
+                  <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                    <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Activity className="h-4 w-4 text-primary"/>Engagement Trend</CardTitle>
+                    <CardDescription className="text-xs">Daily engagement breakdown over {dateRange} days</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <div className="h-72 w-full">
+                      {analytics.engagementTrend.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={analytics.engagementTrend} margin={{top:5,right:5,left:-20,bottom:0}}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
+                            <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>v.slice(5)}/>
+                            <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
+                            <Tooltip content={<ChartTip/>}/>
+                            <Legend iconSize={8} wrapperStyle={{fontSize:11}}/>
+                            <Bar dataKey="likes" name="Likes" stackId="a" fill="#ef4444" radius={[0,0,0,0]}/>
+                            <Bar dataKey="comments" name="Comments" stackId="a" fill="#3b82f6" radius={[0,0,0,0]}/>
+                            <Bar dataKey="shares" name="Shares" stackId="a" fill="#10b981" radius={[0,0,0,0]}/>
+                            <Bar dataKey="saved" name="Saved" stackId="a" fill="#f59e0b" radius={[4,4,0,0]}/>
+                            <Line type="monotone" dataKey="total" name="Total" stroke="#6366f1" strokeWidth={2.5} dot={false}/>
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      ) : <NoData msg="No published posts yet — data will appear after publishing content"/>}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Engagement rate section */}
+                <div className="grid md:grid-cols-2 gap-6">
+                  <Card className="rounded-2xl shadow-sm border border-border/80">
+                    <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                      <CardTitle className="text-sm font-bold">Engagement Rate</CardTitle>
+                      <CardDescription className="text-xs">Formula: (Engagements ÷ Reach) × 100</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-4">
+                      <div className="flex items-end gap-3">
+                        <span className="text-4xl font-black text-foreground">{kpis!.engagementRate.current.toFixed(2)}%</span>
+                        <Delta value={kpis!.engagementRate.change}/>
+                      </div>
+                      <p className="text-xs text-muted-foreground">vs. {kpis!.engagementRate.previous.toFixed(2)}% in the previous period</p>
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full" style={{width:`${Math.min(kpis!.engagementRate.current*10,100)}%`}}/>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="rounded-2xl shadow-sm border border-border/80">
+                    <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                      <CardTitle className="text-sm font-bold">Engagement Mix</CardTitle>
+                      <CardDescription className="text-xs">Distribution of interaction types</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      {kpis!.engagement.total > 0 ? (
+                        <div className="space-y-3">
+                          {[
+                            { label:"Likes", val:kpis!.engagement.likes, color:"bg-red-400" },
+                            { label:"Comments", val:kpis!.engagement.comments, color:"bg-blue-400" },
+                            { label:"Shares", val:kpis!.engagement.shares, color:"bg-emerald-400" },
+                            { label:"Saves", val:kpis!.engagement.saved, color:"bg-amber-400" },
+                          ].map(i => {
+                            const pct = kpis!.engagement.total>0?((i.val/kpis!.engagement.total)*100):0;
+                            return (
+                              <div key={i.label} className="flex items-center gap-3">
+                                <span className="text-xs text-muted-foreground w-16 shrink-0">{i.label}</span>
+                                <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                  <div className={`h-full ${i.color} rounded-full`} style={{width:`${pct}%`}}/>
+                                </div>
+                                <span className="text-xs font-bold w-10 text-right">{pct.toFixed(0)}%</span>
+                                <span className="text-xs text-muted-foreground w-12 text-right">{fmtN(i.val)}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : <NoData/>}
+                    </CardContent>
+                  </Card>
                 </div>
               </div>
-            </Card>
+            )}
 
-            {/* Top Posts Grid */}
-            <Card className="lg:col-span-2 rounded-2xl shadow-sm border border-border/80 overflow-hidden bg-card">
-              <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
-                <CardTitle className="text-sm font-bold">Top Performing Posts</CardTitle>
-                <CardDescription className="text-xs">Highest engagement posts published recently</CardDescription>
-              </CardHeader>
-              <CardContent className="p-0 divide-y divide-border/40 max-h-96 overflow-y-auto">
-                {filteredTopPosts.length === 0 ? (
-                  <div className="text-center py-16 text-muted-foreground text-sm">No published posts stats recorded yet.</div>
-                ) : (
-                  filteredTopPosts.map((post) => (
-                    <div key={post.id} className="p-5 flex items-center justify-between hover:bg-muted/5 transition-all gap-4">
-                      <div className="flex items-center gap-4 min-w-0 flex-1">
-                        {post.mediaUrls && (post.mediaUrls.length > 0 || (Array.isArray(post.mediaUrls) && post.mediaUrls.length > 0)) ? (
-                          <img src={Array.isArray(post.mediaUrls) ? post.mediaUrls[0] : post.mediaUrls} className="h-14 w-14 rounded-xl object-cover bg-muted shrink-0 border shadow-sm" alt="Thumbnail" />
-                        ) : (
-                          <div className="h-14 w-14 rounded-xl bg-muted flex items-center justify-center shrink-0 border border-border/50">
-                            <BarChart2 className="h-6 w-6 text-muted-foreground" />
+            {/* ══════════════ FOLLOWERS ══════════════ */}
+            {activeTab === "followers" && (
+              <div className="space-y-6">
+                <div><h2 className="text-lg font-bold">Followers Analytics</h2><p className="text-xs text-muted-foreground">Audience growth and distribution</p></div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  {[
+                    { label:"Current Followers", value:kpis!.followers.current, icon:Users, color:"blue" },
+                    { label:"Net Change", value:Math.abs(kpis!.followers.change), icon:kpis!.followers.change>=0?ArrowUp:ArrowDown, color:kpis!.followers.change>=0?"emerald":"rose" },
+                    { label:"Growth %", value:Math.abs(kpis!.followers.growth), icon:TrendingUp, color:"indigo", suffix:"%" },
+                    { label:"Prev. Period", value:kpis!.followers.previous, icon:Clock, color:"amber" },
+                  ].map(c => <KPICard key={c.label} growth={undefined} {...c} isRate={"suffix" in c}/>)}
+                </div>
+
+                <Card className="rounded-2xl shadow-sm border border-border/80">
+                  <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                    <CardTitle className="text-sm font-bold flex items-center gap-1.5"><TrendingUp className="h-4 w-4 text-blue-500"/>Followers Growth Chart</CardTitle>
+                    <CardDescription className="text-xs">Total followers tracked daily</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <div className="h-72 w-full">
+                      {chartData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={chartData} margin={{top:5,right:5,left:-20,bottom:0}}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
+                            <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>v.slice(5)}/>
+                            <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
+                            <Tooltip content={<ChartTip/>}/>
+                            <Line type="monotone" dataKey="followers" name="Followers" stroke="#3b82f6" strokeWidth={2.5} dot={false} activeDot={{r:5}}/>
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : <NoData/>}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Platform distribution */}
+                <Card className="rounded-2xl shadow-sm border border-border/80">
+                  <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                    <CardTitle className="text-sm font-bold">Audience Distribution</CardTitle>
+                    <CardDescription className="text-xs">Followers per platform</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <div className="space-y-4">
+                      {(analytics.platformBreakdown||[]).sort((a,b)=>b.followers-a.followers).map(p => {
+                        const tot = (analytics.platformBreakdown||[]).reduce((s,x)=>s+x.followers,0);
+                        const pctVal = tot>0?((p.followers/tot)*100):0;
+                        const col = PLATFORM_COLORS[p.platform]||"#6366f1";
+                        return (
+                          <div key={p.platform} className="space-y-1.5">
+                            <div className="flex items-center justify-between text-sm">
+                              <div className="flex items-center gap-2">{getPlatformIcon(p.platform)}<span className="capitalize font-semibold">{p.platform}</span></div>
+                              <div className="flex items-center gap-3"><span className="text-muted-foreground text-xs">{fmtN(p.followers)}</span><span className="font-bold text-xs">{pctVal.toFixed(1)}%</span></div>
+                            </div>
+                            <div className="h-2 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full rounded-full transition-all" style={{width:`${pctVal}%`,background:col}}/>
+                            </div>
                           </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs text-foreground font-bold leading-normal line-clamp-2">{post.caption}</p>
-                          <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-1.5">
-                            {post.destinations.map((d, i) => (
-                              <span key={i} className="inline-flex items-center gap-1">
-                                {getPlatformIcon(d.platform)}
-                              </span>
-                            ))}
-                            <span>•</span>
-                            <span>{post.publishedAt ? new Date(post.publishedAt).toLocaleDateString() : ""}</span>
-                          </p>
-                        </div>
+                        );
+                      })}
+                      {!(analytics.platformBreakdown||[]).some(p=>p.followers>0) && <NoData/>}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* ══════════════ REACH ══════════════ */}
+            {activeTab === "reach" && (
+              <div className="space-y-6">
+                <div><h2 className="text-lg font-bold">Reach & Impressions</h2><p className="text-xs text-muted-foreground">Content visibility and exposure metrics</p></div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <KPICard label="Total Reach" value={kpis!.reach.current} growth={kpis!.reach.growth} icon={TrendingUp} color="emerald"/>
+                  <KPICard label="Impressions" value={kpis!.impressions.current} growth={kpis!.impressions.growth} icon={Eye} color="purple"/>
+                  <KPICard label="Reach Change" value={Math.abs(kpis!.reach.change)} growth={undefined} icon={kpis!.reach.change>=0?ArrowUp:ArrowDown} color={kpis!.reach.change>=0?"emerald":"rose"}/>
+                  <KPICard label="Frequency" value={kpis!.reach.current>0?parseFloat((kpis!.impressions.current/kpis!.reach.current).toFixed(2)):0} growth={undefined} icon={Repeat2} color="amber"/>
+                </div>
+
+                <Card className="rounded-2xl shadow-sm border border-border/80">
+                  <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                    <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Eye className="h-4 w-4 text-emerald-500"/>Reach vs. Impressions — Daily</CardTitle>
+                    <CardDescription className="text-xs">Unique viewers vs. total content displays</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <div className="h-72 w-full">
+                      {chartData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={chartData} margin={{top:5,right:5,left:-20,bottom:0}}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
+                            <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>v.slice(5)}/>
+                            <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
+                            <Tooltip content={<ChartTip/>}/>
+                            <Legend iconSize={8} wrapperStyle={{fontSize:11}}/>
+                            <Bar dataKey="reach" name="Reach" fill="#10b981" radius={[4,4,0,0]}/>
+                            <Bar dataKey="impressions" name="Impressions" fill="#8b5cf6" radius={[4,4,0,0]}/>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : <NoData/>}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="rounded-2xl shadow-sm border border-border/80">
+                  <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                    <CardTitle className="text-sm font-bold">Daily Reach Trend</CardTitle>
+                    <CardDescription className="text-xs">Reach progression over {dateRange} days</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <div className="h-52 w-full">
+                      {chartData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={chartData} margin={{top:5,right:5,left:-20,bottom:0}}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
+                            <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>v.slice(5)}/>
+                            <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
+                            <Tooltip content={<ChartTip/>}/>
+                            <Line type="monotone" dataKey="reach" name="Reach" stroke="#10b981" strokeWidth={2.5} dot={false} activeDot={{r:5}}/>
+                            <Line type="monotone" dataKey="profileVisits" name="Profile Visits" stroke="#f59e0b" strokeWidth={2} dot={false}/>
+                          </LineChart>
+                        </ResponsiveContainer>
+                      ) : <NoData/>}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* ══════════════ CONTENT ══════════════ */}
+            {activeTab === "content" && (
+              <div className="space-y-6">
+                <div><h2 className="text-lg font-bold">Content Performance</h2><p className="text-xs text-muted-foreground">Top posts and content type analysis</p></div>
+
+                {/* Content type performance */}
+                <Card className="rounded-2xl shadow-sm border border-border/80">
+                  <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                    <CardTitle className="text-sm font-bold flex items-center gap-1.5"><LayoutGrid className="h-4 w-4 text-violet-500"/>Content Type Performance</CardTitle>
+                    <CardDescription className="text-xs">Average metrics per content format</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {analytics.contentTypePerformance.length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border/40 bg-muted/5">
+                              {["Type","Posts","Avg. Reach","Avg. Engagement","Avg. Views","Avg. Saves","Avg. Impressions"].map(h => (
+                                <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-muted-foreground uppercase tracking-wide">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/40">
+                            {analytics.contentTypePerformance.map((ct,i) => {
+                              const Icon = CONTENT_TYPE_ICONS[ct.type] || FileText;
+                              return (
+                                <tr key={ct.type} className={`hover:bg-muted/5 transition-colors ${i===0?"bg-primary/3":""}`}>
+                                  <td className="px-4 py-3"><div className="flex items-center gap-2"><Icon className="h-4 w-4 text-muted-foreground"/><span className="capitalize font-semibold">{ct.type}{i===0?" 🏆":""}</span></div></td>
+                                  <td className="px-4 py-3 font-medium">{ct.count}</td>
+                                  <td className="px-4 py-3">{fmtN(ct.avgReach)}</td>
+                                  <td className="px-4 py-3 font-bold text-primary">{fmtN(ct.avgEngagement)}</td>
+                                  <td className="px-4 py-3">{fmtN(ct.avgViews)}</td>
+                                  <td className="px-4 py-3">{fmtN(ct.avgSaved)}</td>
+                                  <td className="px-4 py-3">{fmtN(ct.avgImpressions)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
-                      <div className="flex items-center gap-5 text-right pl-4 shrink-0">
-                        <div className="text-xs text-muted-foreground space-y-1.5 font-bold">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Heart className="h-3.5 w-3.5 text-red-500 fill-red-500" />
-                            <span>{post.likes || 0}</span>
-                          </div>
-                          <div className="flex items-center justify-end gap-1.5">
-                            <MessageSquare className="h-3.5 w-3.5 text-blue-500" />
-                            <span>{post.comments || 0}</span>
-                          </div>
+                    ) : <div className="p-6"><NoData msg="Publish content and sync to see type performance"/></div>}
+                  </CardContent>
+                </Card>
+
+                {/* Top Posts */}
+                <Card className="rounded-2xl shadow-sm border border-border/80 overflow-hidden">
+                  <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <CardTitle className="text-sm font-bold">Top Performing Posts</CardTitle>
+                        <CardDescription className="text-xs">Sort and filter your published content</CardDescription>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground"/>
+                          <Input placeholder="Search posts..." value={postSearch} onChange={e=>{setPostSearch(e.target.value);setPostPage(1);}} className="pl-8 h-8 text-xs rounded-lg w-44"/>
                         </div>
-                        <div className="bg-primary/5 border border-primary/15 rounded-xl px-3 py-1.5 text-center min-w-20 shadow-inner">
-                          <p className="text-sm font-black text-primary leading-none">{post.engagement || 0}</p>
-                          <p className="text-[9px] text-muted-foreground mt-1 uppercase font-semibold">Engaged</p>
+                        <div className="flex bg-muted/30 border border-border rounded-lg p-0.5 gap-0.5">
+                          {(["engagement","likes","views","newest","oldest"] as const).map(s => (
+                            <button key={s} onClick={()=>{setPostSort(s);setPostPage(1);}}
+                              className={`px-2 py-1 rounded text-[10px] font-bold transition-all ${postSort===s?"bg-primary text-primary-foreground shadow":"text-muted-foreground hover:text-foreground"}`}>
+                              {s.charAt(0).toUpperCase()+s.slice(1)}
+                            </button>
+                          ))}
                         </div>
                       </div>
                     </div>
-                  ))
+                  </CardHeader>
+                  <div className="divide-y divide-border/40">
+                    {postsLoading ? (
+                      <div className="flex justify-center py-12"><RefreshCw className="h-5 w-5 animate-spin text-primary"/></div>
+                    ) : posts.length === 0 ? (
+                      <div className="py-12"><NoData msg="No posts found — try adjusting your filters"/></div>
+                    ) : posts.map(post => {
+                      const media = Array.isArray(post.mediaUrls)?post.mediaUrls[0]:(typeof post.mediaUrls==="string"?post.mediaUrls:null);
+                      return (
+                        <div key={post.id} className="p-4 hover:bg-muted/5 transition-all">
+                          <div className="flex items-start gap-3">
+                            {media ? <img src={media} className="h-16 w-16 rounded-xl object-cover shrink-0 border border-border/50 shadow-sm" alt=""/> :
+                              <div className="h-16 w-16 rounded-xl bg-muted flex items-center justify-center shrink-0 border border-border/50"><BarChart2 className="h-5 w-5 text-muted-foreground"/></div>}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold line-clamp-2 leading-normal">{post.caption||"(no caption)"}</p>
+                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                {(post.destinations||[]).map((d:any,i:number)=><span key={i}>{getPlatformIcon(d.platform,"h-3 w-3 object-contain")}</span>)}
+                                {post.mediaType && <span className="bg-muted border border-border/50 px-1.5 py-0.5 rounded text-[9px] font-bold capitalize">{post.mediaType}</span>}
+                                <span className="text-[10px] text-muted-foreground">{post.publishedAt?new Date(post.publishedAt).toLocaleDateString():""}</span>
+                              </div>
+                              <div className="flex items-center gap-3 mt-2 flex-wrap">
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-rose-500"><Heart size={10} fill="currentColor"/>{fmtN(post.likes)}</span>
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-blue-500"><MessageSquare size={10}/>{fmtN(post.comments)}</span>
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-500"><Share2 size={10}/>{fmtN(post.shares)}</span>
+                                {post.saved>0 && <span className="flex items-center gap-1 text-[10px] font-bold text-amber-500"><Bookmark size={10}/>{fmtN(post.saved)}</span>}
+                                {post.views>0 && <span className="flex items-center gap-1 text-[10px] font-bold text-purple-500"><Play size={10}/>{fmtN(post.views)}</span>}
+                                {post.reach>0 && <span className="flex items-center gap-1 text-[10px] font-bold text-teal-500"><Eye size={10}/>{fmtN(post.reach)}</span>}
+                                <div className="ml-auto flex items-center gap-2">
+                                  <span className="bg-primary/10 border border-primary/20 rounded-lg px-2 py-0.5 text-[10px] font-black text-primary">{fmtN(post.engagement)} eng.</span>
+                                  {post.engagementRate>0&&<span className="text-[10px] font-bold text-muted-foreground">{post.engagementRate.toFixed(1)}% ER</span>}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {postsTotal > POST_LIMIT && (
+                    <div className="px-5 py-3 border-t border-border/40 flex items-center justify-between bg-muted/5">
+                      <span className="text-xs text-muted-foreground">{(postPage-1)*POST_LIMIT+1}–{Math.min(postPage*POST_LIMIT,postsTotal)} of {postsTotal} posts</span>
+                      <div className="flex gap-1">
+                        <button disabled={postPage<=1} onClick={()=>setPostPage(p=>p-1)} className="p-1.5 rounded-lg border border-border disabled:opacity-30 hover:bg-muted/50"><ChevronLeft size={14}/></button>
+                        <button disabled={postPage*POST_LIMIT>=postsTotal} onClick={()=>setPostPage(p=>p+1)} className="p-1.5 rounded-lg border border-border disabled:opacity-30 hover:bg-muted/50"><ChevronRight size={14}/></button>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              </div>
+            )}
+
+            {/* ══════════════ VIDEO & STORY ══════════════ */}
+            {activeTab === "video" && (
+              <div className="space-y-6">
+                <div><h2 className="text-lg font-bold">Video & Story Analytics</h2><p className="text-xs text-muted-foreground">Performance metrics for video and story content</p></div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <KPICard label="Video Views" value={kpis!.engagement.views} growth={undefined} icon={Play} color="purple"/>
+                  <KPICard label="Saves" value={kpis!.engagement.saved} growth={undefined} icon={Bookmark} color="amber"/>
+                  <KPICard label="Shares" value={kpis!.engagement.shares} growth={undefined} icon={Share2} color="emerald"/>
+                  <KPICard label="Comments" value={kpis!.engagement.comments} growth={undefined} icon={MessageSquare} color="blue"/>
+                </div>
+                <SectionLock
+                  title="Advanced Video Analytics"
+                  desc="Watch time, completion rate, 3-second views, average watch duration, and retention rate require extended Meta/YouTube API permissions. These will be available after connecting a Business account and requesting the video_insights permission."
+                />
+                <SectionLock
+                  title="Story Analytics"
+                  desc="Story reach, replies, forward/back taps, exits, and completion rate require Instagram Professional account access and the instagram_manage_insights permission scope."
+                />
+              </div>
+            )}
+
+            {/* ══════════════ AUDIENCE ══════════════ */}
+            {activeTab === "audience" && (
+              <div className="space-y-6">
+                <div><h2 className="text-lg font-bold">Audience Insights</h2><p className="text-xs text-muted-foreground">Who is following your client's accounts</p></div>
+                <SectionLock
+                  title="Age & Gender Demographics"
+                  desc="Age groups (13–17, 18–24, 25–34, 35–44, 45–54, 55+) and gender breakdown require the Instagram Business Account 'instagram_manage_insights' permission and Facebook Page Insights advanced access."
+                />
+                <SectionLock
+                  title="Top Countries & Cities"
+                  desc="Geographic audience data (Top Countries/Cities with Followers and Growth) requires Business-level access to the Audience API endpoint on Facebook/Instagram. Enable advanced data access in Meta Business Suite."
+                />
+              </div>
+            )}
+
+            {/* ══════════════ BEST TIME ══════════════ */}
+            {activeTab === "besttime" && (
+              <div className="space-y-6">
+                <div><h2 className="text-lg font-bold">Best Posting Time</h2><p className="text-xs text-muted-foreground">Optimal publishing times based on your historical engagement</p></div>
+
+                <Card className="rounded-2xl shadow-sm border border-border/80">
+                  <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                    <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Clock className="h-4 w-4 text-amber-500"/>Engagement Heatmap</CardTitle>
+                    <CardDescription className="text-xs">Darker = more engagement at that day/hour</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6 overflow-x-auto">
+                    {analytics.bestTimes.length > 0 ? (
+                      <div>
+                        <div className="flex gap-1 mb-1 pl-10">
+                          {Array.from({length:24},(_,h)=>(
+                            <div key={h} className="w-7 text-center text-[9px] text-muted-foreground font-medium shrink-0">
+                              {h===0?"12a":h<12?`${h}a`:h===12?"12p":`${h-12}p`}
+                            </div>
+                          ))}
+                        </div>
+                        {heatmapGrid.grid.map((row, day) => (
+                          <div key={day} className="flex items-center gap-1 mb-1">
+                            <span className="w-8 text-[10px] font-bold text-muted-foreground shrink-0 text-right pr-1">{DAYS[day]}</span>
+                            {row.map((val,hour) => {
+                              const intensity = heatmapGrid.maxVal>0?val/heatmapGrid.maxVal:0;
+                              return (
+                                <div
+                                  key={hour}
+                                  title={`${DAYS_FULL[day]} ${hour}:00 — ${val} engagement`}
+                                  className="w-7 h-7 rounded-sm shrink-0 border border-border/20 cursor-pointer hover:scale-110 transition-transform"
+                                  style={{
+                                    background: intensity>0
+                                      ? `rgba(99,102,241,${Math.max(intensity,0.08)})`
+                                      : "rgba(0,0,0,0.03)"
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <NoData msg="Publish at least 5 posts to generate the heatmap — sync metrics to refresh"/>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Top 5 slots */}
+                {analytics.bestTimes.length > 0 && (
+                  <Card className="rounded-2xl shadow-sm border border-border/80">
+                    <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                      <CardTitle className="text-sm font-bold">Top 5 Best Posting Slots</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      {analytics.bestTimes.slice(0,5).map((t:any,i:number) => {
+                        const hr = t.hour===0?12:t.hour>12?t.hour-12:t.hour;
+                        const ap = t.hour<12?"AM":"PM";
+                        const maxE = analytics.bestTimes[0]?.engagement||1;
+                        return (
+                          <div key={i} className="flex items-center gap-4 px-6 py-4 border-b border-border/40 last:border-0 hover:bg-muted/5">
+                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-black text-primary shrink-0">#{i+1}</div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-sm">{DAYS_FULL[t.day]}</p>
+                              <p className="text-xs text-muted-foreground">{hr}:00 {ap} · {t.posts} post{t.posts!==1?"s":""} analyzed</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="w-32 h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div className="h-full bg-primary rounded-full" style={{width:`${(t.engagement/maxE)*100}%`}}/>
+                              </div>
+                              <span className="text-xs font-bold text-primary w-16 text-right">{fmtN(t.engagement)} eng.</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </CardContent>
+                  </Card>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            )}
+
+            {/* ══════════════ PLATFORMS ══════════════ */}
+            {activeTab === "platforms" && (
+              <div className="space-y-6">
+                <div><h2 className="text-lg font-bold">Platform Comparison</h2><p className="text-xs text-muted-foreground">Side-by-side performance across all connected platforms</p></div>
+                <Card className="rounded-2xl shadow-sm border border-border/80 overflow-hidden">
+                  <CardContent className="p-0">
+                    {analytics.platformComparison.length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border/40 bg-muted/5">
+                              {["Platform","Followers","Reach","Impressions","Engagement","Posts","Growth"].map(h=>(
+                                <th key={h} className="px-5 py-3 text-left text-[10px] font-bold text-muted-foreground uppercase tracking-wide">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/40">
+                            {(analytics.platformComparison as any[]).sort((a,b)=>b.followers-a.followers).map((p:any) => (
+                              <tr key={p.platform} className="hover:bg-muted/5 transition-colors">
+                                <td className="px-5 py-4"><div className="flex items-center gap-2.5">{getPlatformIcon(p.platform,"h-4 w-4 object-contain")}<span className="capitalize font-semibold">{p.platform}</span></div></td>
+                                <td className="px-5 py-4 font-bold">{fmtN(p.followers)}</td>
+                                <td className="px-5 py-4">{fmtN(p.reach)}</td>
+                                <td className="px-5 py-4">{fmtN(p.impressions)}</td>
+                                <td className="px-5 py-4">{fmtN(p.engagement)}</td>
+                                <td className="px-5 py-4">{fmtN(p.posts)}</td>
+                                <td className="px-5 py-4"><Delta value={p.growth||0}/></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : <div className="py-12"><NoData msg="No platform data available — sync metrics first"/></div>}
+                  </CardContent>
+                </Card>
+
+                {/* Platform chart */}
+                <Card className="rounded-2xl shadow-sm border border-border/80">
+                  <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                    <CardTitle className="text-sm font-bold">Followers by Platform</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <div className="h-52 w-full">
+                      {analytics.platformBreakdown.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={analytics.platformBreakdown.sort((a,b)=>b.followers-a.followers)} layout="vertical" margin={{top:0,right:20,left:40,bottom:0}}>
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(0,0,0,0.05)"/>
+                            <XAxis type="number" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>fmtN(Number(v))}/>
+                            <YAxis dataKey="platform" type="category" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} width={70} tickFormatter={v=>v.charAt(0).toUpperCase()+v.slice(1)}/>
+                            <Tooltip content={<ChartTip/>}/>
+                            <Bar dataKey="followers" name="Followers" fill="#6366f1" radius={[0,4,4,0]}>
+                              {analytics.platformBreakdown.map((p,i) => <Cell key={p.platform} fill={PLATFORM_COLORS[p.platform]||PIE_PALETTE[i%PIE_PALETTE.length]}/>)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : <NoData/>}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* ══════════════ PUBLISHING ══════════════ */}
+            {activeTab === "publishing" && (
+              <div className="space-y-6">
+                <div><h2 className="text-lg font-bold">Publishing Analytics</h2><p className="text-xs text-muted-foreground">Scheduler performance and post status tracking</p></div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+                  {[
+                    { label:"Published", value:analytics.publishing.published, icon:CheckCircle2, color:"emerald" },
+                    { label:"Scheduled", value:analytics.publishing.scheduled, icon:Calendar, color:"blue" },
+                    { label:"Draft", value:analytics.publishing.draft, icon:FileText, color:"amber" },
+                    { label:"Failed", value:analytics.publishing.failed, icon:XCircle, color:"rose" },
+                    { label:"Pending Approval", value:analytics.publishing.pendingApproval, icon:AlertCircle, color:"purple" },
+                    { label:"Success Rate", value:analytics.publishing.successRate, icon:Target, color:"teal", isRate:true },
+                  ].map(c => <KPICard key={c.label} growth={undefined} {...c}/>)}
+                </div>
+
+                {/* Success rate visual */}
+                <Card className="rounded-2xl shadow-sm border border-border/80">
+                  <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                    <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Target className="h-4 w-4 text-teal-500"/>Publishing Success Rate</CardTitle>
+                    <CardDescription className="text-xs">Formula: (Published ÷ Attempted) × 100</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-6">
+                      <div className="relative w-28 h-28 shrink-0">
+                        <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                          <circle cx="50" cy="50" r="40" fill="none" stroke="hsl(var(--muted))" strokeWidth="12"/>
+                          <circle cx="50" cy="50" r="40" fill="none" strokeWidth="12"
+                            stroke={analytics.publishing.successRate>=95?"#10b981":analytics.publishing.successRate>=80?"#f59e0b":"#ef4444"}
+                            strokeDasharray={`${(analytics.publishing.successRate/100)*251.2} 251.2`}
+                            strokeLinecap="round"/>
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center flex-col">
+                          <span className="text-xl font-black text-foreground">{analytics.publishing.successRate}%</span>
+                        </div>
+                      </div>
+                      <div className="space-y-3 flex-1">
+                        {[
+                          { label:"Total Attempted", val:analytics.publishing.published+analytics.publishing.failed, color:"bg-neutral-400" },
+                          { label:"Successfully Published", val:analytics.publishing.published, color:"bg-emerald-500" },
+                          { label:"Failed", val:analytics.publishing.failed, color:"bg-red-500" },
+                        ].map(r => (
+                          <div key={r.label} className="flex items-center gap-3 text-sm">
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${r.color}`}/>
+                            <span className="text-muted-foreground flex-1">{r.label}</span>
+                            <span className="font-bold tabular-nums">{r.val}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Weekly activity */}
+                {(analytics.publishing.weeklyActivity||[]).length > 0 && (
+                  <Card className="rounded-2xl shadow-sm border border-border/80">
+                    <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                      <CardTitle className="text-sm font-bold">Weekly Publishing Activity</CardTitle>
+                      <CardDescription className="text-xs">Posts published per week</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <div className="h-40 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={analytics.publishing.weeklyActivity} margin={{top:5,right:5,left:-20,bottom:0}}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
+                            <XAxis dataKey="week" stroke="#9ca3af" fontSize={10} tickLine={false}/>
+                            <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false}/>
+                            <Tooltip content={<ChartTip/>}/>
+                            <Bar dataKey="posts" name="Posts Published" fill="#6366f1" radius={[4,4,0,0]}/>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+
+            {/* ══════════════ ACCOUNTS ══════════════ */}
+            {activeTab === "accounts" && (
+              <div className="space-y-6">
+                <div><h2 className="text-lg font-bold">Account Analytics</h2><p className="text-xs text-muted-foreground">Detailed metrics for every connected social account</p></div>
+                <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
+                  {(analytics.accounts||[]).map((acc) => {
+                    const m = acc.latestMetrics;
+                    const isHealthy = acc.healthStatus === "healthy";
+                    const er = m?.engagementRate || 0;
+                    return (
+                      <Card key={acc.id} className="rounded-2xl shadow-sm border border-border/80 overflow-hidden">
+                        <div className="flex items-center gap-3 p-5 border-b border-border/40">
+                          <div className="relative">
+                            {acc.avatarUrl ? <img src={acc.avatarUrl} className="w-11 h-11 rounded-full border border-border object-cover" alt=""/> :
+                              <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center border border-border">{getPlatformIcon(acc.platform,"h-5 w-5")}</div>}
+                            <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${isHealthy?"bg-emerald-500":"bg-red-500"}`}/>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-sm truncate">{acc.displayName||acc.platformUsername}</p>
+                            <div className="flex items-center gap-1 mt-0.5">{getPlatformIcon(acc.platform,"h-3 w-3 object-contain")}<span className="text-xs text-muted-foreground capitalize">{acc.platform}</span></div>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${isHealthy?"bg-emerald-50 text-emerald-600 border-emerald-100":"bg-red-50 text-red-500 border-red-100"}`}>
+                            {isHealthy?"Connected":"Issue"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-0 divide-x divide-y divide-border/40">
+                          {[
+                            { label:"Followers", value:m?.followers||0 },
+                            { label:"Reach", value:m?.reach||0 },
+                            { label:"Impressions", value:m?.impressions||0 },
+                            { label:"Profile Visits", value:m?.profileVisits||0 },
+                          ].map(metric => (
+                            <div key={metric.label} className="p-4 text-center">
+                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">{metric.label}</p>
+                              <p className="text-lg font-black text-foreground mt-1">{fmtN(metric.value)}</p>
+                            </div>
+                          ))}
+                        </div>
+                        {er > 0 && (
+                          <div className="px-5 py-3 border-t border-border/40 bg-muted/5 flex items-center gap-3">
+                            <span className="text-xs text-muted-foreground">Engagement Rate</span>
+                            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full bg-emerald-500 rounded-full" style={{width:`${Math.min(er*10,100)}%`}}/>
+                            </div>
+                            <span className="text-xs font-bold text-emerald-600">{er.toFixed(1)}%</span>
+                          </div>
+                        )}
+                        <div className="px-5 pb-3 pt-1 text-[10px] text-muted-foreground">
+                          Last sync: {m?.date ? new Date(m.date).toLocaleDateString() : "Never"}
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ══════════════ AI INSIGHTS ══════════════ */}
+            {activeTab === "ai" && (
+              <div className="space-y-6">
+                <div><h2 className="text-lg font-bold">AI Insights</h2><p className="text-xs text-muted-foreground">Automated recommendations based on your analytics data</p></div>
+                <div className="grid gap-4">
+                  {analytics.aiInsights.length > 0 ? analytics.aiInsights.map((insight, i) => (
+                    <Card key={i} className="rounded-2xl shadow-sm border border-border/80 hover:shadow-md transition-shadow">
+                      <CardContent className="p-5 flex items-start gap-4">
+                        <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-sm">
+                          <Sparkles className="h-4 w-4"/>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-foreground leading-relaxed" dangerouslySetInnerHTML={{
+                            __html: insight.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                          }}/>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )) : (
+                    <Card className="rounded-2xl border-dashed">
+                      <CardContent className="flex flex-col items-center py-16 gap-3 text-center">
+                        <Sparkles className="h-10 w-10 text-muted-foreground/30"/>
+                        <p className="font-medium text-muted-foreground">No insights yet</p>
+                        <p className="text-xs text-muted-foreground max-w-xs">Sync metrics and publish content for the AI to generate recommendations based on your data patterns.</p>
+                        <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing} className="rounded-xl mt-2 gap-2">
+                          <RefreshCw className={`h-4 w-4 ${isRefreshing?"animate-spin":""}`}/>Sync Metrics
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ══════════════ EXPORT ══════════════ */}
+            {activeTab === "export" && (
+              <div className="space-y-6">
+                <div><h2 className="text-lg font-bold">Export Reports</h2><p className="text-xs text-muted-foreground">Download your analytics data in various formats</p></div>
+                <div className="grid md:grid-cols-3 gap-5">
+                  {[
+                    { format:"CSV", icon:FileText, desc:"Raw data export for spreadsheets. Includes all posts, metrics, and engagement data.", action:exportCSV, available:true },
+                    { format:"PDF Report", icon:BookOpen, desc:"Full analytics report with charts and AI insights formatted for clients.", action:()=>toast({title:"PDF Export",description:"PDF export coming soon — currently available as CSV."}), available:false },
+                    { format:"Excel", icon:Layers, desc:"Comprehensive Excel workbook with multiple sheets for each analytics section.", action:()=>toast({title:"Excel Export",description:"Excel export coming soon — use CSV for now."}), available:false },
+                  ].map(e => (
+                    <Card key={e.format} className={`rounded-2xl shadow-sm border ${e.available?"border-border/80 hover:shadow-md cursor-pointer":"border-border/40 opacity-60"} transition-all`}>
+                      <CardContent className="p-6 flex flex-col items-center text-center gap-4">
+                        <div className={`h-14 w-14 rounded-2xl flex items-center justify-center ${e.available?"bg-primary/10 text-primary":"bg-muted text-muted-foreground"}`}>
+                          <e.icon className="h-6 w-6"/>
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-sm">{e.format}</h3>
+                          <p className="text-xs text-muted-foreground mt-1">{e.desc}</p>
+                          {!e.available && <span className="text-[10px] bg-amber-50 text-amber-600 border border-amber-100 px-2 py-0.5 rounded-full font-bold mt-2 inline-block">Coming Soon</span>}
+                        </div>
+                        <Button
+                          onClick={e.action}
+                          variant={e.available?"default":"outline"}
+                          className={`rounded-xl w-full gap-2 ${e.available?"":"opacity-50"}`}
+                          disabled={!e.available&&false}
+                        >
+                          <Download className="h-4 w-4"/>
+                          {e.available?"Export Now":"Coming Soon"}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* What's included */}
+                <Card className="rounded-2xl shadow-sm border border-border/80">
+                  <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                    <CardTitle className="text-sm font-bold">CSV Export Includes</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      {[
+                        "Post captions and media types","Platform(s) posted to","Publication date and time",
+                        "Likes, Comments, Shares, Saves","Video views and reach","Impressions per post",
+                        "Engagement total and ER%","Destination platform breakdown","Filtered by your current date range & platform",
+                      ].map(item => (
+                        <div key={item} className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0"/>{item}
+                        </div>
+                      ))}
+                    </div>
+                    <Button onClick={exportCSV} className="mt-5 rounded-xl gap-2" disabled={posts.length===0}>
+                      <Download className="h-4 w-4"/>Download CSV ({posts.length} posts)
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
 
           </div>
         </div>

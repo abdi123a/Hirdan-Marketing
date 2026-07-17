@@ -1,480 +1,859 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useState, useEffect, useMemo } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { apiFetch } from "@/lib/api-client";
-import { 
-  Facebook, Instagram, Linkedin, Youtube, Twitter, Pin, Music, MessageCircle,
-  Plus, Settings, RefreshCw, Trash2, ShieldAlert, CheckCircle2, AlertTriangle, Building2, User, Link as LinkIcon
+import { AccountsSkeleton } from "@/components/ui/PageSkeleton";
+import {
+  Plus, Settings, RefreshCw, Trash2, CheckCircle2, AlertTriangle,
+  Link as LinkIcon, Building2, Search, ChevronDown, ChevronUp,
+  Activity, Users, Zap, ShieldAlert, Clock, BarChart3, ArrowRight,
+  Globe, X, Check, ExternalLink, AlertCircle, Sparkles,
 } from "lucide-react";
 
+// ─── Types ───────────────────────────────────────────────────────────────────
 interface SocialAccount {
-  id: string;
-  clientId: string;
-  platform: string;
-  platformUserId: string;
-  platformUsername: string;
-  displayName: string;
-  avatarUrl: string | null;
-  pageId: string | null;
-  igAccountId: string | null;
-  healthStatus: string;
-  healthMessage: string | null;
-  groupName: string | null;
-  groupColor: string | null;
-  isActive: boolean;
+  id: string; clientId: string; platform: string;
+  platformUserId: string; platformUsername: string; displayName: string;
+  avatarUrl: string | null; pageId: string | null; igAccountId: string | null;
+  healthStatus: string; healthMessage: string | null;
+  groupName: string | null; groupColor: string | null;
+  isActive: boolean; tokenExpiresAt: string | null;
+  createdAt: string; updatedAt: string;
+  lastSync: string | null;
+  capabilities?: Record<string, boolean>;
 }
 
-interface Client {
-  id: string;
-  name: string;
-  company: string;
+interface Workspace {
+  clientId: string; clientName: string; clientCompany: string;
+  healthStatus: "healthy" | "warning" | "critical" | "empty";
+  accounts: SocialAccount[]; connectedPlatforms: string[];
+  missingPlatforms: string[]; lastPublish: string | null;
+  lastSync: string | null; totalFollowers: number; accountCount: number;
 }
 
+interface WorkspaceSummary {
+  summary: { totalWorkspaces: number; totalAccounts: number; activePlatforms: number; needsAttention: number };
+  workspaces: Workspace[];
+}
+
+interface Client { id: string; name: string; company: string; }
+interface ActivityEvent { type: string; label: string; detail?: string; date: string; }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const PLATFORMS = [
+  { id: "facebook",  label: "Facebook Page",      color: "#1877F2", bg: "bg-blue-50 text-blue-600" },
+  { id: "instagram", label: "Instagram Business",  color: "#E1306C", bg: "bg-pink-50 text-pink-600" },
+  { id: "linkedin",  label: "LinkedIn Company",    color: "#0A66C2", bg: "bg-blue-50 text-blue-700" },
+  { id: "youtube",   label: "YouTube Channel",     color: "#FF0000", bg: "bg-red-50 text-red-600"  },
+  { id: "tiktok",    label: "TikTok Profile",      color: "#000000", bg: "bg-slate-50 text-slate-800" },
+  { id: "x",         label: "X / Twitter",         color: "#14171A", bg: "bg-zinc-50 text-zinc-800"  },
+  { id: "threads",   label: "Meta Threads",        color: "#000000", bg: "bg-zinc-50 text-zinc-950"  },
+  { id: "pinterest", label: "Pinterest Board",     color: "#BD081C", bg: "bg-red-50 text-red-700"   },
+];
+
+const CAPABILITIES: Record<string, Record<string, boolean>> = {
+  facebook:  { Publishing: true, Analytics: true, Comments: true, Messages: true, Reels: true, Stories: true },
+  instagram: { Publishing: true, Analytics: true, Comments: true, Messages: false, Reels: true, Stories: true },
+  linkedin:  { Publishing: true, Analytics: true, Comments: false, Messages: false, Reels: false, Stories: false },
+  tiktok:    { Publishing: true, Analytics: true, Comments: false, Messages: false, Reels: true, Stories: false },
+  youtube:   { Publishing: true, Analytics: true, Comments: false, Messages: false, Reels: true, Stories: false },
+  x:         { Publishing: true, Analytics: true, Comments: true, Messages: false, Reels: false, Stories: false },
+  pinterest: { Publishing: true, Analytics: false, Comments: false, Messages: false, Reels: false, Stories: false },
+  threads:   { Publishing: true, Analytics: false, Comments: false, Messages: false, Reels: false, Stories: false },
+};
+
+const PlatformIcon = ({ platform, cls = "h-5 w-5 object-contain" }: { platform: string; cls?: string }) => {
+  const map: Record<string, string> = {
+    facebook: "/social-icons/Facebook.png", instagram: "/social-icons/instagram.png",
+    threads: "/social-icons/Threads.png", tiktok: "/social-icons/tiktok.png",
+    linkedin: "/social-icons/linkedin.png", youtube: "/social-icons/youtube.png",
+    x: "/social-icons/twitter.png", twitter: "/social-icons/twitter.png",
+    pinterest: "/social-icons/pinterest.png",
+  };
+  const src = map[platform?.toLowerCase()];
+  return src ? <img src={src} className={cls} alt={platform} /> : <Globe className={cls} />;
+};
+
+const timeAgo = (dateStr: string | null) => {
+  if (!dateStr) return "Never";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "Just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+};
+
+const fmtDate = (dateStr: string | null) => {
+  if (!dateStr) return "Never";
+  const d = new Date(dateStr);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return `Today ${d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`;
+  if (d.toDateString() === yesterday.toDateString()) return `Yesterday ${d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+};
+
+const HealthBadge = ({ status }: { status: string }) => {
+  const cfg = {
+    healthy:  { label: "Healthy",         cls: "bg-emerald-50 text-emerald-700 border-emerald-100",  dot: "bg-emerald-500" },
+    warning:  { label: "Warning",         cls: "bg-amber-50 text-amber-700 border-amber-100",        dot: "bg-amber-500"   },
+    critical: { label: "Needs Attention", cls: "bg-red-50 text-red-700 border-red-100",              dot: "bg-red-500"     },
+    empty:    { label: "No Accounts",     cls: "bg-muted text-muted-foreground border-border/50",    dot: "bg-muted-foreground" },
+  }[status] || { label: status, cls: "bg-muted text-muted-foreground border-border/50", dot: "bg-muted-foreground" };
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${cfg.cls}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot} ${status === "critical" ? "animate-pulse" : ""}`} />
+      {cfg.label}
+    </span>
+  );
+};
+
+const EventIcon = ({ type }: { type: string }) => {
+  const icons: Record<string, React.ReactNode> = {
+    connected:     <div className="h-6 w-6 rounded-full bg-emerald-100 flex items-center justify-center"><Zap className="h-3 w-3 text-emerald-600" /></div>,
+    published:     <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center"><Check className="h-3 w-3 text-blue-600" /></div>,
+    failed:        <div className="h-6 w-6 rounded-full bg-red-100 flex items-center justify-center"><AlertCircle className="h-3 w-3 text-red-600" /></div>,
+    synced:        <div className="h-6 w-6 rounded-full bg-violet-100 flex items-center justify-center"><BarChart3 className="h-3 w-3 text-violet-600" /></div>,
+    token_refreshed:<div className="h-6 w-6 rounded-full bg-amber-100 flex items-center justify-center"><RefreshCw className="h-3 w-3 text-amber-600" /></div>,
+  };
+  return icons[type] || <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center"><Activity className="h-3 w-3 text-muted-foreground" /></div>;
+};
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function SocialAccountsPage() {
   const { toast } = useToast();
-  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const [data, setData] = useState<WorkspaceSummary | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [platformStatus, setPlatformStatus] = useState<Record<string, { configured: boolean; enabled: boolean }>>({});
   const [isLoading, setIsLoading] = useState(true);
 
-  // Connection form state
-  const [isConnectOpen, setIsConnectOpen] = useState(false);
-  const [selectedPlatform, setSelectedPlatform] = useState("");
-  const [selectedClient, setSelectedClient] = useState("");
-  const [groupName, setGroupName] = useState("");
-  const [groupColor, setGroupColor] = useState("blue");
+  // UI state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterTab, setFilterTab] = useState<"all" | "connected" | "warning" | "critical">("all");
+  const [sortBy, setSortBy] = useState<"alpha" | "recent_sync" | "recent_publish">("alpha");
+  const [expandedWorkspace, setExpandedWorkspace] = useState<string | null>(null);
+  const [expandedActivity, setExpandedActivity] = useState<string | null>(null);
+  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
+  const [loadingActivity, setLoadingActivity] = useState(false);
 
-  // Edit group state
-  const [isEditGroupOpen, setIsEditGroupOpen] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<SocialAccount | null>(null);
-  const [editGroupName, setEditGroupName] = useState("");
-  const [editGroupColor, setEditGroupColor] = useState("blue");
+  // Connect wizard
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [wizardClientId, setWizardClientId] = useState("");
+  const [wizardPlatform, setWizardPlatform] = useState("");
+  const [isConnecting, setIsConnecting] = useState(false);
 
+  useEffect(() => { fetchData(); }, []);
+
+  // Show toast for OAuth callbacks
   useEffect(() => {
-    fetchData();
+    const connected = searchParams.get("connected");
+    const error = searchParams.get("error");
+    if (connected === "true") toast({ title: "✅ Account Connected!", description: "Your social account has been successfully linked." });
+    if (error) toast({ title: "OAuth Failed", description: decodeURIComponent(error), variant: "destructive" });
   }, []);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [accountsData, clientsData, statusData] = await Promise.all([
-        apiFetch<{ accounts: SocialAccount[] }>("/social/accounts"),
+      const [wsData, clientsData, statusData] = await Promise.all([
+        apiFetch<WorkspaceSummary>("/social/accounts/workspace-summary"),
         apiFetch<{ clients: Client[] }>("/clients"),
         apiFetch<Record<string, { configured: boolean; enabled: boolean }>>("/social/platform-status"),
       ]);
-      setAccounts(accountsData.accounts || []);
+      setData(wsData);
       setClients(clientsData.clients || []);
       setPlatformStatus(statusData || {});
     } catch (err: any) {
-      toast({
-        title: "Error fetching data",
-        description: err.message || "Failed to load accounts list",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleConnect = async () => {
-    if (!selectedPlatform || !selectedClient || !groupName) {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in all connection details",
-        variant: "destructive",
-      });
-      return;
-    }
-
+  const fetchActivity = async (accountId: string) => {
+    setLoadingActivity(true);
     try {
-      const { url } = await apiFetch<{ url: string }>(`/social/oauth/connect?platform=${selectedPlatform}&clientId=${selectedClient}&groupId=${encodeURIComponent(groupName)}`);
-      if (url) {
-        window.location.href = url;
-      } else {
-        throw new Error("No authorization URL returned from server");
-      }
+      const res = await apiFetch<{ events: ActivityEvent[] }>(`/social/accounts/${accountId}/activity`);
+      setActivityEvents(res.events || []);
+    } catch { setActivityEvents([]); }
+    finally { setLoadingActivity(false); }
+  };
+
+  const handleSyncAccount = async (accountId: string, name: string) => {
+    try {
+      await apiFetch<any>(`/social/accounts/${accountId}/sync`, { method: "POST" });
+      toast({ title: `Syncing ${name}`, description: "Sync initiated successfully." });
     } catch (err: any) {
-      toast({
-        title: "OAuth Connection Failed",
-        description: err.message || "Could not generate auth link",
-        variant: "destructive",
-      });
+      toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
     }
   };
 
-  const handleDisconnect = async (accountId: string) => {
-    if (!confirm("Are you sure you want to disconnect this account? This will stop all scheduled posts to this platform.")) return;
-
+  const handleDisconnect = async (accountId: string, name: string) => {
+    if (!confirm(`Disconnect ${name}? This will stop all scheduled posts to this account.`)) return;
     try {
       await apiFetch<any>(`/social/accounts/${accountId}`, { method: "DELETE" });
-      toast({
-        title: "Success",
-        description: "Social account successfully disconnected",
-      });
+      toast({ title: "Disconnected", description: `${name} has been removed.` });
       fetchData();
     } catch (err: any) {
-      toast({
-        title: "Disconnect Failed",
-        description: err.message,
-        variant: "destructive",
-      });
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
     }
   };
 
-  const handleSaveGroup = async () => {
-    if (!editingAccount) return;
+  const handleConnect = async () => {
+    if (!wizardClientId || !wizardPlatform) return;
+    setIsConnecting(true);
     try {
-      await apiFetch<any>(`/social/accounts/${editingAccount.id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          groupName: editGroupName,
-          groupColor: editGroupColor,
-        }),
-      });
-      toast({
-        title: "Group Updated",
-        description: "Group assignment saved successfully",
-      });
-      setIsEditGroupOpen(false);
-      fetchData();
+      const { url } = await apiFetch<{ url: string }>(
+        `/social/oauth/connect?platform=${wizardPlatform}&clientId=${wizardClientId}&groupId=${wizardClientId}`
+      );
+      if (url) window.location.href = url;
     } catch (err: any) {
-      toast({
-        title: "Update Failed",
-        description: err.message,
-        variant: "destructive",
-      });
+      toast({ title: "OAuth Failed", description: err.message, variant: "destructive" });
+      setIsConnecting(false);
     }
   };
 
-  const getPlatformIcon = (platform: string, className = "h-5 w-5 rounded-sm object-contain") => {
-    switch (platform.toLowerCase()) {
-      case "facebook": return <img src="/social-icons/Facebook.png" className={className} alt="Facebook" />;
-      case "instagram": return <img src="/social-icons/instagram.png" className={className} alt="Instagram" />;
-      case "threads": return <img src="/social-icons/Threads.png" className={className} alt="Threads" />;
-      case "tiktok": return <img src="/social-icons/tiktok.png" className={className} alt="TikTok" />;
-      case "linkedin": return <img src="/social-icons/linkedin.png" className={className} alt="LinkedIn" />;
-      case "youtube": return <img src="/social-icons/youtube.png" className={className} alt="YouTube" />;
-      case "x": 
-      case "twitter": return <img src="/social-icons/twitter.png" className={className} alt="Twitter" />;
-      default: return <Settings className={className} />;
+  // Filtered + sorted workspaces
+  const filteredWorkspaces = useMemo(() => {
+    if (!data) return [];
+    let ws = data.workspaces;
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      ws = ws.filter(w =>
+        w.clientName.toLowerCase().includes(q) ||
+        w.clientCompany.toLowerCase().includes(q) ||
+        w.accounts.some(a => a.platformUsername.toLowerCase().includes(q) || a.displayName.toLowerCase().includes(q)) ||
+        w.connectedPlatforms.some(p => p.toLowerCase().includes(q))
+      );
     }
-  };
 
-  const groupedAccounts = accounts.reduce<Record<string, SocialAccount[]>>((groups, acc) => {
-    const key = acc.groupName || "Unassigned Groups";
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(acc);
-    return groups;
-  }, {});
+    if (filterTab === "connected") ws = ws.filter(w => w.accountCount > 0 && w.healthStatus === "healthy");
+    else if (filterTab === "warning") ws = ws.filter(w => w.healthStatus === "warning");
+    else if (filterTab === "critical") ws = ws.filter(w => w.healthStatus === "critical");
 
-  const getBadgeBg = (color: string | null) => {
-    switch (color) {
-      case "purple": return "bg-purple-50 text-purple-600 border-purple-100";
-      case "emerald": return "bg-emerald-50 text-emerald-600 border-emerald-100";
-      case "rose": return "bg-rose-50 text-rose-600 border-rose-100";
-      case "orange": return "bg-orange-50 text-orange-600 border-orange-100";
-      default: return "bg-blue-50 text-blue-600 border-blue-100";
-    }
-  };
+    return [...ws].sort((a, b) => {
+      if (sortBy === "alpha") return a.clientCompany.localeCompare(b.clientCompany);
+      if (sortBy === "recent_sync") {
+        const da = a.lastSync ? new Date(a.lastSync).getTime() : 0;
+        const db = b.lastSync ? new Date(b.lastSync).getTime() : 0;
+        return db - da;
+      }
+      if (sortBy === "recent_publish") {
+        const da = a.lastPublish ? new Date(a.lastPublish).getTime() : 0;
+        const db = b.lastPublish ? new Date(b.lastPublish).getTime() : 0;
+        return db - da;
+      }
+      return 0;
+    });
+  }, [data, searchQuery, filterTab, sortBy]);
 
-  const allSupportedPlatforms = [
-    { id: "facebook", name: "Facebook Page", icon: Facebook, color: "text-blue-600 bg-blue-50" },
-    { id: "instagram", name: "Instagram Business", icon: Instagram, color: "text-pink-600 bg-pink-50" },
-    { id: "linkedin", name: "LinkedIn Profile", icon: Linkedin, color: "text-blue-700 bg-blue-50" },
-    { id: "youtube", name: "YouTube Channel", icon: Youtube, color: "text-red-600 bg-red-50" },
-    { id: "x", name: "X / Twitter", icon: Twitter, color: "text-zinc-900 bg-zinc-50" },
-    { id: "tiktok", name: "TikTok Video", icon: Music, color: "text-black bg-slate-50" },
-    { id: "pinterest", name: "Pinterest Board", icon: Pin, color: "text-red-600 bg-red-50" },
-    { id: "threads", name: "Meta Threads", icon: MessageCircle, color: "text-zinc-950 bg-zinc-50" },
-  ];
+  const enabledPlatforms = PLATFORMS.filter(p => platformStatus[p.id]?.enabled);
+  const metaEnabled = platformStatus.facebook?.enabled || platformStatus.instagram?.enabled;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border/40 pb-5">
+    <div className="p-6 space-y-7 max-w-screen-2xl">
+
+      {/* ── Page Header ── */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border/40 pb-5">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Social Accounts</h1>
-          <p className="text-sm text-muted-foreground">Manage brand groups and link their respective social media accounts.</p>
+          <h1 className="text-2xl font-black tracking-tight text-foreground">Social Account Management</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Manage brand workspaces, platform integrations, and connected accounts.</p>
         </div>
-        <Button onClick={() => setIsConnectOpen(true)} className="rounded-xl flex items-center gap-2 px-5 py-2.5 shadow-md">
-          <Plus className="h-4.5 w-4.5" />
-          <span className="font-semibold text-sm">Connect Social Account</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={fetchData} className="rounded-xl gap-2 border-border">
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+          <Button onClick={() => { setWizardStep(1); setWizardClientId(""); setWizardPlatform(""); setWizardOpen(true); }} className="rounded-xl gap-2 px-5 shadow-md font-bold">
+            <Plus className="h-4 w-4" /> Connect Social Account
+          </Button>
+        </div>
       </div>
 
-      {/* Connection Warning Banners */}
-      {Object.values(platformStatus).every(p => !p.enabled) && !isLoading && (
-        <Card className="border-orange-200 bg-orange-50/20 rounded-2xl">
-          <CardContent className="pt-6 flex gap-3">
-            <AlertTriangle className="h-5 w-5 text-orange-600 shrink-0 mt-0.5" />
+      {/* ── Summary KPI Cards ── */}
+      {!isLoading && data && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: "Brand Workspaces",   value: data.summary.totalWorkspaces, icon: Building2,     color: "text-violet-600 bg-violet-50 border-violet-100" },
+            { label: "Connected Accounts", value: data.summary.totalAccounts,   icon: Users,         color: "text-blue-600 bg-blue-50 border-blue-100"       },
+            { label: "Platforms Active",   value: data.summary.activePlatforms, icon: Globe,         color: "text-emerald-600 bg-emerald-50 border-emerald-100" },
+            { label: "Needs Attention",    value: data.summary.needsAttention,  icon: AlertTriangle, color: data.summary.needsAttention > 0 ? "text-red-600 bg-red-50 border-red-100" : "text-muted-foreground bg-muted border-border/50" },
+          ].map(({ label, value, icon: Icon, color }) => (
+            <Card key={label} className="rounded-2xl border border-border/80 shadow-sm">
+              <CardContent className="p-5 flex items-center gap-4">
+                <div className={`h-11 w-11 rounded-xl flex items-center justify-center border ${color}`}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-2xl font-black text-foreground tabular-nums">{value}</p>
+                  <p className="text-xs text-muted-foreground font-semibold">{label}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* ── No API Keys Warning ── */}
+      {!metaEnabled && !isLoading && (
+        <Card className="border-amber-200 bg-amber-50/30 rounded-2xl">
+          <CardContent className="pt-5 pb-5 flex gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-bold text-orange-850">API Integrations Suspended</p>
-              <p className="text-xs text-orange-700 mt-1">
-                Go to <span className="font-semibold cursor-pointer underline" onClick={() => window.location.href='/dashboard/settings/plugins'}>Settings → Plugins</span> to input API secrets and enable Facebook, Instagram, LinkedIn, or other channels first.
+              <p className="text-sm font-bold text-amber-900">API Integrations Not Configured</p>
+              <p className="text-xs text-amber-700 mt-1">
+                Go to{" "}
+                <button onClick={() => navigate("/dashboard/plugins")} className="font-bold underline">
+                  Settings → Plugins
+                </button>{" "}
+                to add API keys and enable platforms before connecting accounts.
               </p>
             </div>
           </CardContent>
         </Card>
       )}
 
-      <div className="grid lg:grid-cols-12 gap-8 items-start">
-        
-        {/* Left Column: Platform Integration Status (4/12) */}
-        <div className="lg:col-span-4 space-y-6">
-          <Card className="rounded-2xl border border-border/80 shadow-sm overflow-hidden bg-card">
-            <CardHeader className="bg-muted/5 border-b border-border/40 py-4 px-6">
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
+      {/* ── Main Layout ── */}
+      <div className="grid lg:grid-cols-12 gap-7 items-start">
+
+        {/* ── LEFT: API Integrations Panel ── */}
+        <div className="lg:col-span-4 xl:col-span-3 space-y-5 lg:sticky lg:top-6">
+          <Card className="rounded-2xl border border-border/80 shadow-sm overflow-hidden">
+            <CardHeader className="bg-muted/5 border-b border-border/40 py-4 px-5">
+              <CardTitle className="text-sm font-black flex items-center gap-2">
                 <LinkIcon className="h-4 w-4 text-primary" />
-                <span>Integration Plugins</span>
+                API Integrations
               </CardTitle>
-              <CardDescription className="text-xs">API channels state enabled in settings</CardDescription>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Global platform connection status</p>
             </CardHeader>
-            <CardContent className="p-4 space-y-2.5">
-              {allSupportedPlatforms.map(p => {
+            <CardContent className="p-3 space-y-2">
+              {PLATFORMS.map(p => {
                 const status = platformStatus[p.id] || { configured: false, enabled: false };
+                const connectedAccounts = data?.workspaces.flatMap(w => w.accounts).filter(a => a.platform.toLowerCase() === p.id).length || 0;
+
                 return (
-                  <div key={p.id} className="flex items-center justify-between p-3 rounded-xl border border-border/40 hover:bg-muted/5 transition-all bg-muted/5">
-                    <div className="flex items-center gap-3">
-                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${p.color} border border-border/30 overflow-hidden`}>
-                        {getPlatformIcon(p.id, "h-5 w-5 object-contain")}
+                  <div key={p.id} className={`rounded-xl border p-3 transition-all ${status.enabled ? "border-border/50 bg-muted/5 hover:bg-muted/10" : "border-border/30 bg-background"}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-8 w-8 rounded-lg overflow-hidden border border-border/40 bg-background flex items-center justify-center shadow-sm">
+                          <PlatformIcon platform={p.id} cls="h-5 w-5 object-contain" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-foreground leading-tight">{p.label}</p>
+                          {status.enabled && connectedAccounts > 0 && (
+                            <p className="text-[10px] text-muted-foreground">{connectedAccounts} account{connectedAccounts !== 1 ? "s" : ""}</p>
+                          )}
+                        </div>
                       </div>
-                      <span className="text-xs font-bold text-foreground">{p.name}</span>
+                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                        status.enabled
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                          : "bg-muted text-muted-foreground border-border/60"
+                      }`}>
+                        {status.enabled ? "Active" : status.configured ? "Disabled" : "Not Set"}
+                      </span>
                     </div>
-                    <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border ${
-                      status.enabled 
-                        ? "bg-emerald-50 text-emerald-600 border-emerald-100" 
-                        : "bg-muted text-muted-foreground border-border/60"
-                    }`}>
-                      {status.enabled ? "Active" : "Inactive"}
-                    </span>
+
+                    {status.enabled && (
+                      <div className="mt-2.5 flex flex-wrap gap-1">
+                        {Object.entries(CAPABILITIES[p.id] || {}).filter(([, v]) => v).map(([cap]) => (
+                          <span key={cap} className="text-[9px] font-bold bg-primary/5 text-primary/80 border border-primary/10 px-1.5 py-0.5 rounded-full">
+                            {cap}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("/dashboard/plugins")}
+                className="w-full rounded-xl gap-2 mt-2 border-border text-xs font-semibold"
+              >
+                <Settings className="h-3.5 w-3.5" /> Manage API Keys
+              </Button>
             </CardContent>
           </Card>
         </div>
 
-        {/* Right Column: Connected Accounts Listings (8/12) */}
-        <div className="lg:col-span-8 space-y-6">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-24 text-muted-foreground gap-2">
-              <RefreshCw className="h-5 w-5 animate-spin text-primary" />
-              <span>Loading connected accounts...</span>
+        {/* ── RIGHT: Brand Workspaces ── */}
+        <div className="lg:col-span-8 xl:col-span-9 space-y-5">
+
+          {/* Search + Filter + Sort */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search clients, usernames, platforms..."
+                className="pl-9 rounded-xl h-10 border-border"
+              />
             </div>
-          ) : accounts.length === 0 ? (
-            <Card className="border-dashed py-16 flex flex-col items-center justify-center text-center rounded-2xl bg-card">
-              <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center mb-4 border shadow-inner">
-                <User className="h-7 w-7 text-muted-foreground" />
+            <div className="flex items-center gap-2">
+              {/* Filter tabs */}
+              <div className="flex bg-muted/50 rounded-xl border border-border/50 p-0.5 gap-0.5">
+                {[
+                  { key: "all", label: "All" },
+                  { key: "connected", label: "Healthy" },
+                  { key: "warning", label: "Warning" },
+                  { key: "critical", label: "Critical" },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setFilterTab(tab.key as any)}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${filterTab === tab.key ? "bg-background shadow-sm text-foreground border border-border/50" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-              <h3 className="font-bold text-base text-foreground">No Accounts Connected</h3>
+              {/* Sort */}
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as any)}
+                className="text-xs font-semibold border border-border bg-background rounded-xl px-3 py-2 focus:outline-none"
+              >
+                <option value="alpha">A → Z</option>
+                <option value="recent_sync">Recent Sync</option>
+                <option value="recent_publish">Recent Publish</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Workspace cards */}
+          {isLoading ? (
+            <AccountsSkeleton />
+          ) : filteredWorkspaces.length === 0 ? (
+            <Card className="border-dashed py-16 flex flex-col items-center justify-center text-center rounded-2xl">
+              <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center mb-4 border shadow-inner">
+                <Building2 className="h-7 w-7 text-muted-foreground" />
+              </div>
+              <h3 className="font-bold text-base">
+                {searchQuery ? "No matching workspaces" : "No Brand Workspaces"}
+              </h3>
               <p className="text-sm text-muted-foreground max-w-xs mt-1 mb-6">
-                Connect your client brand campaigns to social channels to start scheduling content.
+                {searchQuery
+                  ? "Try a different search term."
+                  : "Connect a client's social accounts to create their brand workspace."}
               </p>
-              <Button onClick={() => setIsConnectOpen(true)} className="rounded-xl px-5 font-semibold shadow-md">
-                Link Social Account
-              </Button>
+              {!searchQuery && (
+                <Button onClick={() => setWizardOpen(true)} className="rounded-xl px-5 font-bold shadow-md gap-2">
+                  <Plus className="h-4 w-4" /> Connect Social Account
+                </Button>
+              )}
             </Card>
           ) : (
-            <div className="grid md:grid-cols-1 gap-6">
-              {Object.entries(groupedAccounts).map(([group, list]) => (
-                <Card key={group} className="border border-border/80 shadow-sm rounded-2xl overflow-hidden bg-card">
-                  <CardHeader className="bg-muted/15 border-b border-border/40 py-4 px-6 flex flex-row items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className={`h-2.5 w-2.5 rounded-full bg-${list[0]?.groupColor || 'blue'}-500 shadow-sm`} />
-                      <CardTitle className="text-base font-bold">{group}</CardTitle>
-                    </div>
-                    <span className="text-[10px] font-black text-muted-foreground bg-muted/60 px-3 py-1 rounded-full uppercase border">
-                      {list.length} {list.length === 1 ? 'Account' : 'Accounts'}
-                    </span>
-                  </CardHeader>
-                  <CardContent className="p-0 divide-y divide-border/45">
-                    {list.map((acc) => (
-                      <div key={acc.id} className="p-5 flex items-center justify-between hover:bg-muted/5 transition-all gap-4">
-                        <div className="flex items-center gap-3.5 min-w-0">
-                          <div className="relative shrink-0 select-none">
-                            <div className="h-11 w-11 rounded-full border border-border/70 flex items-center justify-center bg-muted/20 overflow-hidden shadow-sm">
-                              {acc.avatarUrl ? (
-                                <img src={acc.avatarUrl} alt={acc.displayName} className="h-full w-full object-cover" />
-                              ) : (
-                                <div className="h-full w-full bg-primary/5 flex items-center justify-center text-primary font-bold">
-                                  {acc.displayName[0]}
-                                </div>
-                              )}
-                            </div>
-                            <div className="absolute -bottom-1 -right-1 h-5 w-5 bg-background rounded-full border border-border flex items-center justify-center shadow">
-                              {getPlatformIcon(acc.platform)}
-                            </div>
+            <div className="space-y-4">
+              {filteredWorkspaces.map(ws => {
+                const isExpanded = expandedWorkspace === ws.clientId;
+                const hasAccounts = ws.accountCount > 0;
+                const missingToShow = ws.missingPlatforms.slice(0, 4);
+
+                return (
+                  <Card key={ws.clientId} className={`rounded-2xl border shadow-sm overflow-hidden transition-all ${
+                    ws.healthStatus === "critical" ? "border-red-200" :
+                    ws.healthStatus === "warning" ? "border-amber-200" :
+                    "border-border/80"
+                  }`}>
+                    {/* Workspace header */}
+                    <div className={`px-6 py-4 border-b border-border/40 ${
+                      ws.healthStatus === "critical" ? "bg-red-50/40" :
+                      ws.healthStatus === "warning" ? "bg-amber-50/30" :
+                      "bg-muted/5"
+                    }`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {/* Client avatar */}
+                          <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/10 flex items-center justify-center shrink-0 shadow-sm">
+                            <span className="text-primary font-black text-lg">{ws.clientCompany.charAt(0).toUpperCase()}</span>
                           </div>
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="font-bold text-foreground text-sm leading-none truncate">{acc.displayName}</p>
-                              {acc.healthStatus === "healthy" ? (
-                                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                              ) : (
-                                <ShieldAlert className="h-4 w-4 text-red-500 shrink-0" />
-                              )}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-black text-base text-foreground truncate">{ws.clientCompany}</h3>
+                              <HealthBadge status={ws.healthStatus} />
                             </div>
-                            <p className="text-xs text-muted-foreground mt-1.5 truncate font-mono">@{acc.platformUsername}</p>
-                            {acc.healthStatus !== "healthy" && (
-                              <p className="text-[10px] text-red-500 mt-1.5 font-bold">{acc.healthMessage || "Connection expired. Re-auth required."}</p>
-                            )}
+                            <p className="text-xs text-muted-foreground mt-0.5">{ws.clientName} · {ws.accountCount} account{ws.accountCount !== 1 ? "s" : ""}</p>
                           </div>
                         </div>
+
+                        {/* Quick actions */}
                         <div className="flex items-center gap-2 shrink-0">
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => {
-                              setEditingAccount(acc);
-                              setEditGroupName(acc.groupName || "");
-                              setEditGroupColor(acc.groupColor || "blue");
-                              setIsEditGroupOpen(true);
-                            }}
-                            className="rounded-xl border border-border hover:bg-muted text-muted-foreground hover:text-foreground h-8 text-xs font-semibold px-3"
+                            onClick={() => { setWizardClientId(ws.clientId); setWizardStep(2); setWizardOpen(true); }}
+                            className="rounded-xl text-xs gap-1.5 border-border h-8"
                           >
-                            Edit Group
+                            <Plus className="h-3.5 w-3.5" /> Connect
                           </Button>
                           <Button
                             variant="ghost"
-                            size="icon"
-                            onClick={() => handleDisconnect(acc.id)}
-                            className="h-8.5 w-8.5 text-red-500 hover:text-red-600 hover:bg-red-50/50 rounded-xl"
+                            size="sm"
+                            onClick={() => setExpandedWorkspace(isExpanded ? null : ws.clientId)}
+                            className="rounded-xl h-8 w-8 p-0"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                           </Button>
                         </div>
                       </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              ))}
+
+                      {/* Platform icons + stats */}
+                      <div className="mt-4 flex items-center justify-between gap-4">
+                        {/* Connected platform icons */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {ws.connectedPlatforms.map(plat => (
+                            <div key={plat} className="h-7 w-7 rounded-lg border border-border/60 bg-background shadow-sm overflow-hidden flex items-center justify-center" title={plat}>
+                              <PlatformIcon platform={plat} cls="h-4 w-4 object-contain" />
+                            </div>
+                          ))}
+                          {missingToShow.map(plat => (
+                            <div key={plat} className="h-7 w-7 rounded-lg border border-dashed border-border/50 bg-muted/20 flex items-center justify-center opacity-40" title={`${plat} not connected`}>
+                              <PlatformIcon platform={plat} cls="h-4 w-4 object-contain grayscale" />
+                            </div>
+                          ))}
+                          {ws.missingPlatforms.length > 4 && (
+                            <span className="text-[10px] font-bold text-muted-foreground">+{ws.missingPlatforms.length - 4} more</span>
+                          )}
+                        </div>
+
+                        {/* Stats */}
+                        {hasAccounts && (
+                          <div className="flex items-center gap-4 text-[11px] text-muted-foreground font-semibold">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              Sync: {timeAgo(ws.lastSync)}
+                            </span>
+                            {ws.lastPublish && (
+                              <span className="flex items-center gap-1">
+                                <Activity className="h-3 w-3" />
+                                Published: {timeAgo(ws.lastPublish)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Missing platforms recommendation */}
+                      {ws.missingPlatforms.length > 0 && hasAccounts && (
+                        <div className="mt-3 p-2.5 rounded-xl bg-primary/3 border border-primary/8">
+                          <p className="text-[10px] font-bold text-primary/70 uppercase tracking-wide mb-1.5">
+                            <Sparkles className="h-3 w-3 inline mr-1" />
+                            Recommended Platforms
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {ws.missingPlatforms.slice(0, 5).map(plat => (
+                              <button
+                                key={plat}
+                                onClick={() => { setWizardClientId(ws.clientId); setWizardPlatform(plat); setWizardStep(2); setWizardOpen(true); }}
+                                className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg border border-primary/15 bg-background hover:bg-primary/5 transition-all"
+                              >
+                                <PlatformIcon platform={plat} cls="h-3 w-3 object-contain" />
+                                <span className="text-primary/80">+ {plat.charAt(0).toUpperCase() + plat.slice(1)}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Expanded: Account list */}
+                    {isExpanded && (
+                      <CardContent className="p-0">
+                        {!hasAccounts ? (
+                          <div className="py-10 text-center">
+                            <p className="text-sm text-muted-foreground">No accounts connected yet.</p>
+                            <Button
+                              size="sm"
+                              onClick={() => { setWizardClientId(ws.clientId); setWizardStep(2); setWizardOpen(true); }}
+                              className="mt-3 rounded-xl gap-1.5 font-semibold"
+                            >
+                              <Plus className="h-3.5 w-3.5" /> Connect Platform
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-border/40">
+                            {ws.accounts.map(acc => {
+                              const caps = CAPABILITIES[acc.platform.toLowerCase()] || {};
+                              const isActExpanded = expandedActivity === acc.id;
+                              const tokenExpiry = acc.tokenExpiresAt ? new Date(acc.tokenExpiresAt) : null;
+                              const daysToExpiry = tokenExpiry ? Math.floor((tokenExpiry.getTime() - Date.now()) / 86400000) : null;
+                              const isExpiringSoon = daysToExpiry !== null && daysToExpiry < 7;
+
+                              return (
+                                <div key={acc.id} className="p-5">
+                                  <div className="flex items-start gap-4">
+                                    {/* Avatar */}
+                                    <div className="relative shrink-0">
+                                      <div className="h-11 w-11 rounded-full border-2 border-border/60 overflow-hidden shadow-sm bg-muted/20">
+                                        {acc.avatarUrl ? (
+                                          <img src={acc.avatarUrl} alt={acc.displayName} className="h-full w-full object-cover" />
+                                        ) : (
+                                          <div className="h-full w-full bg-primary/10 flex items-center justify-center text-primary font-black text-base">
+                                            {acc.displayName.charAt(0)}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="absolute -bottom-0.5 -right-0.5 h-5 w-5 rounded-full bg-background border border-border flex items-center justify-center shadow-sm overflow-hidden">
+                                        <PlatformIcon platform={acc.platform} cls="h-3.5 w-3.5 object-contain" />
+                                      </div>
+                                    </div>
+
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="font-bold text-sm text-foreground truncate">{acc.displayName}</p>
+                                        {acc.healthStatus === "healthy" ? (
+                                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                                        ) : (
+                                          <ShieldAlert className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                                        )}
+                                        {isExpiringSoon && (
+                                          <span className="text-[9px] font-black bg-amber-50 text-amber-700 border border-amber-100 px-1.5 py-0.5 rounded-full">
+                                            TOKEN EXPIRES {daysToExpiry}d
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-xs text-muted-foreground font-mono mt-0.5">@{acc.platformUsername}</p>
+
+                                      {/* Capability pills */}
+                                      <div className="flex flex-wrap gap-1 mt-2.5">
+                                        {Object.entries(caps).map(([cap, enabled]) => (
+                                          <span key={cap} className={`flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full border ${
+                                            enabled
+                                              ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                                              : "bg-muted/30 text-muted-foreground/50 border-border/30 line-through"
+                                          }`}>
+                                            {enabled ? <Check className="h-2 w-2" /> : <X className="h-2 w-2" />}
+                                            {cap}
+                                          </span>
+                                        ))}
+                                      </div>
+
+                                      {/* Sync time */}
+                                      <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground font-semibold">
+                                        <span>Sync: {timeAgo(acc.lastSync)}</span>
+                                        {acc.tokenExpiresAt && daysToExpiry !== null && daysToExpiry > 0 && (
+                                          <span>Token: {daysToExpiry}d left</span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Account actions */}
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={async () => {
+                                          if (isActExpanded) {
+                                            setExpandedActivity(null);
+                                          } else {
+                                            setExpandedActivity(acc.id);
+                                            await fetchActivity(acc.id);
+                                          }
+                                        }}
+                                        className="rounded-xl h-8 text-xs gap-1.5 border-border"
+                                      >
+                                        <Activity className="h-3 w-3" /> Logs
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleSyncAccount(acc.id, acc.displayName)}
+                                        className="rounded-xl h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                                        title="Sync"
+                                      >
+                                        <RefreshCw className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleDisconnect(acc.id, acc.displayName)}
+                                        className="rounded-xl h-8 w-8 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+                                        title="Disconnect"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  </div>
+
+                                  {/* Activity feed */}
+                                  {isActExpanded && (
+                                    <div className="mt-4 ml-15 pl-4 border-l-2 border-border/40 space-y-2">
+                                      <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">Activity Log</p>
+                                      {loadingActivity ? (
+                                        <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                                          <RefreshCw className="h-3 w-3 animate-spin" /> Loading activity...
+                                        </div>
+                                      ) : activityEvents.length === 0 ? (
+                                        <p className="text-xs text-muted-foreground py-2">No activity recorded yet.</p>
+                                      ) : (
+                                        activityEvents.map((evt, i) => (
+                                          <div key={i} className="flex items-start gap-2.5">
+                                            <EventIcon type={evt.type} />
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-xs font-semibold text-foreground">{evt.label}</p>
+                                              {evt.detail && <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{evt.detail}</p>}
+                                              <p className="text-[10px] text-muted-foreground/70 mt-0.5">{fmtDate(evt.date)}</p>
+                                            </div>
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    )}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
-
       </div>
 
-      {/* Connect Modal */}
-      <Dialog open={isConnectOpen} onOpenChange={setIsConnectOpen}>
-        <DialogContent className="sm:max-w-md rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-bold text-lg">Connect Social Media Account</DialogTitle>
-            <DialogDescription className="text-xs">
-              Link a client company to their official social media profiles.
-            </DialogDescription>
+      {/* ── Connect Wizard Dialog ── */}
+      <Dialog open={wizardOpen} onOpenChange={open => { setWizardOpen(open); if (!open) setWizardStep(1); }}>
+        <DialogContent className="sm:max-w-2xl rounded-2xl p-0 overflow-hidden">
+          <DialogHeader className="border-b border-border/40 bg-muted/5 px-7 py-5">
+            <DialogTitle className="font-black text-lg">Connect Social Account</DialogTitle>
+            {/* Step indicator */}
+            <div className="flex items-center gap-2 mt-3">
+              {["Select Client", "Choose Platform", "Authenticate"].map((step, i) => (
+                <div key={step} className="flex items-center gap-2">
+                  {i > 0 && <ArrowRight className="h-3 w-3 text-muted-foreground/40" />}
+                  <div className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full border transition-all ${
+                    wizardStep === i + 1
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : wizardStep > i + 1
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                      : "bg-muted text-muted-foreground border-border/50"
+                  }`}>
+                    {wizardStep > i + 1 ? <CheckCircle2 className="h-3 w-3" /> : <span>{i + 1}</span>}
+                    {step}
+                  </div>
+                </div>
+              ))}
+            </div>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Select Platform</label>
-              <select
-                value={selectedPlatform}
-                onChange={(e) => setSelectedPlatform(e.target.value)}
-                className="w-full border border-border bg-background rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-              >
-                <option value="">-- Choose Platform --</option>
-                {platformStatus.facebook?.enabled && <option value="facebook">Facebook Page</option>}
-                {platformStatus.instagram?.enabled && <option value="instagram">Instagram Business</option>}
-                {platformStatus.threads?.enabled && <option value="threads">Meta Threads</option>}
-                {platformStatus.tiktok?.enabled && <option value="tiktok">TikTok Video</option>}
-                {platformStatus.linkedin?.enabled && <option value="linkedin">LinkedIn Profile</option>}
-                {platformStatus.youtube?.enabled && <option value="youtube">YouTube Channel</option>}
-                {platformStatus.x?.enabled && <option value="x">X / Twitter Profile</option>}
-                {platformStatus.pinterest?.enabled && <option value="pinterest">Pinterest Board</option>}
-              </select>
-            </div>
 
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Linked Client (DB Record)</label>
-              <select
-                value={selectedClient}
-                onChange={(e) => setSelectedClient(e.target.value)}
-                className="w-full border border-border bg-background rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-              >
-                <option value="">-- Choose Client --</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.company} ({c.name})
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="p-6">
+            {/* Step 1: Select Client */}
+            {wizardStep === 1 && (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">Choose the client (brand workspace) to connect an account to.</p>
+                <div className="grid grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
+                  {clients.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => { setWizardClientId(c.id); setWizardStep(2); }}
+                      className={`flex items-center gap-3 p-4 rounded-xl border text-left transition-all hover:border-primary hover:bg-primary/3 ${
+                        wizardClientId === c.id ? "border-primary bg-primary/5" : "border-border/60 bg-background"
+                      }`}
+                    >
+                      <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/10 flex items-center justify-center shrink-0">
+                        <span className="text-primary font-black text-base">{c.company.charAt(0)}</span>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-sm text-foreground truncate">{c.company}</p>
+                        <p className="text-xs text-muted-foreground truncate">{c.name}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => navigate("/dashboard/clients/add")}
+                  className="w-full rounded-xl gap-2 border-dashed"
+                >
+                  <Plus className="h-4 w-4" /> Create New Client
+                </Button>
+              </div>
+            )}
 
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Brand / Group Name</label>
-              <Input
-                placeholder="e.g. Tokka Campaign, Acme Corp"
-                value={groupName}
-                onChange={(e) => setGroupName(e.target.value)}
-                className="rounded-xl h-11"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Group Color Badge</label>
-              <select
-                value={groupColor}
-                onChange={(e) => setGroupColor(e.target.value)}
-                className="w-full border border-border bg-background rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-              >
-                <option value="blue">Blue</option>
-                <option value="purple">Purple</option>
-                <option value="emerald">Emerald</option>
-                <option value="rose">Rose</option>
-                <option value="orange">Orange</option>
-              </select>
-            </div>
+            {/* Step 2: Choose Platform */}
+            {wizardStep === 2 && (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Choose the platform to connect for{" "}
+                  <strong>{clients.find(c => c.id === wizardClientId)?.company || "this client"}</strong>.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {PLATFORMS.map(p => {
+                    const status = platformStatus[p.id] || { enabled: false };
+                    const isEnabled = status.enabled;
+                    return (
+                      <button
+                        key={p.id}
+                        disabled={!isEnabled}
+                        onClick={() => setWizardPlatform(p.id)}
+                        className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${
+                          !isEnabled
+                            ? "opacity-40 cursor-not-allowed border-border/30 bg-muted/20"
+                            : wizardPlatform === p.id
+                            ? "border-primary bg-primary/5 shadow-sm ring-1 ring-primary/20"
+                            : "border-border/60 bg-background hover:border-primary/40 hover:bg-primary/3"
+                        }`}
+                      >
+                        <div className="h-10 w-10 rounded-xl border border-border/40 bg-background overflow-hidden flex items-center justify-center shadow-sm">
+                          <PlatformIcon platform={p.id} cls="h-6 w-6 object-contain" />
+                        </div>
+                        <span className="text-xs font-bold text-center leading-tight">{p.label.split(" ")[0]}</span>
+                        {isEnabled ? (
+                          <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 rounded-full">Active</span>
+                        ) : (
+                          <span className="text-[9px] font-black text-muted-foreground bg-muted border border-border/50 px-1.5 rounded-full">Not set</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {enabledPlatforms.length === 0 && (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-100">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                    <p className="text-xs text-amber-700">No platforms are enabled. Go to Settings → Plugins to enable API integrations first.</p>
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-3 pt-2">
+                  <Button variant="ghost" onClick={() => setWizardStep(1)} className="rounded-xl gap-2">
+                    ← Back
+                  </Button>
+                  <Button
+                    onClick={handleConnect}
+                    disabled={!wizardPlatform || !wizardClientId || isConnecting}
+                    className="rounded-xl gap-2 px-6 font-bold shadow-md"
+                  >
+                    {isConnecting ? (
+                      <><RefreshCw className="h-4 w-4 animate-spin" /> Redirecting...</>
+                    ) : (
+                      <><ExternalLink className="h-4 w-4" /> Authenticate with {wizardPlatform ? wizardPlatform.charAt(0).toUpperCase() + wizardPlatform.slice(1) : "Platform"}</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
-          <DialogFooter>
-            <Button variant="ghost" className="rounded-xl px-5" onClick={() => setIsConnectOpen(false)}>
-              Cancel
-            </Button>
-            <Button className="rounded-xl px-5 font-bold shadow-md" onClick={handleConnect}>
-              Connect & Redirect
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Group Modal */}
-      <Dialog open={isEditGroupOpen} onOpenChange={setIsEditGroupOpen}>
-        <DialogContent className="sm:max-w-sm rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="font-bold text-base">Assign Group</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-3">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Group / Brand Name</label>
-              <Input
-                value={editGroupName}
-                onChange={(e) => setEditGroupName(e.target.value)}
-                className="rounded-xl h-11"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Group Color</label>
-              <select
-                value={editGroupColor}
-                onChange={(e) => setEditGroupColor(e.target.value)}
-                className="w-full border border-border bg-background rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-              >
-                <option value="blue">Blue</option>
-                <option value="purple">Purple</option>
-                <option value="emerald">Emerald</option>
-                <option value="rose">Rose</option>
-                <option value="orange">Orange</option>
-              </select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" className="rounded-xl px-5" onClick={() => setIsEditGroupOpen(false)}>
-              Cancel
-            </Button>
-            <Button className="rounded-xl px-5 font-bold shadow-md" onClick={handleSaveGroup}>
-              Save Group
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

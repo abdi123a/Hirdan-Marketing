@@ -18,6 +18,7 @@ import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { DetailPageSkeleton } from "@/components/ui/PageSkeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles, Plus, Image, Video, SwitchCamera, ListFilter, Brain, Wand2 } from "lucide-react";
 import { Trash2 } from "lucide-react";
@@ -191,11 +192,7 @@ export default function SubscriptionDetailsPage() {
   );
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 text-primary animate-spin" />
-      </div>
-    );
+    return <DetailPageSkeleton />;
   }
 
   if (!subscription) {

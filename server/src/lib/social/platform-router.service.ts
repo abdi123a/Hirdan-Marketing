@@ -64,29 +64,37 @@ export async function publishPostToPlatform(post: SocialPost, account: SocialAcc
   const mediaType = post.mediaType || 'image';
 
   switch (platform) {
-    case 'facebook':
+    case 'facebook': {
       if (!account.pageId) {
         throw new Error('Facebook account does not have a linked page ID');
       }
+      const fbContent = (post.platformContent as any)?.facebook || {};
+      const fbType: string = fbContent.type || 'post';
       return await meta.publishToFacebookPage({
         pageId: account.pageId,
         pageAccessToken: accessToken,
         caption,
         mediaUrls,
         mediaType,
+        postType: fbType as 'post' | 'reel' | 'story',
       });
+    }
 
-    case 'instagram':
+    case 'instagram': {
       if (!account.igAccountId) {
         throw new Error('Instagram account does not have a linked Business ID');
       }
+      const igContent = (post.platformContent as any)?.instagram || {};
+      const igType: string = igContent.type || 'post';
       return await meta.publishToInstagram({
         igAccountId: account.igAccountId,
         pageAccessToken: accessToken,
         caption,
         mediaUrls,
         mediaType,
+        postType: igType as 'post' | 'reel' | 'story',
       });
+    }
 
     case 'threads':
       if (!account.pageId) {

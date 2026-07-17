@@ -16,6 +16,7 @@ import {
   Sparkles, FileDown, CheckCircle2, Clock, Eye, AlertCircle
 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
+import { CardGridSkeleton } from "@/components/ui/PageSkeleton";
 import { useAgencyStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
@@ -792,11 +793,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
   };
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-16">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <CardGridSkeleton />;
   }
 
   return (
@@ -1022,7 +1019,11 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                                   key={pl}
                                   className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[8px] font-bold ${pc.bg}`}
                                 >
-                                  <PIcon className={`h-2.5 w-2.5 ${pc.color}`} />
+                                  {pl === "PINTEREST" ? (
+                                    <img src="/social-icons/pinterest.png" className="h-2.5 w-2.5 object-contain" alt="Pinterest" />
+                                  ) : (
+                                    <PIcon className={`h-2.5 w-2.5 ${pc.color}`} />
+                                  )}
                                   <span className={pc.color}>{pc.label.slice(0, 3)}</span>
                                 </div>
                               );
@@ -1447,6 +1448,13 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                                       </svg>
                                     );
                                   }
+                                  if (platform === "PINTEREST") {
+                                    return (
+                                      <svg width={size} height={size} viewBox="0 0 24 24" fill={iconColor}>
+                                        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.08 3.16 9.42 7.63 11.16-.1-.95-.19-2.41.04-3.45.21-.93 1.37-5.82 1.37-5.82s-.35-.7-.35-1.74c0-1.63.95-2.85 2.13-2.85 1.01 0 1.49.75 1.49 1.66 0 1.01-.64 2.53-.98 3.93-.28 1.18.59 2.14 1.75 2.14 2.1 0 3.72-2.22 3.72-5.42 0-2.84-2.04-4.82-4.94-4.82-3.37 0-5.34 2.53-5.34 5.14 0 1.02.39 2.11.88 2.71a.36.36 0 0 1 .08.34c-.1.4-.3.1.33.56c-.04.16-.16.28-.27.32-.47-.22-1.12-1.07-1.12-2.12 0-3.36 2.44-6.44 7.03-6.44 3.69 0 6.56 2.63 6.56 6.15 0 3.67-2.31 6.62-5.52 6.62-1.08 0-2.1-.56-2.44-1.22 0 0-.53 2.04-.66 2.54-.24.92-.89 2.08-1.32 2.79C10.02 23.82 11.01 24 12 24c6.63 0 12-5.37 12-12S18.63 0 12 0z"/>
+                                      </svg>
+                                    );
+                                  }
                                   // Fallback: a simple circle with first letter
                                   const label = (PLATFORM_CONFIG[platform]?.label || platform).slice(0, 1).toUpperCase();
                                   return (
@@ -1718,7 +1726,11 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                           : "bg-muted/50 border-transparent text-muted-foreground hover:bg-muted"
                           }`}
                       >
-                        <PIcon className="h-3.5 w-3.5" />
+                        {pl === "PINTEREST" ? (
+                          <img src="/social-icons/pinterest.png" className="h-3.5 w-3.5 object-contain" alt="Pinterest" />
+                        ) : (
+                          <PIcon className="h-3.5 w-3.5" />
+                        )}
                         {pc.label}
                       </button>
                     );

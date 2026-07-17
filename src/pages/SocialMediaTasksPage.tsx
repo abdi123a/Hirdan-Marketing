@@ -21,6 +21,7 @@ import { apiFetch, apiUpload, apiFetchBlob, downloadProtectedFile } from "@/lib/
 import { useAgencyStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { DocumentViewer } from "@/components/DocumentViewer";
+import { KanbanSkeleton } from "@/components/ui/PageSkeleton";
 
 // ─── Platform utilities ───────────────────────────────────────────
 
@@ -39,10 +40,15 @@ const PLATFORM_CONFIG: Record<string, { icon: any; color: string; bg: string }> 
 function PlatformBadge({ platform }: { platform: string }) {
   const config = PLATFORM_CONFIG[platform] || PLATFORM_CONFIG.OTHER;
   const Icon = config.icon;
+  const isPinterest = platform === "PINTEREST";
   return (
     <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider border ${config.bg}`}>
       <div className="translate-y-[0.5px]">
-        <Icon className={`h-3.5 w-3.5 ${config.color}`} />
+        {isPinterest ? (
+          <img src="/social-icons/pinterest.png" className="h-3.5 w-3.5 object-contain" alt="Pinterest" />
+        ) : (
+          <Icon className={`h-3.5 w-3.5 ${config.color}`} />
+        )}
       </div>
       <span className={config.color}>{platform}</span>
     </div>
@@ -397,12 +403,7 @@ export default function SocialMediaTasksPage() {
   }), [tasks]);
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground font-medium">Loading task board...</p>
-      </div>
-    );
+    return <KanbanSkeleton />;
   }
 
   return (

@@ -11,6 +11,7 @@ import { ArrowLeft, Save, RefreshCw, Banknote, Calendar, Users, FileText, Plus, 
 import { useAgencyStore, Subscription } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, normalizeFeatureList } from "@/lib/utils";
+import { FormPageSkeleton } from "@/components/ui/PageSkeleton";
 
 export default function EditSubscriptionPage() {
   const { id } = useParams();
@@ -153,11 +154,7 @@ export default function EditSubscriptionPage() {
   };
 
   if (isLoading || !form.id) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <RefreshCw className="h-8 w-8 text-primary animate-spin" />
-      </div>
-    );
+    return <FormPageSkeleton />;
   }
 
   return (

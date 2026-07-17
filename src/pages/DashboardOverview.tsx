@@ -42,6 +42,7 @@ import {
 } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { useAgencyStore } from "@/lib/store";
+import { DashboardSkeleton } from "@/components/ui/PageSkeleton";
 import { useMemo, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -514,11 +515,7 @@ export default function DashboardOverview() {
   }, [leads]);
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <RefreshCw className="h-8 w-8 text-primary animate-spin opacity-20" />
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   return (

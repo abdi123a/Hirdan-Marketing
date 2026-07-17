@@ -2246,7 +2246,11 @@ export default function ClientPortalPage() {
                                           className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[9px] font-bold ${pc.bg}`}
                                           title={pc.label}
                                         >
-                                          <PIcon className={`h-2.5 w-2.5 ${pc.color}`} />
+                                          {pl === "PINTEREST" ? (
+                                            <img src="/social-icons/pinterest.png" className="h-2.5 w-2.5 object-contain" alt="Pinterest" />
+                                          ) : (
+                                            <PIcon className={`h-2.5 w-2.5 ${pc.color}`} />
+                                          )}
                                           <span className={pc.color}>{pc.label}</span>
                                         </div>
                                       );

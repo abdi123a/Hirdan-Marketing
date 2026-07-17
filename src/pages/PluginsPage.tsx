@@ -721,7 +721,7 @@ export default function PluginsPage() {
                   <tr className="hover:bg-muted/5 transition-colors">
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-xl bg-neutral-900 flex items-center justify-center border border-neutral-800 shadow-sm shrink-0 overflow-hidden bg-background">
+                        <div className="h-10 w-10 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-150 shadow-sm shrink-0 overflow-hidden">
                           <img src="/social-icons/tiktok.png" className="h-6 w-6 object-contain" alt="TikTok" />
                         </div>
                         <div>
@@ -889,8 +889,8 @@ export default function PluginsPage() {
                   <tr className="hover:bg-muted/5 transition-colors">
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-xl bg-red-50 flex items-center justify-center border border-red-150 shadow-sm shrink-0">
-                          <Pin className="h-5 w-5 text-red-700" />
+                        <div className="h-10 w-10 rounded-xl bg-red-50 flex items-center justify-center border border-red-150 shadow-sm shrink-0 overflow-hidden">
+                          <img src="/social-icons/pinterest.png" className="h-6 w-6 object-contain" alt="Pinterest" />
                         </div>
                         <div>
                           <p className="font-semibold text-foreground text-sm">Pinterest Pins</p>

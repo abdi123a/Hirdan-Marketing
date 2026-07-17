@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiFetch, apiUpload, downloadProtectedFile } from "@/lib/api-client";
 import { DocumentViewer } from "@/components/DocumentViewer";
 import { Progress } from "@/components/ui/progress";
+import { AccountsSkeleton, InlineTableSkeleton } from "@/components/ui/PageSkeleton";
 import { ClientMonthlyPlannerTab } from "@/pages/SocialMediaPlannerPage";
 
 interface ClientMeeting {
@@ -1139,7 +1140,7 @@ function ClientSocialProfilesTab({ clientId }: { clientId: string }) {
     }
   };
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+  if (loading) return <AccountsSkeleton />;
 
   return (
     <div className="space-y-4">
@@ -1171,7 +1172,11 @@ function ClientSocialProfilesTab({ clientId }: { clientId: string }) {
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
                     <div className={`w-10 h-10 rounded-xl ${config.bg} flex items-center justify-center shrink-0`}>
-                      <Icon className={`h-5 w-5 ${config.color}`} />
+                      {profile.platform === "PINTEREST" ? (
+                        <img src="/social-icons/pinterest.png" className="h-5 w-5 object-contain" alt="Pinterest" />
+                      ) : (
+                        <Icon className={`h-5 w-5 ${config.color}`} />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold">{config.label}</p>
@@ -1329,7 +1334,7 @@ function ClientDocumentsTab({ clientId, setPreviewDoc }: { clientId: string, set
   };
 
 
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+  if (loading) return <InlineTableSkeleton rows={4} />;
 
   return (
     <div className="space-y-4">
