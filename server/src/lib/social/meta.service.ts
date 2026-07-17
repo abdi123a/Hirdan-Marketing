@@ -466,6 +466,7 @@ export async function getMetaInsights(accountId: string, token: string, platform
       params: {
         metric: 'reach,views',
         period: 'day',
+        metric_type: 'total_value',
         access_token: token,
       },
     });
