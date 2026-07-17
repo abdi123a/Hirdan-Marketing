@@ -398,43 +398,45 @@ async function waitForThreadsContainerReady(containerId: string, accessToken: st
 
 export async function getMetaInsights(accountId: string, token: string, platform: 'facebook' | 'instagram'): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number }> {
   if (platform === 'facebook') {
+    // page_media_view replaces page_impressions
+    // page_post_engagements replaces page_engaged_users
     const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
       params: {
-        metric: 'page_impressions_unique,page_engaged_users',
+        metric: 'page_media_view,page_post_engagements',
         period: 'day',
         access_token: token,
       },
     });
 
-    const reachVal = data.data.find((item: any) => item.name === 'page_impressions_unique')?.values[0]?.value ?? 0;
-    const engagedVal = data.data.find((item: any) => item.name === 'page_engaged_users')?.values[0]?.value ?? 0;
+    const reachVal = data.data.find((item: any) => item.name === 'page_media_view')?.values[0]?.value ?? 0;
+    const engagedVal = data.data.find((item: any) => item.name === 'page_post_engagements')?.values[0]?.value ?? 0;
 
     // Follower count for Page
     const { data: pageData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
       params: {
-        fields: 'fan_count',
+        fields: 'fan_count,followers_count',
         access_token: token,
       },
     });
 
     return {
-      followers: pageData.fan_count || 0,
+      followers: pageData.followers_count || pageData.fan_count || 0,
       reach: reachVal,
       impressions: reachVal, // Proxy
       profileVisits: engagedVal,
     };
   } else {
     // Instagram Business insights
+    // profile_views was deprecated by Meta on January 8, 2025
     const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
       params: {
-        metric: 'reach,profile_views,impressions',
+        metric: 'reach,impressions',
         period: 'day',
         access_token: token,
       },
     });
 
     const reachVal = data.data.find((item: any) => item.name === 'reach')?.values[0]?.value ?? 0;
-    const profileViewsVal = data.data.find((item: any) => item.name === 'profile_views')?.values[0]?.value ?? 0;
     const impressionsVal = data.data.find((item: any) => item.name === 'impressions')?.values[0]?.value ?? 0;
 
     const { data: igData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
@@ -448,7 +450,7 @@ export async function getMetaInsights(accountId: string, token: string, platform
       followers: igData.followers_count || 0,
       reach: reachVal,
       impressions: impressionsVal,
-      profileVisits: profileViewsVal,
+      profileVisits: 0,
     };
   }
 }
