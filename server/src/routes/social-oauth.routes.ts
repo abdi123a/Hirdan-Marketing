@@ -166,7 +166,16 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
     // ── Other platforms ──
     if (platform === 'threads') {
       const token = await meta.exchangeMetaCodeForToken('threads', code);
-      tokenData = { accessToken: token, refreshToken: null, expiresIn: 3600 * 24, userId: 'threads_user', username: 'Threads User' };
+      const profile = await meta.getThreadsProfile(token);
+      tokenData = {
+        accessToken: token,
+        refreshToken: null,
+        expiresIn: 3600 * 24,
+        userId: profile.userId,
+        username: profile.username,
+        avatarUrl: profile.avatarUrl,
+        followers: profile.followers,
+      };
     } else if (platform === 'tiktok') {
       const d = await tiktok.exchangeTikTokCodeForToken(code);
       tokenData = { accessToken: d.access_token, refreshToken: d.refresh_token, expiresIn: d.expires_in, userId: d.open_id, username: d.username };
@@ -192,6 +201,7 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
         platformUserId: tokenData.userId,
         platformUsername: tokenData.username,
         displayName: tokenData.username,
+        avatarUrl: tokenData.avatarUrl || null,
         accessTokenEnc: encryptToken(tokenData.accessToken),
         refreshTokenEnc: tokenData.refreshToken ? encryptToken(tokenData.refreshToken) : null,
         tokenExpiresAt: tokenData.expiresIn ? new Date(Date.now() + tokenData.expiresIn * 1000) : null,
@@ -200,6 +210,7 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
       update: {
         platformUsername: tokenData.username,
         displayName: tokenData.username,
+        avatarUrl: tokenData.avatarUrl || undefined,
         accessTokenEnc: encryptToken(tokenData.accessToken),
         refreshTokenEnc: tokenData.refreshToken ? encryptToken(tokenData.refreshToken) : null,
         tokenExpiresAt: tokenData.expiresIn ? new Date(Date.now() + tokenData.expiresIn * 1000) : null,
@@ -229,12 +240,14 @@ async function saveMetaAccount(platform: string, clientId: string, groupId: stri
       create: {
         clientId, platform: 'facebook', platformUserId: page.pageId,
         platformUsername: page.pageName, displayName: page.pageName, pageId: page.pageId,
+        avatarUrl: page.pageAvatarUrl || null,
         accessTokenEnc: encryptToken(page.pageAccessToken),
         tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
         groupName: groupId, groupColor: 'blue',
       },
       update: {
         platformUsername: page.pageName, displayName: page.pageName,
+        avatarUrl: page.pageAvatarUrl || undefined,
         accessTokenEnc: encryptToken(page.pageAccessToken),
         tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
       },
@@ -246,12 +259,14 @@ async function saveMetaAccount(platform: string, clientId: string, groupId: stri
         clientId, platform: 'instagram', platformUserId: page.igAccountId,
         platformUsername: page.igUsername || page.pageName, displayName: page.igUsername || page.pageName,
         pageId: page.pageId, igAccountId: page.igAccountId,
+        avatarUrl: page.igAvatarUrl || null,
         accessTokenEnc: encryptToken(page.pageAccessToken),
         tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
         groupName: groupId, groupColor: 'purple',
       },
       update: {
         platformUsername: page.igUsername || page.pageName, displayName: page.igUsername || page.pageName,
+        avatarUrl: page.igAvatarUrl || undefined,
         accessTokenEnc: encryptToken(page.pageAccessToken),
         tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
       },
@@ -277,12 +292,15 @@ router.get('/oauth/pending/:sessionId', authenticate, async (req, res) => {
   }
 
   // Return sanitized account list (no tokens)
+  // FIX: previously read p.followers / p.avatarUrl, which never existed on the
+  // page objects returned by getPagesWithInstagram — every account here showed
+  // 0 followers and no photo. Now reads the correct real fields per platform.
   const accounts = session.pages.map((p: any) => ({
     id: session.platform === 'facebook' ? p.pageId : (p.igAccountId || p.pageId),
     name: session.platform === 'facebook' ? p.pageName : (p.igUsername || p.pageName),
     username: p.igUsername || null,
-    avatarUrl: p.avatarUrl || null,
-    followers: p.followers || 0,
+    avatarUrl: session.platform === 'facebook' ? (p.pageAvatarUrl || null) : (p.igAvatarUrl || p.pageAvatarUrl || null),
+    followers: session.platform === 'facebook' ? (p.pageFollowers || 0) : (p.igFollowers ?? p.pageFollowers ?? 0),
     platform: session.platform,
   }));
 

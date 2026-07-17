@@ -12,6 +12,27 @@ const sum = (arr: any[], field: string) =>
 const pct = (curr: number, prev: number) =>
   prev > 0 ? parseFloat(((curr - prev) / prev * 100).toFixed(2)) : 0;
 
+// FIX (analytics/platform mismatch): a cross-posted SocialPost has one PostInsight
+// row per platform destination. Every aggregate below used to sum ALL of a post's
+// insight rows regardless of which platform the user had selected in the filter
+// dropdown, so picking e.g. "Instagram" still folded in that post's Facebook/X/etc.
+// numbers. This scopes a post's insights down to just the selected platform (or
+// returns everything when platformFilter is 'ALL').
+const scopedInsights = (insights: any[] | undefined, platformFilter: string) => {
+  if (!insights) return [];
+  if (!platformFilter || platformFilter === 'ALL') return insights;
+  return insights.filter(i => (i.platform || '').toUpperCase() === platformFilter);
+};
+
+// Same idea for posts themselves: when a platform filter is active, only include
+// posts that actually went out to that platform — otherwise a Twitter-only post
+// still shows up (with zero matching insights) while the user is looking at
+// "Instagram", inflating post counts / content-type counts for the wrong platform.
+const matchesPlatform = (destinations: any[] | undefined, platformFilter: string) => {
+  if (!platformFilter || platformFilter === 'ALL') return true;
+  return (destinations || []).some((d: any) => (d.platform || '').toUpperCase() === platformFilter);
+};
+
 // ── 1. FULL analytics in one call ──────────────────────────────────────────
 router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => {
   try {
@@ -63,7 +84,12 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       orderBy: { createdAt: 'desc' },
     });
 
-    const publishedPosts = allPosts.filter(p => p.status === 'PUBLISHED' && p.publishedAt);
+    // FIX: scope posts to the selected platform, same as accounts already are above.
+    // Without this, a post published only to a platform other than the one selected
+    // in the dropdown still counted toward post totals / content-type breakdowns.
+    const platformScopedPosts = allPosts.filter(p => matchesPlatform(p.destinations, platformFilter));
+
+    const publishedPosts = platformScopedPosts.filter(p => p.status === 'PUBLISHED' && p.publishedAt);
     const recentPosts = publishedPosts.filter(p => new Date(p.publishedAt!) >= since);
     const prevPeriodPosts = publishedPosts.filter(p => {
       const d = new Date(p.publishedAt!);
@@ -91,8 +117,8 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     const currVisits = sum(currentMetrics, 'profileVisits');
     const prevVisits = sum(prevMetrics, 'profileVisits');
 
-    const recentInsights = recentPosts.flatMap(p => p.insights || []);
-    const prevInsights = prevPeriodPosts.flatMap(p => p.insights || []);
+    const recentInsights = recentPosts.flatMap(p => scopedInsights(p.insights, platformFilter));
+    const prevInsights = prevPeriodPosts.flatMap(p => scopedInsights(p.insights, platformFilter));
 
     const currLikes = sum(recentInsights, 'likes');
     const currComments = sum(recentInsights, 'comments');
@@ -106,11 +132,11 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
 
     // ── Publishing stats ──
     const publishing = {
-      published: allPosts.filter(p => p.status === 'PUBLISHED').length,
-      scheduled: allPosts.filter(p => p.status === 'SCHEDULED').length,
-      draft: allPosts.filter(p => p.status === 'DRAFT').length,
-      failed: allPosts.filter(p => p.status === 'FAILED').length,
-      pendingApproval: allPosts.filter(p => p.status === 'AWAITING_APPROVAL').length,
+      published: platformScopedPosts.filter(p => p.status === 'PUBLISHED').length,
+      scheduled: platformScopedPosts.filter(p => p.status === 'SCHEDULED').length,
+      draft: platformScopedPosts.filter(p => p.status === 'DRAFT').length,
+      failed: platformScopedPosts.filter(p => p.status === 'FAILED').length,
+      pendingApproval: platformScopedPosts.filter(p => p.status === 'AWAITING_APPROVAL').length,
     };
     const totalAttempted = publishing.published + publishing.failed;
     const successRate = totalAttempted > 0 ? parseFloat(((publishing.published / totalAttempted) * 100).toFixed(1)) : 0;
@@ -146,7 +172,7 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     for (const p of recentPosts) {
       const ds = new Date(p.publishedAt!).toISOString().split('T')[0];
       if (!engMap[ds]) engMap[ds] = { date: ds, likes: 0, comments: 0, shares: 0, saved: 0, views: 0, total: 0 };
-      for (const ins of p.insights || []) {
+      for (const ins of scopedInsights(p.insights, platformFilter)) {
         engMap[ds].likes += ins.likes || 0;
         engMap[ds].comments += ins.comments || 0;
         engMap[ds].shares += ins.shares || 0;
@@ -164,7 +190,7 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       const t = (p.mediaType || 'text').toLowerCase();
       if (!ctMap[t]) ctMap[t] = { type: t, count: 0, reach: 0, engagement: 0, views: 0, saved: 0, impressions: 0 };
       ctMap[t].count += 1;
-      for (const ins of p.insights || []) {
+      for (const ins of scopedInsights(p.insights, platformFilter)) {
         ctMap[t].reach += ins.reach || 0;
         ctMap[t].engagement += (ins.likes || 0) + (ins.comments || 0) + (ins.shares || 0) + (ins.saved || 0);
         ctMap[t].views += ins.views || 0;
@@ -190,7 +216,7 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       const key = `${d.getDay()}_${d.getHours()}`;
       if (!timeMap[key]) timeMap[key] = { day: d.getDay(), hour: d.getHours(), engagement: 0, posts: 0 };
       timeMap[key].posts += 1;
-      for (const ins of p.insights || []) {
+      for (const ins of scopedInsights(p.insights, platformFilter)) {
         timeMap[key].engagement += (ins.likes || 0) + (ins.comments || 0) + (ins.shares || 0);
       }
     }
@@ -213,7 +239,12 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
         const plat = dest.platform.toLowerCase();
         if (!platMap[plat]) continue;
         platMap[plat].posts += 1;
-        for (const ins of p.insights || []) {
+        // FIX: previously summed ALL of the post's insights here, so a post
+        // cross-posted to Facebook + Instagram double-counted BOTH platforms'
+        // engagement into EACH platform's bucket. Now only counts the insight
+        // row(s) that actually belong to this destination's platform.
+        const destInsights = (p.insights || []).filter((i: any) => (i.platform || '').toUpperCase() === dest.platform.toUpperCase());
+        for (const ins of destInsights) {
           platMap[plat].engagement += (ins.likes || 0) + (ins.comments || 0) + (ins.shares || 0) + (ins.saved || 0);
         }
       }
@@ -221,7 +252,7 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
 
     // ── Top posts ──
     const topPosts = recentPosts.map(p => {
-      const ins = p.insights || [];
+      const ins = scopedInsights(p.insights, platformFilter);
       const likes = sum(ins, 'likes'), comments = sum(ins, 'comments'), shares = sum(ins, 'shares'),
         saved = sum(ins, 'saved'), views = sum(ins, 'views'), reach = sum(ins, 'reach'), impressions = sum(ins, 'impressions');
       const engagement = likes + comments + shares + saved;
@@ -337,9 +368,9 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
 
     const withScores = posts
       .filter(p => p.publishedAt && new Date(p.publishedAt) >= since)
-      .filter(p => !platform || platform === 'ALL' || (p.destinations || []).some((d: any) => d.platform.toUpperCase() === platform.toUpperCase()))
+      .filter(p => matchesPlatform(p.destinations, (platform || 'ALL').toUpperCase()))
       .map(p => {
-        const ins = p.insights || [];
+        const ins = scopedInsights(p.insights, (platform || 'ALL').toUpperCase());
         const likes = sum(ins, 'likes'), comments = sum(ins, 'comments'),
           shares = sum(ins, 'shares'), saved = sum(ins, 'saved'),
           views = sum(ins, 'views'), reach = sum(ins, 'reach'), impressions = sum(ins, 'impressions');

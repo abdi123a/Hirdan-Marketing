@@ -432,11 +432,12 @@ export default function SocialAnalyzePage() {
           <nav className="w-44 shrink-0 border-r border-border/50 bg-muted/10 flex flex-col gap-0.5 py-4 px-2 sticky top-[145px] h-[calc(100vh-145px)] overflow-y-auto">
             {TABS.map(t => {
               const Icon = t.icon;
+              const label = t.id === "followers" && platformFilter === "YOUTUBE" ? "Subscribers" : t.label;
               return (
                 <button key={t.id} onClick={() => setActiveTab(t.id)}
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${activeTab===t.id?"bg-primary text-primary-foreground shadow-sm":"text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}>
                   <Icon className="h-3.5 w-3.5 shrink-0"/>
-                  {t.label}
+                  {label}
                 </button>
               );
             })}
@@ -454,10 +455,10 @@ export default function SocialAnalyzePage() {
                 </div>
                 {/* 6 KPI cards */}
                 <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-                  <KPICard label="Total Followers" value={kpis!.followers.current} growth={kpis!.followers.growth} icon={Users} color="blue"/>
+                  <KPICard label={platformFilter === "YOUTUBE" ? "Total Subscribers" : "Total Followers"} value={kpis!.followers.current} growth={kpis!.followers.growth} icon={Users} color="blue"/>
                   <KPICard label="Total Reach" value={kpis!.reach.current} growth={kpis!.reach.growth} icon={TrendingUp} color="emerald"/>
                   <KPICard label="Impressions" value={kpis!.impressions.current} growth={kpis!.impressions.growth} icon={Eye} color="purple"/>
-                  <KPICard label="Profile Visits" value={kpis!.profileVisits.current} growth={kpis!.profileVisits.growth} icon={UserPlus} color="amber"/>
+                  <KPICard label="Profile Visits" value={platformFilter === "YOUTUBE" ? 0 : kpis!.profileVisits.current} growth={platformFilter === "YOUTUBE" ? undefined : kpis!.profileVisits.growth} icon={UserPlus} color="amber"/>
                   <KPICard label="Engagement Rate" value={kpis!.engagementRate.current} growth={kpis!.engagementRate.change} icon={Activity} color="rose" isRate/>
                   <KPICard label="Posts Published" value={kpis!.publishing.published} icon={Zap} color="indigo"/>
                 </div>
@@ -508,7 +509,7 @@ export default function SocialAnalyzePage() {
                   <Card className="rounded-2xl shadow-sm border border-border/80 overflow-hidden">
                     <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
                       <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Target className="h-4 w-4 text-indigo-500"/>Audience Split</CardTitle>
-                      <CardDescription className="text-xs">Follower distribution by platform</CardDescription>
+                      <CardDescription className="text-xs">{platformFilter === "YOUTUBE" ? "Subscriber distribution by platform" : "Follower distribution by platform"}</CardDescription>
                     </CardHeader>
                     <CardContent className="p-6 flex flex-col items-center gap-4">
                       {pieData.length > 0 ? (
@@ -551,7 +552,7 @@ export default function SocialAnalyzePage() {
                   <CardContent className="p-6">
                     {analytics.monthlyComparison ? (
                       <div className="space-y-0">
-                        <CompareRow label="Followers" curr={analytics.monthlyComparison.current.followers} prev={analytics.monthlyComparison.previous.followers}/>
+                        <CompareRow label={platformFilter === "YOUTUBE" ? "Subscribers" : "Followers"} curr={analytics.monthlyComparison.current.followers} prev={analytics.monthlyComparison.previous.followers}/>
                         <CompareRow label="Reach" curr={analytics.monthlyComparison.current.reach} prev={analytics.monthlyComparison.previous.reach}/>
                         <CompareRow label="Impressions" curr={analytics.monthlyComparison.current.impressions} prev={analytics.monthlyComparison.previous.impressions}/>
                         <CompareRow label="Engagement" curr={analytics.monthlyComparison.current.engagement} prev={analytics.monthlyComparison.previous.engagement}/>
@@ -665,10 +666,10 @@ export default function SocialAnalyzePage() {
             {/* ══════════════ FOLLOWERS ══════════════ */}
             {activeTab === "followers" && (
               <div className="space-y-6">
-                <div><h2 className="text-lg font-bold">Followers Analytics</h2><p className="text-xs text-muted-foreground">Audience growth and distribution</p></div>
+                <div><h2 className="text-lg font-bold">{platformFilter === "YOUTUBE" ? "Subscribers Analytics" : "Followers Analytics"}</h2><p className="text-xs text-muted-foreground">Audience growth and distribution</p></div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   {[
-                    { label:"Current Followers", value:kpis!.followers.current, icon:Users, color:"blue" },
+                    { label: platformFilter === "YOUTUBE" ? "Current Subscribers" : "Current Followers", value:kpis!.followers.current, icon:Users, color:"blue" },
                     { label:"Net Change", value:Math.abs(kpis!.followers.change), icon:kpis!.followers.change>=0?ArrowUp:ArrowDown, color:kpis!.followers.change>=0?"emerald":"rose" },
                     { label:"Growth %", value:Math.abs(kpis!.followers.growth), icon:TrendingUp, color:"indigo", suffix:"%" },
                     { label:"Prev. Period", value:kpis!.followers.previous, icon:Clock, color:"amber" },
@@ -677,8 +678,8 @@ export default function SocialAnalyzePage() {
 
                 <Card className="rounded-2xl shadow-sm border border-border/80">
                   <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
-                    <CardTitle className="text-sm font-bold flex items-center gap-1.5"><TrendingUp className="h-4 w-4 text-blue-500"/>Followers Growth Chart</CardTitle>
-                    <CardDescription className="text-xs">Total followers tracked daily</CardDescription>
+                    <CardTitle className="text-sm font-bold flex items-center gap-1.5"><TrendingUp className="h-4 w-4 text-blue-500"/>{platformFilter === "YOUTUBE" ? "Subscribers Growth Chart" : "Followers Growth Chart"}</CardTitle>
+                    <CardDescription className="text-xs">{platformFilter === "YOUTUBE" ? "Total subscribers tracked daily" : "Total followers tracked daily"}</CardDescription>
                   </CardHeader>
                   <CardContent className="p-6">
                     <div className="h-72 w-full">
@@ -689,7 +690,7 @@ export default function SocialAnalyzePage() {
                             <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>v.slice(5)}/>
                             <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
                             <Tooltip content={<ChartTip/>}/>
-                            <Line type="monotone" dataKey="followers" name="Followers" stroke="#3b82f6" strokeWidth={2.5} dot={false} activeDot={{r:5}}/>
+                            <Line type="monotone" dataKey="followers" name={platformFilter === "YOUTUBE" ? "Subscribers" : "Followers"} stroke="#3b82f6" strokeWidth={2.5} dot={false} activeDot={{r:5}}/>
                           </LineChart>
                         </ResponsiveContainer>
                       ) : <NoData/>}
@@ -701,7 +702,7 @@ export default function SocialAnalyzePage() {
                 <Card className="rounded-2xl shadow-sm border border-border/80">
                   <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
                     <CardTitle className="text-sm font-bold">Audience Distribution</CardTitle>
-                    <CardDescription className="text-xs">Followers per platform</CardDescription>
+                    <CardDescription className="text-xs">{platformFilter === "YOUTUBE" ? "Subscribers per platform" : "Followers per platform"}</CardDescription>
                   </CardHeader>
                   <CardContent className="p-6">
                     <div className="space-y-4">
@@ -778,7 +779,9 @@ export default function SocialAnalyzePage() {
                             <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
                             <Tooltip content={<ChartTip/>}/>
                             <Line type="monotone" dataKey="reach" name="Reach" stroke="#10b981" strokeWidth={2.5} dot={false} activeDot={{r:5}}/>
-                            <Line type="monotone" dataKey="profileVisits" name="Profile Visits" stroke="#f59e0b" strokeWidth={2} dot={false}/>
+                            {platformFilter !== "YOUTUBE" && (
+                              <Line type="monotone" dataKey="profileVisits" name="Profile Visits" stroke="#f59e0b" strokeWidth={2} dot={false}/>
+                            )}
                           </LineChart>
                         </ResponsiveContainer>
                       ) : <NoData/>}
@@ -1033,7 +1036,7 @@ export default function SocialAnalyzePage() {
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b border-border/40 bg-muted/5">
-                              {["Platform","Followers","Reach","Impressions","Engagement","Posts","Growth"].map(h=>(
+                              {["Platform", platformFilter === "YOUTUBE" ? "Subscribers" : "Followers", "Reach", "Impressions", "Engagement", "Posts", "Growth"].map(h=>(
                                 <th key={h} className="px-5 py-3 text-left text-[10px] font-bold text-muted-foreground uppercase tracking-wide">{h}</th>
                               ))}
                             </tr>
@@ -1060,7 +1063,7 @@ export default function SocialAnalyzePage() {
                 {/* Platform chart */}
                 <Card className="rounded-2xl shadow-sm border border-border/80">
                   <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
-                    <CardTitle className="text-sm font-bold">Followers by Platform</CardTitle>
+                    <CardTitle className="text-sm font-bold">{platformFilter === "YOUTUBE" ? "Subscribers by Platform" : "Followers by Platform"}</CardTitle>
                   </CardHeader>
                   <CardContent className="p-6">
                     <div className="h-52 w-full">
@@ -1071,7 +1074,7 @@ export default function SocialAnalyzePage() {
                             <XAxis type="number" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>fmtN(Number(v))}/>
                             <YAxis dataKey="platform" type="category" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} width={70} tickFormatter={v=>v.charAt(0).toUpperCase()+v.slice(1)}/>
                             <Tooltip content={<ChartTip/>}/>
-                            <Bar dataKey="followers" name="Followers" fill="#6366f1" radius={[0,4,4,0]}>
+                            <Bar dataKey="followers" name={platformFilter === "YOUTUBE" ? "Subscribers" : "Followers"} fill="#6366f1" radius={[0,4,4,0]}>
                               {analytics.platformBreakdown.map((p,i) => <Cell key={p.platform} fill={PLATFORM_COLORS[p.platform]||PIE_PALETTE[i%PIE_PALETTE.length]}/>)}
                             </Bar>
                           </BarChart>
@@ -1188,10 +1191,10 @@ export default function SocialAnalyzePage() {
                         </div>
                         <div className="grid grid-cols-2 gap-0 divide-x divide-y divide-border/40">
                           {[
-                            { label:"Followers", value:m?.followers||0 },
+                            { label: acc.platform?.toLowerCase() === "youtube" ? "Subscribers" : "Followers", value:m?.followers||0 },
                             { label:"Reach", value:m?.reach||0 },
                             { label:"Impressions", value:m?.impressions||0 },
-                            { label:"Profile Visits", value:m?.profileVisits||0 },
+                            { label:"Profile Visits", value: acc.platform?.toLowerCase() === "youtube" ? 0 : (m?.profileVisits||0) },
                           ].map(metric => (
                             <div key={metric.label} className="p-4 text-center">
                               <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">{metric.label}</p>

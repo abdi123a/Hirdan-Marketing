@@ -247,7 +247,7 @@ export default function SocialAccountPickerPage() {
                             {acc.followers > 0 && (
                               <span className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
                                 <Users className="h-3 w-3" />
-                                {fmtNum(acc.followers)} followers
+                                {fmtNum(acc.followers)} {acc.platform?.toLowerCase() === 'youtube' ? 'subscribers' : 'followers'}
                               </span>
                             )}
                             <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">

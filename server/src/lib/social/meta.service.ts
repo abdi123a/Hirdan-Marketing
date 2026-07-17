@@ -127,35 +127,64 @@ export async function getMetaLongLivedToken(shortLivedToken: string): Promise<st
   return data.access_token;
 }
 
+// FIX (Threads shows no real data): previously the OAuth callback never called any
+// Threads profile endpoint at all — it hardcoded userId: 'threads_user' and
+// username: 'Threads User' for every single Threads account ever connected, for
+// every client. This fetches the real Threads user id + username so each account
+// is stored and displayed correctly, and so multiple Threads accounts under the
+// same client don't collide on the same fake platformUserId.
+export async function getThreadsProfile(accessToken: string): Promise<{ userId: string; username: string; avatarUrl: string | null; followers: number }> {
+  const { data } = await axios.get('https://graph.threads.net/v1.0/me', {
+    params: {
+      fields: 'id,username,threads_profile_picture_url,threads_biography',
+      access_token: accessToken,
+    },
+  });
+
+  let followers = 0;
+  try {
+    const { data: insightsData } = await axios.get(`https://graph.threads.net/v1.0/${data.id}/threads_insights`, {
+      params: { metric: 'followers_count', access_token: accessToken },
+    });
+    followers = insightsData?.data?.find((m: any) => m.name === 'followers_count')?.total_value?.value || 0;
+  } catch (e: any) {
+    console.warn('[Meta Service] Could not fetch Threads follower count:', e.message);
+  }
+
+  return {
+    userId: data.id,
+    username: data.username || 'Threads User',
+    avatarUrl: data.threads_profile_picture_url || null,
+    followers,
+  };
+}
+
 export interface MetaPageInstagramInfo {
   pageId: string;
   pageName: string;
   pageAccessToken: string;
+  pageFollowers: number;
+  pageAvatarUrl: string | null;
   igAccountId: string | null;
   igUsername: string | null;
+  igFollowers: number | null;
+  igAvatarUrl: string | null;
 }
 
 export async function getPagesWithInstagram(userAccessToken: string): Promise<MetaPageInstagramInfo[]> {
-  console.log('[Meta Service] Fetching /me/accounts...');
+  // FIX (data mismatch): this previously only requested id/name/access_token/
+  // instagram_business_account{id,username} — it never asked Graph API for
+  // follower counts or profile pictures, so every account in the OAuth picker
+  // screen (SocialAccountPickerPage.tsx) always showed "0 followers" and no
+  // avatar regardless of the account's real size. Now requests fan_count and
+  // picture{url} for the Page, and followers_count + profile_picture_url for
+  // the linked Instagram Business account.
   const { data } = await axios.get(`${GRAPH_URL}/me/accounts`, {
     params: {
       access_token: userAccessToken,
-      fields: 'id,name,access_token,instagram_business_account{id,username}',
+      fields: 'id,name,access_token,fan_count,picture{url},instagram_business_account{id,username,followers_count,profile_picture_url}',
     },
   });
-  console.log('[Meta Service] /me/accounts raw response:', JSON.stringify(data, null, 2));
-
-  // Let's also fetch permissions to see what's granted
-  try {
-    const { data: permData } = await axios.get(`${GRAPH_URL}/me/permissions`, {
-      params: {
-        access_token: userAccessToken,
-      },
-    });
-    console.log('[Meta Service] /me/permissions response:', JSON.stringify(permData, null, 2));
-  } catch (e: any) {
-    console.error('[Meta Service] Failed to fetch /me/permissions:', e.message);
-  }
 
   if (!data || !data.data) {
     return [];
@@ -165,8 +194,12 @@ export async function getPagesWithInstagram(userAccessToken: string): Promise<Me
     pageId: page.id,
     pageName: page.name,
     pageAccessToken: page.access_token,
+    pageFollowers: page.fan_count || 0,
+    pageAvatarUrl: page.picture?.data?.url || null,
     igAccountId: page.instagram_business_account?.id || null,
     igUsername: page.instagram_business_account?.username || null,
+    igFollowers: page.instagram_business_account?.followers_count ?? null,
+    igAvatarUrl: page.instagram_business_account?.profile_picture_url || null,
   }));
 }
 

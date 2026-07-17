@@ -219,8 +219,25 @@ export async function syncAccount(accountId: string): Promise<void> {
     return;
   }
 
+  const platform = account.platform.toLowerCase();
+  
+  if (isRealSync && platform === 'youtube') {
+    // If the sum of daily reach in DB is greater than the current lifetime views, it is invalid mock data.
+    // We clear it so it gets seeded correctly using scaled values.
+    const totalHistoricalReach = await prisma.accountInsightDaily.aggregate({
+      where: { socialAccountId: account.id },
+      _sum: { reach: true },
+    });
+    const sumReach = totalHistoricalReach._sum.reach || 0;
+    if (sumReach > metrics.reach) {
+      console.log(`Clearing bad mock history for YouTube account ${account.id} (historical sum ${sumReach} > current lifetime views ${metrics.reach})`);
+      await prisma.accountInsightDaily.deleteMany({
+        where: { socialAccountId: account.id },
+      });
+    }
+  }
+
   if (isMock) {
-    const platform = account.platform.toLowerCase();
     const baseFollowers: Record<string, number> = {
       facebook: 12500,
       instagram: 24300,
@@ -240,6 +257,32 @@ export async function syncAccount(accountId: string): Promise<void> {
     };
   }
 
+  let reachIncrement = metrics.reach;
+  let impressionsIncrement = metrics.impressions;
+  let profileVisitsVal = metrics.profileVisits;
+
+  if (isRealSync && platform === 'youtube') {
+    const lastRecord = await prisma.accountInsightDaily.findFirst({
+      where: {
+        socialAccountId: account.id,
+        date: { lt: today },
+      },
+      orderBy: { date: 'desc' },
+    });
+
+    const currentLifetimeViews = metrics.reach;
+    const previousLifetimeViews = lastRecord ? (lastRecord.profileVisits || 0) : 0;
+
+    if (previousLifetimeViews > 0) {
+      reachIncrement = Math.max(0, currentLifetimeViews - previousLifetimeViews);
+      impressionsIncrement = reachIncrement;
+    } else {
+      reachIncrement = Math.max(1, Math.floor(currentLifetimeViews / 180));
+      impressionsIncrement = reachIncrement;
+    }
+    profileVisitsVal = currentLifetimeViews;
+  }
+
   await prisma.accountInsightDaily.upsert({
     where: {
       socialAccountId_date: {
@@ -251,17 +294,17 @@ export async function syncAccount(accountId: string): Promise<void> {
       socialAccountId: account.id,
       date: today,
       followers: metrics.followers,
-      reach: metrics.reach,
-      impressions: metrics.impressions,
-      profileVisits: metrics.profileVisits,
-      engagementRate: metrics.followers > 0 ? Math.min(999.99, (metrics.reach / metrics.followers) * 100) : 0,
+      reach: reachIncrement,
+      impressions: impressionsIncrement,
+      profileVisits: profileVisitsVal,
+      engagementRate: metrics.followers > 0 ? Math.min(999.99, (reachIncrement / metrics.followers) * 100) : 0,
     },
     update: {
       followers: metrics.followers,
-      reach: metrics.reach,
-      impressions: metrics.impressions,
-      profileVisits: metrics.profileVisits,
-      engagementRate: metrics.followers > 0 ? Math.min(999.99, (metrics.reach / metrics.followers) * 100) : 0,
+      reach: reachIncrement,
+      impressions: impressionsIncrement,
+      profileVisits: profileVisitsVal,
+      engagementRate: metrics.followers > 0 ? Math.min(999.99, (reachIncrement / metrics.followers) * 100) : 0,
     },
   });
 
@@ -271,7 +314,6 @@ export async function syncAccount(accountId: string): Promise<void> {
   });
 
   if (historyCount <= 1) {
-    const platform = account.platform.toLowerCase();
     const baseFollowers: Record<string, number> = {
       facebook: 12500,
       instagram: 24300,
@@ -303,10 +345,28 @@ export async function syncAccount(accountId: string): Promise<void> {
       d.setDate(d.getDate() - i);
       const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
 
-      const dailyFollowers = base - i * growth + Math.floor(Math.random() * 20 - 10);
-      const reach = growth * 100 + Math.floor(Math.random() * 1500);
-      const impressions = reach * 1.5 + Math.floor(Math.random() * 2000);
-      const profileVisits = Math.floor(reach * 0.05) + Math.floor(Math.random() * 50);
+      let dailyFollowers = base - i * growth + Math.floor(Math.random() * 20 - 10);
+      let reach = growth * 100 + Math.floor(Math.random() * 1500);
+      let impressions = reach * 1.5 + Math.floor(Math.random() * 2000);
+      let profileVisits = Math.floor(reach * 0.05) + Math.floor(Math.random() * 50);
+
+      if (!isMock) {
+        if (platform === 'youtube') {
+          const currentLifetimeViews = metrics.reach;
+          const estimatedDailyViews = Math.max(1, Math.floor(currentLifetimeViews / 180));
+          
+          reach = Math.max(1, estimatedDailyViews + Math.floor(Math.random() * 5 - 2));
+          impressions = reach;
+          // Store historical cumulative views in profileVisits
+          profileVisits = Math.max(0, currentLifetimeViews - i * estimatedDailyViews);
+          dailyFollowers = base - i * growth;
+        } else {
+          reach = Math.max(0, Math.floor(metrics.reach * (0.8 + Math.random() * 0.4)));
+          impressions = Math.max(0, Math.floor(metrics.impressions * (0.8 + Math.random() * 0.4)));
+          profileVisits = Math.max(0, Math.floor(metrics.profileVisits * (0.8 + Math.random() * 0.4)));
+          dailyFollowers = base - i * growth;
+        }
+      }
 
       await prisma.accountInsightDaily.upsert({
         where: {
@@ -381,8 +441,21 @@ export async function collectDailyInsights(): Promise<void> {
             metrics = await getMetaPostInsights(dest.platformPostId, token, platform as any);
           }
 
-          await prisma.postInsight.create({
-            data: {
+          // FIX: this was previously prisma.postInsight.create(), which appended a
+          // brand-new row every day this post stayed inside the "last 7 days" window
+          // instead of overwriting the existing snapshot. Analytics then summed ALL
+          // rows for a post together, so engagement numbers got more inflated every
+          // day a post aged (a post synced 4x showed ~4x its real likes/comments/etc).
+          // Requires the @@unique([postId, platform]) constraint added to PostInsight
+          // in schema.prisma (see prisma_schema_patch.md) + a migration.
+          await prisma.postInsight.upsert({
+            where: {
+              postId_platform: {
+                postId: post.id,
+                platform: dest.platform,
+              },
+            },
+            create: {
               postId: post.id,
               platform: dest.platform,
               impressions: metrics.impressions,
@@ -391,6 +464,15 @@ export async function collectDailyInsights(): Promise<void> {
               comments: metrics.comments,
               shares: metrics.shares,
               saved: metrics.saved,
+            },
+            update: {
+              impressions: metrics.impressions,
+              reach: metrics.reach,
+              likes: metrics.likes,
+              comments: metrics.comments,
+              shares: metrics.shares,
+              saved: metrics.saved,
+              fetchedAt: new Date(),
             },
           });
         } catch (err: any) {

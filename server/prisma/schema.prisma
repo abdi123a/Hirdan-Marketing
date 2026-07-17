@@ -1376,6 +1376,7 @@ model PostInsight {
 
   post SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
+  @@unique([postId, platform])
   @@index([postId])
   @@map("post_insights")
 }

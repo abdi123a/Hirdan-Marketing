@@ -170,14 +170,20 @@ export async function refreshAccountToken(account: SocialAccount): Promise<{ acc
   switch (platform) {
     case 'facebook':
     case 'instagram':
-    case 'threads':
-      // Meta Graph tokens last 60 days, refresh by swapping user token again
+    case 'threads': {
+      // Meta Graph tokens last 60 days, refresh by swapping user token again.
+      // getMetaLongLivedToken returns a plaintext token from Meta's API — it must be
+      // ENCRYPTED before storage, not decrypted (that was the bug: decryptToken() on
+      // a plaintext string threw "Invalid stored encrypted token format" every time,
+      // silently failing every Facebook/Instagram/Threads token refresh).
       const longToken = await meta.getMetaLongLivedToken(decryptedRefreshToken);
+      const { encryptToken } = await import('./token-crypto.service.js');
       return {
-        accessTokenEnc: decryptToken(longToken), // Meta exchange token is ready to encrypt
+        accessTokenEnc: encryptToken(longToken),
         refreshTokenEnc: account.refreshTokenEnc,
         tokenExpiresAt: new Date(Date.now() + 5184000 * 1000),
       };
+    }
 
     case 'tiktok':
       const tkRes = await tiktok.refreshTikTokToken(decryptedRefreshToken);
