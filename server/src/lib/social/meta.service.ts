@@ -134,12 +134,30 @@ export interface MetaPageInstagramInfo {
 }
 
 export async function getPagesWithInstagram(userAccessToken: string): Promise<MetaPageInstagramInfo[]> {
+  console.log('[Meta Service] Fetching /me/accounts...');
   const { data } = await axios.get(`${GRAPH_URL}/me/accounts`, {
     params: {
       access_token: userAccessToken,
       fields: 'id,name,access_token,instagram_business_account{id,username}',
     },
   });
+  console.log('[Meta Service] /me/accounts raw response:', JSON.stringify(data, null, 2));
+
+  // Let's also fetch permissions to see what's granted
+  try {
+    const { data: permData } = await axios.get(`${GRAPH_URL}/me/permissions`, {
+      params: {
+        access_token: userAccessToken,
+      },
+    });
+    console.log('[Meta Service] /me/permissions response:', JSON.stringify(permData, null, 2));
+  } catch (e: any) {
+    console.error('[Meta Service] Failed to fetch /me/permissions:', e.message);
+  }
+
+  if (!data || !data.data) {
+    return [];
+  }
 
   return data.data.map((page: any) => ({
     pageId: page.id,

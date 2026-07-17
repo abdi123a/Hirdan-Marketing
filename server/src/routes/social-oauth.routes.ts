@@ -70,17 +70,25 @@ router.get('/oauth/connect', authenticate, async (req, res, next) => {
 
 // 2. Unified OAuth callback
 router.get('/oauth/callback/:platform', async (req, res, next) => {
+  const { platform } = req.params;
+  console.log(`[OAuth Callback DEBUG] --- Callback Route Hit for platform: ${platform} ---`);
+  console.log('[OAuth Callback DEBUG] Incoming query params:', req.query);
+  console.log('[OAuth Callback DEBUG] Headers:', req.headers);
+
   try {
-    const { platform } = req.params;
     const { code, state } = req.query as { code: string; state: string };
 
     if (!code || !state) {
+      console.error(`[OAuth Callback DEBUG] Error: Callback missing code or state parameters. Platform: ${platform}, query:`, req.query);
       throw new Error('Callback missing code or state parameters');
     }
 
     // Verify OAuth signed state (CSRF Protection)
+    console.log('[OAuth Callback DEBUG] Verifying OAuth state...');
     const verified = verifyOAuthState(state);
+    console.log('[OAuth Callback DEBUG] Verified state payload:', verified);
     if (verified.platform !== platform) {
+      console.error(`[OAuth Callback DEBUG] Error: OAuth state platform mismatch. Verified: ${verified.platform}, Requested: ${platform}`);
       throw new Error('OAuth state platform mismatch');
     }
 
@@ -88,71 +96,101 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
     let tokenData: any = {};
 
     if (platform === 'facebook' || platform === 'instagram') {
+      console.log(`[OAuth Callback DEBUG] Calling exchangeMetaCodeForToken for platform: ${platform}, code: ${code ? code.substring(0, 10) + '...' : 'undefined'}`);
       const userToken = await meta.exchangeMetaCodeForToken(platform as any, code);
+      console.log(`[OAuth Callback DEBUG] exchangeMetaCodeForToken SUCCESS. userToken length: ${userToken ? userToken.length : 0}`);
+
+      console.log('[OAuth Callback DEBUG] Calling getMetaLongLivedToken...');
       const longLivedUserToken = await meta.getMetaLongLivedToken(userToken);
+      console.log(`[OAuth Callback DEBUG] getMetaLongLivedToken SUCCESS. longLivedUserToken length: ${longLivedUserToken ? longLivedUserToken.length : 0}`);
+
+      console.log('[OAuth Callback DEBUG] Calling getPagesWithInstagram...');
       const pages = await meta.getPagesWithInstagram(longLivedUserToken);
+      console.log('[OAuth Callback DEBUG] getPagesWithInstagram result pages count:', pages.length);
+      console.log('[OAuth Callback DEBUG] Pages details:', JSON.stringify(pages.map(p => ({ ...p, pageAccessToken: p.pageAccessToken ? p.pageAccessToken.substring(0, 10) + '...' : null })), null, 2));
+
+      if (pages.length === 0) {
+        console.warn('[OAuth Callback DEBUG] WARNING: getPagesWithInstagram returned an empty array! No pages or Instagram accounts linked to this user token.');
+      }
 
       for (const page of pages) {
         if (platform === 'facebook') {
-          await prisma.socialAccount.upsert({
-            where: {
-              clientId_platform_platformUserId: {
+          console.log(`[OAuth Callback DEBUG] Attempting DB upsert for facebook. clientId: ${clientId}, pageId: ${page.pageId}, pageName: ${page.pageName}`);
+          try {
+            const upserted = await prisma.socialAccount.upsert({
+              where: {
+                clientId_platform_platformUserId: {
+                  clientId: clientId as string,
+                  platform: 'facebook',
+                  platformUserId: page.pageId,
+                },
+              },
+              create: {
                 clientId: clientId as string,
                 platform: 'facebook',
                 platformUserId: page.pageId,
+                platformUsername: page.pageName,
+                displayName: page.pageName,
+                pageId: page.pageId,
+                accessTokenEnc: encryptToken(page.pageAccessToken),
+                tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // ~60 days
+                groupName: groupId,
+                groupColor: 'blue',
               },
-            },
-            create: {
-              clientId: clientId as string,
-              platform: 'facebook',
-              platformUserId: page.pageId,
-              platformUsername: page.pageName,
-              displayName: page.pageName,
-              pageId: page.pageId,
-              accessTokenEnc: encryptToken(page.pageAccessToken),
-              tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // ~60 days
-              groupName: groupId,
-              groupColor: 'blue',
-            },
-            update: {
-              platformUsername: page.pageName,
-              displayName: page.pageName,
-              accessTokenEnc: encryptToken(page.pageAccessToken),
-              tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-            },
-          });
+              update: {
+                platformUsername: page.pageName,
+                displayName: page.pageName,
+                accessTokenEnc: encryptToken(page.pageAccessToken),
+                tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+              },
+            });
+            console.log('[OAuth Callback DEBUG] DB Upsert for facebook page SUCCESS:', upserted.id);
+          } catch (dbErr: any) {
+            console.error('[OAuth Callback DEBUG] DB Upsert for facebook page FAILED. Error details:', dbErr);
+            throw dbErr;
+          }
         } else if (platform === 'instagram' && page.igAccountId) {
-          await prisma.socialAccount.upsert({
-            where: {
-              clientId_platform_platformUserId: {
+          console.log(`[OAuth Callback DEBUG] Attempting DB upsert for instagram. clientId: ${clientId}, igAccountId: ${page.igAccountId}, igUsername: ${page.igUsername}`);
+          try {
+            const upserted = await prisma.socialAccount.upsert({
+              where: {
+                clientId_platform_platformUserId: {
+                  clientId: clientId as string,
+                  platform: 'instagram',
+                  platformUserId: page.igAccountId,
+                },
+              },
+              create: {
                 clientId: clientId as string,
                 platform: 'instagram',
                 platformUserId: page.igAccountId,
+                platformUsername: page.igUsername || page.pageName,
+                displayName: page.igUsername || page.pageName,
+                pageId: page.pageId,
+                igAccountId: page.igAccountId,
+                accessTokenEnc: encryptToken(page.pageAccessToken),
+                tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+                groupName: groupId,
+                groupColor: 'purple',
               },
-            },
-            create: {
-              clientId: clientId as string,
-              platform: 'instagram',
-              platformUserId: page.igAccountId,
-              platformUsername: page.igUsername || page.pageName,
-              displayName: page.igUsername || page.pageName,
-              pageId: page.pageId,
-              igAccountId: page.igAccountId,
-              accessTokenEnc: encryptToken(page.pageAccessToken),
-              tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-              groupName: groupId,
-              groupColor: 'purple',
-            },
-            update: {
-              platformUsername: page.igUsername || page.pageName,
-              displayName: page.igUsername || page.pageName,
-              accessTokenEnc: encryptToken(page.pageAccessToken),
-              tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-            },
-          });
+              update: {
+                platformUsername: page.igUsername || page.pageName,
+                displayName: page.igUsername || page.pageName,
+                accessTokenEnc: encryptToken(page.pageAccessToken),
+                tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+              },
+            });
+            console.log('[OAuth Callback DEBUG] DB Upsert for instagram page SUCCESS:', upserted.id);
+          } catch (dbErr: any) {
+            console.error('[OAuth Callback DEBUG] DB Upsert for instagram page FAILED. Error details:', dbErr);
+            throw dbErr;
+          }
+        } else if (platform === 'instagram' && !page.igAccountId) {
+          console.log(`[OAuth Callback DEBUG] Page ${page.pageName} (${page.pageId}) does not have an Instagram business account linked. Skipping Instagram upsert.`);
         }
       }
     } else {
+      console.log(`[OAuth Callback DEBUG] Handling exchange for platform: ${platform}`);
       if (platform === 'threads') {
         const token = await meta.exchangeMetaCodeForToken('threads', code);
         tokenData = {
@@ -210,40 +248,48 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
         };
       }
 
-      await prisma.socialAccount.upsert({
-        where: {
-          clientId_platform_platformUserId: {
+      console.log(`[OAuth Callback DEBUG] Attempting DB upsert for platform: ${platform}, userId: ${tokenData.userId}`);
+      try {
+        const upserted = await prisma.socialAccount.upsert({
+          where: {
+            clientId_platform_platformUserId: {
+              clientId: clientId as string,
+              platform,
+              platformUserId: tokenData.userId as string,
+            },
+          },
+          create: {
             clientId: clientId as string,
             platform,
             platformUserId: tokenData.userId as string,
+            platformUsername: tokenData.username as string,
+            displayName: tokenData.username as string,
+            accessTokenEnc: encryptToken(tokenData.accessToken as string),
+            refreshTokenEnc: tokenData.refreshToken ? encryptToken(tokenData.refreshToken as string) : null,
+            tokenExpiresAt: tokenData.expiresIn ? new Date(Date.now() + (tokenData.expiresIn as number) * 1000) : null,
+            groupName: groupId,
           },
-        },
-        create: {
-          clientId: clientId as string,
-          platform,
-          platformUserId: tokenData.userId as string,
-          platformUsername: tokenData.username as string,
-          displayName: tokenData.username as string,
-          accessTokenEnc: encryptToken(tokenData.accessToken as string),
-          refreshTokenEnc: tokenData.refreshToken ? encryptToken(tokenData.refreshToken as string) : null,
-          tokenExpiresAt: tokenData.expiresIn ? new Date(Date.now() + (tokenData.expiresIn as number) * 1000) : null,
-          groupName: groupId,
-        },
-        update: {
-          platformUsername: tokenData.username as string,
-          displayName: tokenData.username as string,
-          accessTokenEnc: encryptToken(tokenData.accessToken as string),
-          refreshTokenEnc: tokenData.refreshToken ? encryptToken(tokenData.refreshToken as string) : null,
-          tokenExpiresAt: tokenData.expiresIn ? new Date(Date.now() + (tokenData.expiresIn as number) * 1000) : null,
-        },
-      });
+          update: {
+            platformUsername: tokenData.username as string,
+            displayName: tokenData.username as string,
+            accessTokenEnc: encryptToken(tokenData.accessToken as string),
+            refreshTokenEnc: tokenData.refreshToken ? encryptToken(tokenData.refreshToken as string) : null,
+            tokenExpiresAt: tokenData.expiresIn ? new Date(Date.now() + (tokenData.expiresIn as number) * 1000) : null,
+          },
+        });
+        console.log(`[OAuth Callback DEBUG] DB Upsert for platform: ${platform} SUCCESS:`, upserted.id);
+      } catch (dbErr: any) {
+        console.error(`[OAuth Callback DEBUG] DB Upsert for platform: ${platform} FAILED. Error details:`, dbErr);
+        throw dbErr;
+      }
     }
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    console.log('[OAuth Callback DEBUG] Success. Redirecting to frontend accounts page:', `${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?connected=true`);
     res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?connected=true`);
     return;
   } catch (err: any) {
-    console.error('OAuth Callback Error:', err.message);
+    console.error('[OAuth Callback DEBUG] General Catch Error:', err.stack || err.message);
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?error=${encodeURIComponent(err.message)}`);
     return;
