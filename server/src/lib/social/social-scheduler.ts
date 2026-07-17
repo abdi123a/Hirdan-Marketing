@@ -188,6 +188,7 @@ export async function syncAccount(accountId: string): Promise<void> {
 
   let metrics = { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
   let isMock = false;
+  let syncError: string | null = null;
 
   try {
     const decryptedToken = decryptToken(account.accessTokenEnc);
@@ -198,12 +199,24 @@ export async function syncAccount(accountId: string): Promise<void> {
       // If the platform doesn't support metrics yet (or returning 0), simulate realistic ones
       if (metrics.followers === 0 && metrics.reach === 0 && metrics.impressions === 0) {
         isMock = true;
+        syncError = 'Platform API returned no metrics; falling back to mock data.';
       }
     }
   } catch (err: any) {
-    console.warn(`Real API sync failed for account ${account.id}, falling back to mock:`, err.message);
+    const errorMsg = err.response?.data?.error?.message || err.message || 'Unknown error';
+    console.warn(`Real API sync failed for account ${account.id}, falling back to mock:`, errorMsg);
     isMock = true;
+    syncError = `API Error: ${errorMsg}`;
   }
+
+  // Update health message based on whether sync succeeded or fell back
+  await prisma.socialAccount.update({
+    where: { id: accountId },
+    data: {
+      healthStatus: syncError ? 'warning' : 'healthy',
+      healthMessage: syncError,
+    },
+  });
 
   if (isMock) {
     const platform = account.platform.toLowerCase();

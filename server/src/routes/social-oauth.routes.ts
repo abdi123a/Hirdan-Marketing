@@ -541,13 +541,11 @@ router.post('/accounts/:accountId/sync', authenticate, async (req, res, next) =>
     const { syncAccount } = await import('../lib/social/social-scheduler.js');
     await syncAccount(accountId);
 
-    // Update health status to indicate successful sync
+    // Update sync time
     await prisma.socialAccount.update({
       where: { id: accountId },
       data: {
         updatedAt: new Date(),
-        healthStatus: 'healthy',
-        healthMessage: null,
       },
     });
 

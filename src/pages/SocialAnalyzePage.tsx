@@ -59,7 +59,7 @@ interface TopPost {
 
 interface AccountRow {
   id: string; platform: string; displayName: string; platformUsername: string;
-  avatarUrl: string | null; healthStatus: string; updatedAt: string;
+  avatarUrl: string | null; healthStatus: string; healthMessage: string | null; updatedAt: string;
   latestMetrics: { followers: number; reach: number; impressions: number; profileVisits: number; engagementRate: number; date: string } | null;
 }
 
@@ -1208,8 +1208,13 @@ export default function SocialAnalyzePage() {
                             <span className="text-xs font-bold text-emerald-600">{er.toFixed(1)}%</span>
                           </div>
                         )}
-                        <div className="px-5 pb-3 pt-1 text-[10px] text-muted-foreground">
-                          Last sync: {m?.date ? new Date(m.date).toLocaleDateString() : "Never"}
+                        <div className="px-5 pb-3 pt-1 text-[10px] text-muted-foreground flex flex-col gap-2">
+                          <div>Last sync: {m?.date ? new Date(m.date).toLocaleDateString() : "Never"}</div>
+                          {acc.healthStatus !== "healthy" && acc.healthMessage && (
+                            <div className="text-[10px] text-red-600 bg-red-50/50 border border-red-100 px-2 py-1 rounded font-medium">
+                              ⚠️ {acc.healthMessage}
+                            </div>
+                          )}
                         </div>
                       </Card>
                     );

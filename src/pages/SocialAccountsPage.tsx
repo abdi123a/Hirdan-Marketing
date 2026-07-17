@@ -654,6 +654,12 @@ export default function SocialAccountsPage() {
                                           <span>Token: {daysToExpiry}d left</span>
                                         )}
                                       </div>
+
+                                      {acc.healthStatus !== "healthy" && acc.healthMessage && (
+                                        <div className="mt-2.5 text-[11px] text-red-600 bg-red-50/50 border border-red-100 px-2 py-1 rounded font-medium">
+                                          ⚠️ {acc.healthMessage}
+                                        </div>
+                                      )}
                                     </div>
 
                                     {/* Account actions */}

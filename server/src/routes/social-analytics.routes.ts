@@ -288,7 +288,7 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       publishing: { ...publishing, successRate, weeklyActivity },
       accounts: accountsWithLatest.map(a => ({
         id: a.id, platform: a.platform, displayName: a.displayName, platformUsername: a.platformUsername,
-        avatarUrl: a.avatarUrl, healthStatus: a.healthStatus, updatedAt: a.updatedAt,
+        avatarUrl: a.avatarUrl, healthStatus: a.healthStatus, healthMessage: a.healthMessage, updatedAt: a.updatedAt,
         latestMetrics: a.latest ? {
           followers: a.latest.followers || 0, reach: a.latest.reach || 0,
           impressions: a.latest.impressions || 0, profileVisits: a.latest.profileVisits || 0,
