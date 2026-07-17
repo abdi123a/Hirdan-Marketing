@@ -77,6 +77,95 @@ export default function InvoiceDetailsPage() {
     }
   }, [invoice?.id, getVerificationToken]);
 
+  const generateAndUploadPdf = async () => {
+    try {
+      const element = printRef.current?.querySelector('.print-content') as HTMLElement || printRef.current;
+      if (!element) return;
+
+      // Wait for images
+      const images = Array.from(element.querySelectorAll('img'));
+      await Promise.all(
+        images.map(img => {
+          if (img.complete) return Promise.resolve();
+          return new Promise(resolve => {
+            img.onload = resolve;
+            img.onerror = resolve;
+          });
+        })
+      );
+
+      const captureScale = 2;
+      const canvas = await html2canvas(element, {
+        scale: captureScale,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+        width: 794,
+        height: element.scrollHeight,
+        onclone: (clonedDoc) => {
+          const el = clonedDoc.querySelector('.print-content') as HTMLElement;
+          if (el) {
+            el.style.width = '794px';
+            el.style.margin = '0';
+            el.style.padding = '0';
+          }
+        }
+      });
+
+      const imgData = canvas.toDataURL("image/jpeg", 0.9);
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = 210;
+      const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
+      const pageHeight = 297;
+
+      let heightLeft = pdfHeightRatio;
+      let position = 0;
+
+      if (pdfHeightRatio <= 300) {
+        pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
+      } else {
+        pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
+        heightLeft -= pageHeight;
+
+        while (heightLeft > 10) {
+          position = heightLeft - pdfHeightRatio;
+          pdf.addPage();
+          pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
+          heightLeft -= pageHeight;
+        }
+      }
+
+      const pdfDataUri = pdf.output('datauristring');
+      const base64Data = pdfDataUri.split(',')[1] || pdfDataUri;
+
+      const dbId = invoice._dbId || invoice.id;
+      await apiFetch(`/invoices/${dbId}/pdf`, {
+        method: "POST",
+        body: JSON.stringify({
+          pdfBase64: base64Data,
+        }),
+      });
+      console.log('[InvoiceDetails] Background invoice PDF cached successfully.');
+    } catch (err) {
+      console.error('[InvoiceDetails] Background PDF cache upload failed:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (invoice?.id && !isInitialLoading) {
+      const timer = setTimeout(() => {
+        generateAndUploadPdf();
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [invoice?.id, isInitialLoading]);
+
   if (isInitialLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
@@ -147,7 +236,7 @@ export default function InvoiceDetailsPage() {
       const captureScale = 3;
       const jpegQuality = 0.95;
       const canvas = await html2canvas(element, {
-        scale: captureScale, 
+        scale: captureScale,
         useCORS: true,
         logging: false,
         backgroundColor: "#ffffff",
@@ -174,7 +263,7 @@ export default function InvoiceDetailsPage() {
       const pdfWidth = 210;
       const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
       const pageHeight = 297;
-      
+
       let heightLeft = pdfHeightRatio;
       let position = 0;
 
@@ -233,8 +322,8 @@ export default function InvoiceDetailsPage() {
   const statusColor = (s: string) =>
     s === 'Paid' ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
       s === 'Partially Paid' ? "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" :
-      s === 'Overdue' ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
-        "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
+        s === 'Overdue' ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
+          "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400";
 
   const statusAccent =
     invoice.status === "Paid"
@@ -288,7 +377,7 @@ export default function InvoiceDetailsPage() {
               variant="outline"
               onClick={() => {
                 // #region agent log
-                fetch('http://127.0.0.1:7891/ingest/c6d26856-ebcd-4639-9d6e-816efcb76a2c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1b217a'},body:JSON.stringify({sessionId:'1b217a',runId:'pre-fix',hypothesisId:'H7',location:'src/pages/InvoiceDetailsPage.tsx:166',message:'Print invoice initiated',data:{invoiceId:invoice.id,route:window.location.pathname},timestamp:Date.now()})}).catch(()=>{});
+                fetch('http://127.0.0.1:7891/ingest/c6d26856-ebcd-4639-9d6e-816efcb76a2c', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1b217a' }, body: JSON.stringify({ sessionId: '1b217a', runId: 'pre-fix', hypothesisId: 'H7', location: 'src/pages/InvoiceDetailsPage.tsx:166', message: 'Print invoice initiated', data: { invoiceId: invoice.id, route: window.location.pathname }, timestamp: Date.now() }) }).catch(() => { });
                 // #endregion
                 setTimeout(() => window.print(), 50);
               }}

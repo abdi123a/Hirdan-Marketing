@@ -231,6 +231,94 @@ export default function ClientPortalPage() {
   const [actionType, setActionType] = useState<'accept' | 'reject' | null>(null);
   const [actionComment, setActionComment] = useState('');
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
+  const [isUploadingCache, setIsUploadingCache] = useState(false);
+
+  useEffect(() => {
+    if (viewingDoc && viewingDoc.type === 'Invoice') {
+      const timer = setTimeout(async () => {
+        if (!downloadRef.current || isUploadingCache) return;
+        setIsUploadingCache(true);
+        try {
+          const element = downloadRef.current.querySelector('.print-content') as HTMLElement || downloadRef.current;
+          
+          // Wait for images
+          const images = Array.from(element.querySelectorAll('img'));
+          await Promise.all(
+            images.map(img => {
+              if (img.complete) return Promise.resolve();
+              return new Promise(resolve => {
+                img.onload = resolve;
+                img.onerror = resolve;
+              });
+            })
+          );
+
+          const canvas = await html2canvas(element, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: "#ffffff",
+            width: 794,
+            height: element.scrollHeight,
+            onclone: (clonedDoc) => {
+              const el = clonedDoc.querySelector('.print-content') as HTMLElement;
+              if (el) {
+                el.style.width = '794px';
+                el.style.margin = '0';
+                el.style.padding = '0';
+              }
+            }
+          });
+
+          const imgData = canvas.toDataURL("image/jpeg", 0.9);
+          const pdf = new jsPDF({
+            orientation: "portrait",
+            unit: "mm",
+            format: "a4",
+          });
+
+          const imgProps = pdf.getImageProperties(imgData);
+          const pdfWidth = 210;
+          const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
+          const pageHeight = 297;
+          
+          let heightLeft = pdfHeightRatio;
+          let position = 0;
+
+          if (pdfHeightRatio <= 300) {
+            pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
+          } else {
+            pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
+            heightLeft -= pageHeight;
+
+            while (heightLeft > 10) {
+              position = heightLeft - pdfHeightRatio;
+              pdf.addPage();
+              pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
+              heightLeft -= pageHeight;
+            }
+          }
+
+          const pdfDataUri = pdf.output('datauristring');
+          const base64Data = pdfDataUri.split(',')[1] || pdfDataUri;
+
+          const dbId = viewingDoc.data._dbId || viewingDoc.data.id;
+          await apiFetch(`/invoices/${dbId}/pdf`, {
+            method: "POST",
+            body: JSON.stringify({
+              pdfBase64: base64Data,
+            }),
+          });
+          console.log('[ClientPortal] Background invoice PDF cached successfully.');
+        } catch (err) {
+          console.error('[ClientPortal] Background PDF cache upload failed:', err);
+        } finally {
+          setIsUploadingCache(false);
+        }
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [viewingDoc]);
 
   const handleDocActionSubmit = async () => {
     if (!viewingDoc || !actionType) return;
@@ -2656,7 +2744,7 @@ export default function ClientPortalPage() {
       />
 
       <div className="fixed -left-[9999px] top-0 pointer-events-none" aria-hidden="true">
-        {activeDownloadDocument && (
+        {activeDownloadDocument ? (
           <div ref={downloadRef}>
             <PremiumInvoice
               type={activeDownloadDocument.type}
@@ -2664,7 +2752,15 @@ export default function ClientPortalPage() {
               settings={settings}
             />
           </div>
-        )}
+        ) : (viewingDoc && viewingDoc.type === 'Invoice') ? (
+          <div ref={downloadRef}>
+            <PremiumInvoice
+              type="Invoice"
+              data={viewingDoc.data}
+              settings={settings}
+            />
+          </div>
+        ) : null}
       </div>
 
       <ClientPortalTour

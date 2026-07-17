@@ -345,6 +345,35 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) =>
   }
 });
 
+router.post('/:id/pdf', async (req: Request, res: Response, next) => {
+  try {
+    const targetInvoice = await prisma.invoice.findFirst({
+      where: {
+        OR: [
+          { id: req.params.id as string },
+          { invoiceNumber: req.params.id as string }
+        ]
+      }
+    });
+    if (!targetInvoice) throw AppError.notFound('Invoice not found');
+
+    const { pdfBase64 } = req.body;
+    if (!pdfBase64) {
+      throw AppError.badRequest('pdfBase64 is required');
+    }
+
+    const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    const pdfPath = path.resolve(PATHS.DOCUMENTS, `Invoice_${targetInvoice.id}.pdf`);
+    fs.writeFileSync(pdfPath, buffer);
+
+    res.json({ success: true, message: 'Invoice PDF saved successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response, next) => {
   try {
     const targetInvoice = await prisma.invoice.findFirst({
