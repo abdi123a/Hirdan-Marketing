@@ -461,17 +461,17 @@ export async function getMetaInsights(accountId: string, token: string, platform
     };
   } else {
     // Instagram Business insights
-    // profile_views was deprecated by Meta on January 8, 2025
+    // impressions was deprecated/unified to views by Meta on April 21, 2025
     const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
       params: {
-        metric: 'reach,impressions',
+        metric: 'reach,views',
         period: 'day',
         access_token: token,
       },
     });
 
     const reachVal = data.data.find((item: any) => item.name === 'reach')?.values[0]?.value ?? 0;
-    const impressionsVal = data.data.find((item: any) => item.name === 'impressions')?.values[0]?.value ?? 0;
+    const viewsVal = data.data.find((item: any) => item.name === 'views')?.values[0]?.value ?? 0;
 
     const { data: igData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
       params: {
@@ -483,7 +483,7 @@ export async function getMetaInsights(accountId: string, token: string, platform
     return {
       followers: igData.followers_count || 0,
       reach: reachVal,
-      impressions: impressionsVal,
+      impressions: viewsVal,
       profileVisits: 0,
     };
   }
@@ -491,7 +491,7 @@ export async function getMetaInsights(accountId: string, token: string, platform
 
 export async function getMetaPostInsights(platformPostId: string, token: string, platform: 'facebook' | 'instagram'): Promise<{ impressions: number; reach: number; likes: number; comments: number; shares: number; saved: number }> {
   const metricList = platform === 'instagram'
-    ? 'impressions,reach,likes,comments,saved,shares'
+    ? 'views,reach,likes,comments,saved,shares'
     : 'post_impressions,post_reactions_by_type_total,post_comments_by_type';
 
   const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/insights`, {
@@ -505,7 +505,7 @@ export async function getMetaPostInsights(platformPostId: string, token: string,
 
   if (platform === 'instagram') {
     return {
-      impressions: metrics.impressions || 0,
+      impressions: metrics.views || metrics.impressions || 0,
       reach: metrics.reach || 0,
       likes: metrics.likes || 0,
       comments: metrics.comments || 0,
