@@ -245,6 +245,7 @@ export default function SocialPublishPage() {
   // Composer modal state
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [alreadyPublishedAccountIds, setAlreadyPublishedAccountIds] = useState<string[]>([]);
   const [composerClient, setComposerClient] = useState("");
   const [composerCampaign, setComposerCampaign] = useState("");
   const [newCampaignName, setNewCampaignName] = useState("");
@@ -525,6 +526,7 @@ export default function SocialPublishPage() {
     setThreadsLocation("");
     setPostTags([]);
     setEditingPostId(null);
+    setAlreadyPublishedAccountIds([]);
     setIsEmojiOpen(false);
     setExpandedComposerPlatform(null);
     setIsSubmitting(false);
@@ -810,6 +812,12 @@ export default function SocialPublishPage() {
 
     const accIds = (post.destinations || []).map(d => d.socialAccountId).filter(Boolean);
     setComposerAccounts(accIds);
+
+    const publishedIds = (post.destinations || [])
+      .filter(d => d.status === "PUBLISHED")
+      .map(d => d.socialAccountId)
+      .filter(Boolean);
+    setAlreadyPublishedAccountIds(publishedIds);
 
     const validPlatforms = ["x", "facebook", "instagram", "linkedin", "tiktok", "youtube", "threads"];
     const platList = Array.from(
@@ -2601,6 +2609,7 @@ export default function SocialPublishPage() {
                         const platId = account.platform.toLowerCase();
                         const pConfig = PLATFORMS_CONFIG.find(p => p.id === platId) || { label: account.platform, color: "#8E8E93", icon: HelpCircle };
                         const isAccSelected = composerAccounts.includes(account.id);
+                        const isAlreadyPublished = alreadyPublishedAccountIds.includes(account.id);
                         const initials = (account.displayName || account.platformUsername || "?")
                           .split(" ")
                           .map(n => n[0])
@@ -2614,6 +2623,7 @@ export default function SocialPublishPage() {
                               <TooltipTrigger asChild>
                                 <button
                                   type="button"
+                                  disabled={isAlreadyPublished}
                                   onClick={() => {
                                     if (isAccSelected) {
                                       setComposerAccounts(prev => prev.filter(id => id !== account.id));
@@ -2633,10 +2643,13 @@ export default function SocialPublishPage() {
                                       setExpandedComposerPlatform(platId);
                                     }
                                   }}
-                                  className={`relative w-12 h-12 rounded-full cursor-pointer transition-all duration-200 outline-none flex items-center justify-center shrink-0 ${isAccSelected
-                                      ? "ring-2 ring-primary ring-offset-2 ring-offset-background scale-105 opacity-100"
-                                      : "opacity-60 grayscale hover:opacity-100 hover:grayscale-0 hover:scale-105"
-                                    }`}
+                                  className={`relative w-12 h-12 rounded-full outline-none flex items-center justify-center shrink-0 ${
+                                    isAlreadyPublished
+                                      ? "ring-2 ring-emerald-500 ring-offset-2 ring-offset-background scale-105 opacity-85 cursor-not-allowed"
+                                      : isAccSelected
+                                        ? "ring-2 ring-primary ring-offset-2 ring-offset-background scale-105 opacity-100 cursor-pointer transition-all duration-200"
+                                        : "opacity-60 grayscale hover:opacity-100 hover:grayscale-0 hover:scale-105 cursor-pointer transition-all duration-200"
+                                  }`}
                                 >
                                   {/* Avatar or Initials */}
                                   {account.avatarUrl ? (
@@ -2665,7 +2678,9 @@ export default function SocialPublishPage() {
 
                                   {/* Selected Checkmark indicator */}
                                   {isAccSelected && (
-                                    <div className="absolute -top-1 -right-1 bg-primary text-primary-foreground rounded-full w-4 h-4 flex items-center justify-center z-20 shadow-sm border border-background">
+                                    <div className={`absolute -top-1 -right-1 text-primary-foreground rounded-full w-4 h-4 flex items-center justify-center z-20 shadow-sm border border-background ${
+                                      isAlreadyPublished ? "bg-emerald-500" : "bg-primary"
+                                    }`}>
                                       <Check className="h-2.5 w-2.5 stroke-[3px]" />
                                     </div>
                                   )}
@@ -2674,6 +2689,9 @@ export default function SocialPublishPage() {
                               <TooltipContent side="bottom" className="text-xs p-2">
                                 <p className="font-semibold">{account.displayName || account.platformUsername}</p>
                                 <p className="text-[10px] text-muted-foreground capitalize">{pConfig.label}</p>
+                                {isAlreadyPublished && (
+                                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">✔ Already published</p>
+                                )}
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>

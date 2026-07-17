@@ -156,18 +156,53 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
     }
 
     if (accountIds && Array.isArray(accountIds)) {
-      await prisma.socialPostDestination.deleteMany({
-        where: { postId: id as string },
-      });
-      
-      const destinationsData = [];
-      for (const accountId of accountIds) {
-        const account = await prisma.socialAccount.findUnique({ where: { id: accountId as string } });
-        destinationsData.push({
-          socialAccountId: accountId as string,
-          platform: account?.platform || 'UNKNOWN',
-          status: 'QUEUED',
+      const existingDests = currentPost.destinations;
+      const publishedDests = existingDests.filter(d => d.status === 'PUBLISHED');
+      const nonPublishedDests = existingDests.filter(d => d.status !== 'PUBLISHED');
+
+      const accountIdsSet = new Set(accountIds);
+
+      // 1. Delete non-published destinations that are not in the new accountIds list
+      const destsToDelete = nonPublishedDests.filter(d => !accountIdsSet.has(d.socialAccountId));
+      if (destsToDelete.length > 0) {
+        await prisma.socialPostDestination.deleteMany({
+          where: {
+            id: { in: destsToDelete.map(d => d.id) }
+          }
         });
+      }
+
+      // 2. Add or update destinations
+      for (const accountId of accountIds) {
+        // If already published on this account, skip
+        const isPublished = publishedDests.some(d => d.socialAccountId === accountId);
+        if (isPublished) continue;
+
+        const existingNonPublished = nonPublishedDests.find(d => d.socialAccountId === accountId);
+        if (existingNonPublished) {
+          // Reset existing non-published destination to QUEUED
+          await prisma.socialPostDestination.update({
+            where: { id: existingNonPublished.id },
+            data: {
+              status: 'QUEUED',
+              lastError: null,
+              attempts: 0,
+              lastAttemptAt: null,
+              lockedAt: null
+            }
+          });
+        } else {
+          // Create new destination
+          const account = await prisma.socialAccount.findUnique({ where: { id: accountId as string } });
+          await prisma.socialPostDestination.create({
+            data: {
+              postId: id as string,
+              socialAccountId: accountId as string,
+              platform: account?.platform || 'UNKNOWN',
+              status: 'QUEUED',
+            }
+          });
+        }
       }
 
       await prisma.socialPost.update({
@@ -180,9 +215,6 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
           scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
           campaignId: campaignId as string | null,
           status: status || currentPost.status,
-          destinations: {
-            create: destinationsData,
-          },
         },
       });
     } else {
@@ -299,6 +331,8 @@ router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
     const errorsList: string[] = [];
 
     for (const dest of post.destinations) {
+      if (dest.status === 'PUBLISHED') continue;
+
       try {
         await prisma.socialPostDestination.update({
           where: { id: dest.id as string },
@@ -334,12 +368,22 @@ router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
       }
     }
 
+    const allDests = await prisma.socialPostDestination.findMany({
+      where: { postId: id as string },
+    });
+    const total = allDests.length;
+    const published = allDests.filter(d => d.status === 'PUBLISHED').length;
+    const failed = allDests.filter(d => d.status === 'FAILED').length;
+
+    const postHasErrors = failed > 0 || errorsList.length > 0;
+    const isFullyPublished = published === total;
+
     const finalPost = await prisma.socialPost.update({
       where: { id: id as string },
       data: {
-        status: hasErrors ? 'FAILED' : 'PUBLISHED',
-        publishedAt: hasErrors ? null : new Date(),
-        errorMessage: hasErrors ? errorsList.join('; ') : null,
+        status: isFullyPublished ? 'PUBLISHED' : 'FAILED',
+        publishedAt: isFullyPublished ? new Date() : null,
+        errorMessage: postHasErrors ? (errorsList.length > 0 ? errorsList.join('; ') : 'Some destinations failed') : null,
       },
       include: { destinations: true },
     });
