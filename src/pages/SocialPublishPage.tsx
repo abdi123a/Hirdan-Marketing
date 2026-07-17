@@ -256,6 +256,8 @@ export default function SocialPublishPage() {
   const [composerAccounts, setComposerAccounts] = useState<string[]>([]);
   const [composerScheduledFor, setComposerScheduledFor] = useState("");
   const [publishNow, setPublishNow] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitType, setSubmitType] = useState<"draft" | "publish" | null>(null);
 
   // platform overrides
   const [showOverrides, setShowOverrides] = useState(false);
@@ -525,9 +527,12 @@ export default function SocialPublishPage() {
     setEditingPostId(null);
     setIsEmojiOpen(false);
     setExpandedComposerPlatform(null);
+    setIsSubmitting(false);
+    setSubmitType(null);
   };
 
   const handleOpenChange = (open: boolean) => {
+    if (isSubmitting) return;
     setIsComposerOpen(open);
     if (!open) {
       resetComposer();
@@ -597,7 +602,10 @@ export default function SocialPublishPage() {
       });
       return;
     }
+    if (isSubmitting) return;
 
+    setIsSubmitting(true);
+    setSubmitType(asDraft ? "draft" : "publish");
     try {
       const payload = {
         clientId: composerClient,
@@ -705,6 +713,9 @@ export default function SocialPublishPage() {
         description: err.message,
         variant: "destructive",
       });
+    } finally {
+      setIsSubmitting(false);
+      setSubmitType(null);
     }
   };
 
@@ -2951,7 +2962,8 @@ export default function SocialPublishPage() {
           <div className="flex items-center justify-between px-6 py-4 border-t border-border/40 shrink-0 bg-background">
             <div className="flex items-center gap-3">
               <select value={publishNow ? "now" : "schedule"} onChange={e => setPublishNow(e.target.value === "now")}
-                className="border border-border/50 bg-background rounded-xl px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer font-medium">
+                disabled={isSubmitting}
+                className="border border-border/50 bg-background rounded-xl px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                 <option value="now">Publish Now</option>
                 <option value="schedule">Schedule</option>
               </select>
@@ -2959,25 +2971,35 @@ export default function SocialPublishPage() {
                 <div className="flex items-center gap-2 border border-border/50 bg-muted/20 rounded-xl px-3 py-1.5">
                   <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   <input type="datetime-local" value={composerScheduledFor} onChange={e => setComposerScheduledFor(e.target.value)}
-                    className="bg-transparent border-none text-xs focus:ring-0 outline-none cursor-pointer text-foreground" />
+                    disabled={isSubmitting}
+                    className="bg-transparent border-none text-xs focus:ring-0 outline-none cursor-pointer text-foreground disabled:opacity-50 disabled:cursor-not-allowed" />
                 </div>
               )}
-              <button type="button" disabled={!composerClient} onClick={() => handleCreatePost(true)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors border ${!composerClient ? "bg-muted text-muted-foreground/40 border-border/30 cursor-not-allowed" : "text-foreground bg-muted/30 hover:bg-muted border-border/50 cursor-pointer"
+              <button type="button" disabled={!composerClient || isSubmitting || isUploading} onClick={() => handleCreatePost(true)}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors border flex items-center gap-2 ${!composerClient || isSubmitting || isUploading ? "bg-muted text-muted-foreground/40 border-border/30 cursor-not-allowed" : "text-foreground bg-muted/30 hover:bg-muted border-border/50 cursor-pointer"
                   }`}>
+                {isSubmitting && submitType === "draft" && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                )}
                 Save Draft
               </button>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="outline" className="rounded-xl px-5 font-semibold text-sm h-9" onClick={() => handleOpenChange(false)}>Cancel</Button>
+              <Button variant="outline" className="rounded-xl px-5 font-semibold text-sm h-9" disabled={isSubmitting || isUploading} onClick={() => handleOpenChange(false)}>Cancel</Button>
               {(() => {
-                const disabled = !composerClient || composerAccounts.length === 0;
-                const label = !composerClient ? "Select Client" : composerAccounts.length === 0 ? "Select Accounts" : publishNow ? "Publish Now" : "Schedule Post";
+                const disabled = !composerClient || composerAccounts.length === 0 || isSubmitting || isUploading;
+                const label = !composerClient ? "Select Client" : composerAccounts.length === 0 ? "Select Accounts" : isUploading ? "Uploading Media..." : isSubmitting && submitType === "publish" ? (publishNow ? "Publishing..." : "Scheduling...") : publishNow ? "Publish Now" : "Schedule Post";
                 return (
                   <button type="button" disabled={disabled} onClick={() => handleCreatePost()}
-                    className={`px-5 py-2 rounded-xl text-sm font-bold transition-colors border-none h-9 ${disabled ? "bg-muted text-muted-foreground/40 cursor-not-allowed" : "bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-sm"
+                    className={`px-5 py-2 rounded-xl text-sm font-bold transition-colors border-none h-9 flex items-center justify-center gap-2 ${disabled ? "bg-muted text-muted-foreground/40 cursor-not-allowed" : "bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-sm"
                       }`}>
-                    {label}
+                    {isSubmitting && submitType === "publish" && (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary-foreground" />
+                    )}
+                    {isUploading && (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                    )}
+                    <span>{label}</span>
                   </button>
                 );
               })()}
