@@ -240,15 +240,48 @@ export async function publishToFacebookPage({
   if (postType === 'story') {
     if (!url) throw new Error('Facebook Story requires a media URL');
     if (mediaType === 'video') {
-      const { data } = await axios.post(`${GRAPH_URL}/${pageId}/video_stories`, null, {
-        params: { file_url: url, access_token: pageAccessToken },
+      // 1. Initialize upload session
+      const { data: initData } = await axios.post(`${GRAPH_URL}/${pageId}/video_stories`, null, {
+        params: { upload_phase: 'start', access_token: pageAccessToken },
       });
-      return data.id;
+      const { video_id, upload_url } = initData;
+      if (!video_id || !upload_url) {
+        throw new Error('Failed to initialize Facebook video story upload session');
+      }
+
+      // 2. Download the video file from the remote URL as a binary buffer
+      const videoResponse = await axios.get(url, { responseType: 'arraybuffer' });
+      const videoBuffer = Buffer.from(videoResponse.data);
+
+      // 3. Upload the binary data to the upload_url
+      await axios.post(upload_url, videoBuffer, {
+        headers: {
+          Authorization: `OAuth ${pageAccessToken}`,
+          'Content-Type': 'application/octet-stream',
+        },
+      });
+
+      // 4. Finish the upload phase
+      const { data: finishData } = await axios.post(`${GRAPH_URL}/${pageId}/video_stories`, null, {
+        params: {
+          upload_phase: 'finish',
+          video_id,
+          access_token: pageAccessToken,
+        },
+      });
+      return finishData.id || video_id;
     } else {
-      const { data } = await axios.post(`${GRAPH_URL}/${pageId}/photo_stories`, null, {
-        params: { url, access_token: pageAccessToken },
+      // 1. Upload photo as unpublished to get photo_id
+      const { data: photoData } = await axios.post(`${GRAPH_URL}/${pageId}/photos`, null, {
+        params: { url, published: false, access_token: pageAccessToken },
       });
-      return data.id;
+      const photoId = photoData.id;
+
+      // 2. Publish the photo story using the photo_id
+      const { data: storyData } = await axios.post(`${GRAPH_URL}/${pageId}/photo_stories`, null, {
+        params: { photo_id: photoId, access_token: pageAccessToken },
+      });
+      return storyData.id;
     }
   }
 
