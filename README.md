@@ -1,24 +1,48 @@
 # Hirdan Marketing Management
 
-A premium digital marketing agency platform featuring a Next.js landing page, a React CRM admin dashboard & client portal, and a robust Express backend.
+[![Version](https://img.shields.io/badge/version-2.22.0-blue.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/package.json)
+[![Node Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/LICENSE)
 
-## Project Structure
+A premium, all-in-one digital marketing agency platform featuring a Next.js landing page, a React CRM admin dashboard & client portal, and a robust Express backend. Designed to automate and manage client onboarding, tasks, invoices, document verification, and content planning.
 
-This repository is structured as a monorepo containing three core components:
-
-*   **CRM Frontend (Root)**: React single-page application built with Vite, TypeScript, Tailwind CSS, and Shadcn UI.
-*   **Landing Page ([landing-page](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/landing-page))**: Next.js-powered marketing site for the agency.
-*   **Backend API ([server](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/server))**: Node.js Express server configured with TypeScript, Prisma ORM, and PostgreSQL.
+> 💡 **Deploying to production?** This repository includes a pre-configured GitHub Actions CI/CD workflow ([deploy.yml](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/.github/workflows/deploy.yml)) that builds and deploys the Frontend, Backend, and Landing Page to a Hostinger VPS with CloudPanel using Rsync.
 
 ---
 
-## Features
+## 🔗 Quick Links
 
-- **Marketing Landing Page**: Next.js landing page highlighting services, stats, and contact options.
-- **Agency CRM Admin Dashboard**: Comprehensive project, task, user, and subscription management.
-- **Client Portal**: Dedicated space for clients to view projects, files, invoices, and approve deliverables.
-- **Document Verification**: Safe, automated handling and verification of Invoices and Proformas.
-- **Short Link Integration**: Built-in support for short-url domain redirects for client portals.
+| Component / File | Description | Location |
+|---|---|---|
+| 🌐 **CRM Frontend** | Vite + React + TypeScript + Tailwind CSS / Shadcn UI | [src/](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/src) |
+| 🗄️ **Backend API** | Express + TypeScript + Prisma ORM + PostgreSQL | [server/](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/server) |
+| 📄 **Landing Page** | Next.js marketing site for Hirdan Marketing | [landing-page/](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/landing-page) |
+| ⚙️ **CI/CD Workflow** | Automated build and deploy workflow via SSH & Rsync | [deploy.yml](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/.github/workflows/deploy.yml) |
+| 📜 **Contributing Guide** | Development setup and coding guidelines | [CONTRIBUTING.md](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/CONTRIBUTING.md) |
+| 🔒 **Security Policy** | Vulnerability reporting procedure | [SECURITY.md](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/SECURITY.md) |
+| 🔑 **License** | Open-source MIT License terms | [LICENSE](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/LICENSE) |
+
+---
+
+## Why Hirdan Marketing Management?
+
+- **Unified Codebase** — Monorepo-like layout containing the landing page, front-end dashboard, and server.
+- **Agency CRM Admin Dashboard** — Built-in client onboarding, task assignments, and subscription flows.
+- **Secure Client Portal** — Dedicated space for clients to view projects, verify/approve deliverables, and pay invoices.
+- **Automated Verification** — System for tracking and verifying Invoices and Proformas.
+- **Short Link Domain redirects** — Seamless link shortener integration for sharing secure project links.
+
+---
+
+## Project Structure & Architecture
+
+```
+agency-flow-pro/
+├── landing-page/      # Next.js Static Landing Page (hirdanmarketing.com)
+├── server/            # Node.js + Express API Backend (api.hirdanmarketing.com)
+├── src/               # Vite + React Frontend Dashboard (app.hirdanmarketing.com)
+└── .github/           # GitHub Action workflows for CI/CD
+```
 
 ---
 
@@ -26,62 +50,61 @@ This repository is structured as a monorepo containing three core components:
 
 ### Prerequisites
 
-Ensure you have Node.js (v20+) and either `npm` or `bun` installed on your system.
+- **Node.js** (v20 or higher)
+- **npm** (v10+) or **Bun**
 
-### CRM Frontend Setup (Root)
+### 1. CRM Frontend Setup (Root)
 
-1.  Install dependencies:
-    ```bash
-    npm install
-    ```
-2.  Start the development server:
-    ```bash
-    npm run dev
-    ```
-3.  Build for production:
-    ```bash
-    npm run build
-    ```
+The root folder contains the React CRM application.
 
-### Landing Page Setup
+```bash
+# Install dependencies
+npm install
 
-1.  Navigate to the directory:
-    ```bash
-    cd landing-page
-    ```
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-3.  Start the Next.js development server:
-    ```bash
-    npm run dev
-    ```
-4.  Build the static export:
-    ```bash
-    npm run build
-    ```
+# Start local Vite development server
+npm run dev
 
-### Backend API Setup
+# Build production assets (Vite dist/)
+npm run build
+```
 
-1.  Navigate to the server directory:
-    ```bash
-    cd server
-    ```
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-3.  Configure your `.env` file (refer to `.env.example`).
-4.  Run database migrations and seed:
-    ```bash
-    npm run db:push
-    npm run db:seed
-    ```
-5.  Start the development backend:
-    ```bash
-    npm run dev
-    ```
+### 2. Landing Page Setup
+
+The marketing site is powered by Next.js.
+
+```bash
+cd landing-page
+
+# Install dependencies
+npm install
+
+# Start Next.js development server
+npm run dev
+
+# Build and export static landing page files
+npm run build
+```
+
+### 3. Backend API Setup
+
+The Express server handles routing, database connections via Prisma, and scheduler tasks.
+
+```bash
+cd server
+
+# Install dependencies
+npm install
+
+# Create and configure .env from .env.example
+cp .env.example .env
+
+# Generate Prisma Client and apply DB Schema
+npm run db:push
+npm run db:seed
+
+# Start Express tsx watch development server
+npm run dev
+```
 
 ---
 
@@ -91,15 +114,15 @@ To configure and use a custom short link domain for shared transfers (e.g. `hird
 
 ### 1. Point DNS Records to VPS
 In your domain registrar dashboard, add the following DNS records pointing to your server's IP (`72.61.192.11`):
-*   **Type:** `A`, **Name:** `@`, **Value:** `72.61.192.11`
-*   **Type:** `A`, **Name:** `www`, **Value:** `72.61.192.11` (optional)
+- **Type:** `A`, **Name:** `@`, **Value:** `72.61.192.11`
+- **Type:** `A`, **Name:** `www`, **Value:** `72.61.192.11` (optional)
 
 ### 2. Configure Reverse Proxy in CloudPanel
-1.  Go to your **CloudPanel** admin dashboard.
-2.  Navigate to **Sites** ➜ **Add Site** ➜ **Reverse Proxy**.
-3.  Set the domain name to `hirdan.cc`.
-4.  Point the Reverse Proxy target to the port that your Node.js Express server runs on (default: `3001`).
-5.  Open the site settings in CloudPanel and issue a free **Let's Encrypt SSL certificate** in one click.
+1. Go to your **CloudPanel** admin dashboard.
+2. Navigate to **Sites** ➜ **Add Site** ➜ **Reverse Proxy**.
+3. Set the domain name to `hirdan.cc`.
+4. Point the Reverse Proxy target to the port that your Node.js Express server runs on (default: `3001`).
+5. Open the site settings in CloudPanel and issue a free **Let's Encrypt SSL certificate** in one click.
 
 ### 3. Update Environment Variables
 
@@ -119,13 +142,20 @@ VITE_SHORT_LINK_DOMAIN="https://hirdan.cc"
 
 ---
 
-## Contributing
+## Deployment Workflow (CI/CD)
 
-Please read [CONTRIBUTING.md](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+Deployments are automated via GitHub Actions using the `.github/workflows/deploy.yml` workflow.
 
-## Security
+### Triggering Deployments
+Every push to the `clean-version` branch will run the deployment pipeline:
+1. **Build Frontend**: Compiles the CRM into the static `dist/` directory.
+2. **Build Landing Page**: Exports Next.js static pages to `landing-page/dist/`.
+3. **Build Backend**: Transpiles TypeScript files into Node-ready scripts inside `server/dist`.
+4. **VPS Deploy**: Copies the builds to their respective directories on the Hostinger VPS using Rsync.
+5. **Database Migration**: Runs Prisma db push to sync the database schema.
+6. **Restart Backend**: Restarts the Express server PM2 process on the VPS.
 
-If you discover a security vulnerability, please refer to our [SECURITY.md](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/SECURITY.md) policy for reporting instructions.
+---
 
 ## License
 
