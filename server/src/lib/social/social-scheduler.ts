@@ -254,14 +254,14 @@ export async function syncAccount(accountId: string): Promise<void> {
       reach: metrics.reach,
       impressions: metrics.impressions,
       profileVisits: metrics.profileVisits,
-      engagementRate: metrics.followers > 0 ? (metrics.reach / metrics.followers) * 100 : 0,
+      engagementRate: metrics.followers > 0 ? Math.min(999.99, (metrics.reach / metrics.followers) * 100) : 0,
     },
     update: {
       followers: metrics.followers,
       reach: metrics.reach,
       impressions: metrics.impressions,
       profileVisits: metrics.profileVisits,
-      engagementRate: metrics.followers > 0 ? (metrics.reach / metrics.followers) * 100 : 0,
+      engagementRate: metrics.followers > 0 ? Math.min(999.99, (metrics.reach / metrics.followers) * 100) : 0,
     },
   });
 
