@@ -580,8 +580,14 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.22.3",
+  appVersion: "2.23.1",
   versionHistory: [
+    {
+      version: "2.23.0",
+      description: "feat: implement Meta and multi-platform social media publishing, scheduling, analytics, and account management",
+      author: "Antigravity",
+      date: "2026-07-17T06:17:00.000Z",
+    },
     {
       version: "2.19.0",
       description: "feat: implement centralized notification system, update brand assets, update client portal dashboard, update invoice numbering and PDF layouts, add client meetings section, and general bug fixes",

@@ -65,6 +65,9 @@ const UsersPage = lazy(() => import('./pages/UsersPage.tsx'));
 const AddUserPage = lazy(() => import('./pages/AddUserPage.tsx'));
 const SocialMediaTasksPage = lazy(() => import('./pages/SocialMediaTasksPage.tsx'));
 const SocialMediaPlannerPage = lazy(() => import('./pages/SocialMediaPlannerPage.tsx'));
+const SocialAnalyzePage = lazy(() => import('./pages/SocialAnalyzePage.tsx'));
+const SocialPublishPage = lazy(() => import('./pages/SocialPublishPage.tsx'));
+const SocialAccountsPage = lazy(() => import('./pages/SocialAccountsPage.tsx'));
 const MonthlyReportStudioPage = lazy(() => import("./pages/MonthlyReportStudioPage.tsx"));
 const FinancialReportPage = lazy(() => import("./pages/FinancialReportPage.tsx"));
 const ExpensesPage = lazy(() => import("./pages/ExpensesPage.tsx"));
@@ -249,6 +252,9 @@ function AppRoutes() {
         <Route path="subscriptions/view/:id" element={<SubscriptionDetailsPage />} />
         <Route path="social-media" element={<SocialMediaTasksPage />} />
         <Route path="social-media/planner" element={<SocialMediaPlannerPage />} />
+        <Route path="social-media/analyze" element={<SocialAnalyzePage />} />
+        <Route path="social-media/publish" element={<SocialPublishPage />} />
+        <Route path="social-media/accounts" element={<SocialAccountsPage />} />
         <Route path="reports/monthly" element={<MonthlyReportStudioPage />} />
         <Route path="reports/financial" element={<FinancialReportPage />} />
         <Route path="expenses" element={<ExpensesPage />} />

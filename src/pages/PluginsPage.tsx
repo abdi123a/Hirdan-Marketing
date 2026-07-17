@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,14 @@ import {
   Loader2,
   Database,
   Cloud,
+  Facebook,
+  Instagram,
+  Linkedin,
+  Youtube,
+  Twitter,
+  Pin,
+  Music,
+  MessageCircle,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 
@@ -56,6 +64,71 @@ export default function PluginsPage() {
   
   const [isSaving, setIsSaving] = useState(false);
   const [editingPlugin, setEditingPlugin] = useState<"recaptcha" | "analytics" | "gdrive" | "onesignal" | null>(null);
+
+  const [platformStatuses, setPlatformStatuses] = useState<Record<string, { configured: boolean; enabled: boolean }>>({
+    facebook: { configured: false, enabled: false },
+    instagram: { configured: false, enabled: false },
+    threads: { configured: false, enabled: false },
+    tiktok: { configured: false, enabled: false },
+    linkedin: { configured: false, enabled: false },
+    youtube: { configured: false, enabled: false },
+    x: { configured: false, enabled: false },
+    pinterest: { configured: false, enabled: false },
+  });
+
+  useEffect(() => {
+    apiFetch('/social/platform-status')
+      .then((res: any) => {
+        if (res) setPlatformStatuses(res);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleToggleSocialPlatform = async (platform: string, enabled: boolean) => {
+    const isConfigured = platformStatuses[platform]?.configured;
+    if (enabled && !isConfigured) {
+      toast({
+        title: "Configuration Required",
+        description: `Please configure the credentials for ${platform} in your server/.env file first.`,
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const fieldMap: Record<string, string> = {
+        facebook: 'metaEnabled',
+        instagram: 'metaEnabled',
+        threads: 'metaEnabled',
+        tiktok: 'tiktokEnabled',
+        linkedin: 'linkedinEnabled',
+        youtube: 'googleEnabled',
+        x: 'xEnabled',
+        pinterest: 'pinterestEnabled',
+      };
+      
+      const field = fieldMap[platform];
+      await updateSettings({ [field]: enabled });
+      
+      setPlatformStatuses(prev => ({
+        ...prev,
+        [platform]: { ...prev[platform], enabled }
+      }));
+
+      toast({
+        title: enabled ? `${platform.toUpperCase()} Enabled` : `${platform.toUpperCase()} Disabled`,
+        description: enabled
+          ? `${platform} integration is now active.`
+          : `${platform} integration has been deactivated.`
+      });
+    } catch (err) {
+      toast({
+        title: "Error updating platform state",
+        description: "Please try again later.",
+        variant: "destructive"
+      });
+    }
+  };
 
   // Modal form states
   const [recaptchaSiteKey, setRecaptchaSiteKey] = useState(settings.recaptchaSiteKey || "");
@@ -507,6 +580,349 @@ export default function PluginsPage() {
                         >
                           <Edit2 className="h-3.5 w-3.5" />
                         </Button>
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* Social Media Platforms Header */}
+                  <tr>
+                    <td colSpan={3} className="bg-muted/15 px-6 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Social Media Platforms
+                    </td>
+                  </tr>
+
+                  {/* Meta / Facebook Row */}
+                  <tr className="hover:bg-muted/5 transition-colors">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-blue-50/50 flex items-center justify-center border border-blue-100 shadow-sm shrink-0 overflow-hidden">
+                          <img src="/social-icons/Facebook.png" className="h-6 w-6 object-contain" alt="Facebook" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground text-sm">Facebook Pages</p>
+                          <p className="text-xs text-muted-foreground">Publish posts directly to connected Facebook Pages</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      {platformStatuses.facebook?.configured ? (
+                        platformStatuses.facebook?.enabled ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-100">
+                            Configured (Disabled)
+                          </span>
+                        )
+                      ) : (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-100">
+                          Not Configured (.env)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center justify-end gap-4">
+                        <Switch
+                          checked={platformStatuses.facebook?.enabled && platformStatuses.facebook?.configured}
+                          disabled={!platformStatuses.facebook?.configured}
+                          onCheckedChange={(val) => handleToggleSocialPlatform("facebook", val)}
+                          className="data-[state=checked]:bg-primary"
+                        />
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* Instagram Row */}
+                  <tr className="hover:bg-muted/5 transition-colors">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-pink-50/50 flex items-center justify-center border border-pink-100 shadow-sm shrink-0 overflow-hidden">
+                          <img src="/social-icons/instagram.png" className="h-6 w-6 object-contain" alt="Instagram" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground text-sm">Instagram Business</p>
+                          <p className="text-xs text-muted-foreground">Publish images, carousel, and video posts to Instagram</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      {platformStatuses.instagram?.configured ? (
+                        platformStatuses.instagram?.enabled ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-100">
+                            Configured (Disabled)
+                          </span>
+                        )
+                      ) : (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-100">
+                          Not Configured (.env)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center justify-end gap-4">
+                        <Switch
+                          checked={platformStatuses.instagram?.enabled && platformStatuses.instagram?.configured}
+                          disabled={!platformStatuses.instagram?.configured}
+                          onCheckedChange={(val) => handleToggleSocialPlatform("instagram", val)}
+                          className="data-[state=checked]:bg-primary"
+                        />
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* Threads Row */}
+                  <tr className="hover:bg-muted/5 transition-colors">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-zinc-50 flex items-center justify-center border border-zinc-200 shadow-sm shrink-0 overflow-hidden">
+                          <img src="/social-icons/Threads.png" className="h-6 w-6 object-contain" alt="Threads" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground text-sm">Meta Threads</p>
+                          <p className="text-xs text-muted-foreground">Publish short threads and media to Meta Threads</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      {platformStatuses.threads?.configured ? (
+                        platformStatuses.threads?.enabled ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-100">
+                            Configured (Disabled)
+                          </span>
+                        )
+                      ) : (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-100">
+                          Not Configured (.env)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center justify-end gap-4">
+                        <Switch
+                          checked={platformStatuses.threads?.enabled && platformStatuses.threads?.configured}
+                          disabled={!platformStatuses.threads?.configured}
+                          onCheckedChange={(val) => handleToggleSocialPlatform("threads", val)}
+                          className="data-[state=checked]:bg-primary"
+                        />
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* TikTok Row */}
+                  <tr className="hover:bg-muted/5 transition-colors">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-neutral-900 flex items-center justify-center border border-neutral-800 shadow-sm shrink-0 overflow-hidden bg-background">
+                          <img src="/social-icons/tiktok.png" className="h-6 w-6 object-contain" alt="TikTok" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground text-sm">TikTok Videos</p>
+                          <p className="text-xs text-muted-foreground">Publish draft or public video clips to TikTok profile</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      {platformStatuses.tiktok?.configured ? (
+                        platformStatuses.tiktok?.enabled ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-100">
+                            Configured (Disabled)
+                          </span>
+                        )
+                      ) : (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-100">
+                          Not Configured (.env)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center justify-end gap-4">
+                        <Switch
+                          checked={platformStatuses.tiktok?.enabled && platformStatuses.tiktok?.configured}
+                          disabled={!platformStatuses.tiktok?.configured}
+                          onCheckedChange={(val) => handleToggleSocialPlatform("tiktok", val)}
+                          className="data-[state=checked]:bg-primary"
+                        />
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* LinkedIn Row */}
+                  <tr className="hover:bg-muted/5 transition-colors">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-blue-50/50 flex items-center justify-center border border-blue-150 shadow-sm shrink-0 overflow-hidden">
+                          <img src="/social-icons/linkedin.png" className="h-6 w-6 object-contain" alt="LinkedIn" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground text-sm">LinkedIn Share</p>
+                          <p className="text-xs text-muted-foreground">Post professional updates, articles and links to LinkedIn</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      {platformStatuses.linkedin?.configured ? (
+                        platformStatuses.linkedin?.enabled ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-100">
+                            Configured (Disabled)
+                          </span>
+                        )
+                      ) : (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-100">
+                          Not Configured (.env)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center justify-end gap-4">
+                        <Switch
+                          checked={platformStatuses.linkedin?.enabled && platformStatuses.linkedin?.configured}
+                          disabled={!platformStatuses.linkedin?.configured}
+                          onCheckedChange={(val) => handleToggleSocialPlatform("linkedin", val)}
+                          className="data-[state=checked]:bg-primary"
+                        />
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* YouTube Row */}
+                  <tr className="hover:bg-muted/5 transition-colors">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-red-50 flex items-center justify-center border border-red-100 shadow-sm shrink-0 overflow-hidden">
+                          <img src="/social-icons/youtube.png" className="h-6 w-6 object-contain" alt="YouTube" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground text-sm">YouTube Videos</p>
+                          <p className="text-xs text-muted-foreground">Upload and publish video clips to YouTube channels</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      {platformStatuses.youtube?.configured ? (
+                        platformStatuses.youtube?.enabled ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-100">
+                            Configured (Disabled)
+                          </span>
+                        )
+                      ) : (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-100">
+                          Not Configured (.env)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center justify-end gap-4">
+                        <Switch
+                          checked={platformStatuses.youtube?.enabled && platformStatuses.youtube?.configured}
+                          disabled={!platformStatuses.youtube?.configured}
+                          onCheckedChange={(val) => handleToggleSocialPlatform("youtube", val)}
+                          className="data-[state=checked]:bg-primary"
+                        />
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* X Row */}
+                  <tr className="hover:bg-muted/5 transition-colors">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-zinc-900 flex items-center justify-center border border-zinc-800 shadow-sm shrink-0 overflow-hidden">
+                          <img src="/social-icons/twitter.png" className="h-6 w-6 object-contain" alt="X" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground text-sm">X / Twitter</p>
+                          <p className="text-xs text-muted-foreground">Publish text updates and media tweets directly to X profiles</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      {platformStatuses.x?.configured ? (
+                        platformStatuses.x?.enabled ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-100">
+                            Configured (Disabled)
+                          </span>
+                        )
+                      ) : (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-100">
+                          Not Configured (.env)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center justify-end gap-4">
+                        <Switch
+                          checked={platformStatuses.x?.enabled && platformStatuses.x?.configured}
+                          disabled={!platformStatuses.x?.configured}
+                          onCheckedChange={(val) => handleToggleSocialPlatform("x", val)}
+                          className="data-[state=checked]:bg-primary"
+                        />
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* Pinterest Row */}
+                  <tr className="hover:bg-muted/5 transition-colors">
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-red-50 flex items-center justify-center border border-red-150 shadow-sm shrink-0">
+                          <Pin className="h-5 w-5 text-red-700" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-foreground text-sm">Pinterest Pins</p>
+                          <p className="text-xs text-muted-foreground">Create and publish image pins directly to Pinterest boards</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-5">
+                      {platformStatuses.pinterest?.configured ? (
+                        platformStatuses.pinterest?.enabled ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-50 text-slate-600 border border-slate-100">
+                            Configured (Disabled)
+                          </span>
+                        )
+                      ) : (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-600 border border-orange-100">
+                          Not Configured (.env)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-5">
+                      <div className="flex items-center justify-end gap-4">
+                        <Switch
+                          checked={platformStatuses.pinterest?.enabled && platformStatuses.pinterest?.configured}
+                          disabled={!platformStatuses.pinterest?.configured}
+                          onCheckedChange={(val) => handleToggleSocialPlatform("pinterest", val)}
+                          className="data-[state=checked]:bg-primary"
+                        />
                       </div>
                     </td>
                   </tr>

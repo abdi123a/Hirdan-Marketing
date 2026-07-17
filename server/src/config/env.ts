@@ -49,6 +49,45 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().email().optional(),
   APP_URL: z.string().url().optional(),
+
+  // ─── Social Media Security & Storage ───
+  TOKEN_ENCRYPTION_KEY: z.string().optional(),
+  OAUTH_STATE_SECRET: z.string().optional(),
+  STORAGE_PROVIDER: z.string().default('local'),
+  STORAGE_PUBLIC_URL: z.string().default('http://localhost:3001'),
+
+  // Meta
+  META_APP_ID: z.string().optional(),
+  META_APP_SECRET: z.string().optional(),
+  META_GRAPH_VERSION: z.string().default('v20.0'),
+  META_REDIRECT_URI_FACEBOOK: z.string().optional(),
+  META_REDIRECT_URI_INSTAGRAM: z.string().optional(),
+  META_REDIRECT_URI_THREADS: z.string().optional(),
+
+  // TikTok
+  TIKTOK_CLIENT_KEY: z.string().optional(),
+  TIKTOK_CLIENT_SECRET: z.string().optional(),
+  TIKTOK_REDIRECT_URI: z.string().optional(),
+
+  // LinkedIn
+  LINKEDIN_CLIENT_ID: z.string().optional(),
+  LINKEDIN_CLIENT_SECRET: z.string().optional(),
+  LINKEDIN_REDIRECT_URI: z.string().optional(),
+
+  // Google
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().optional(),
+
+  // X
+  X_CLIENT_ID: z.string().optional(),
+  X_CLIENT_SECRET: z.string().optional(),
+  X_REDIRECT_URI: z.string().optional(),
+
+  // Pinterest
+  PINTEREST_APP_ID: z.string().optional(),
+  PINTEREST_APP_SECRET: z.string().optional(),
+  PINTEREST_REDIRECT_URI: z.string().optional(),
 }).refine((v) => isNonRootMysqlUrl(v.DATABASE_URL, v.NODE_ENV), {
   message: 'DATABASE_URL must not use the root MySQL user',
   path: ['DATABASE_URL'],

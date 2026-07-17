@@ -89,29 +89,84 @@ export function AppSidebar() {
           )}
           <SidebarGroupContent>
             <SidebarMenu className={collapsed ? "items-center gap-1.5" : "gap-0.5"}>
-              {allowedItems.map((item) => (
-                <SidebarMenuItem key={item.title} className={collapsed ? "flex justify-center" : ""}>
-                  <SidebarMenuButton asChild tooltip={item.title}>
-                    <NavLink
-                      to={item.url}
-                      end={item.url === "/dashboard"}
-                      className={
-                        collapsed
-                          ? "flex items-center justify-center w-10 h-10 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
-                          : "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
-                      }
-                      activeClassName={
-                        collapsed
-                          ? "bg-sidebar-accent text-sidebar-primary"
-                          : "bg-sidebar-accent text-sidebar-primary font-medium"
-                      }
-                    >
-                      <item.icon className="h-[18px] w-[18px] shrink-0" />
-                      {!collapsed && <span className="text-[13px]">{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {allowedItems.map((item) => {
+                if (item.url === "/dashboard/social-media") {
+                  if (collapsed) {
+                    return (
+                      <SidebarMenuItem key={item.title} className="flex justify-center">
+                        <SidebarMenuButton asChild tooltip={item.title}>
+                          <NavLink
+                            to="/dashboard/social-media/publish"
+                            className="flex items-center justify-center w-10 h-10 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
+                            activeClassName="bg-sidebar-accent text-sidebar-primary"
+                          >
+                            <item.icon className="h-[18px] w-[18px] shrink-0" />
+                          </NavLink>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  } else {
+                    return (
+                      <div key={item.title} className="w-full flex flex-col gap-1 py-1">
+                        <div className="text-[10px] font-semibold text-sidebar-foreground/35 uppercase tracking-[0.15em] mb-1 px-3 mt-2 flex items-center gap-2">
+                          <item.icon className="h-3.5 w-3.5" />
+                          {item.title}
+                        </div>
+                        <div className="flex flex-col gap-0.5 pl-2.5 ml-2 border-l border-sidebar-border/40">
+                          <NavLink
+                            to="/dashboard/social-media/analyze"
+                            className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200 text-[13px]"
+                            activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                          >
+                            <BarChart3 className="h-3.5 w-3.5 shrink-0" />
+                            <span>Analyze</span>
+                          </NavLink>
+                          <NavLink
+                            to="/dashboard/social-media/publish"
+                            className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200 text-[13px]"
+                            activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                          >
+                            <Share2 className="h-3.5 w-3.5 shrink-0" />
+                            <span>Publish</span>
+                          </NavLink>
+                          <NavLink
+                            to="/dashboard/social-media/accounts"
+                            className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200 text-[13px]"
+                            activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                          >
+                            <Users className="h-3.5 w-3.5 shrink-0" />
+                            <span>Accounts</span>
+                          </NavLink>
+                        </div>
+                      </div>
+                    );
+                  }
+                }
+
+                return (
+                  <SidebarMenuItem key={item.title} className={collapsed ? "flex justify-center" : ""}>
+                    <SidebarMenuButton asChild tooltip={item.title}>
+                      <NavLink
+                        to={item.url}
+                        end={item.url === "/dashboard"}
+                        className={
+                          collapsed
+                            ? "flex items-center justify-center w-10 h-10 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
+                            : "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
+                        }
+                        activeClassName={
+                          collapsed
+                            ? "bg-sidebar-accent text-sidebar-primary"
+                            : "bg-sidebar-accent text-sidebar-primary font-medium"
+                        }
+                      >
+                        <item.icon className="h-[18px] w-[18px] shrink-0" />
+                        {!collapsed && <span className="text-[13px]">{item.title}</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

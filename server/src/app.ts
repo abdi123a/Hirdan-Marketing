@@ -17,6 +17,7 @@ import { PATHS } from './lib/paths.js';
 import fileRoutes from './routes/files.routes.js';
 import { startTransferCleanupJob } from './lib/transfer-cleanup.js';
 import { startSubscriptionBillingJob } from './lib/subscription-billing.js';
+import { startSocialScheduler } from './lib/social/social-scheduler.js';
 
 // ─── Storage Bootstrap ───────────────────────────────────────────
 
@@ -29,6 +30,7 @@ function bootstrapStorage() {
     PATHS.EMPLOYEE_DOCS,
     PATHS.RECEIPTS,
     PATHS.TRANSFERS,
+    path.join(PATHS.UPLOADS_ROOT, 'social'), // social uploads directory
   ];
 
   console.log('📂 [Storage] Bootstrapping directories...');
@@ -59,6 +61,8 @@ bootstrapStorage();
 startTransferCleanupJob();
 // Automatically generate subscription invoices and send reminders/overdue notices.
 startSubscriptionBillingJob();
+// Start social media posting and token refresh background jobs
+startSocialScheduler();
 
 const app = express();
 
@@ -141,6 +145,9 @@ app.get('/api/health', async (_req, res) => {
 // ─── API Routes ───────────────────────────────────────────────────
 
 app.use('/api', routes);
+
+// Serve social media assets publicly for external platforms (Meta/TikTok/etc) to download
+app.use('/public-uploads', express.static(path.join(PATHS.UPLOADS_ROOT, 'social')));
 
 // Handle protected file access first
 app.use('/uploads', fileRoutes);

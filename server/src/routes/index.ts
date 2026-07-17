@@ -74,5 +74,14 @@ router.use('/reports', reportsRoutes);
 router.use('/transfer', transferRoutes);
 router.use('/landing-page', landingPageRoutes);
 
+// New Social Media Engine routes
+import socialOAuthRoutes from './social-oauth.routes.js';
+import socialPostsRoutes from './social-posts.routes.js';
+import socialAnalyticsRoutes from './social-analytics.routes.js';
+
+router.use('/social', socialOAuthRoutes);
+router.use('/social', socialPostsRoutes);
+router.use('/social', socialAnalyticsRoutes);
+
 export default router;
 

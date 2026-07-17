@@ -8,27 +8,27 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(uuid())
-  email         String         @unique
-  username      String?        @unique
-  passwordHash  String         @map("password_hash")
-  mustChangePassword Boolean   @default(false) @map("must_change_password")
-  passwordResetToken  String?  @unique @map("password_reset_token") @db.VarChar(512)
-  passwordResetExpiry DateTime? @map("password_reset_expiry")
-  role          UserRole       @default(CLIENT)
-  name          String
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
-  client        Client?
-  teamMember    TeamMember?
-  monthlyReports         MonthlyReport[]        @relation("MonthlyReportCreatedBy")
-  monthlyReportVersions  MonthlyReportVersion[] @relation("MonthlyReportVersionCreatedBy")
-  refreshTokens RefreshToken[]
-  hrDocumentsGenerated   HrDocument[]           @relation("HrDocumentGeneratedBy")
-  hrDocumentsApproved    HrDocument[]           @relation("HrDocumentApprovedBy")
-  hrDocumentApprovals    HrDocumentApproval[]   @relation("HrDocumentApprovals")
-  sharedFiles            SharedFile[]           @relation("SharedFileUploadedBy")
-  notifications          Notification[]
+  id                    String                 @id @default(uuid())
+  email                 String                 @unique
+  username              String?                @unique
+  passwordHash          String                 @map("password_hash")
+  mustChangePassword    Boolean                @default(false) @map("must_change_password")
+  passwordResetToken    String?                @unique @map("password_reset_token") @db.VarChar(512)
+  passwordResetExpiry   DateTime?              @map("password_reset_expiry")
+  role                  UserRole               @default(CLIENT)
+  name                  String
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+  client                Client?
+  teamMember            TeamMember?
+  monthlyReports        MonthlyReport[]        @relation("MonthlyReportCreatedBy")
+  monthlyReportVersions MonthlyReportVersion[] @relation("MonthlyReportVersionCreatedBy")
+  refreshTokens         RefreshToken[]
+  hrDocumentsGenerated  HrDocument[]           @relation("HrDocumentGeneratedBy")
+  hrDocumentsApproved   HrDocument[]           @relation("HrDocumentApprovedBy")
+  hrDocumentApprovals   HrDocumentApproval[]   @relation("HrDocumentApprovals")
+  sharedFiles           SharedFile[]           @relation("SharedFileUploadedBy")
+  notifications         Notification[]
 
   @@map("users")
 }
@@ -47,56 +47,59 @@ model RefreshToken {
 }
 
 model Client {
-  id            String         @id @default(uuid())
-  userId        String?        @unique @map("user_id")
-  name          String
-  email         String?
-  phone         String?
-  company       String
-  type          ClientType     @default(BUSINESS)
-  website       String?
-  address       String?
-  city          String?
-  country       String?
-  industry      String?
-  notes         String?        @db.Text
-  status        ClientStatus   @default(ACTIVE)
-  initials      String?
-  invoiceGenerationDay Int?    @map("invoice_generation_day")
-  paymentReminderDelay Int?    @map("payment_reminder_delay")
-  overdueNoticeDelay   Int?    @map("overdue_notice_delay")
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
-  user             User?                @relation(fields: [userId], references: [id])
-  invoices         Invoice[]
-  proformas        Proforma[]
-  projects         Project[]
-  subscriptions    Subscription[]
-  socialProfiles   ClientSocialProfile[]
-  documents        ClientDocument[]
-  deliverableTasks DeliverableTask[]
-  contentPosts     ContentPost[]
-  monthlyReports   MonthlyReport[]
-  sharedFiles      SharedFile[]
-  meetings         ClientMeeting[]
+  id                   String                @id @default(uuid())
+  userId               String?               @unique @map("user_id")
+  name                 String
+  email                String?
+  phone                String?
+  company              String
+  type                 ClientType            @default(BUSINESS)
+  website              String?
+  address              String?
+  city                 String?
+  country              String?
+  industry             String?
+  notes                String?               @db.Text
+  status               ClientStatus          @default(ACTIVE)
+  initials             String?
+  invoiceGenerationDay Int?                  @map("invoice_generation_day")
+  paymentReminderDelay Int?                  @map("payment_reminder_delay")
+  overdueNoticeDelay   Int?                  @map("overdue_notice_delay")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  user                 User?                 @relation(fields: [userId], references: [id])
+  invoices             Invoice[]
+  proformas            Proforma[]
+  projects             Project[]
+  subscriptions        Subscription[]
+  socialProfiles       ClientSocialProfile[]
+  documents            ClientDocument[]
+  deliverableTasks     DeliverableTask[]
+  contentPosts         ContentPost[]
+  monthlyReports       MonthlyReport[]
+  sharedFiles          SharedFile[]
+  meetings             ClientMeeting[]
+  socialAccounts       SocialAccount[]
+  socialPosts          SocialPost[]
+  socialCampaigns      SocialCampaign[]
 
-  portalAccess  Json?          @map("portal_access")
-  
+  portalAccess Json? @map("portal_access")
+
   @@index([email])
   @@index([company])
   @@map("clients")
 }
 
 model ClientMeeting {
-  id          String   @id @default(uuid())
-  clientId    String   @map("client_id")
-  title       String
-  date        DateTime
-  location    String?
-  notes       String?  @db.Text
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  clientId  String   @map("client_id")
+  title     String
+  date      DateTime
+  location  String?
+  notes     String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
   @@index([date])
@@ -107,7 +110,6 @@ enum ClientType {
   BUSINESS
   INDIVIDUAL
 }
-
 
 model Project {
   id          String              @id @default(uuid())
@@ -143,50 +145,50 @@ model ProjectTeamMember {
 }
 
 model TeamMember {
-  id         String              @id @default(uuid())
-  userId     String?             @unique @map("user_id")
+  id         String       @id @default(uuid())
+  userId     String?      @unique @map("user_id")
   name       String
-  email      String              @unique
+  email      String       @unique
   phone      String?
   role       String
   department String?
-  status     MemberStatus        @default(DRAFT)
+  status     MemberStatus @default(DRAFT)
   avatar     String?
-  photoUrl   String?             @map("photo_url") @db.LongText
-  hourlyRate Int?                @map("hourly_rate")
-  startDate  DateTime?           @map("start_date")
-  bio        String?             @db.Text
-  createdAt  DateTime            @default(now()) @map("created_at")
-  updatedAt  DateTime            @updatedAt @map("updated_at")
-  archivedAt DateTime?           @map("archived_at")
+  photoUrl   String?      @map("photo_url") @db.LongText
+  hourlyRate Int?         @map("hourly_rate")
+  startDate  DateTime?    @map("start_date")
+  bio        String?      @db.Text
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+  archivedAt DateTime?    @map("archived_at")
 
   // Personal Info (Step 1)
-  dateOfBirth              String?  @map("date_of_birth")
+  dateOfBirth              String? @map("date_of_birth")
   gender                   String?
-  nationalId               String?  @map("national_id")
-  nationalIdType           String?  @map("national_id_type")
+  nationalId               String? @map("national_id")
+  nationalIdType           String? @map("national_id_type")
   nationality              String?
-  homeAddress              String?  @map("home_address") @db.Text
-  emergencyContactName     String?  @map("emergency_contact_name")
-  emergencyContactRelation String?  @map("emergency_contact_relation")
-  emergencyContactPhone    String?  @map("emergency_contact_phone")
+  homeAddress              String? @map("home_address") @db.Text
+  emergencyContactName     String? @map("emergency_contact_name")
+  emergencyContactRelation String? @map("emergency_contact_relation")
+  emergencyContactPhone    String? @map("emergency_contact_phone")
 
   // Employment Info (Step 2)
-  employmentType String?  @map("employment_type")
-  managerId      String?  @map("manager_id")
-  workLocation   String?  @map("work_location")
+  employmentType String? @map("employment_type")
+  managerId      String? @map("manager_id")
+  workLocation   String? @map("work_location")
 
   // Payroll Info (Step 4)
-  isHourlyMode       Boolean  @default(false) @map("is_hourly_mode")
-  basicSalary        Int?     @map("basic_salary")
-  housingAllowance   Int?     @map("housing_allowance")
-  transportAllowance Int?     @map("transport_allowance")
-  otherAllowances    String?  @map("other_allowances") @db.Text
-  bankName           String?  @map("bank_name")
-  accountNumber      String?  @map("account_number")
-  taxId              String?  @map("tax_id")
-  paymentMethod      String?  @map("payment_method")
-  currency           String?  @default("USD")
+  isHourlyMode       Boolean @default(false) @map("is_hourly_mode")
+  basicSalary        Int?    @map("basic_salary")
+  housingAllowance   Int?    @map("housing_allowance")
+  transportAllowance Int?    @map("transport_allowance")
+  otherAllowances    String? @map("other_allowances") @db.Text
+  bankName           String? @map("bank_name")
+  accountNumber      String? @map("account_number")
+  taxId              String? @map("tax_id")
+  paymentMethod      String? @map("payment_method")
+  currency           String? @default("USD")
 
   projects      ProjectTeamMember[]
   user          User?               @relation(fields: [userId], references: [id])
@@ -205,14 +207,14 @@ model TeamMember {
 // ─── Employee Files ───────────────────────────────────────────────
 
 model EmployeeFile {
-  id          String           @id @default(uuid())
-  employeeId  String           @map("employee_id")
-  category    EmployeeFileCategory
-  label       String?
-  fileUrl     String           @map("file_url") @db.LongText
-  uploadedAt  DateTime         @default(now()) @map("uploaded_at")
-  uploadedBy  String?          @map("uploaded_by")
-  employee    TeamMember       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id         String               @id @default(uuid())
+  employeeId String               @map("employee_id")
+  category   EmployeeFileCategory
+  label      String?
+  fileUrl    String               @map("file_url") @db.LongText
+  uploadedAt DateTime             @default(now()) @map("uploaded_at")
+  uploadedBy String?              @map("uploaded_by")
+  employee   TeamMember           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
   @@map("employee_files")
@@ -252,35 +254,35 @@ enum EmployeeActionType {
 }
 
 model Invoice {
-  id                 String              @id @default(uuid())
-  invoiceNumber      String              @unique @map("invoice_number")
-  clientId           String              @map("client_id")
-  amount             Int
-  status             InvoiceStatus       @default(PENDING)
-  date               DateTime
-  dueDate            DateTime            @map("due_date")
-  notes              String?             @db.Text
-  taxRate            Float?              @map("tax_rate")
-  discount           Float?
-  discountType       DiscountType?       @map("discount_type")
-  deposit            Int?
-  paymentMethod      String?             @map("payment_method")
-  createdAt          DateTime            @default(now()) @map("created_at")
-  updatedAt          DateTime            @updatedAt @map("updated_at")
-  items              InvoiceItem[]
-  showSignature      Boolean             @default(true) @map("show_signature")
-  showStamp          Boolean             @default(true) @map("show_stamp")
-  deliveryNoteEnabled Boolean            @default(false) @map("delivery_note_enabled")
-  deliveryNoteTitle  String?             @map("delivery_note_title")
-  deliveryNoteContent String?            @db.Text @map("delivery_note_content")
-  subscriptionId        String?             @map("subscription_id")
-  autoGenerated         Boolean             @default(false) @map("auto_generated")
-  paymentConfirmationSentAt DateTime?       @map("payment_confirmation_sent_at")
-  reminderSentAt        DateTime?           @map("reminder_sent_at")
-  overdueSentAt         DateTime?           @map("overdue_sent_at")
-  dueSoonNotifiedAt     DateTime?           @map("due_soon_notified_at")
-  client             Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  verificationTokens VerificationToken[]
+  id                        String              @id @default(uuid())
+  invoiceNumber             String              @unique @map("invoice_number")
+  clientId                  String              @map("client_id")
+  amount                    Int
+  status                    InvoiceStatus       @default(PENDING)
+  date                      DateTime
+  dueDate                   DateTime            @map("due_date")
+  notes                     String?             @db.Text
+  taxRate                   Float?              @map("tax_rate")
+  discount                  Float?
+  discountType              DiscountType?       @map("discount_type")
+  deposit                   Int?
+  paymentMethod             String?             @map("payment_method")
+  createdAt                 DateTime            @default(now()) @map("created_at")
+  updatedAt                 DateTime            @updatedAt @map("updated_at")
+  items                     InvoiceItem[]
+  showSignature             Boolean             @default(true) @map("show_signature")
+  showStamp                 Boolean             @default(true) @map("show_stamp")
+  deliveryNoteEnabled       Boolean             @default(false) @map("delivery_note_enabled")
+  deliveryNoteTitle         String?             @map("delivery_note_title")
+  deliveryNoteContent       String?             @map("delivery_note_content") @db.Text
+  subscriptionId            String?             @map("subscription_id")
+  autoGenerated             Boolean             @default(false) @map("auto_generated")
+  paymentConfirmationSentAt DateTime?           @map("payment_confirmation_sent_at")
+  reminderSentAt            DateTime?           @map("reminder_sent_at")
+  overdueSentAt             DateTime?           @map("overdue_sent_at")
+  dueSoonNotifiedAt         DateTime?           @map("due_soon_notified_at")
+  client                    Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  verificationTokens        VerificationToken[]
 
   @@index([clientId])
   @@index([status])
@@ -301,28 +303,28 @@ model InvoiceItem {
 }
 
 model Proforma {
-  id                 String              @id @default(uuid())
-  proformaNumber     String              @unique @map("proforma_number")
-  clientId           String              @map("client_id")
-  amount             Int
-  status             ProformaStatus      @default(DRAFT)
-  date               DateTime
-  dueDate            DateTime            @map("due_date")
-  notes              String?             @db.Text
-  taxRate            Float?              @map("tax_rate")
-  discount           Float?
-  discountType       DiscountType?       @map("discount_type")
-  deposit            Int?
-  createdAt          DateTime            @default(now()) @map("created_at")
-  updatedAt          DateTime            @updatedAt @map("updated_at")
-  items              ProformaItem[]
-  showSignature      Boolean             @default(true) @map("show_signature")
-  showStamp          Boolean             @default(true) @map("show_stamp")
-  deliveryNoteEnabled Boolean            @default(false) @map("delivery_note_enabled")
-  deliveryNoteTitle  String?             @map("delivery_note_title")
-  deliveryNoteContent String?            @db.Text @map("delivery_note_content")
-  client             Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  verificationTokens VerificationToken[]
+  id                  String              @id @default(uuid())
+  proformaNumber      String              @unique @map("proforma_number")
+  clientId            String              @map("client_id")
+  amount              Int
+  status              ProformaStatus      @default(DRAFT)
+  date                DateTime
+  dueDate             DateTime            @map("due_date")
+  notes               String?             @db.Text
+  taxRate             Float?              @map("tax_rate")
+  discount            Float?
+  discountType        DiscountType?       @map("discount_type")
+  deposit             Int?
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  items               ProformaItem[]
+  showSignature       Boolean             @default(true) @map("show_signature")
+  showStamp           Boolean             @default(true) @map("show_stamp")
+  deliveryNoteEnabled Boolean             @default(false) @map("delivery_note_enabled")
+  deliveryNoteTitle   String?             @map("delivery_note_title")
+  deliveryNoteContent String?             @map("delivery_note_content") @db.Text
+  client              Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  verificationTokens  VerificationToken[]
 
   @@index([clientId])
   @@map("proformas")
@@ -342,23 +344,23 @@ model ProformaItem {
 }
 
 model Subscription {
-  id           String             @id @default(uuid())
-  clientId     String             @map("client_id")
-  packageId    String?            @map("package_id")
-  plan         String
-  amount       Int
-  billingCycle BillingCycle       @default(MONTHLY) @map("billing_cycle")
-  startDate    DateTime           @default(now()) @map("start_date")
-  endDate      DateTime?          @map("end_date")
-  status       SubscriptionStatus @default(ACTIVE)
-  features     String?            @db.Text
-  notes        String?            @db.Text
-  createdAt    DateTime           @default(now()) @map("created_at")
-  updatedAt    DateTime           @updatedAt @map("updated_at")
-  client           Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  package          Package?           @relation(fields: [packageId], references: [id])
-  cycles           SubscriptionCycle[]
-  deliverableTasks DeliverableTask[]
+  id                 String              @id @default(uuid())
+  clientId           String              @map("client_id")
+  packageId          String?             @map("package_id")
+  plan               String
+  amount             Int
+  billingCycle       BillingCycle        @default(MONTHLY) @map("billing_cycle")
+  startDate          DateTime            @default(now()) @map("start_date")
+  endDate            DateTime?           @map("end_date")
+  status             SubscriptionStatus  @default(ACTIVE)
+  features           String?             @db.Text
+  notes              String?             @db.Text
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  client             Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  package            Package?            @relation(fields: [packageId], references: [id])
+  cycles             SubscriptionCycle[]
+  deliverableTasks   DeliverableTask[]
   verificationTokens VerificationToken[]
 
   @@index([clientId])
@@ -367,14 +369,14 @@ model Subscription {
 }
 
 model Package {
-  id              String           @id @default(uuid())
+  id              String               @id @default(uuid())
   name            String
-  description     String           @db.Text
+  description     String               @db.Text
   price           Int
-  features        String?          @db.Text
-  type            PackageType      @default(SUBSCRIPTION)
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
+  features        String?              @db.Text
+  type            PackageType          @default(SUBSCRIPTION)
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
   packageServices PackageService[]
   subscriptions   Subscription[]
   deliverables    PackageDeliverable[]
@@ -409,22 +411,22 @@ model PackageService {
 }
 
 model VerificationToken {
-  id           String    @id @default(uuid())
-  token        String    @unique @db.VarChar(128)
-  documentType String    @map("document_type")
-  invoiceId    String?   @map("invoice_id")
-  proformaId   String?   @map("proforma_id")
-  subscriptionId  String?         @map("subscription_id")
-  monthlyReportId String?         @map("monthly_report_id")
-  hrDocumentId    String?         @map("hr_document_id")
-  createdAt       DateTime        @default(now()) @map("created_at")
-  expiresAt       DateTime        @default(dbgenerated("(DATE_ADD(NOW(), INTERVAL 365 DAY))")) @map("expires_at")
-  revokedAt       DateTime?       @map("revoked_at")
-  invoice         Invoice?        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  proforma        Proforma?       @relation(fields: [proformaId], references: [id], onDelete: Cascade)
-  subscription    Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  monthlyReport   MonthlyReport?  @relation(fields: [monthlyReportId], references: [id], onDelete: Cascade)
-  hrDocument      HrDocument?     @relation(fields: [hrDocumentId], references: [id], onDelete: Cascade)
+  id              String         @id @default(uuid())
+  token           String         @unique @db.VarChar(128)
+  documentType    String         @map("document_type")
+  invoiceId       String?        @map("invoice_id")
+  proformaId      String?        @map("proforma_id")
+  subscriptionId  String?        @map("subscription_id")
+  monthlyReportId String?        @map("monthly_report_id")
+  hrDocumentId    String?        @map("hr_document_id")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  expiresAt       DateTime       @default(dbgenerated("(DATE_ADD(NOW(), INTERVAL 365 DAY))")) @map("expires_at")
+  revokedAt       DateTime?      @map("revoked_at")
+  invoice         Invoice?       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  proforma        Proforma?      @relation(fields: [proformaId], references: [id], onDelete: Cascade)
+  subscription    Subscription?  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  monthlyReport   MonthlyReport? @relation(fields: [monthlyReportId], references: [id], onDelete: Cascade)
+  hrDocument      HrDocument?    @relation(fields: [hrDocumentId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
   @@index([proformaId])
@@ -435,57 +437,65 @@ model VerificationToken {
 }
 
 model AgencySettings {
-  id                  String   @id @default(uuid())
-  agencyName          String   @map("agency_name")
-  adminEmail          String   @map("admin_email")
-  phone               String?
-  website             String?
-  address             String?  @db.LongText
-  currency            String   @default("USD")
-  timezone            String   @default("UTC")
-  logo                String?  @db.LongText
-  whiteLogo           String?  @map("white_logo") @db.LongText
-  favicon             String?  @db.LongText
-  primaryColor        String?  @map("primary_color")
-  taxRate             Float    @default(0) @map("tax_rate")
-  defaultInvoiceNotes String?  @map("default_invoice_notes") @db.LongText
-  paymentMethods      String?  @map("payment_methods") @db.LongText
-  socialLinks         String?  @map("social_links") @db.LongText
-  notifications       String?  @db.LongText
-  signature           String?  @map("signature") @db.LongText
-  stamp               String?  @map("stamp") @db.LongText
-  enableRecaptcha     Boolean  @default(false) @map("enable_recaptcha")
-  recaptchaSiteKey    String?  @map("recaptcha_site_key")
-  recaptchaSecretKey  String?  @map("recaptcha_secret_key")
-  googleAnalyticsEnabled     Boolean  @default(false) @map("google_analytics_enabled")
-  googleAnalyticsMeasurementId String?  @map("google_analytics_measurement_id")
-  developmentMode          Boolean  @default(false) @map("development_mode")
-  comingSoonMessage        String?  @map("coming_soon_message") @db.LongText
-  openAiApiKey        String?  @map("open_ai_api_key")
-  claudeApiKey        String?  @map("claude_api_key")
-  geminiApiKey        String?  @map("gemini_api_key")
-  mainAiProvider      String   @default("openai") @map("main_ai_provider")
-  resendApiKey        String?  @map("resend_api_key")
-  emailFrom           String?  @map("email_from")
-  mailerName          String?  @map("mailer_name")
-  smtpHost            String?  @map("smtp_host")
-  smtpPort            Int?     @map("smtp_port")
-  smtpUsername        String?  @map("smtp_username")
-  smtpEncryption      String?  @map("smtp_encryption")
-  smtpDriver          String?  @map("smtp_driver")
-  mailEnabled         Boolean  @default(false) @map("mail_enabled")
-  hrFallbackApproverId String?  @map("hr_fallback_approver_id")
-  googleDriveFolderId        String?  @map("google_drive_folder_id")
+  id                            String  @id @default(uuid())
+  agencyName                    String  @map("agency_name")
+  adminEmail                    String  @map("admin_email")
+  phone                         String?
+  website                       String?
+  address                       String? @db.LongText
+  currency                      String  @default("USD")
+  timezone                      String  @default("UTC")
+  logo                          String? @db.LongText
+  whiteLogo                     String? @map("white_logo") @db.LongText
+  favicon                       String? @db.LongText
+  primaryColor                  String? @map("primary_color")
+  taxRate                       Float   @default(0) @map("tax_rate")
+  defaultInvoiceNotes           String? @map("default_invoice_notes") @db.LongText
+  paymentMethods                String? @map("payment_methods") @db.LongText
+  socialLinks                   String? @map("social_links") @db.LongText
+  notifications                 String? @db.LongText
+  signature                     String? @map("signature") @db.LongText
+  stamp                         String? @map("stamp") @db.LongText
+  enableRecaptcha               Boolean @default(false) @map("enable_recaptcha")
+  recaptchaSiteKey              String? @map("recaptcha_site_key")
+  recaptchaSecretKey            String? @map("recaptcha_secret_key")
+  googleAnalyticsEnabled        Boolean @default(false) @map("google_analytics_enabled")
+  googleAnalyticsMeasurementId  String? @map("google_analytics_measurement_id")
+  developmentMode               Boolean @default(false) @map("development_mode")
+  comingSoonMessage             String? @map("coming_soon_message") @db.LongText
+  openAiApiKey                  String? @map("open_ai_api_key")
+  claudeApiKey                  String? @map("claude_api_key")
+  geminiApiKey                  String? @map("gemini_api_key")
+  mainAiProvider                String  @default("openai") @map("main_ai_provider")
+  resendApiKey                  String? @map("resend_api_key")
+  emailFrom                     String? @map("email_from")
+  mailerName                    String? @map("mailer_name")
+  smtpHost                      String? @map("smtp_host")
+  smtpPort                      Int?    @map("smtp_port")
+  smtpUsername                  String? @map("smtp_username")
+  smtpEncryption                String? @map("smtp_encryption")
+  smtpDriver                    String? @map("smtp_driver")
+  mailEnabled                   Boolean @default(false) @map("mail_enabled")
+  hrFallbackApproverId          String? @map("hr_fallback_approver_id")
+  googleDriveFolderId           String? @map("google_drive_folder_id")
   googleDriveServiceAccountJson String? @map("google_drive_service_account_json") @db.LongText
-  googleDriveClientId          String?  @map("google_drive_client_id")
-  googleDriveClientSecret      String?  @map("google_drive_client_secret") @db.LongText
-  googleDriveRefreshToken      String?  @map("google_drive_refresh_token") @db.LongText
-  googleDriveEnabled         Boolean  @default(false) @map("google_drive_enabled")
-  oneSignalAppId      String?  @map("one_signal_app_id")
-  oneSignalApiKey     String?  @map("one_signal_api_key")
-  oneSignalEnabled    Boolean  @default(false) @map("one_signal_enabled")
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  googleDriveClientId           String? @map("google_drive_client_id")
+  googleDriveClientSecret       String? @map("google_drive_client_secret") @db.LongText
+  googleDriveRefreshToken       String? @map("google_drive_refresh_token") @db.LongText
+  googleDriveEnabled            Boolean @default(false) @map("google_drive_enabled")
+  oneSignalAppId                String? @map("one_signal_app_id")
+  oneSignalApiKey               String? @map("one_signal_api_key")
+  oneSignalEnabled              Boolean @default(false) @map("one_signal_enabled")
+
+  metaEnabled      Boolean @default(false) @map("meta_enabled")
+  tiktokEnabled    Boolean @default(false) @map("tiktok_enabled")
+  linkedinEnabled  Boolean @default(false) @map("linkedin_enabled")
+  googleEnabled    Boolean @default(false) @map("google_enabled")
+  xEnabled         Boolean @default(false) @map("x_enabled")
+  pinterestEnabled Boolean @default(false) @map("pinterest_enabled")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("agency_settings")
 }
@@ -678,7 +688,7 @@ model PackageDeliverable {
   createdAt   DateTime        @default(now()) @map("created_at")
   updatedAt   DateTime        @updatedAt @map("updated_at")
 
-  package   Package              @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  package   Package               @relation(fields: [packageId], references: [id], onDelete: Cascade)
   platforms DeliverablePlatform[]
 
   @@index([packageId])
@@ -687,9 +697,9 @@ model PackageDeliverable {
 
 /// Join table: which platforms a PackageDeliverable targets (avoids JSON storage)
 model DeliverablePlatform {
-  id             String         @id @default(uuid())
-  deliverableId  String         @map("deliverable_id")
-  platform       SocialPlatform
+  id            String         @id @default(uuid())
+  deliverableId String         @map("deliverable_id")
+  platform      SocialPlatform
 
   deliverable PackageDeliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
 
@@ -703,11 +713,11 @@ model SubscriptionCycle {
   subscriptionId String   @map("subscription_id")
   cycleStart     DateTime @map("cycle_start")
   cycleEnd       DateTime @map("cycle_end")
-  label          String   // e.g. "March 2026"
+  label          String // e.g. "March 2026"
   tasksGenerated Boolean  @default(false) @map("tasks_generated")
   createdAt      DateTime @default(now()) @map("created_at")
 
-  subscription     Subscription    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  subscription     Subscription      @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   deliverableTasks DeliverableTask[]
 
   @@unique([subscriptionId, cycleStart])
@@ -729,18 +739,18 @@ model DeliverableTask {
   teamMemberId   String?         @map("team_member_id")
 
   // Separated notes: internal vs client-visible
-  internalNotes  String?         @map("internal_notes") @db.Text
-  clientNotes    String?         @map("client_notes") @db.Text
+  internalNotes String? @map("internal_notes") @db.Text
+  clientNotes   String? @map("client_notes") @db.Text
 
   // Post tracking
-  mediaUrl       String?         @map("media_url")
-  postUrl        String?         @map("post_url")
-  postedAt       DateTime?       @map("posted_at")
-  proofUrl       String?         @map("proof_url")
+  mediaUrl String?   @map("media_url")
+  postUrl  String?   @map("post_url")
+  postedAt DateTime? @map("posted_at")
+  proofUrl String?   @map("proof_url")
 
-  clientVisible  Boolean         @default(true) @map("client_visible")
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @updatedAt @map("updated_at")
+  clientVisible Boolean  @default(true) @map("client_visible")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   client       Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
   subscription Subscription      @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
@@ -783,7 +793,7 @@ enum PostStatus {
 model ContentPost {
   id            String         @id @default(uuid())
   clientId      String         @map("client_id")
-  month         Int            // 1–12
+  month         Int // 1–12
   year          Int
   title         String
   platform      SocialPlatform
@@ -796,7 +806,7 @@ model ContentPost {
   createdAt     DateTime       @default(now()) @map("created_at")
   updatedAt     DateTime       @updatedAt @map("updated_at")
 
-  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client      Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
   linkedTasks DeliverableTask[]
 
   @@index([clientId])
@@ -818,11 +828,11 @@ model MonthlyReport {
   createdAt     DateTime            @default(now()) @map("created_at")
   updatedAt     DateTime            @updatedAt @map("updated_at")
 
-  client    Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  createdBy User?                  @relation("MonthlyReportCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  sections  MonthlyReportSection[]
-  assets    MonthlyReportAsset[]
-  versions  MonthlyReportVersion[]
+  client             Client                 @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdBy          User?                  @relation("MonthlyReportCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  sections           MonthlyReportSection[]
+  assets             MonthlyReportAsset[]
+  versions           MonthlyReportVersion[]
   verificationTokens VerificationToken[]
 
   @@unique([clientId, month, year])
@@ -905,22 +915,22 @@ enum ExpenseCategory {
 
 /// Financial account (bank, mobile wallet, or cash)
 model Account {
-  id          String      @id @default(uuid())
-  name        String
-  type        AccountType
-  currency    String      @default("USD")
-  color       String?
-  icon        String?
-  image       String?     @db.LongText
-  notes       String?     @db.Text
-  isArchived  Boolean     @default(false) @map("is_archived")
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
+  id         String      @id @default(uuid())
+  name       String
+  type       AccountType
+  currency   String      @default("USD")
+  color      String?
+  icon       String?
+  image      String?     @db.LongText
+  notes      String?     @db.Text
+  isArchived Boolean     @default(false) @map("is_archived")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
 
   expenses          Expense[]
   recurringExpenses RecurringExpense[]
-  transfersFrom     AccountTransfer[] @relation("TransferFrom")
-  transfersTo       AccountTransfer[] @relation("TransferTo")
+  transfersFrom     AccountTransfer[]  @relation("TransferFrom")
+  transfersTo       AccountTransfer[]  @relation("TransferTo")
   deposits          Deposit[]
 
   @@map("accounts")
@@ -928,17 +938,17 @@ model Account {
 
 /// A business expense entry
 model Expense {
-  id          String          @id @default(uuid())
-  accountId   String          @map("account_id")
-  employeeId  String?         @map("employee_id")
-  amount      Int             // stored in smallest currency unit (cents)
-  category    String          @default("OTHER")
-  description String          @db.Text
+  id          String   @id @default(uuid())
+  accountId   String   @map("account_id")
+  employeeId  String?  @map("employee_id")
+  amount      Int // stored in smallest currency unit (cents)
+  category    String   @default("OTHER")
+  description String   @db.Text
   date        DateTime
-  receiptUrl  String?         @map("receipt_url") @db.LongText
-  notes       String?         @db.Text
-  createdAt   DateTime        @default(now()) @map("created_at")
-  updatedAt   DateTime        @updatedAt @map("updated_at")
+  receiptUrl  String?  @map("receipt_url") @db.LongText
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   account  Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
   employee TeamMember? @relation("EmployeeExpenses", fields: [employeeId], references: [id], onDelete: SetNull)
@@ -952,19 +962,19 @@ model Expense {
 
 /// A standing monthly business expense (template, not a real payment)
 model RecurringExpense {
-  id          String          @id @default(uuid())
-  name        String                          // e.g. "Office Rent"
-  category    String          @default("OTHER")
-  amount      Int                             // cents
-  accountId   String?         @map("account_id") // preferred payment account
-  description String?         @db.Text
-  isActive    Boolean         @default(true) @map("is_active")
-  dayOfMonth  Int?            @map("day_of_month") // e.g. 1 = 1st of month
-  startDate   DateTime        @default(now()) @map("start_date")
-  endDate     DateTime?       @map("end_date")
-  frequency   String          @default("MONTHLY") // "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" | "ON_DEMAND"
-  createdAt   DateTime        @default(now()) @map("created_at")
-  updatedAt   DateTime        @updatedAt     @map("updated_at")
+  id          String    @id @default(uuid())
+  name        String // e.g. "Office Rent"
+  category    String    @default("OTHER")
+  amount      Int // cents
+  accountId   String?   @map("account_id") // preferred payment account
+  description String?   @db.Text
+  isActive    Boolean   @default(true) @map("is_active")
+  dayOfMonth  Int?      @map("day_of_month") // e.g. 1 = 1st of month
+  startDate   DateTime  @default(now()) @map("start_date")
+  endDate     DateTime? @map("end_date")
+  frequency   String    @default("MONTHLY") // "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" | "ON_DEMAND"
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
 
@@ -977,7 +987,7 @@ model AccountTransfer {
   id            String   @id @default(uuid())
   fromAccountId String   @map("from_account_id")
   toAccountId   String   @map("to_account_id")
-  amount        Int      // in cents
+  amount        Int // in cents
   note          String?  @db.Text
   date          DateTime
   createdAt     DateTime @default(now()) @map("created_at")
@@ -994,14 +1004,14 @@ model AccountTransfer {
 model Deposit {
   id          String   @id @default(uuid())
   accountId   String   @map("account_id")
-  amount      Int      // in cents
+  amount      Int // in cents
   category    String   @default("OTHER") // e.g. OWNER_INVESTMENT, REVENUE, REFUND, OTHER
   description String?  @db.Text
   date        DateTime
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId])
   @@index([date])
@@ -1011,23 +1021,23 @@ model Deposit {
 // ─── HR Document Generator Module ─────────────────────────────────
 
 model HrDocument {
-  id            String             @id @default(uuid())
-  employeeId    String             @map("employee_id")
-  docType       HrDocumentType     @map("doc_type")
-  docNumber     String             @map("doc_number")
-  status        HrDocumentStatus   @default(DRAFT)
-  generatedById String?            @map("generated_by_id")
-  generatedBy   User?              @relation("HrDocumentGeneratedBy", fields: [generatedById], references: [id], onDelete: SetNull)
-  generatedAt   DateTime           @default(now()) @map("generated_at")
-  approvedById  String?            @map("approved_by_id")
-  approvedBy    User?              @relation("HrDocumentApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
-  approvedAt    DateTime?          @map("approved_at")
-  version       Int                @default(1)
-  pdfUrl        String?            @map("pdf_url") @db.LongText
-  content       Json?              // Store the form fields (JSON stringified/parsed)
-  
-  employee      TeamMember         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  approvals     HrDocumentApproval[]
+  id            String           @id @default(uuid())
+  employeeId    String           @map("employee_id")
+  docType       HrDocumentType   @map("doc_type")
+  docNumber     String           @map("doc_number")
+  status        HrDocumentStatus @default(DRAFT)
+  generatedById String?          @map("generated_by_id")
+  generatedBy   User?            @relation("HrDocumentGeneratedBy", fields: [generatedById], references: [id], onDelete: SetNull)
+  generatedAt   DateTime         @default(now()) @map("generated_at")
+  approvedById  String?          @map("approved_by_id")
+  approvedBy    User?            @relation("HrDocumentApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt    DateTime?        @map("approved_at")
+  version       Int              @default(1)
+  pdfUrl        String?          @map("pdf_url") @db.LongText
+  content       Json? // Store the form fields (JSON stringified/parsed)
+
+  employee           TeamMember           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  approvals          HrDocumentApproval[]
   verificationTokens VerificationToken[]
 
   @@unique([docNumber, version])
@@ -1038,15 +1048,15 @@ model HrDocument {
 }
 
 model HrDocumentApproval {
-  id            String     @id @default(uuid())
-  hrDocumentId  String     @map("hr_document_id")
-  approverId    String     @map("approver_id")
-  decision      String     // 'APPROVED' or 'REJECTED'
-  comment       String?    @db.Text
-  decidedAt     DateTime   @default(now()) @map("decided_at")
+  id           String   @id @default(uuid())
+  hrDocumentId String   @map("hr_document_id")
+  approverId   String   @map("approver_id")
+  decision     String // 'APPROVED' or 'REJECTED'
+  comment      String?  @db.Text
+  decidedAt    DateTime @default(now()) @map("decided_at")
 
-  hrDocument    HrDocument @relation(fields: [hrDocumentId], references: [id], onDelete: Cascade)
-  approver      User       @relation("HrDocumentApprovals", fields: [approverId], references: [id], onDelete: Cascade)
+  hrDocument HrDocument @relation(fields: [hrDocumentId], references: [id], onDelete: Cascade)
+  approver   User       @relation("HrDocumentApprovals", fields: [approverId], references: [id], onDelete: Cascade)
 
   @@index([hrDocumentId])
   @@index([approverId])
@@ -1071,23 +1081,23 @@ enum HrDocumentStatus {
 }
 
 model SharedFile {
-  id            String    @id @default(uuid())
-  shareId       String    @unique @default(uuid()) @map("share_id")
-  fileName      String    @map("file_name")
-  storedName    String    @map("stored_name")
-  filePath      String    @map("file_path")
-  fileSize      Int       @map("file_size")
-  mimeType      String    @map("mime_type")
+  id         String @id @default(uuid())
+  shareId    String @unique @default(uuid()) @map("share_id")
+  fileName   String @map("file_name")
+  storedName String @map("stored_name")
+  filePath   String @map("file_path")
+  fileSize   Int    @map("file_size")
+  mimeType   String @map("mime_type")
 
-  clientId      String?   @map("client_id")
-  client        Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId String? @map("client_id")
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
-  uploadedById  String    @map("uploaded_by_id")
-  uploadedBy    User      @relation("SharedFileUploadedBy", fields: [uploadedById], references: [id], onDelete: Cascade)
-  message       String?   @db.Text
+  uploadedById String  @map("uploaded_by_id")
+  uploadedBy   User    @relation("SharedFileUploadedBy", fields: [uploadedById], references: [id], onDelete: Cascade)
+  message      String? @db.Text
 
-  emailSentTo   String?   @map("email_sent_to")
-  emailSentAt   DateTime? @map("email_sent_at")
+  emailSentTo String?   @map("email_sent_to")
+  emailSentAt DateTime? @map("email_sent_at")
 
   expiresAt     DateTime  @map("expires_at")
   downloadCount Int       @default(0) @map("download_count")
@@ -1095,9 +1105,9 @@ model SharedFile {
   isDeleted     Boolean   @default(false) @map("is_deleted")
   deletedAt     DateTime? @map("deleted_at")
 
-  createdAt     DateTime  @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
-  events        SharedFileEvent[]
+  events SharedFileEvent[]
 
   @@index([shareId])
   @@index([expiresAt, isDeleted])
@@ -1118,70 +1128,70 @@ model SharedFileEvent {
 }
 
 model LandingPageContent {
-  id               String   @id @default("default")
-  
+  id String @id @default("default")
+
   // Dynamic Images
-  heroImageUrl     String   @default("/assets/img/hero/digital-marketing-hero-img-min.png")
-  heroShapeImageUrl String  @default("/assets/img/hero/circle-musk.png")
-  heroBadgeImageUrl String  @default("/assets/img/bale.png")
-  aboutImageUrl    String   @default("/assets/img/about/digittal-about-img.png")
-  contactImageUrl  String   @default("/assets/img/contact.jpg")
-  trustImageUrl    String   @default("/assets/img/about/face-mans-2.png")
-  clientLogos      Json     @default("[]")
+  heroImageUrl      String @default("/assets/img/hero/digital-marketing-hero-img-min.png")
+  heroShapeImageUrl String @default("/assets/img/hero/circle-musk.png")
+  heroBadgeImageUrl String @default("/assets/img/bale.png")
+  aboutImageUrl     String @default("/assets/img/about/digittal-about-img.png")
+  contactImageUrl   String @default("/assets/img/contact.jpg")
+  trustImageUrl     String @default("/assets/img/about/face-mans-2.png")
+  clientLogos       Json   @default("[]")
 
   // Hero Section
-  heroSubtitle     String   @default("Social Media Marketing")
-  heroTitle        String   @default("Growth With High-Impact Social Media")
-  heroDescription  String?  @db.Text
-  heroBtn1Text     String   @default("Boost My Social Media")
-  heroBtn2Text     String   @default("Work Process")
-  heroAwardNumber  String   @default("2K+")
-  heroAwardLabel   String   @default("Happy Client")
+  heroSubtitle    String  @default("Social Media Marketing")
+  heroTitle       String  @default("Growth With High-Impact Social Media")
+  heroDescription String? @db.Text
+  heroBtn1Text    String  @default("Boost My Social Media")
+  heroBtn2Text    String  @default("Work Process")
+  heroAwardNumber String  @default("2K+")
+  heroAwardLabel  String  @default("Happy Client")
 
   // About Section
-  aboutSubtitle    String   @default("About SEOX")
-  aboutTitle       String   @default("Helping Business All Size Stay Ahead Social Media")
-  aboutDescription String?  @db.Text
-  aboutBullets     String?  @db.Text
-  aboutCampaigns   String   @default("500+")
-  aboutClients     String   @default("1200+")
+  aboutSubtitle    String  @default("About SEOX")
+  aboutTitle       String  @default("Helping Business All Size Stay Ahead Social Media")
+  aboutDescription String? @db.Text
+  aboutBullets     String? @db.Text
+  aboutCampaigns   String  @default("500+")
+  aboutClients     String  @default("1200+")
 
   // Process Section
-  processSubtitle  String   @default("Our Seamless Process")
-  processTitle     String   @default("Our Step-by-Step Approach")
-  process1Title    String   @default("Consultation Discovery")
-  process1Desc     String?  @db.Text
-  process2Title    String   @default("Design And Development")
-  process2Desc     String?  @db.Text
-  process3Title    String   @default("Continuous Improvement")
-  process3Desc     String?  @db.Text
-  process4Title    String   @default("Reporting")
-  process4Desc     String?  @db.Text
+  processSubtitle String  @default("Our Seamless Process")
+  processTitle    String  @default("Our Step-by-Step Approach")
+  process1Title   String  @default("Consultation Discovery")
+  process1Desc    String? @db.Text
+  process2Title   String  @default("Design And Development")
+  process2Desc    String? @db.Text
+  process3Title   String  @default("Continuous Improvement")
+  process3Desc    String? @db.Text
+  process4Title   String  @default("Reporting")
+  process4Desc    String? @db.Text
 
   // CTA Section
-  ctaSubtitle      String   @default("tailored social strategies")
-  ctaTitle         String   @default("Results Driven Marketing For Your Social Business")
-  ctaDescription   String?  @db.Text
+  ctaSubtitle    String  @default("tailored social strategies")
+  ctaTitle       String  @default("Results Driven Marketing For Your Social Business")
+  ctaDescription String? @db.Text
 
   // SEO Settings
-  seoTitle         String   @default("SEOX - High-Impact Social Media Marketing Agency")
-  seoDescription   String?  @db.Text
-  seoKeywords      String?  @db.Text
-  seoImage         String   @default("")
+  seoTitle       String  @default("SEOX - High-Impact Social Media Marketing Agency")
+  seoDescription String? @db.Text
+  seoKeywords    String? @db.Text
+  seoImage       String  @default("")
 
   // Dynamic Content & Inclusions (Hirdan Marketing default values stored inside Json fields)
-  servicesJson     Json     @default("[]") @map("services_json")
-  faqsJson         Json     @default("[]") @map("faqs_json")
-  packagesJson     Json     @default("[]") @map("packages_json")
-  footerTagline    String   @default("We grow your business with creative marketing that delivers real results.")
+  servicesJson  Json   @default("[]") @map("services_json")
+  faqsJson      Json   @default("[]") @map("faqs_json")
+  packagesJson  Json   @default("[]") @map("packages_json")
+  footerTagline String @default("We grow your business with creative marketing that delivers real results.")
 
   // About Page Mission & Stats
-  aboutMissionTitle  String   @default("Our Mission Is Simple")
-  aboutMissionDesc   String?  @db.Text
+  aboutMissionTitle   String  @default("Our Mission Is Simple")
+  aboutMissionDesc    String? @db.Text
   aboutMissionBullets String? @db.Text
-  aboutStatsJson     Json     @default("[]") @map("about_stats_json")
+  aboutStatsJson      Json    @default("[]") @map("about_stats_json")
 
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("landing_page_contents")
 }
@@ -1199,14 +1209,14 @@ model CaseStudy {
 }
 
 model Testimonial {
-  id          String   @id @default(uuid())
-  name        String
-  role        String
-  feedback    String   @db.Text
-  rating      Int      @default(5)
-  avatarUrl   String?  @map("avatar_url")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id        String   @id @default(uuid())
+  name      String
+  role      String
+  feedback  String   @db.Text
+  rating    Int      @default(5)
+  avatarUrl String?  @map("avatar_url")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("testimonials")
 }
@@ -1243,7 +1253,7 @@ model Notification {
   userId     String?              @map("user_id")
   title      String
   message    String
-  type       String               // e.g. "INVOICE_PAID", "PROJECT_OVERDUE"
+  type       String // e.g. "INVOICE_PAID", "PROJECT_OVERDUE"
   category   NotificationCategory @default(INFORMATION)
   entityType String?              @map("entity_type") // "INVOICE" | "PROJECT" | "CLIENT" | "EMPLOYEE" | "SUBSCRIPTION"
   entityId   String?              @map("entity_id")
@@ -1251,8 +1261,134 @@ model Notification {
   read       Boolean              @default(false)
   createdAt  DateTime             @default(now()) @map("created_at")
 
-  user       User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("notifications")
+}
+
+model SocialAccount {
+  id               String    @id @default(uuid())
+  clientId         String    @map("client_id")
+  platform         String // 'facebook'|'instagram'|'tiktok'|'linkedin'|'youtube'|'x'|'threads'|'pinterest'
+  platformUserId   String    @map("platform_user_id")
+  platformUsername String    @map("platform_username")
+  displayName      String    @map("display_name")
+  avatarUrl        String?   @map("avatar_url") @db.Text
+  pageId           String?   @map("page_id")
+  igAccountId      String?   @map("ig_account_id")
+  accessTokenEnc   String    @map("access_token_enc") @db.Text
+  refreshTokenEnc  String?   @map("refresh_token_enc") @db.Text
+  tokenExpiresAt   DateTime? @map("token_expires_at")
+  healthStatus     String    @default("healthy") @map("health_status")
+  healthMessage    String?   @map("health_message") @db.Text
+  rateLimitedUntil DateTime? @map("rate_limited_until")
+  groupName        String?   @map("group_name")
+  groupColor       String?   @map("group_color")
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  client        Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  destinations  SocialPostDestination[]
+  insightsDaily AccountInsightDaily[]
+
+  @@unique([clientId, platform, platformUserId])
+  @@index([clientId])
+  @@map("social_accounts")
+}
+
+model SocialPost {
+  id              String    @id @default(uuid())
+  clientId        String    @map("client_id")
+  caption         String    @db.Text
+  platformContent Json?     @map("platform_content")
+  mediaUrls       Json?     @map("media_urls")
+  mediaType       String?   @map("media_type")
+  status          String    @default("DRAFT")
+  scheduledFor    DateTime? @map("scheduled_for")
+  publishedAt     DateTime? @map("published_at")
+  campaignId      String?   @map("campaign_id")
+  errorMessage    String?   @map("error_message") @db.Text
+  createdById     String?   @map("created_by_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  client       Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  destinations SocialPostDestination[]
+  insights     PostInsight[]
+
+  @@index([clientId])
+  @@index([status, scheduledFor])
+  @@map("social_posts")
+}
+
+model SocialPostDestination {
+  id              String    @id @default(uuid())
+  postId          String    @map("post_id")
+  socialAccountId String    @map("social_account_id")
+  platform        String
+  status          String    @default("QUEUED") // QUEUED|PUBLISHING|PUBLISHED|FAILED
+  platformPostId  String?   @map("platform_post_id")
+  publishedAt     DateTime? @map("published_at")
+  lastError       String?   @map("last_error") @db.Text
+  attempts        Int       @default(0)
+  lastAttemptAt   DateTime? @map("last_attempt_at")
+  lockedAt        DateTime? @map("locked_at")
+
+  post          SocialPost    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([status, lockedAt])
+  @@map("social_post_destinations")
+}
+
+model AccountInsightDaily {
+  id              String   @id @default(uuid())
+  socialAccountId String   @map("social_account_id")
+  date            DateTime @db.Date
+  followers       Int?
+  reach           Int?
+  impressions     Int?
+  profileVisits   Int?     @map("profile_visits")
+  engagementRate  Decimal? @map("engagement_rate") @db.Decimal(5, 2)
+
+  account SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialAccountId, date])
+  @@index([socialAccountId])
+  @@map("account_insights_daily")
+}
+
+model PostInsight {
+  id          String   @id @default(uuid())
+  postId      String   @map("post_id")
+  platform    String
+  impressions Int?
+  reach       Int?
+  likes       Int?
+  comments    Int?
+  shares      Int?
+  saved       Int?
+  views       Int?
+  fetchedAt   DateTime @default(now()) @map("fetched_at")
+
+  post SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@map("post_insights")
+}
+
+model SocialCampaign {
+  id        String   @id @default(uuid())
+  clientId  String   @map("client_id")
+  name      String
+  status    String   @default("active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("social_campaigns")
 }
