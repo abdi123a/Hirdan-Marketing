@@ -1,46 +1,32 @@
-# Contributing to Hirdan Marketing Management
+# Contributing Guidelines (Internal Only)
 
-Thank you for your interest in contributing to Hirdan Marketing Management! We welcome community contributions to help improve the platform.
+This repository is private and proprietary to Hirdan Marketing. Contributions are restricted to authorized internal developers and team members.
 
 ## Code of Conduct
 
-Please be respectful and professional in all interactions within this project.
+Please maintain professional and respectful communication in all project spaces.
 
-## How Can I Contribute?
+## Internal Development Flow
 
-### Reporting Bugs
-If you find a bug, please open a GitHub Issue and include:
-- A clear, descriptive title.
-- Steps to reproduce the bug.
-- Expected vs. actual behavior.
-- Screenshots or error logs if available.
-- Your environment details (browser, OS, Node.js version).
+### Feature branches
+Always create a feature branch off of the `clean-version` branch:
+```bash
+git checkout -b feature/your-feature-name
+```
 
-### Suggesting Enhancements
-If you have ideas for new features or improvements:
-- Open a GitHub Issue describing the feature request.
-- Explain the use case and why it would be beneficial to the project.
+### Commit Messages
+Write clear, concise commit messages outlining what was changed and why.
 
 ### Pull Requests
-We welcome pull requests! To submit a contribution:
-1. Fork the repository and create your branch from `clean-version`.
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Make your changes, adhering to the project's coding standards.
-4. Ensure code passes linting and tests:
-   ```bash
-   npm run lint
-   ```
-5. Commit your changes with clear, descriptive commit messages.
-6. Push to your fork and submit a Pull Request (PR) to the `clean-version` branch.
+- Keep Pull Requests small and focused.
+- Ensure all automated checks (linting, build) pass before requesting a review.
+- Tag another internal team member for review before merging into `clean-version`.
 
 ## Development Setup
 
-The project is structured as a monorepo-like layout:
+The project is structured as follows:
 - **CRM Frontend**: Root directory (Vite + React + TypeScript + Tailwind CSS).
 - **Backend API**: `server/` directory (Node.js + Express + Prisma + PostgreSQL).
 - **Landing Page**: `landing-page/` directory (Next.js/React).
 
-Refer to the main `README.md` for specific configuration and setup instructions.
+Refer to the main `README.md` for local setup and database seeding instructions.

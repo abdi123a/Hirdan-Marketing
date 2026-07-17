@@ -1,12 +1,12 @@
 # Hirdan Marketing Management
 
-[![Version](https://img.shields.io/badge/version-2.22.0-blue.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/package.json)
+[![Version](https://img.shields.io/badge/version-2.22.1-blue.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/package.json)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/package.json)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/LICENSE)
+[![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/LICENSE)
 
 A premium, all-in-one digital marketing agency platform featuring a Next.js landing page, a React CRM admin dashboard & client portal, and a robust Express backend. Designed to automate and manage client onboarding, tasks, invoices, document verification, and content planning.
 
-> 💡 **Deploying to production?** This repository includes a pre-configured GitHub Actions CI/CD workflow ([deploy.yml](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/.github/workflows/deploy.yml)) that builds and deploys the Frontend, Backend, and Landing Page to a Hostinger VPS with CloudPanel using Rsync.
+> 🔒 **Proprietary & Private:** This repository is proprietary and confidential. It is for internal use by Hirdan Marketing only.
 
 ---
 
@@ -18,16 +18,16 @@ A premium, all-in-one digital marketing agency platform featuring a Next.js land
 | 🗄️ **Backend API** | Express + TypeScript + Prisma ORM + PostgreSQL | [server/](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/server) |
 | 📄 **Landing Page** | Next.js marketing site for Hirdan Marketing | [landing-page/](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/landing-page) |
 | ⚙️ **CI/CD Workflow** | Automated build and deploy workflow via SSH & Rsync | [deploy.yml](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/.github/workflows/deploy.yml) |
-| 📜 **Contributing Guide** | Development setup and coding guidelines | [CONTRIBUTING.md](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/CONTRIBUTING.md) |
+| 📜 **Contributing Guide** | Internal development guidelines | [CONTRIBUTING.md](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/CONTRIBUTING.md) |
 | 🔒 **Security Policy** | Vulnerability reporting procedure | [SECURITY.md](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/SECURITY.md) |
-| 🔑 **License** | Open-source MIT License terms | [LICENSE](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/LICENSE) |
+| 🔑 **License** | Proprietary license terms | [LICENSE](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/LICENSE) |
 
 ---
 
-## Why Hirdan Marketing Management?
+## Features
 
-- **Unified Codebase** — Monorepo-like layout containing the landing page, front-end dashboard, and server.
-- **Agency CRM Admin Dashboard** — Built-in client onboarding, task assignments, and subscription flows.
+- **Monorepo Architecture** — Contains landing page, CRM client/admin dashboard, and Express backend in one repository.
+- **Agency CRM Admin Dashboard** — Client onboarding, task assignments, and subscription flows.
 - **Secure Client Portal** — Dedicated space for clients to view projects, verify/approve deliverables, and pay invoices.
 - **Automated Verification** — System for tracking and verifying Invoices and Proformas.
 - **Short Link Domain redirects** — Seamless link shortener integration for sharing secure project links.
@@ -159,4 +159,4 @@ Every push to the `clean-version` branch will run the deployment pipeline:
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/LICENSE) file for details.
+This project is proprietary and confidential. All rights reserved by Hirdan Marketing. Unauthorized copying or distribution of these files is strictly prohibited. See the [LICENSE](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/LICENSE) file for more information.
