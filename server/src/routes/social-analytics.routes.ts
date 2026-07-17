@@ -176,7 +176,13 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       dateMap[ds]._n += 1;
     }
     const chartData = Object.values(dateMap)
-      .map((d: any) => { if (d._n > 0) d.engagementRate = parseFloat((d.engagementRate / d._n).toFixed(2)); delete d._n; return d; })
+      .map((d: any) => {
+        d.engagementRate = d.followers > 0
+          ? parseFloat(((d.reach / d.followers) * 100).toFixed(2))
+          : d._n > 0 ? parseFloat((d.engagementRate / d._n).toFixed(2)) : 0;
+        delete d._n;
+        return d;
+      })
       .sort((a: any, b: any) => a.date.localeCompare(b.date));
 
     // ── Engagement trend ──
