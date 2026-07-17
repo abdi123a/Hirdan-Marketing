@@ -442,8 +442,8 @@ export async function getMetaInsights(accountId: string, token: string, platform
       },
     });
 
-    const reachVal = data.data.find((item: any) => item.name === 'page_media_view')?.values[0]?.value ?? 0;
-    const engagedVal = data.data.find((item: any) => item.name === 'page_post_engagements')?.values[0]?.value ?? 0;
+    const reachVal = data.data.find((item: any) => item.name === 'page_media_view')?.values?.[0]?.value ?? 0;
+    const engagedVal = data.data.find((item: any) => item.name === 'page_post_engagements')?.values?.[0]?.value ?? 0;
 
     // Follower count for Page
     const { data: pageData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
@@ -471,8 +471,8 @@ export async function getMetaInsights(accountId: string, token: string, platform
       },
     });
 
-    const reachVal = data.data.find((item: any) => item.name === 'reach')?.values[0]?.value ?? 0;
-    const viewsVal = data.data.find((item: any) => item.name === 'views')?.values[0]?.value ?? 0;
+    const reachVal = data.data.find((item: any) => item.name === 'reach')?.values?.[0]?.value ?? 0;
+    const viewsVal = data.data.find((item: any) => item.name === 'views')?.values?.[0]?.value ?? 0;
 
     const { data: igData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
       params: {
@@ -501,7 +501,7 @@ export async function getMetaPostInsights(platformPostId: string, token: string,
 
   const metrics: Record<string, number> = {};
   for (const item of data.data) {
-    metrics[item.name] = item.values[0]?.value ?? 0;
+    metrics[item.name] = item.values?.[0]?.value ?? 0;
   }
 
   if (platform === 'instagram') {
