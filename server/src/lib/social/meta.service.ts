@@ -41,6 +41,7 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
       'pages_read_engagement',
       'instagram_basic',
       'instagram_content_publish',
+      'instagram_manage_insights',
       'read_insights',
       'business_management',
     ];
