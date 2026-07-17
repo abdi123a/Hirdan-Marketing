@@ -60,7 +60,7 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     }
 
     // ── Daily metrics ──
-    const [currentMetrics, prevMetrics] = await Promise.all([
+    const [rawCurrentMetrics, rawPrevMetrics] = await Promise.all([
       prisma.accountInsightDaily.findMany({
         where: { socialAccountId: { in: accountIds }, date: { gte: since } },
         include: { account: { select: { platform: true, displayName: true } } },
@@ -68,9 +68,21 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       }),
       prisma.accountInsightDaily.findMany({
         where: { socialAccountId: { in: accountIds }, date: { gte: prevSince, lt: since } },
+        include: { account: { select: { platform: true } } },
         orderBy: { date: 'asc' },
       }),
     ]);
+
+    const cleanMetric = (m: any) => {
+      const plat = (m.account?.platform || '').toLowerCase();
+      if (['facebook', 'instagram', 'youtube'].includes(plat)) {
+        return { ...m, profileVisits: 0 };
+      }
+      return m;
+    };
+
+    const currentMetrics = rawCurrentMetrics.map(cleanMetric);
+    const prevMetrics = rawPrevMetrics.map(cleanMetric);
 
     // ── Posts ──
     const postWhere: any = { clientId };
@@ -317,15 +329,19 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       platformBreakdown,
       topPosts,
       publishing: { ...publishing, successRate, weeklyActivity },
-      accounts: accountsWithLatest.map(a => ({
-        id: a.id, platform: a.platform, displayName: a.displayName, platformUsername: a.platformUsername,
-        avatarUrl: a.avatarUrl, healthStatus: a.healthStatus, healthMessage: a.healthMessage, updatedAt: a.updatedAt,
-        latestMetrics: a.latest ? {
-          followers: a.latest.followers || 0, reach: a.latest.reach || 0,
-          impressions: a.latest.impressions || 0, profileVisits: a.latest.profileVisits || 0,
-          engagementRate: Number(a.latest.engagementRate) || 0, date: a.latest.date,
-        } : null,
-      })),
+      accounts: accountsWithLatest.map(a => {
+        const isExcluded = ['facebook', 'instagram', 'youtube'].includes(a.platform.toLowerCase());
+        return {
+          id: a.id, platform: a.platform, displayName: a.displayName, platformUsername: a.platformUsername,
+          avatarUrl: a.avatarUrl, healthStatus: a.healthStatus, healthMessage: a.healthMessage, updatedAt: a.updatedAt,
+          latestMetrics: a.latest ? {
+            followers: a.latest.followers || 0, reach: a.latest.reach || 0,
+            impressions: a.latest.impressions || 0,
+            profileVisits: isExcluded ? 0 : (a.latest.profileVisits || 0),
+            engagementRate: Number(a.latest.engagementRate) || 0, date: a.latest.date,
+          } : null,
+        };
+      }),
       monthlyComparison,
       aiInsights: ai,
     });

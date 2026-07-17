@@ -308,12 +308,12 @@ export async function syncAccount(accountId: string): Promise<void> {
     },
   });
 
-  // Seed 30 days of metrics history if the account has no history
+  // Seed 30 days of metrics history if the account has no history and it is a mock account
   const historyCount = await prisma.accountInsightDaily.count({
     where: { socialAccountId: account.id },
   });
 
-  if (historyCount <= 1) {
+  if (historyCount <= 1 && isMock) {
     const baseFollowers: Record<string, number> = {
       facebook: 12500,
       instagram: 24300,
