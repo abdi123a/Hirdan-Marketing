@@ -1,6 +1,6 @@
 {
   "name": "agency-flow-pro-server",
-  "version": "2.21.1",
+  "version": "2.22.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,9 +14,12 @@
     "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1089.0",
+    "@aws-sdk/s3-request-presigner": "^3.1089.0",
     "@prisma/client": "^6.9.0",
     "@types/pdfkit": "^0.17.6",
     "archiver": "^8.0.0",
+    "axios": "^1.18.1",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -26,6 +29,7 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.1.1",
+    "node-cron": "^4.6.0",
     "pdfkit": "^0.19.1",
     "resend": "^6.17.2",
     "zod": "^3.25.76"
@@ -40,6 +44,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.1.0",
     "@types/node": "^22.16.5",
+    "@types/node-cron": "^3.0.11",
     "prisma": "^6.9.0",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
