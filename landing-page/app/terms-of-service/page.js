@@ -5,14 +5,15 @@ import Breadcrumb from "@/components/Breadcrumb";
 import { useSettings } from "@/components/SettingsProvider";
 
 export default function TermsOfService() {
-  const { settings } = useSettings();
+  const { settings, isLoading } = useSettings();
   const agencySettings = settings || {};
   const agencyName = agencySettings.agencyName || "Hirdan Marketing";
   const contactEmail = agencySettings.adminEmail || "info@hirdanmarketing.com";
   const address = agencySettings.address || "Cite Barwaqo, Republic of Djibouti";
   const phone = agencySettings.phone || "+253 77 64 61 59";
   const cleanPhone = phone ? phone.replace(/\s+/g, '') : '';
-  const isDevMode = agencySettings.developmentMode;
+  // Wait until settings are resolved to pick the right layout
+  const isDevMode = settings ? agencySettings.developmentMode : undefined;
 
   const renderContent = () => (
     <>
@@ -99,6 +100,16 @@ export default function TermsOfService() {
       </ul>
     </>
   );
+
+  // While settings are loading, show a minimal centered spinner — prevents layout flash
+  if (isLoading && settings === null) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8f8f8" }}>
+        <div style={{ width: 40, height: 40, border: "3px solid #e0e0e0", borderTopColor: "#504289", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+        <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
+      </div>
+    );
+  }
 
   // Case 2: Development / Coming Soon Mode - Clean, self-contained layout using brand colors
   if (isDevMode) {

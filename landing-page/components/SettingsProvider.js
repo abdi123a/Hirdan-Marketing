@@ -193,11 +193,19 @@ export default function SettingsProvider({ children }) {
     fetchSettings();
   }, [apiBaseUrl]);
 
-  const isLegalPage = pathname === "/privacy-policy" || pathname === "/terms-of-service";
+  // Match legal pages regardless of trailing slash or static export path format
+  const isLegalPage =
+    pathname === "/privacy-policy" ||
+    pathname === "/privacy-policy/" ||
+    pathname === "/terms-of-service" ||
+    pathname === "/terms-of-service/" ||
+    pathname.startsWith("/privacy-policy") ||
+    pathname.startsWith("/terms-of-service");
 
   return (
     <SettingsContext.Provider value={{ settings, landingPageContent, caseStudies, projects, testimonials, isLoading, apiBaseUrl, appUrl, resolveImageUrl }}>
-      <Preloader />
+      {/* Never show the preloader or coming-soon screen on legal pages */}
+      {!isLegalPage && <Preloader />}
       {settings?.developmentMode && !isLegalPage ? (
         <ComingSoon />
       ) : (
