@@ -229,7 +229,13 @@ export async function refreshAccountToken(account: SocialAccount): Promise<{ acc
   };
 }
 
-export async function fetchPlatformInsights(account: SocialAccount): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number }> {
+export async function fetchPlatformInsights(account: SocialAccount): Promise<{
+  followers: number;
+  reach: number;
+  impressions: number;
+  profileVisits: number;
+  dailyHistory?: { date: Date; reach: number; impressions: number; profileVisits: number }[];
+}> {
   const platform = account.platform.toLowerCase();
   const accessToken = decryptToken(account.accessTokenEnc);
 

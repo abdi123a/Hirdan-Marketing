@@ -186,7 +186,13 @@ export async function syncAccount(accountId: string): Promise<void> {
   const now = new Date();
   const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
 
-  let metrics = { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
+  let metrics: {
+    followers: number;
+    reach: number;
+    impressions: number;
+    profileVisits: number;
+    dailyHistory?: { date: Date; reach: number; impressions: number; profileVisits: number }[];
+  } = { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
   let isMock = false;
   let syncError: string | null = null;
   let isRealSync = false;
@@ -283,6 +289,34 @@ export async function syncAccount(accountId: string): Promise<void> {
     profileVisitsVal = currentLifetimeViews;
   }
 
+  if (metrics.dailyHistory && metrics.dailyHistory.length > 0) {
+    for (const hist of metrics.dailyHistory) {
+      await prisma.accountInsightDaily.upsert({
+        where: {
+          socialAccountId_date: {
+            socialAccountId: account.id,
+            date: hist.date,
+          },
+        },
+        create: {
+          socialAccountId: account.id,
+          date: hist.date,
+          followers: metrics.followers,
+          reach: hist.reach,
+          impressions: hist.impressions,
+          profileVisits: hist.profileVisits,
+          engagementRate: metrics.followers > 0 ? Math.min(999.99, (hist.reach / metrics.followers) * 100) : 0,
+        },
+        update: {
+          reach: hist.reach,
+          impressions: hist.impressions,
+          profileVisits: hist.profileVisits,
+          engagementRate: metrics.followers > 0 ? Math.min(999.99, (hist.reach / metrics.followers) * 100) : 0,
+        },
+      });
+    }
+  }
+
   await prisma.accountInsightDaily.upsert({
     where: {
       socialAccountId_date: {
@@ -335,38 +369,18 @@ export async function syncAccount(accountId: string): Promise<void> {
       pinterest: 25,
     };
 
-    // Use actual fetched follower count as baseline if it's a real sync
-    const base = (!isMock && metrics.followers > 0) ? metrics.followers : (baseFollowers[platform] || 5000);
-    // Use a tiny growth coefficient if real (to show a stable real count) or the default mock growth
-    const growth = (!isMock) ? Math.max(1, Math.floor(base * 0.001)) : (dailyGrowth[platform] || 10);
+    const base = baseFollowers[platform] || 5000;
+    const growth = dailyGrowth[platform] || 10;
 
     for (let i = 30; i >= 1; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
 
-      let dailyFollowers = base - i * growth + Math.floor(Math.random() * 20 - 10);
-      let reach = growth * 100 + Math.floor(Math.random() * 1500);
-      let impressions = reach * 1.5 + Math.floor(Math.random() * 2000);
-      let profileVisits = Math.floor(reach * 0.05) + Math.floor(Math.random() * 50);
-
-      if (!isMock) {
-        if (platform === 'youtube') {
-          const currentLifetimeViews = metrics.reach;
-          const estimatedDailyViews = Math.max(1, Math.floor(currentLifetimeViews / 180));
-          
-          reach = Math.max(1, estimatedDailyViews + Math.floor(Math.random() * 5 - 2));
-          impressions = reach;
-          // Store historical cumulative views in profileVisits
-          profileVisits = Math.max(0, currentLifetimeViews - i * estimatedDailyViews);
-          dailyFollowers = base - i * growth;
-        } else {
-          reach = Math.max(0, Math.floor(metrics.reach * (0.8 + Math.random() * 0.4)));
-          impressions = Math.max(0, Math.floor(metrics.impressions * (0.8 + Math.random() * 0.4)));
-          profileVisits = Math.max(0, Math.floor(metrics.profileVisits * (0.8 + Math.random() * 0.4)));
-          dailyFollowers = base - i * growth;
-        }
-      }
+      const dailyFollowers = base - i * growth + Math.floor(Math.random() * 20 - 10);
+      const reach = growth * 100 + Math.floor(Math.random() * 1500);
+      const impressions = reach * 1.5 + Math.floor(Math.random() * 2000);
+      const profileVisits = Math.floor(reach * 0.05) + Math.floor(Math.random() * 50);
 
       await prisma.accountInsightDaily.upsert({
         where: {

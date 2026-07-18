@@ -463,7 +463,13 @@ async function waitForThreadsContainerReady(containerId: string, accessToken: st
   throw new Error('Threads media container timed out waiting to process');
 }
 
-export async function getMetaInsights(accountId: string, token: string, platform: 'facebook' | 'instagram'): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number }> {
+export async function getMetaInsights(accountId: string, token: string, platform: 'facebook' | 'instagram'): Promise<{
+  followers: number;
+  reach: number;
+  impressions: number;
+  profileVisits: number;
+  dailyHistory?: { date: Date; reach: number; impressions: number; profileVisits: number }[];
+}> {
   if (platform === 'facebook') {
     // page_media_view replaces page_impressions
     // page_post_engagements replaces page_engaged_users
@@ -471,12 +477,32 @@ export async function getMetaInsights(accountId: string, token: string, platform
       params: {
         metric: 'page_media_view,page_post_engagements',
         period: 'day',
+        date_preset: 'last_30d',
         access_token: token,
       },
     });
 
-    const reachVal = data.data.find((item: any) => item.name === 'page_media_view')?.values?.[0]?.value ?? 0;
-    const engagedVal = data.data.find((item: any) => item.name === 'page_post_engagements')?.values?.[0]?.value ?? 0;
+    const pageMediaViewValues = data.data.find((item: any) => item.name === 'page_media_view')?.values || [];
+    const pagePostEngagementsValues = data.data.find((item: any) => item.name === 'page_post_engagements')?.values || [];
+
+    const reachVal = pageMediaViewValues[pageMediaViewValues.length - 1]?.value ?? 0;
+    const engagedVal = pagePostEngagementsValues[pagePostEngagementsValues.length - 1]?.value ?? 0;
+
+    const dailyHistory: { date: Date; reach: number; impressions: number; profileVisits: number }[] = [];
+    for (const v of pageMediaViewValues) {
+      const dateStr = v.end_time.split('T')[0];
+      const valDate = new Date(Date.UTC(new Date(dateStr).getFullYear(), new Date(dateStr).getMonth(), new Date(dateStr).getDate()));
+      const engObj = pagePostEngagementsValues.find((e: any) => e.end_time.split('T')[0] === dateStr);
+      const reach = v.value || 0;
+      const engaged = engObj?.value || 0;
+
+      dailyHistory.push({
+        date: valDate,
+        reach,
+        impressions: reach, // Proxy
+        profileVisits: engaged,
+      });
+    }
 
     // Follower count for Page
     const { data: pageData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
@@ -491,6 +517,7 @@ export async function getMetaInsights(accountId: string, token: string, platform
       reach: reachVal,
       impressions: reachVal, // Proxy
       profileVisits: engagedVal,
+      dailyHistory,
     };
   } else {
     // Instagram Business insights
@@ -499,13 +526,32 @@ export async function getMetaInsights(accountId: string, token: string, platform
       params: {
         metric: 'reach,views',
         period: 'day',
-        metric_type: 'total_value',
+        date_preset: 'last_30d',
         access_token: token,
       },
     });
 
-    const reachVal = data.data.find((item: any) => item.name === 'reach')?.values?.[0]?.value ?? 0;
-    const viewsVal = data.data.find((item: any) => item.name === 'views')?.values?.[0]?.value ?? 0;
+    const reachValues = data.data.find((item: any) => item.name === 'reach')?.values || [];
+    const viewsValues = data.data.find((item: any) => item.name === 'views')?.values || [];
+
+    const reachVal = reachValues[reachValues.length - 1]?.value ?? 0;
+    const viewsVal = viewsValues[viewsValues.length - 1]?.value ?? 0;
+
+    const dailyHistory: { date: Date; reach: number; impressions: number; profileVisits: number }[] = [];
+    for (const v of reachValues) {
+      const dateStr = v.end_time.split('T')[0];
+      const valDate = new Date(Date.UTC(new Date(dateStr).getFullYear(), new Date(dateStr).getMonth(), new Date(dateStr).getDate()));
+      const viewsObj = viewsValues.find((e: any) => e.end_time.split('T')[0] === dateStr);
+      const reach = v.value || 0;
+      const views = viewsObj?.value || 0;
+
+      dailyHistory.push({
+        date: valDate,
+        reach,
+        impressions: views,
+        profileVisits: 0,
+      });
+    }
 
     const { data: igData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
       params: {
@@ -519,6 +565,7 @@ export async function getMetaInsights(accountId: string, token: string, platform
       reach: reachVal,
       impressions: viewsVal,
       profileVisits: 0,
+      dailyHistory,
     };
   }
 }

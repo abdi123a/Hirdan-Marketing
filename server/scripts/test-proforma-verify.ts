@@ -50,7 +50,7 @@ async function testProforma() {
     const data = await res.json();
     console.log('Data:', JSON.stringify(data, null, 2));
   } catch (error) {
-    console.error('Error:', error.message);
+    console.error('Error:', error instanceof Error ? error.message : String(error));
   }
 }
 
