@@ -584,7 +584,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.27.4",
+  appVersion: "2.27.5",
   versionHistory: [
     {
       version: "2.23.0",

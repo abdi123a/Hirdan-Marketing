@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import NextLayout from "@/layouts/NextLayout";
 import Breadcrumb from "@/components/Breadcrumb";
 import { useSettings } from "@/components/SettingsProvider";
@@ -17,9 +17,8 @@ function getLocalSettings() {
 
 export default function TermsOfService() {
   const { settings } = useSettings();
-  // Use live settings if available, otherwise fall back to localStorage cache immediately
-  const [localSettings, setLocalSettings] = useState(null);
-  useEffect(() => { setLocalSettings(getLocalSettings()); }, []);
+  // Lazy initializer reads localStorage synchronously on first render — no flash
+  const [localSettings] = useState(() => getLocalSettings());
   const agencySettings = settings || localSettings || {};
   const agencyName = agencySettings.agencyName || "Hirdan Marketing";
   const contactEmail = agencySettings.adminEmail || "info@hirdanmarketing.com";
