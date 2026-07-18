@@ -16,7 +16,7 @@ function getLocalSettings() {
 }
 
 export default function PrivacyPolicy() {
-  const { settings } = useSettings();
+  const { settings, isLoading } = useSettings();
   // mounted guard: render nothing during SSR so the pre-rendered HTML is blank,
   // preventing a flash of the wrong layout before client hydration reads localStorage
   const [mounted, setMounted] = useState(false);
@@ -31,7 +31,7 @@ export default function PrivacyPolicy() {
   const cleanPhone = phone ? phone.replace(/\s+/g, '') : '';
   const isDevMode = agencySettings.developmentMode;
 
-  if (!mounted) return null;
+  if (!mounted || (isLoading && !localSettings)) return null;
 
   const renderContent = () => (
     <>
