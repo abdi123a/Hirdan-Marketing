@@ -58,11 +58,26 @@ const ThreadsGlyph = ({ className, style }: { className?: string; style?: React.
   </svg>
 );
 const YouTubeIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => {
-  const isContrast = style?.color === "#fff" || style?.color === "white" || className?.includes("text-white");
+  const isContrast = style?.color === "#fff" || style?.color === "white" || className?.includes("text-white") || style?.color === "inherit";
+  
+  if (!isContrast) {
+    return (
+      <svg viewBox="0 0 24 24" className={className} style={style}>
+        <rect x="2" y="4.7" width="20" height="14.6" rx="4.5" fill="#FF0000" />
+        <path d="M9.8 15.5V8.5l6 3.5-6 3.5Z" fill="white" />
+      </svg>
+    );
+  }
+
   return (
     <svg viewBox="0 0 24 24" className={className} style={style}>
-      <rect x="2" y="4.7" width="20" height="14.6" rx="4.5" fill="currentColor" />
-      <path d="M9.8 15.5V8.5l6 3.5-6 3.5Z" fill={isContrast ? "#FF0000" : "white"} />
+      <defs>
+        <mask id="yt-play-mask">
+          <rect x="0" y="0" width="24" height="24" fill="white" />
+          <path d="M9.8 15.5V8.5l6 3.5-6 3.5Z" fill="black" />
+        </mask>
+      </defs>
+      <rect x="2" y="4.7" width="20" height="14.6" rx="4.5" fill="currentColor" mask="url(#yt-play-mask)" />
     </svg>
   );
 };
@@ -2958,16 +2973,22 @@ export default function SocialPublishPage() {
                     <Eye size={11} />
                     {activePlatform ? `${PLATFORMS_CONFIG.find(p => p.id === activePlatform)?.label || activePlatform} Preview` : "Live Preview"}
                   </div>
-                  {activePlatform ? (
-                    <PreviewCard
-                      platform={activePlatform}
-                      text={getPlatformCaption(activePlatform) || "What would you like to share?"}
-                      image={composerMediaUrls[0] || null}
-                      mediaType={composerMediaType}
-                      accountName={accounts.find(a => a.platform.toLowerCase() === activePlatform)?.displayName || accounts.find(a => a.platform.toLowerCase() === activePlatform)?.platformUsername || activePlatform}
-                      postType={activePlatform === "instagram" ? instagramType : activePlatform === "facebook" ? facebookType : activePlatform === "youtube" ? youtubeType : "post"}
-                    />
-                  ) : (
+                  {activePlatform ? (() => {
+                    const previewAccount = accounts.find(a => composerAccounts.includes(a.id) && a.platform.toLowerCase() === activePlatform)
+                      || accounts.find(a => a.platform.toLowerCase() === activePlatform);
+                    return (
+                      <PreviewCard
+                        platform={activePlatform}
+                        text={getPlatformCaption(activePlatform) || "What would you like to share?"}
+                        image={composerMediaUrls[0] || null}
+                        mediaType={composerMediaType}
+                        accountName={previewAccount?.displayName || activePlatform}
+                        platformUsername={previewAccount?.platformUsername}
+                        avatarUrl={previewAccount?.avatarUrl}
+                        postType={activePlatform === "instagram" ? instagramType : activePlatform === "facebook" ? facebookType : activePlatform === "youtube" ? youtubeType : "post"}
+                      />
+                    );
+                  })() : (
                     <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs italic text-center py-12">
                       Select a platform to see the live preview.
                     </div>
@@ -3108,13 +3129,15 @@ interface PreviewCardProps {
   image: string | null;
   mediaType?: string;
   accountName?: string;
+  platformUsername?: string;
+  avatarUrl?: string | null;
   postType?: "post" | "reel" | "story" | "short" | "video";
 }
 
-function PreviewCard({ platform, text, image, mediaType = "image", accountName, postType = "post" }: PreviewCardProps) {
-  const avatar = "https://api.dicebear.com/7.x/identicon/svg?seed=hirdanmarketing";
+function PreviewCard({ platform, text, image, mediaType = "image", accountName, platformUsername, avatarUrl, postType = "post" }: PreviewCardProps) {
+  const avatar = avatarUrl || "https://api.dicebear.com/7.x/identicon/svg?seed=hirdanmarketing";
   const displayName = accountName || "Your Account";
-  const handle = displayName.toLowerCase().replace(/\s+/g, "");
+  const handle = platformUsername || displayName.toLowerCase().replace(/\s+/g, "");
 
   if (platform === "x" || platform === "twitter") {
     return (
