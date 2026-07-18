@@ -4,10 +4,21 @@ import { useSettings } from "@/components/SettingsProvider";
 
 const Preloader = () => {
   const { settings, resolveImageUrl, isLoading } = useSettings();
-  console.log("[DEBUG Preloader] render: isLoading =", isLoading, "settings =", settings);
   const [cachedSettings, setCachedSettings] = useState(null);
   const [fade, setFade] = useState(false);
   const [visible, setVisible] = useState(true);
+
+  // Skip preloader entirely on legal pages — they have their own self-contained layout
+  const [isLegalPage, setIsLegalPage] = useState(false);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const path = window.location.pathname;
+      if (path === "/privacy-policy" || path === "/terms-of-service") {
+        setIsLegalPage(true);
+        setVisible(false);
+      }
+    }
+  }, []);
 
   // Read settings from cache on mount
   useEffect(() => {
@@ -23,18 +34,27 @@ const Preloader = () => {
     }
   }, []);
 
-  // Handle transition and cleanup immediately when isLoading is false
+  // Handle transition and cleanup when isLoading becomes false
   useEffect(() => {
     if (!isLoading) {
       setFade(true);
       const hideTimer = setTimeout(() => {
         setVisible(false);
-      }, 600); // Wait for fade out transition
+      }, 600);
       return () => clearTimeout(hideTimer);
     }
   }, [isLoading]);
 
-  if (!visible) return null;
+  // Safety fallback: force-hide preloader after 4 seconds no matter what
+  useEffect(() => {
+    const safetyTimer = setTimeout(() => {
+      setFade(true);
+      setTimeout(() => setVisible(false), 300);
+    }, 4000);
+    return () => clearTimeout(safetyTimer);
+  }, []);
+
+  if (!visible || isLegalPage) return null;
 
   const currentSettings = settings || cachedSettings;
   const logo = currentSettings ? resolveImageUrl(currentSettings.whiteLogo || currentSettings.logo) : "";
@@ -51,7 +71,7 @@ const Preloader = () => {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#ffffff", // Pure light background
+        backgroundColor: "#ffffff",
         opacity: fade ? 0 : 1,
         transition: "opacity 0.6s cubic-bezier(0.25, 1, 0.5, 1)",
         pointerEvents: fade ? "none" : "all",
@@ -74,7 +94,6 @@ const Preloader = () => {
         }
       `}</style>
 
-      {/* Pulsing Logo in Center */}
       <div 
         className="pulsing-logo"
         style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
