@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import NextLayout from "@/layouts/NextLayout";
 import Breadcrumb from "@/components/Breadcrumb";
 import { useSettings } from "@/components/SettingsProvider";
@@ -17,7 +17,11 @@ function getLocalSettings() {
 
 export default function PrivacyPolicy() {
   const { settings } = useSettings();
-  // Lazy initializer reads localStorage synchronously on first render — no flash
+  // mounted guard: render nothing during SSR so the pre-rendered HTML is blank,
+  // preventing a flash of the wrong layout before client hydration reads localStorage
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const [localSettings] = useState(() => getLocalSettings());
   const agencySettings = settings || localSettings || {};
   const agencyName = agencySettings.agencyName || "Hirdan Marketing";
@@ -26,6 +30,8 @@ export default function PrivacyPolicy() {
   const phone = agencySettings.phone || "+253 77 64 61 59";
   const cleanPhone = phone ? phone.replace(/\s+/g, '') : '';
   const isDevMode = agencySettings.developmentMode;
+
+  if (!mounted) return null;
 
   const renderContent = () => (
     <>
