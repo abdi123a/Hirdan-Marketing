@@ -30,8 +30,9 @@ export const useSettings = () => useContext(SettingsContext);
 
 export default function SettingsProvider({ children }) {
   const pathname = usePathname() || "";
-  // Start with null to prevent hydration mismatch, and load from cache inside useEffect
-  const [settings, setSettings] = useState(null);
+  // Initialize synchronously from localStorage on first render (lazy initializer).
+  // This means developmentMode is known BEFORE the first paint — no flash of the wrong layout.
+  const [settings, setSettings] = useState(() => getCachedSettings());
   const [landingPageContent, setLandingPageContent] = useState(null);
   const [caseStudies, setCaseStudies] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -54,9 +55,9 @@ export default function SettingsProvider({ children }) {
   }, [apiBaseUrl]);
 
   useEffect(() => {
-    // Read settings from cache immediately on mount to prevent any blank/unstyled flash
+    // On mount, also re-read cache synchronously in case useState ran on server (null)
     const cached = getCachedSettings();
-    if (cached) {
+    if (cached && !settings) {
       setSettings(cached);
     }
 
@@ -74,7 +75,7 @@ export default function SettingsProvider({ children }) {
     const fetchSettings = async () => {
       let data = null;
       try {
-        const response = await fetch(`${apiBaseUrl}/api/settings`).catch((err) => {
+        const response = await fetch(`${apiBaseUrl}/api/settings?t=${Date.now()}`, { cache: "no-store" }).catch((err) => {
           console.warn("API settings endpoint not reachable:", err.message);
           return null;
         });
@@ -141,7 +142,7 @@ export default function SettingsProvider({ children }) {
           }
         }
 
-        const lpResponse = await fetch(`${apiBaseUrl}/api/landing-page/content`).catch(() => null);
+        const lpResponse = await fetch(`${apiBaseUrl}/api/landing-page/content?t=${Date.now()}`, { cache: "no-store" }).catch(() => null);
         if (lpResponse && lpResponse.ok) {
           const lpData = await lpResponse.json();
           setLandingPageContent(lpData.content);
@@ -202,11 +203,16 @@ export default function SettingsProvider({ children }) {
     pathname.startsWith("/privacy-policy") ||
     pathname.startsWith("/terms-of-service");
 
+  // On non-legal pages: if we haven't resolved settings yet (no cache, API still pending),
+  // show only the preloader — never show children before we know if Coming Soon is active.
+  // This prevents the full site from flashing before Coming Soon appears.
+  const settingsUnknown = settings === null && isLoading && !isLegalPage;
+
   return (
     <SettingsContext.Provider value={{ settings, landingPageContent, caseStudies, projects, testimonials, isLoading, apiBaseUrl, appUrl, resolveImageUrl }}>
       {/* Never show the preloader or coming-soon screen on legal pages */}
       {!isLegalPage && <Preloader />}
-      {settings?.developmentMode && !isLegalPage ? (
+      {settingsUnknown ? null : settings?.developmentMode && !isLegalPage ? (
         <ComingSoon />
       ) : (
         children

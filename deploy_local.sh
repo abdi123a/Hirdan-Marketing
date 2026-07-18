@@ -25,7 +25,7 @@ rsync -avz -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
   dist/ root@72.61.192.11:/home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
 
 echo "🚀 Copying Landing Page static files to hirdanmarketing.com..."
-rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
+rsync -avz --delete --exclude='.well-known' -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
   landing-page/dist/ root@72.61.192.11:/home/hirdanmarketing/htdocs/hirdanmarketing.com/
    
 echo "🚀 Copying Backend compiled files to api.hirdanmarketing.com..."
@@ -36,6 +36,7 @@ rsync -avz -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519" \
 echo "⚙️ Finalizing Server Setup..."
 ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 root@72.61.192.11 << 'EOF'
   chown -R hirdanmarketing-app:hirdanmarketing-app /home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
+  chown -R hirdanmarketing:hirdanmarketing /home/hirdanmarketing/htdocs/hirdanmarketing.com/
   
   mkdir -p /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/public
   ln -sfn /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/uploads \
