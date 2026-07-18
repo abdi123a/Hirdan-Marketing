@@ -69,6 +69,8 @@ router.get('/public', async (req: Request, res: Response, next) => {
         googleAnalyticsMeasurementId: settings.googleAnalyticsMeasurementId,
         developmentMode: settings.developmentMode,
         comingSoonMessage: settings.comingSoonMessage,
+        comingSoonCountdown: settings.comingSoonCountdown,
+        comingSoonBullets: settings.comingSoonBullets,
       }
     });
   } catch (error) {
@@ -158,6 +160,8 @@ router.get('/', async (req: Request, res: Response, next) => {
           googleAnalyticsMeasurementId: settings.googleAnalyticsMeasurementId,
           developmentMode: settings.developmentMode,
           comingSoonMessage: settings.comingSoonMessage,
+          comingSoonCountdown: settings.comingSoonCountdown,
+          comingSoonBullets: settings.comingSoonBullets,
           socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
         },
       });
@@ -196,6 +200,8 @@ const settingsDtoSchema = z.object({
   googleAnalyticsMeasurementId: z.string().optional().nullable(),
   developmentMode: z.boolean().optional(),
   comingSoonMessage: z.string().optional().nullable(),
+  comingSoonCountdown: z.string().optional().nullable(),
+  comingSoonBullets: z.string().optional().nullable(),
   openAiApiKey: z.string().optional().nullable(),
   claudeApiKey: z.string().optional().nullable(),
   geminiApiKey: z.string().optional().nullable(),

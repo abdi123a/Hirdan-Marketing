@@ -464,6 +464,8 @@ model AgencySettings {
   googleAnalyticsMeasurementId  String? @map("google_analytics_measurement_id")
   developmentMode               Boolean @default(false) @map("development_mode")
   comingSoonMessage             String? @map("coming_soon_message") @db.LongText
+  comingSoonCountdown           String? @map("coming_soon_countdown")
+  comingSoonBullets             String? @map("coming_soon_bullets") @db.LongText
   openAiApiKey                  String? @map("open_ai_api_key")
   claudeApiKey                  String? @map("claude_api_key")
   geminiApiKey                  String? @map("gemini_api_key")

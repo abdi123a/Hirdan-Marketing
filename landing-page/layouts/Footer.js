@@ -117,13 +117,10 @@ const Footer1 = () => {
                     <Link href="service-details">Popular Services</Link>
                   </li>
                   <li>
-                    <Link href="team-details">Team Member</Link>
+                    <Link href="/terms-of-service">Terms of Service</Link>
                   </li>
                   <li>
-                    <Link href="contact">Privacy &amp; Setting</Link>
-                  </li>
-                  <li>
-                    <Link href="pricing">Pricing Package</Link>
+                    <Link href="/privacy-policy">Privacy Policy</Link>
                   </li>
                 </ul>
               </div>
@@ -226,13 +223,10 @@ const Footer1 = () => {
             <div className="footer-wrapper d-flex align-items-center justify-content-between">
               <ul className="footer-menu wow fadeInUp" data-wow-delay=".2s">
                 <li>
-                  <Link href="faq">FAQs</Link>
+                  <Link href="/terms-of-service">Terms of Service</Link>
                 </li>
                 <li>
-                  <Link href="about">Company</Link>
-                </li>
-                <li>
-                  <Link href="contact">Privacy</Link>
+                  <Link href="/privacy-policy">Privacy Policy</Link>
                 </li>
               </ul>
               <a
@@ -308,13 +302,10 @@ const Footer2 = () => {
                     <Link href="service-details">Popular Services</Link>
                   </li>
                   <li>
-                    <Link href="team-details">Team Member</Link>
+                    <Link href="/terms-of-service">Terms of Service</Link>
                   </li>
                   <li>
-                    <Link href="contact">Privacy &amp; Setting</Link>
-                  </li>
-                  <li>
-                    <Link href="pricing">Pricing Package</Link>
+                    <Link href="/privacy-policy">Privacy Policy</Link>
                   </li>
                 </ul>
               </div>
@@ -415,13 +406,10 @@ const Footer2 = () => {
           <div className="footer-wrapper d-flex align-items-center justify-content-between pb-0">
             <ul className="footer-menu">
               <li>
-                <Link href="faq">FAQs</Link>
+                <Link href="/terms-of-service">Terms of Service</Link>
               </li>
               <li>
-                <Link href="about">Company</Link>
-              </li>
-              <li>
-                <Link href="contact">Privacy</Link>
+                <Link href="/privacy-policy">Privacy Policy</Link>
               </li>
             </ul>
             <a href="#" id="scrollUp" className="scroll-icon">
@@ -491,13 +479,10 @@ const Footer3 = () => {
                     <Link href="service-details">Popular Services</Link>
                   </li>
                   <li>
-                    <Link href="team-details">Team Member</Link>
+                    <Link href="/terms-of-service">Terms of Service</Link>
                   </li>
                   <li>
-                    <Link href="contact">Privacy &amp; Setting</Link>
-                  </li>
-                  <li>
-                    <Link href="pricing">Pricing Package</Link>
+                    <Link href="/privacy-policy">Privacy Policy</Link>
                   </li>
                 </ul>
               </div>
@@ -572,13 +557,10 @@ const Footer3 = () => {
           <div className="footer-wrapper d-flex align-items-center justify-content-between pb-0">
             <ul className="footer-menu">
               <li>
-                <Link href="faq">FAQs</Link>
+                <Link href="/terms-of-service">Terms of Service</Link>
               </li>
               <li>
-                <Link href="about">Company</Link>
-              </li>
-              <li>
-                <Link href="contact">Privacy</Link>
+                <Link href="/privacy-policy">Privacy Policy</Link>
               </li>
             </ul>
             <a href="#" id="scrollUp" className="scroll-icon">
@@ -705,10 +687,10 @@ const Footer4 = () => {
                     <Link href="about">About Company</Link>
                   </li>
                   <li>
-                    <Link href="contact">Contact Us</Link>
+                    <Link href="/terms-of-service">Terms of Service</Link>
                   </li>
                   <li>
-                    <Link href="contact">Privacy &amp; Settings</Link>
+                    <Link href="/privacy-policy">Privacy Policy</Link>
                   </li>
                 </ul>
               </div>
@@ -793,13 +775,10 @@ const Footer4 = () => {
           <div className="footer-wrapper d-flex align-items-center justify-content-between pb-0">
             <ul className="footer-menu">
               <li>
-                <Link href="contact">FAQs</Link>
+                <Link href="/terms-of-service">Terms of Service</Link>
               </li>
               <li>
-                <Link href="about">Company</Link>
-              </li>
-              <li>
-                <Link href="contact">Privacy</Link>
+                <Link href="/privacy-policy">Privacy Policy</Link>
               </li>
             </ul>
             <a href="#" id="scrollUp" className="scroll-icon">
@@ -885,13 +864,10 @@ const Footer6 = () => {
                     <Link href="service-details">Popular Services</Link>
                   </li>
                   <li>
-                    <Link href="team-details">Team Member</Link>
+                    <Link href="/terms-of-service">Terms of Service</Link>
                   </li>
                   <li>
-                    <Link href="contact">Privacy &amp; Setting</Link>
-                  </li>
-                  <li>
-                    <Link href="pricing">Pricing Package</Link>
+                    <Link href="/privacy-policy">Privacy Policy</Link>
                   </li>
                 </ul>
               </div>
@@ -994,13 +970,10 @@ const Footer6 = () => {
             <div className="footer-wrapper d-flex align-items-center justify-content-between">
               <ul className="footer-menu wow fadeInUp" data-wow-delay=".2s">
                 <li>
-                  <Link href="faq">FAQs</Link>
+                  <Link href="/terms-of-service">Terms of Service</Link>
                 </li>
                 <li>
-                  <Link href="about">Company</Link>
-                </li>
-                <li>
-                  <Link href="contact">Privacy</Link>
+                  <Link href="/privacy-policy">Privacy Policy</Link>
                 </li>
               </ul>
               <a

@@ -28,6 +28,12 @@ const SettingsContext = createContext({
 export const useSettings = () => useContext(SettingsContext);
 
 export default function SettingsProvider({ children }) {
+  const [pathname, setPathname] = useState("");
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setPathname(window.location.pathname);
+    }
+  }, []);
   // Start with null to prevent hydration mismatch, and load from cache inside useEffect
   const [settings, setSettings] = useState(null);
   const [landingPageContent, setLandingPageContent] = useState(null);
@@ -191,10 +197,12 @@ export default function SettingsProvider({ children }) {
     fetchSettings();
   }, [apiBaseUrl]);
 
+  const isLegalPage = pathname === "/privacy-policy" || pathname === "/terms-of-service";
+
   return (
     <SettingsContext.Provider value={{ settings, landingPageContent, caseStudies, projects, testimonials, isLoading, apiBaseUrl, appUrl, resolveImageUrl }}>
       <Preloader />
-      {settings?.developmentMode ? (
+      {settings?.developmentMode && !isLegalPage ? (
         <ComingSoon />
       ) : (
         children

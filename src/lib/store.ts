@@ -372,6 +372,8 @@ export interface AgencySettings {
   googleAnalyticsMeasurementId: string;
   developmentMode: boolean;
   comingSoonMessage: string;
+  comingSoonCountdown: string;
+  comingSoonBullets: string;
   paymentMethods: PaymentMethod[];
   socialLinks: SocialLink[];
   notifications: {
@@ -551,6 +553,8 @@ const createDefaultSettings = (): AgencySettings => ({
   googleAnalyticsMeasurementId: "",
   developmentMode: false,
   comingSoonMessage: "",
+  comingSoonCountdown: "",
+  comingSoonBullets: "",
   paymentMethods: [],
   socialLinks: [],
   notifications: {
@@ -580,7 +584,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.26.20",
+  appVersion: "2.26.21",
   versionHistory: [
     {
       version: "2.23.0",

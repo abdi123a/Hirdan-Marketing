@@ -1339,8 +1339,8 @@ export default function SettingsPage() {
                 />
               </div>
 
-              {formData.developmentMode && (
-                <div className="grid gap-2 border p-6 rounded-2xl bg-muted/20 animate-in fade-in duration-200">
+              <div className="grid gap-4 border p-6 rounded-2xl bg-muted/20">
+                <div className="grid gap-2">
                   <Label htmlFor="comingSoonMessage" className="font-semibold text-sm">
                     Coming Soon Message
                   </Label>
@@ -1355,7 +1355,39 @@ export default function SettingsPage() {
                     This message will be prominently displayed on the Coming Soon screen.
                   </p>
                 </div>
-              )}
+
+                <div className="grid gap-2">
+                  <Label htmlFor="comingSoonCountdown" className="font-semibold text-sm">
+                    Launch Countdown Target Date
+                  </Label>
+                  <Input
+                    type="datetime-local"
+                    id="comingSoonCountdown"
+                    value={formData.comingSoonCountdown || ''}
+                    onChange={handleInputChange}
+                    className="bg-background focus-visible:ring-primary"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Set the target date and time when the website goes live. The Coming Soon page will display a countdown timer.
+                  </p>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="comingSoonBullets" className="font-semibold text-sm">
+                    Coming Soon Page Bullet Points (Features)
+                  </Label>
+                  <Textarea
+                    id="comingSoonBullets"
+                    value={formData.comingSoonBullets || ''}
+                    onChange={handleInputChange}
+                    placeholder="Full-Service Digital Marketing, Data-Driven Strategy, Premium Brand Identity, Targeted Campaign Management"
+                    className="min-h-[80px] bg-background focus-visible:ring-primary"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Enter key features or marketing bullet points for your coming soon page, separated by commas.
+                  </p>
+                </div>
+              </div>
 
             </CardContent>
           </Card>
