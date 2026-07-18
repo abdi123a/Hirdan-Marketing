@@ -3,6 +3,8 @@ import React, { useState, useEffect } from "react";
 import NextLayout from "@/layouts/NextLayout";
 import Breadcrumb from "@/components/Breadcrumb";
 import { useSettings } from "@/components/SettingsProvider";
+import Link from "next/link";
+
 
 // Read cached settings synchronously from localStorage to avoid layout flash
 function getLocalSettings() {
@@ -132,9 +134,9 @@ export default function PrivacyPolicy() {
                   {renderContent()}
                 </div>
                 <div className="dev-legal-footer">
-                  <a href="/">Back to Coming Soon</a>
+                  <Link href="/">Back to Coming Soon</Link>
                   <span className="separator">•</span>
-                  <a href="/terms-of-service">Terms of Service</a>
+                  <Link href="/terms-of-service">Terms of Service</Link>
                 </div>
               </div>
             </div>

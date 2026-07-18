@@ -39,13 +39,13 @@ export default function SettingsProvider({ children }) {
   const [testimonials, setTestimonials] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 
-    (typeof window !== "undefined" && window.location.hostname === "localhost" 
-      ? "http://localhost:3001" 
-      : "https://api.hirdanmarketing.com");
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ||
     (typeof window !== "undefined" && window.location.hostname === "localhost"
-      ? "http://localhost:5173" 
+      ? "http://localhost:3001"
+      : "https://api.hirdanmarketing.com");
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ||
+    (typeof window !== "undefined" && window.location.hostname === "localhost"
+      ? "http://localhost:5173"
       : "https://app.hirdanmarketing.com/login");
 
   const resolveImageUrl = useCallback((url) => {
@@ -86,7 +86,7 @@ export default function SettingsProvider({ children }) {
             if (typeof window !== "undefined") {
               localStorage.setItem("agency_settings", JSON.stringify(data.settings));
             }
-            
+
             // Dynamic Favicon Update
             if (data.settings.favicon) {
               const faviconUrl = resolveImageUrl(data.settings.favicon);
@@ -100,7 +100,7 @@ export default function SettingsProvider({ children }) {
                 document.getElementsByTagName('head')[0].appendChild(link);
               }
             }
-            
+
             // Dynamic Title Update
             if (data.settings.agencyName) {
               document.title = `${data.settings.agencyName} | Elevating Your Brand`;
@@ -151,7 +151,7 @@ export default function SettingsProvider({ children }) {
           setTestimonials(lpData.testimonials || []);
 
           if (lpData.content) {
-            const pageTitle = lpData.content.seoTitle || 
+            const pageTitle = lpData.content.seoTitle ||
               (data && data.settings && data.settings.agencyName ? `${data.settings.agencyName} | Elevating Your Brand` : "SEOX");
             document.title = pageTitle;
 

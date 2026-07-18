@@ -1,6 +1,8 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useSettings } from "./SettingsProvider";
+import Link from "next/link";
+
 
 export default function ComingSoon() {
   const { settings, landingPageContent, apiBaseUrl, resolveImageUrl } = useSettings();
@@ -223,9 +225,9 @@ export default function ComingSoon() {
       <footer className="cs-footer">
         <span>© {new Date().getFullYear()} {agencyName}. All rights reserved.</span>
         <div className="cs-footer-links">
-          <a href="/terms-of-service">Terms of Service</a>
+          <Link href="/terms-of-service">Terms of Service</Link>
           <span className="cs-sep">·</span>
-          <a href="/privacy-policy">Privacy Policy</a>
+          <Link href="/privacy-policy">Privacy Policy</Link>
         </div>
       </footer>
 
