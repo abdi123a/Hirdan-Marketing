@@ -126,20 +126,43 @@ export async function publishToPinterest({
   return data.id;
 }
 
-export async function getPinterestInsights(accessToken: string): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number }> {
+export async function getPinterestInsights(accessToken: string): Promise<{ followers: number; reach: number | null; impressions: number | null; profileVisits: number | null }> {
+  // FIX (made-up analytics): previously reach/impressions/profileVisits were
+  // arbitrary multiples of follower count (followers*2, followers*3, etc.).
+  // Pinterest DOES expose a real user account analytics endpoint
+  // (/v5/user_account/analytics) — this now calls it for a trailing 30-day
+  // window and falls back to null (not a guessed number) if that call fails,
+  // e.g. because the app doesn't have analytics scope approved yet.
   try {
     const { data } = await axios.get('https://api.pinterest.com/v5/user_account', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    
     const followers = data?.follower_count || 0;
 
-    return {
-      followers,
-      reach: followers * 2,
-      impressions: followers * 3,
-      profileVisits: Math.floor(followers * 0.15),
-    };
+    let reach: number | null = null;
+    let impressions: number | null = null;
+    let profileVisits: number | null = null;
+
+    try {
+      const end = new Date().toISOString().split('T')[0];
+      const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const { data: analytics } = await axios.get('https://api.pinterest.com/v5/user_account/analytics', {
+        params: {
+          start_date: start,
+          end_date: end,
+          metric_types: 'IMPRESSION,PIN_CLICK_RATE,OUTBOUND_CLICK',
+        },
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const summary = analytics?.all?.summary_metrics;
+      impressions = summary?.IMPRESSION ?? null;
+      profileVisits = summary?.OUTBOUND_CLICK ?? null;
+      reach = impressions; // Pinterest doesn't separate unique reach from impressions at this tier
+    } catch (e: any) {
+      console.warn('Pinterest analytics endpoint unavailable (likely needs analytics scope approval):', e.message);
+    }
+
+    return { followers, reach, impressions, profileVisits };
   } catch (err: any) {
     console.error('Failed to fetch Pinterest insights:', err.message);
     throw err;

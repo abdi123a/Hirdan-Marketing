@@ -1,17 +1,24 @@
 import axios from 'axios';
 import { createOAuthState } from './oauth-state.service.js';
-import { getMediaBuffer } from './storage.service.js';
-
 
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v20.0';
 const GRAPH_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 export const RATE_LIMIT_CODES = [4, 17, 32, 613];
 
+// TikTok's Content Posting API returns rate-limit info as an error CODE inside
+// a 200-status JSON body, not as an HTTP 429 — so the generic status check below
+// never sees it. tiktok.service.ts's publishToTikTok attaches this code onto the
+// thrown Error (as `.tiktokErrorCode`) specifically so it can be detected here.
+const TIKTOK_RATE_LIMIT_CODES = ['rate_limit_exceeded', 'spam_risk_too_many_posts', 'spam_risk_user_banned_from_posting'];
+
 export function isRateLimitError(err: any): boolean {
   if (err?.response?.status === 429) return true;
   const fbError = err?.response?.data?.error;
   if (fbError && RATE_LIMIT_CODES.includes(fbError.code)) {
+    return true;
+  }
+  if (err?.tiktokErrorCode && TIKTOK_RATE_LIMIT_CODES.includes(err.tiktokErrorCode)) {
     return true;
   }
   return false;
@@ -43,7 +50,6 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
       'pages_read_engagement',
       'instagram_basic',
       'instagram_content_publish',
-      'instagram_manage_insights',
       'read_insights',
       'business_management',
     ];
@@ -226,91 +232,31 @@ export async function publishToFacebookPage({
   // Facebook Reel
   if (postType === 'reel') {
     if (!url) throw new Error('Facebook Reel requires a video URL');
-    
-    // 1. Initialize upload session
-    const { data: initData } = await axios.post(`${GRAPH_URL}/${pageId}/video_reels`, null, {
-      params: {
-        upload_phase: 'start',
-        access_token: pageAccessToken,
-      },
-    });
-    const { video_id, upload_url } = initData;
-    if (!video_id || !upload_url) {
-      throw new Error('Failed to initialize Facebook video reel upload session');
-    }
-
-    // 2. Retrieve video binary buffer (local file first)
-    const videoBuffer = await getMediaBuffer(url);
-
-    // 3. Upload the binary data to the upload_url
-    await axios.post(upload_url, videoBuffer, {
-      headers: {
-        Authorization: `OAuth ${pageAccessToken}`,
-        offset: '0',
-        file_size: videoBuffer.length.toString(),
-        'Content-Type': 'application/octet-stream',
-      },
-    });
-
-    // 4. Finish the upload phase to publish
-    const { data: finishData } = await axios.post(`${GRAPH_URL}/${pageId}/video_reels`, null, {
+    const { data } = await axios.post(`${GRAPH_URL}/${pageId}/video_reels`, null, {
       params: {
         upload_phase: 'finish',
-        video_id,
         video_state: 'PUBLISHED',
         description: caption,
+        file_url: url,
         access_token: pageAccessToken,
       },
     });
-
-    return finishData.video_id || finishData.id || video_id;
+    return data.video_id || data.id;
   }
 
   // Facebook Story
   if (postType === 'story') {
     if (!url) throw new Error('Facebook Story requires a media URL');
     if (mediaType === 'video') {
-      // 1. Initialize upload session
-      const { data: initData } = await axios.post(`${GRAPH_URL}/${pageId}/video_stories`, null, {
-        params: { upload_phase: 'start', access_token: pageAccessToken },
+      const { data } = await axios.post(`${GRAPH_URL}/${pageId}/video_stories`, null, {
+        params: { file_url: url, access_token: pageAccessToken },
       });
-      const { video_id, upload_url } = initData;
-      if (!video_id || !upload_url) {
-        throw new Error('Failed to initialize Facebook video story upload session');
-      }
-
-      // 2. Retrieve the video binary buffer (local file first)
-      const videoBuffer = await getMediaBuffer(url);
-
-      // 3. Upload the binary data to the upload_url
-      await axios.post(upload_url, videoBuffer, {
-        headers: {
-          Authorization: `OAuth ${pageAccessToken}`,
-          'Content-Type': 'application/octet-stream',
-        },
-      });
-
-      // 4. Finish the upload phase
-      const { data: finishData } = await axios.post(`${GRAPH_URL}/${pageId}/video_stories`, null, {
-        params: {
-          upload_phase: 'finish',
-          video_id,
-          access_token: pageAccessToken,
-        },
-      });
-      return finishData.id || video_id;
+      return data.id;
     } else {
-      // 1. Upload photo as unpublished to get photo_id
-      const { data: photoData } = await axios.post(`${GRAPH_URL}/${pageId}/photos`, null, {
-        params: { url, published: false, access_token: pageAccessToken },
+      const { data } = await axios.post(`${GRAPH_URL}/${pageId}/photo_stories`, null, {
+        params: { url, access_token: pageAccessToken },
       });
-      const photoId = photoData.id;
-
-      // 2. Publish the photo story using the photo_id
-      const { data: storyData } = await axios.post(`${GRAPH_URL}/${pageId}/photo_stories`, null, {
-        params: { photo_id: photoId, access_token: pageAccessToken },
-      });
-      return storyData.id;
+      return data.id;
     }
   }
 
@@ -492,13 +438,7 @@ async function waitForThreadsContainerReady(containerId: string, accessToken: st
   throw new Error('Threads media container timed out waiting to process');
 }
 
-export async function getMetaInsights(accountId: string, token: string, platform: 'facebook' | 'instagram'): Promise<{
-  followers: number;
-  reach: number;
-  impressions: number;
-  profileVisits: number;
-  dailyHistory?: { date: Date; reach: number; impressions: number; profileVisits: number }[];
-}> {
+export async function getMetaInsights(accountId: string, token: string, platform: 'facebook' | 'instagram'): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number }> {
   if (platform === 'facebook') {
     // page_media_view replaces page_impressions
     // page_post_engagements replaces page_engaged_users
@@ -506,32 +446,12 @@ export async function getMetaInsights(accountId: string, token: string, platform
       params: {
         metric: 'page_media_view,page_post_engagements',
         period: 'day',
-        date_preset: 'last_30d',
         access_token: token,
       },
     });
 
-    const pageMediaViewValues = data.data.find((item: any) => item.name === 'page_media_view')?.values || [];
-    const pagePostEngagementsValues = data.data.find((item: any) => item.name === 'page_post_engagements')?.values || [];
-
-    const reachVal = pageMediaViewValues[pageMediaViewValues.length - 1]?.value ?? 0;
-    const engagedVal = pagePostEngagementsValues[pagePostEngagementsValues.length - 1]?.value ?? 0;
-
-    const dailyHistory: { date: Date; reach: number; impressions: number; profileVisits: number }[] = [];
-    for (const v of pageMediaViewValues) {
-      const dateStr = v.end_time.split('T')[0];
-      const valDate = new Date(Date.UTC(new Date(dateStr).getFullYear(), new Date(dateStr).getMonth(), new Date(dateStr).getDate()));
-      const engObj = pagePostEngagementsValues.find((e: any) => e.end_time.split('T')[0] === dateStr);
-      const reach = v.value || 0;
-      const engaged = engObj?.value || 0;
-
-      dailyHistory.push({
-        date: valDate,
-        reach,
-        impressions: reach, // Proxy
-        profileVisits: engaged,
-      });
-    }
+    const reachVal = data.data.find((item: any) => item.name === 'page_media_view')?.values[0]?.value ?? 0;
+    const engagedVal = data.data.find((item: any) => item.name === 'page_post_engagements')?.values[0]?.value ?? 0;
 
     // Follower count for Page
     const { data: pageData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
@@ -546,41 +466,20 @@ export async function getMetaInsights(accountId: string, token: string, platform
       reach: reachVal,
       impressions: reachVal, // Proxy
       profileVisits: engagedVal,
-      dailyHistory,
     };
   } else {
     // Instagram Business insights
-    // impressions was deprecated/unified to views by Meta on April 21, 2025
+    // profile_views was deprecated by Meta on January 8, 2025
     const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
       params: {
-        metric: 'reach,views',
+        metric: 'reach,impressions',
         period: 'day',
-        date_preset: 'last_30d',
         access_token: token,
       },
     });
 
-    const reachValues = data.data.find((item: any) => item.name === 'reach')?.values || [];
-    const viewsValues = data.data.find((item: any) => item.name === 'views')?.values || [];
-
-    const reachVal = reachValues[reachValues.length - 1]?.value ?? 0;
-    const viewsVal = viewsValues[viewsValues.length - 1]?.value ?? 0;
-
-    const dailyHistory: { date: Date; reach: number; impressions: number; profileVisits: number }[] = [];
-    for (const v of reachValues) {
-      const dateStr = v.end_time.split('T')[0];
-      const valDate = new Date(Date.UTC(new Date(dateStr).getFullYear(), new Date(dateStr).getMonth(), new Date(dateStr).getDate()));
-      const viewsObj = viewsValues.find((e: any) => e.end_time.split('T')[0] === dateStr);
-      const reach = v.value || 0;
-      const views = viewsObj?.value || 0;
-
-      dailyHistory.push({
-        date: valDate,
-        reach,
-        impressions: views,
-        profileVisits: 0,
-      });
-    }
+    const reachVal = data.data.find((item: any) => item.name === 'reach')?.values[0]?.value ?? 0;
+    const impressionsVal = data.data.find((item: any) => item.name === 'impressions')?.values[0]?.value ?? 0;
 
     const { data: igData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
       params: {
@@ -592,16 +491,15 @@ export async function getMetaInsights(accountId: string, token: string, platform
     return {
       followers: igData.followers_count || 0,
       reach: reachVal,
-      impressions: viewsVal,
+      impressions: impressionsVal,
       profileVisits: 0,
-      dailyHistory,
     };
   }
 }
 
 export async function getMetaPostInsights(platformPostId: string, token: string, platform: 'facebook' | 'instagram'): Promise<{ impressions: number; reach: number; likes: number; comments: number; shares: number; saved: number }> {
   const metricList = platform === 'instagram'
-    ? 'views,reach,likes,comments,saved,shares'
+    ? 'impressions,reach,likes,comments,saved,shares'
     : 'post_impressions,post_reactions_by_type_total,post_comments_by_type';
 
   const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/insights`, {
@@ -610,12 +508,12 @@ export async function getMetaPostInsights(platformPostId: string, token: string,
 
   const metrics: Record<string, number> = {};
   for (const item of data.data) {
-    metrics[item.name] = item.values?.[0]?.value ?? 0;
+    metrics[item.name] = item.values[0]?.value ?? 0;
   }
 
   if (platform === 'instagram') {
     return {
-      impressions: metrics.views || metrics.impressions || 0,
+      impressions: metrics.impressions || 0,
       reach: metrics.reach || 0,
       likes: metrics.likes || 0,
       comments: metrics.comments || 0,

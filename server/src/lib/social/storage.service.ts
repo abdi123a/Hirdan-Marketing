@@ -21,6 +21,29 @@ function getS3Client(): S3Client {
   return _s3Client;
 }
 
+// FIX (silent publish failures / missing media): if STORAGE_PUBLIC_URL isn't set
+// in production, uploaded media URLs point at localhost. Pinterest, TikTok,
+// YouTube (which does a server-side axios.get(videoUrl) to read the file), and
+// LinkedIn's upload flow all need a URL reachable from the public internet, not
+// the app server's own loopback address. This was previously a silent fallback
+// with no signal to whoever's operating the app — logging a loud one-time
+// warning instead so a misconfigured deploy doesn't manifest as mysteriously
+// missing images/videos on some platforms.
+let _warnedAboutLocalStorageUrl = false;
+function warnIfLocalStorageUrlInProd(publicUrl: string) {
+  if (_warnedAboutLocalStorageUrl) return;
+  if (process.env.NODE_ENV === 'production' && /localhost|127\.0\.0\.1/.test(publicUrl)) {
+    console.warn(
+      '[storage.service] WARNING: STORAGE_PUBLIC_URL is not set (or points at localhost) while ' +
+      'NODE_ENV=production. Uploaded media URLs will not be reachable by Pinterest, TikTok, ' +
+      'YouTube, or LinkedIn when they try to fetch the file server-side — posts to those ' +
+      'platforms may silently fail or publish without media. Set STORAGE_PUBLIC_URL to a real, ' +
+      'publicly resolvable URL.'
+    );
+    _warnedAboutLocalStorageUrl = true;
+  }
+}
+
 export async function uploadSocialMediaFile(file: Express.Multer.File): Promise<string> {
   const provider = process.env.STORAGE_PROVIDER || 'local';
   const ext = path.extname(file.originalname);
@@ -33,6 +56,7 @@ export async function uploadSocialMediaFile(file: Express.Multer.File): Promise<
     fs.renameSync(file.path, destinationPath);
     
     const publicUrl = process.env.STORAGE_PUBLIC_URL || 'http://localhost:3001';
+    warnIfLocalStorageUrlInProd(publicUrl);
     return `${publicUrl.replace(/\/$/, '')}/public-uploads/${filename}`;
   } else {
     const client = getS3Client();
@@ -94,4 +118,3 @@ export async function getMediaBuffer(mediaUrl: string): Promise<Buffer> {
   const response = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
   return Buffer.from(response.data);
 }
-

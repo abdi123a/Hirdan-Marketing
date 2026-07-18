@@ -1,6 +1,46 @@
 import axios from 'axios';
 import { createOAuthState } from './oauth-state.service.js';
 
+// FIX (LinkedIn images don't actually post): registerLinkedInImageUpload +
+// uploadLinkedInImageBinary implement LinkedIn's real native-image flow —
+// register the upload, PUT the binary bytes to the returned URL, then reference
+// the resulting asset URN in the post. Previously publishToLinkedIn skipped all
+// of this and just set shareMediaCategory: 'ARTICLE' with the image URL as
+// originalUrl, which publishes a link-preview card (or fails), never an actual
+// photo post.
+async function registerLinkedInImageUpload(accessToken: string, authorUrn: string): Promise<{ uploadUrl: string; asset: string }> {
+  const { data } = await axios.post('https://api.linkedin.com/v2/assets?action=registerUpload', {
+    registerUploadRequest: {
+      recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
+      owner: authorUrn,
+      serviceRelationships: [
+        { relationshipType: 'OWNER', identifier: 'urn:li:userGeneratedContent' },
+      ],
+    },
+  }, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const uploadUrl = data.value.uploadMechanism['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'].uploadUrl;
+  const asset = data.value.asset;
+  return { uploadUrl, asset };
+}
+
+async function uploadLinkedInImageBinary(uploadUrl: string, accessToken: string, imageUrl: string): Promise<void> {
+  const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+  const imageBuffer = Buffer.from(imageResponse.data);
+
+  await axios.put(uploadUrl, imageBuffer, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/octet-stream',
+    },
+  });
+}
+
 export function getLinkedInAuthorizationUrl(clientIdStr: string, groupId: string): string {
   const clientId = process.env.LINKEDIN_CLIENT_ID;
   if (!clientId) {
@@ -82,14 +122,16 @@ export async function publishToLinkedIn({
   };
 
   if (mediaUrls && mediaUrls.length > 0) {
-    // For images, LinkedIn requires registering the upload, uploading it, then publishing
-    // To keep it simple and stable, we can reference external public URLs if using a article share type
-    requestBody.specificContent['com.linkedin.ugc.ShareContent'].shareMediaCategory = 'ARTICLE';
+    // Register the upload, PUT the actual image bytes, then reference the
+    // resulting asset URN as a native IMAGE share (not an ARTICLE link card).
+    const { uploadUrl, asset } = await registerLinkedInImageUpload(accessToken, authorUrn);
+    await uploadLinkedInImageBinary(uploadUrl, accessToken, mediaUrls[0]);
+
+    requestBody.specificContent['com.linkedin.ugc.ShareContent'].shareMediaCategory = 'IMAGE';
     requestBody.specificContent['com.linkedin.ugc.ShareContent'].media = [
       {
         status: 'READY',
-        originalUrl: mediaUrls[0],
-        title: { text: caption.substring(0, 50) },
+        media: asset,
       },
     ];
   }
@@ -105,7 +147,16 @@ export async function publishToLinkedIn({
   return data.id;
 }
 
-export async function getLinkedInInsights(accessToken: string): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number }> {
+export async function getLinkedInInsights(accessToken: string): Promise<{ followers: number; reach: number | null; impressions: number | null; profileVisits: number | null }> {
+  // FIX (made-up analytics): this used to fabricate reach/impressions/profileVisits
+  // as arbitrary multiples of follower count (followers*3, followers*5, etc.), and
+  // even faked the follower count itself to 1 if the network-size call failed
+  // ("prevent fallback to mock data" — but a hardcoded 1 IS mock data). Personal
+  // LinkedIn profiles have no public reach/impressions API — only LinkedIn Company
+  // Pages get real analytics via the Organization Page Statistics API. Since this
+  // account model only stores a personal person URN, we return real followers
+  // where obtainable and null (honestly "not available") for the rest, rather
+  // than a number that looks real but isn't.
   try {
     const profileResponse = await axios.get('https://api.linkedin.com/v2/me', {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -113,6 +164,7 @@ export async function getLinkedInInsights(accessToken: string): Promise<{ follow
     const personUrn = `urn:li:person:${profileResponse.data.id}`;
 
     let followers = 0;
+    let followersAvailable = true;
     try {
       const networkResponse = await axios.get(`https://api.linkedin.com/v2/networkSizes/${personUrn}`, {
         params: { edgeType: 'CompanyFollowedByMember' },
@@ -120,15 +172,19 @@ export async function getLinkedInInsights(accessToken: string): Promise<{ follow
       });
       followers = networkResponse.data?.firstDegreeConnectionSize || 0;
     } catch {
-      // In case edgeType is not supported on personal profile scopes, try basic profile info or connections
-      followers = 1; // Default to non-zero count to prevent fallback to mock data
+      // Not supported for this app's scopes on a personal profile — we genuinely
+      // don't know the follower count, so say so instead of guessing 1.
+      followersAvailable = false;
     }
 
     return {
-      followers: followers || 1,
-      reach: followers * 3 || 10,
-      impressions: followers * 5 || 15,
-      profileVisits: Math.floor(followers * 0.2) || 2,
+      followers: followersAvailable ? followers : 0,
+      // Personal-profile reach/impressions/profile-visit metrics aren't exposed
+      // by any LinkedIn public API today. If you upgrade this account model to
+      // Company Pages, wire in the Organization Page Statistics API here instead.
+      reach: null,
+      impressions: null,
+      profileVisits: null,
     };
   } catch (err: any) {
     console.error('Failed to fetch LinkedIn insights:', err.message);

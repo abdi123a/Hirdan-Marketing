@@ -1,3 +1,4 @@
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -1352,6 +1353,13 @@ model AccountInsightDaily {
   reach           Int?
   impressions     Int?
   profileVisits   Int?     @map("profile_visits")
+  // FIX: YouTube's reach/impressions are computed as a daily delta off the
+  // channel's cumulative lifetime view count. That "previous lifetime views"
+  // number was previously stashed in profileVisits — a field that means an
+  // actual profile-visit count for every other platform — so any generic
+  // dashboard reading profileVisits showed nonsense for YouTube rows. It now
+  // has its own column.
+  lifetimeViewsSnapshot Int? @map("lifetime_views_snapshot")
   engagementRate  Decimal? @map("engagement_rate") @db.Decimal(5, 2)
 
   account SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
@@ -1376,6 +1384,10 @@ model PostInsight {
 
   post SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
+  // FIX: without this, collectDailyInsights() had no way to upsert — it called
+  // .create() every day for up to 7 days per post/platform, so analytics summed
+  // multiple stale+current snapshots together instead of the one current value,
+  // inflating likes/comments/shares/reach/impressions more each day a post aged.
   @@unique([postId, platform])
   @@index([postId])
   @@map("post_insights")

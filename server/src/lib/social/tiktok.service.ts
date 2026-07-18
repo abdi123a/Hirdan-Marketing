@@ -107,32 +107,40 @@ export async function publishToTikTok({
   });
 
   if (data?.error?.code !== 'ok') {
-    throw new Error(`TikTok API error: ${data?.error?.message || 'Unknown'}`);
+    const err: any = new Error(`TikTok API error: ${data?.error?.message || 'Unknown'}`);
+    err.tiktokErrorCode = data?.error?.code;
+    throw err;
   }
 
   return data.data.publish_id;
 }
 
-export async function getTikTokInsights(accessToken: string): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number }> {
+export async function getTikTokInsights(accessToken: string): Promise<{ followers: number; reach: number | null; impressions: number | null; profileVisits: number | null }> {
+  // FIX (made-up analytics): previously reach/impressions were derived as
+  // followers*2 / followers*3 (or likes*1.5) — invented numbers, not real reach
+  // or impressions. TikTok's public Display API does not expose account-level
+  // reach/impressions/profile-visit metrics for most app tiers, so we return the
+  // real follower/likes counts we CAN get and null for what we genuinely can't,
+  // instead of fabricating a plausible-looking number.
   try {
     const { data } = await axios.get('https://open.tiktokapis.com/v2/user/info/', {
       params: { fields: 'follower_count,likes_count' },
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    
+
     const user = data?.data?.user;
     if (!user) {
-      return { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
+      return { followers: 0, reach: null, impressions: null, profileVisits: null };
     }
 
-    const followers = user.follower_count || 0;
-    const likes = user.likes_count || 0;
-
     return {
-      followers,
-      reach: likes || followers * 2,
-      impressions: likes * 1.5 || followers * 3,
-      profileVisits: Math.floor(followers * 0.1),
+      followers: user.follower_count || 0,
+      // Total likes is real data, but it isn't "reach" — don't relabel it as such.
+      // Leaving null until TikTok's Business/Analytics API (separate app approval)
+      // is wired in for genuine video view/reach numbers.
+      reach: null,
+      impressions: null,
+      profileVisits: null,
     };
   } catch (err: any) {
     console.error('Failed to fetch TikTok insights:', err.message);

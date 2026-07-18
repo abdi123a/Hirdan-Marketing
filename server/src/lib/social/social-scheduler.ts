@@ -6,16 +6,23 @@ import { decryptToken } from './token-crypto.service.js';
 
 export async function processDuePosts(): Promise<void> {
   try {
-    // 1. Atomically claim destinations that are QUEUED and whose post is scheduled for <= now
-    // We set status to 'PUBLISHING', lock it, and set attempt timestamp
+    // 1. Atomically claim destinations that are QUEUED and whose post is scheduled for <= now.
+    // FIX (rate-limit retry race): previously this claimed a destination even if its
+    // account was currently rate_limited, then immediately threw it back with an
+    // attempts+1 penalty and no backoff — 3 claims (15 min at a 5-min cron) could
+    // exhaust the retry budget and permanently FAIL a post before the rate-limit
+    // cooldown even finished. Now the claim query itself excludes accounts that are
+    // still within their rateLimitedUntil window.
     await prisma.$executeRawUnsafe(`
       UPDATE social_post_destinations spd
       JOIN social_posts sp ON sp.id = spd.post_id
+      JOIN social_accounts sa ON sa.id = spd.social_account_id
       SET spd.status = 'PUBLISHING', spd.locked_at = NOW(), spd.last_attempt_at = NOW()
       WHERE spd.status = 'QUEUED'
         AND spd.locked_at IS NULL
         AND sp.status = 'SCHEDULED'
         AND sp.scheduled_for <= NOW()
+        AND (sa.rate_limited_until IS NULL OR sa.rate_limited_until <= NOW())
     `);
 
     // 2. Fetch all destinations currently locked by this process
@@ -35,9 +42,20 @@ export async function processDuePosts(): Promise<void> {
     // 3. Process each destination
     for (const dest of destinations) {
       try {
-        // Check rate limit cooldown
+        // Race-condition safety net: the claim query already excludes rate-limited
+        // accounts, but an account could become rate-limited in the brief window
+        // between claiming and processing. If so, release it WITHOUT counting
+        // this as a failed attempt — it never actually tried to publish.
         if (dest.socialAccount.rateLimitedUntil && dest.socialAccount.rateLimitedUntil > new Date()) {
-          throw new Error(`Platform account is rate limited until ${dest.socialAccount.rateLimitedUntil.toISOString()}`);
+          await prisma.socialPostDestination.update({
+            where: { id: dest.id },
+            data: {
+              status: 'QUEUED',
+              lockedAt: null,
+              lastError: `Skipped: rate limited until ${dest.socialAccount.rateLimitedUntil.toISOString()}`,
+            },
+          });
+          continue;
         }
 
         const platformPostId = await publishPostToPlatform(dest.post, dest.socialAccount);
@@ -186,13 +204,7 @@ export async function syncAccount(accountId: string): Promise<void> {
   const now = new Date();
   const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
 
-  let metrics: {
-    followers: number;
-    reach: number;
-    impressions: number;
-    profileVisits: number;
-    dailyHistory?: { date: Date; reach: number; impressions: number; profileVisits: number }[];
-  } = { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
+  let metrics: { followers: number; reach: number | null; impressions: number | null; profileVisits: number | null } = { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
   let isMock = false;
   let syncError: string | null = null;
   let isRealSync = false;
@@ -235,7 +247,7 @@ export async function syncAccount(accountId: string): Promise<void> {
       _sum: { reach: true },
     });
     const sumReach = totalHistoricalReach._sum.reach || 0;
-    if (sumReach > metrics.reach) {
+    if (sumReach > (metrics.reach || 0)) {
       console.log(`Clearing bad mock history for YouTube account ${account.id} (historical sum ${sumReach} > current lifetime views ${metrics.reach})`);
       await prisma.accountInsightDaily.deleteMany({
         where: { socialAccountId: account.id },
@@ -263,9 +275,10 @@ export async function syncAccount(accountId: string): Promise<void> {
     };
   }
 
-  let reachIncrement = metrics.reach;
-  let impressionsIncrement = metrics.impressions;
-  let profileVisitsVal = metrics.profileVisits;
+  let reachIncrement: number | null = metrics.reach;
+  let impressionsIncrement: number | null = metrics.impressions;
+  let profileVisitsVal: number | null = metrics.profileVisits;
+  let lifetimeViewsSnapshot: number | null = null;
 
   if (isRealSync && platform === 'youtube') {
     const lastRecord = await prisma.accountInsightDaily.findFirst({
@@ -276,8 +289,10 @@ export async function syncAccount(accountId: string): Promise<void> {
       orderBy: { date: 'desc' },
     });
 
-    const currentLifetimeViews = metrics.reach;
-    const previousLifetimeViews = lastRecord ? (lastRecord.profileVisits || 0) : 0;
+    const currentLifetimeViews = metrics.reach || 0;
+    // FIX: read the previous snapshot from its own dedicated column now,
+    // instead of profileVisits (which meant something else entirely).
+    const previousLifetimeViews = lastRecord?.lifetimeViewsSnapshot || 0;
 
     if (previousLifetimeViews > 0) {
       reachIncrement = Math.max(0, currentLifetimeViews - previousLifetimeViews);
@@ -286,36 +301,18 @@ export async function syncAccount(accountId: string): Promise<void> {
       reachIncrement = Math.max(1, Math.floor(currentLifetimeViews / 180));
       impressionsIncrement = reachIncrement;
     }
-    profileVisitsVal = currentLifetimeViews;
+    lifetimeViewsSnapshot = currentLifetimeViews;
+    profileVisitsVal = null; // YouTube doesn't expose a real profile-visits metric
   }
 
-  if (metrics.dailyHistory && metrics.dailyHistory.length > 0) {
-    for (const hist of metrics.dailyHistory) {
-      await prisma.accountInsightDaily.upsert({
-        where: {
-          socialAccountId_date: {
-            socialAccountId: account.id,
-            date: hist.date,
-          },
-        },
-        create: {
-          socialAccountId: account.id,
-          date: hist.date,
-          followers: metrics.followers,
-          reach: hist.reach,
-          impressions: hist.impressions,
-          profileVisits: hist.profileVisits,
-          engagementRate: metrics.followers > 0 ? Math.min(999.99, (hist.reach / metrics.followers) * 100) : 0,
-        },
-        update: {
-          reach: hist.reach,
-          impressions: hist.impressions,
-          profileVisits: hist.profileVisits,
-          engagementRate: metrics.followers > 0 ? Math.min(999.99, (hist.reach / metrics.followers) * 100) : 0,
-        },
-      });
-    }
-  }
+  // FIX: previously `reachIncrement / metrics.followers` would silently treat a
+  // null reach as 0 (JS coerces null -> 0 in arithmetic), showing a confident
+  // "0% engagement" for platforms where we genuinely don't know reach (LinkedIn,
+  // TikTok, X) instead of leaving engagement rate unset. Only compute it when
+  // we actually have a real reach number.
+  const engagementRate = (metrics.followers > 0 && reachIncrement !== null)
+    ? Math.min(999.99, (reachIncrement / metrics.followers) * 100)
+    : null;
 
   await prisma.accountInsightDaily.upsert({
     where: {
@@ -331,81 +328,95 @@ export async function syncAccount(accountId: string): Promise<void> {
       reach: reachIncrement,
       impressions: impressionsIncrement,
       profileVisits: profileVisitsVal,
-      engagementRate: metrics.followers > 0 ? Math.min(999.99, (reachIncrement / metrics.followers) * 100) : 0,
+      lifetimeViewsSnapshot,
+      engagementRate,
     },
     update: {
       followers: metrics.followers,
       reach: reachIncrement,
       impressions: impressionsIncrement,
       profileVisits: profileVisitsVal,
-      engagementRate: metrics.followers > 0 ? Math.min(999.99, (reachIncrement / metrics.followers) * 100) : 0,
+      lifetimeViewsSnapshot,
+      engagementRate,
     },
   });
 
-  // Seed 30 days of metrics history if the account has no history and it is a mock account
-  const historyCount = await prisma.accountInsightDaily.count({
-    where: { socialAccountId: account.id },
-  });
+  // FIX (fake analytics history): this used to seed 30 days of history for ANY
+  // account with <=1 existing daily record — including real, freshly-connected
+  // accounts — using Math.random() noise scaled off of today's single real
+  // snapshot. That meant every newly-connected real account's 30-day chart was
+  // entirely fabricated, not actual past data, with no indication to the user
+  // that it was synthetic.
+  //
+  // Real accounts now simply accumulate real history one day at a time from
+  // whichever day they were connected — no backfilled/guessed days. Only mock/
+  // demo accounts (isMock) still get a synthetic 30-day history seeded, since
+  // that's an intentional demo-mode convenience, not something shown as real data.
+  if (isMock) {
+    const historyCount = await prisma.accountInsightDaily.count({
+      where: { socialAccountId: account.id },
+    });
 
-  if (historyCount <= 1 && isMock) {
-    const baseFollowers: Record<string, number> = {
-      facebook: 12500,
-      instagram: 24300,
-      linkedin: 8400,
-      youtube: 42000,
-      tiktok: 31200,
-      x: 15400,
-      threads: 4300,
-      pinterest: 9500,
-    };
-    const dailyGrowth: Record<string, number> = {
-      facebook: 15,
-      instagram: 45,
-      linkedin: 20,
-      youtube: 110,
-      tiktok: 75,
-      x: 35,
-      threads: 10,
-      pinterest: 25,
-    };
+    if (historyCount <= 1) {
+      const baseFollowers: Record<string, number> = {
+        facebook: 12500,
+        instagram: 24300,
+        linkedin: 8400,
+        youtube: 42000,
+        tiktok: 31200,
+        x: 15400,
+        threads: 4300,
+        pinterest: 9500,
+      };
+      const dailyGrowth: Record<string, number> = {
+        facebook: 15,
+        instagram: 45,
+        linkedin: 20,
+        youtube: 110,
+        tiktok: 75,
+        x: 35,
+        threads: 10,
+        pinterest: 25,
+      };
 
-    const base = baseFollowers[platform] || 5000;
-    const growth = dailyGrowth[platform] || 10;
+      const base = baseFollowers[platform] || 5000;
+      const growth = dailyGrowth[platform] || 10;
 
-    for (let i = 30; i >= 1; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      for (let i = 30; i >= 1; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
 
-      const dailyFollowers = base - i * growth + Math.floor(Math.random() * 20 - 10);
-      const reach = growth * 100 + Math.floor(Math.random() * 1500);
-      const impressions = reach * 1.5 + Math.floor(Math.random() * 2000);
-      const profileVisits = Math.floor(reach * 0.05) + Math.floor(Math.random() * 50);
+        const dailyFollowers = base - i * growth + Math.floor(Math.random() * 20 - 10);
+        const reach = growth * 100 + Math.floor(Math.random() * 1500);
+        const impressions = reach * 1.5 + Math.floor(Math.random() * 2000);
+        const profileVisits = Math.floor(reach * 0.05) + Math.floor(Math.random() * 50);
 
-      await prisma.accountInsightDaily.upsert({
-        where: {
-          socialAccountId_date: {
+        await prisma.accountInsightDaily.upsert({
+          where: {
+            socialAccountId_date: {
+              socialAccountId: account.id,
+              date,
+            },
+          },
+          create: {
             socialAccountId: account.id,
             date,
+            followers: Math.max(0, dailyFollowers),
+            reach,
+            impressions,
+            profileVisits,
+            engagementRate: 2.5 + Math.random() * 3,
           },
-        },
-        create: {
-          socialAccountId: account.id,
-          date,
-          followers: Math.max(0, dailyFollowers),
-          reach,
-          impressions,
-          profileVisits,
-          engagementRate: 2.5 + Math.random() * 3,
-        },
-        update: {
-          followers: Math.max(0, dailyFollowers),
-          reach,
-          impressions,
-          profileVisits,
-          engagementRate: 2.5 + Math.random() * 3,
-        },
-      });
+          update: {
+            followers: Math.max(0, dailyFollowers),
+            reach,
+            impressions,
+            profileVisits,
+            engagementRate: 2.5 + Math.random() * 3,
+          },
+        });
+      }
     }
   }
 }

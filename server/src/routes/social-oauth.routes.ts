@@ -374,12 +374,22 @@ router.get('/accounts', authenticate, async (req, res, next) => {
 // ─── 6. Workspace summary (all clients with accounts + health) ────────────────
 router.get('/accounts/workspace-summary', authenticate, async (req, res, next) => {
   try {
-    const [clients, allAccounts, latestSyncs, lastPublishes] = await Promise.all([
+    const [clients, allAccounts, latestSyncs, latestInsights, lastPublishes] = await Promise.all([
       prisma.client.findMany({ select: { id: true, name: true, company: true } }),
       prisma.socialAccount.findMany({ orderBy: { createdAt: 'desc' } }),
       prisma.accountInsightDaily.groupBy({
         by: ['socialAccountId'],
         _max: { date: true },
+      }),
+      // FIX (totalFollowers always 0): previously totalFollowers was computed as
+      // `accounts.reduce((s, _a) => s, 0)` — a reducer that ignores its own
+      // element entirely, always returning 0 for every workspace regardless of
+      // real account size. Fetches each account's most recent daily follower
+      // count so the workspace summary can report a real total.
+      prisma.accountInsightDaily.findMany({
+        orderBy: { date: 'desc' },
+        distinct: ['socialAccountId'],
+        select: { socialAccountId: true, followers: true },
       }),
       prisma.socialPost.findMany({
         where: { status: 'PUBLISHED', publishedAt: { not: null } },
@@ -388,6 +398,9 @@ router.get('/accounts/workspace-summary', authenticate, async (req, res, next) =
         take: 1000,
       }),
     ]);
+
+    // Map: accountId → most recent follower count
+    const followersMap = new Map(latestInsights.map((i: any) => [i.socialAccountId, i.followers || 0]));
 
     // Map: accountId → lastSyncDate
     const syncMap = new Map(latestSyncs.map((s: any) => [s.socialAccountId, s._max.date]));
@@ -423,22 +436,29 @@ router.get('/accounts/workspace-summary', authenticate, async (req, res, next) =
       const lastPublish = publishMap.get(client.id) || null;
 
       // Health scoring
+      // FIX: previously ANY non-'healthy' status (including a merely rate-limited
+      // or transient-warning account, which is often self-resolving in minutes)
+      // escalated the ENTIRE workspace to 'critical' — the same severity as an
+      // actually broken/expired account needing re-auth. Now only 'expired'
+      // (or another account explicitly needing reconnection) is critical;
+      // rate-limited/warning accounts correctly surface as 'warning' instead.
       let healthStatus: 'healthy' | 'warning' | 'critical' | 'empty' = 'empty';
       if (accounts.length > 0) {
-        const hasDisconnected = accounts.some(a => a.healthStatus !== 'healthy');
+        const hasBroken = accounts.some(a => a.healthStatus === 'expired' || a.healthStatus === 'disconnected');
+        const hasWarning = accounts.some(a => a.healthStatus === 'warning' || a.healthStatus === 'rate_limited');
         const hasExpiringSoon = accounts.some(a => a.tokenExpiresAt && (new Date(a.tokenExpiresAt).getTime() - now.getTime()) < WEEK_MS);
         const hasSyncGap = !lastSync || (now.getTime() - new Date(lastSync).getTime()) > DAY_MS;
 
-        if (hasDisconnected) {
+        if (hasBroken) {
           healthStatus = 'critical';
-        } else if (hasExpiringSoon || hasSyncGap) {
+        } else if (hasWarning || hasExpiringSoon || hasSyncGap) {
           healthStatus = 'warning';
         } else {
           healthStatus = 'healthy';
         }
       }
 
-      const totalFollowers = accounts.reduce((s, _a) => s, 0); // will be filled from insights if needed
+      const totalFollowers = accounts.reduce((s, a) => s + (followersMap.get(a.id) || 0), 0);
 
       return {
         clientId: client.id,
@@ -474,12 +494,25 @@ router.get('/accounts/:accountId/activity', authenticate, async (req, res, next)
   try {
     const accountId = req.params.accountId as string;
 
-    const [account, posts, insights] = await Promise.all([
-      prisma.socialAccount.findUnique({ where: { id: accountId } }),
+    const account = await prisma.socialAccount.findUnique({ where: { id: accountId } });
+    if (!account) {
+      res.status(404).json({ error: 'Account not found' });
+      return;
+    }
+
+    // FIX: this previously passed `clientId: undefined as any` to Prisma, which
+    // Prisma silently treats as "no filter at all" — so it pulled the 50 most
+    // recently-published posts across the ENTIRE agency, then filtered down to
+    // this client/account in JS afterward. For any agency with more than a
+    // handful of active clients, this account's real activity could easily be
+    // pushed out of that top-50 window by other clients' posts, leaving the
+    // activity feed empty even though the account has plenty of real history.
+    // Now scopes directly to this client AND this specific account in the query.
+    const [posts, insights] = await Promise.all([
       prisma.socialPost.findMany({
         where: {
-          destinations: { some: { platform: { not: '' } } },
-          clientId: undefined as any, // will filter below
+          clientId: account.clientId,
+          destinations: { some: { socialAccountId: accountId } },
         },
         select: { status: true, publishedAt: true, caption: true, mediaType: true, clientId: true, destinations: { select: { platform: true } } },
         orderBy: { publishedAt: 'desc' },
@@ -492,16 +525,7 @@ router.get('/accounts/:accountId/activity', authenticate, async (req, res, next)
       }),
     ]);
 
-    if (!account) {
-      res.status(404).json({ error: 'Account not found' });
-      return;
-    }
-
-    // Filter posts to this client + platform
-    const accountPosts = posts.filter(p =>
-      p.clientId === account.clientId &&
-      p.destinations.some((d: any) => d.platform.toLowerCase() === account.platform.toLowerCase())
-    );
+    const accountPosts = posts;
 
     type ActivityEvent = { type: string; label: string; detail?: string; date: Date };
     const events: ActivityEvent[] = [];

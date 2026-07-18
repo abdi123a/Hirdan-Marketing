@@ -114,7 +114,12 @@ export async function publishToX({
   return data.data.id;
 }
 
-export async function getXInsights(accessToken: string): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number }> {
+export async function getXInsights(accessToken: string): Promise<{ followers: number; reach: number | null; impressions: number | null; profileVisits: number | null }> {
+  // FIX (made-up analytics): previously reach/impressions were followers*2 /
+  // followers*3 — invented, not measured. X's real impressions/profile-visit
+  // metrics require the paid Analytics/Enterprise API tier, which this basic
+  // v2 users/me call doesn't have access to. Returning real followers, honest
+  // null for the rest, rather than a fabricated number.
   try {
     const { data } = await axios.get('https://api.twitter.com/2/users/me', {
       params: { 'user.fields': 'public_metrics' },
@@ -123,16 +128,18 @@ export async function getXInsights(accessToken: string): Promise<{ followers: nu
 
     const metrics = data?.data?.public_metrics;
     if (!metrics) {
-      return { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
+      return { followers: 0, reach: null, impressions: null, profileVisits: null };
     }
 
-    const followers = metrics.followers_count || 0;
-
     return {
-      followers,
-      reach: followers * 2,
-      impressions: followers * 3,
-      profileVisits: Math.floor(followers * 0.12),
+      followers: metrics.followers_count || 0,
+      // Real per-tweet impressions ARE available via GET /2/tweets/:id with
+      // public_metrics.impression_count on X's higher API tiers — worth wiring
+      // in at the post level if your app has that access. Account-level reach
+      // isn't exposed on the basic tier used here.
+      reach: null,
+      impressions: null,
+      profileVisits: null,
     };
   } catch (err: any) {
     console.error('Failed to fetch X insights:', err.message);
