@@ -105,6 +105,7 @@ interface SocialPost {
   scheduledFor: string | null;
   publishedAt: string | null;
   campaignId: string | null;
+  errorMessage?: string | null;
   createdAt: string;
   updatedAt: string;
   destinations: Array<{
@@ -292,6 +293,62 @@ export default function SocialPublishPage() {
   // Media uploading state
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgressFiles, setUploadProgressFiles] = useState<UploadProgressFile[]>([]);
+
+  // Publishing progress modal state
+  const [isPublishProgressOpen, setIsPublishProgressOpen] = useState(false);
+  const [publishStatus, setPublishStatus] = useState<{
+    postId: string | null;
+    status: 'idle' | 'publishing' | 'success' | 'failed';
+    totalDestinations: number;
+    completedDestinations: number;
+    failedDestinations: number;
+    destinations: Array<{
+      id: string;
+      platform: string;
+      accountName: string;
+      status: string;
+      error: string | null;
+    }>;
+  }>({
+    postId: null,
+    status: 'idle',
+    totalDestinations: 0,
+    completedDestinations: 0,
+    failedDestinations: 0,
+    destinations: []
+  });
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isPublishProgressOpen && publishStatus.status === 'publishing') {
+      setElapsedSeconds(0);
+      timer = setInterval(() => {
+        setElapsedSeconds(prev => prev + 1);
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isPublishProgressOpen, publishStatus.status]);
+
+  const getEstimatedTimeRemaining = () => {
+    const total = publishStatus.totalDestinations;
+    const completed = publishStatus.completedDestinations;
+    const failed = publishStatus.failedDestinations;
+    const finished = completed + failed;
+    
+    if (finished === total) return "0s";
+    if (finished === 0) {
+      const est = total * 10 - elapsedSeconds;
+      return est > 0 ? `${est}s` : "Few seconds...";
+    }
+    
+    const avgTimePerPlatform = elapsedSeconds / finished;
+    const remaining = total - finished;
+    const estRemaining = Math.max(1, Math.round(avgTimePerPlatform * remaining));
+    return `${estRemaining}s`;
+  };
 
   // Redesigned composer states
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
@@ -692,20 +749,125 @@ export default function SocialPublishPage() {
       };
 
       if (publishNow && !asDraft) {
+        let createdPostId = editingPostId;
+        
         if (editingPostId) {
           await apiFetch<any>(`/social/posts/${editingPostId}`, {
             method: "PUT",
             body: JSON.stringify({ ...payload, status: "DRAFT" }),
           });
-          await apiFetch<any>(`/social/posts/${editingPostId}/publish-now`, { method: "POST" });
         } else {
           const post = await apiFetch<SocialPost>("/social/posts", {
             method: "POST",
             body: JSON.stringify({ ...payload, status: "DRAFT" }),
           });
-          await apiFetch<any>(`/social/posts/${post.id}/publish-now`, { method: "POST" });
+          createdPostId = post.id;
         }
-        toast({ title: "Post Published", description: "Your post has been distributed to selected accounts" });
+
+        if (!createdPostId) {
+          throw new Error("Could not determine post ID");
+        }
+
+        // Close composer, reset form, and reload background list immediately
+        setIsComposerOpen(false);
+        resetComposer();
+        fetchData();
+
+        // Initialize and open publishing progress modal
+        setIsPublishProgressOpen(true);
+        setPublishStatus({
+          postId: createdPostId,
+          status: 'publishing',
+          totalDestinations: composerAccounts.length,
+          completedDestinations: 0,
+          failedDestinations: 0,
+          destinations: composerAccounts.map(accId => {
+            const acc = accounts.find(a => a.id === accId);
+            return {
+              id: accId,
+              platform: acc?.platform || 'UNKNOWN',
+              accountName: acc?.displayName || acc?.platformUsername || 'Unknown Account',
+              status: 'QUEUED',
+              error: null
+            };
+          })
+        });
+
+        // Start background status polling
+        const pollInterval = setInterval(async () => {
+          try {
+            const updatedPost = await apiFetch<SocialPost>(`/social/posts/${createdPostId}`);
+            if (updatedPost && updatedPost.destinations) {
+              const total = updatedPost.destinations.length;
+              const completed = updatedPost.destinations.filter(d => d.status === 'PUBLISHED').length;
+              const failed = updatedPost.destinations.filter(d => d.status === 'FAILED').length;
+              
+              setPublishStatus(prev => ({
+                ...prev,
+                postId: createdPostId,
+                totalDestinations: total,
+                completedDestinations: completed,
+                failedDestinations: failed,
+                destinations: updatedPost.destinations.map(d => ({
+                  id: d.id,
+                  platform: d.platform,
+                  accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || 'Unknown Account',
+                  status: d.status,
+                  error: d.lastError
+                }))
+              }));
+            }
+          } catch (pollErr) {
+            console.error("Polling error", pollErr);
+          }
+        }, 1500);
+
+        try {
+          // Trigger the synchronous publish-now API call
+          const finalPost = await apiFetch<SocialPost>(`/social/posts/${createdPostId}/publish-now`, { method: "POST" });
+          clearInterval(pollInterval);
+
+          const total = finalPost.destinations.length;
+          const completed = finalPost.destinations.filter(d => d.status === 'PUBLISHED').length;
+          const failed = finalPost.destinations.filter(d => d.status === 'FAILED').length;
+          
+          setPublishStatus(prev => ({
+            ...prev,
+            status: failed > 0 ? 'failed' : 'success',
+            completedDestinations: completed,
+            failedDestinations: failed,
+            destinations: finalPost.destinations.map(d => ({
+              id: d.id,
+              platform: d.platform,
+              accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || 'Unknown Account',
+              status: d.status,
+              error: d.lastError
+            }))
+          }));
+
+          fetchData(); // Final refresh of dashboard
+
+          if (failed > 0) {
+            toast({ 
+              title: "Publishing Finished with Errors", 
+              description: `Some destinations failed: ${finalPost.errorMessage || ''}`, 
+              variant: "destructive" 
+            });
+          } else {
+            toast({ title: "Post Published", description: "Your post has been distributed to selected accounts" });
+            setTimeout(() => {
+              setIsPublishProgressOpen(false);
+            }, 3000);
+          }
+        } catch (err: any) {
+          clearInterval(pollInterval);
+          setPublishStatus(prev => ({
+            ...prev,
+            status: 'failed'
+          }));
+          fetchData(); // Make sure dashboard is updated
+          throw err;
+        }
       } else {
         if (editingPostId) {
           await apiFetch<any>(`/social/posts/${editingPostId}`, {
@@ -719,11 +881,10 @@ export default function SocialPublishPage() {
           });
         }
         toast({ title: asDraft ? "Draft Saved" : "Post Scheduled", description: asDraft ? "Your post has been saved as draft" : "Your post has been added to content queue" });
+        setIsComposerOpen(false);
+        resetComposer();
+        fetchData();
       }
-
-      setIsComposerOpen(false);
-      resetComposer();
-      fetchData();
     } catch (err: any) {
       toast({
         title: "Error creating post",
@@ -3045,6 +3206,180 @@ export default function SocialPublishPage() {
               })()}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Social Publishing Progress Modal */}
+      <Dialog open={isPublishProgressOpen} onOpenChange={(open) => {
+        if (!open && publishStatus.status !== 'publishing') {
+          setIsPublishProgressOpen(false);
+        }
+      }}>
+        <DialogContent className="max-w-md p-6 rounded-2xl bg-card border border-border/80 shadow-2xl backdrop-blur-md">
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+              {publishStatus.status === 'publishing' ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                  <span>Publishing Post...</span>
+                </>
+              ) : publishStatus.status === 'success' ? (
+                <>
+                  <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                  <span className="text-emerald-500">Publication Successful</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="h-5 w-5 text-rose-500" />
+                  <span className="text-rose-500">Publication completed with errors</span>
+                </>
+              )}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              {publishStatus.status === 'publishing' 
+                ? "Distributing your content and media assets to the selected social platforms. Please keep this window open."
+                : publishStatus.status === 'success'
+                ? "Your content has been successfully published across all platforms."
+                : "Some destinations failed to publish. Check details below."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Progress Circular Indicator and Stats */}
+          <div className="flex flex-col items-center justify-center py-6 border-y border-border/40 my-4 space-y-4">
+            <div className="relative flex items-center justify-center">
+              {/* Circular SVG Progress */}
+              <svg className="w-32 h-32 transform -rotate-90">
+                {/* Background Track */}
+                <circle
+                  cx="64"
+                  cy="64"
+                  r="50"
+                  className="stroke-muted"
+                  strokeWidth="8"
+                  fill="transparent"
+                />
+                {/* Active Progress */}
+                <circle
+                  cx="64"
+                  cy="64"
+                  r="50"
+                  className={`transition-all duration-500 ease-out ${
+                    publishStatus.status === 'success' 
+                      ? 'stroke-emerald-500' 
+                      : publishStatus.status === 'failed' && publishStatus.completedDestinations === 0
+                      ? 'stroke-rose-500'
+                      : 'stroke-primary'
+                  }`}
+                  strokeWidth="8"
+                  fill="transparent"
+                  strokeDasharray={2 * Math.PI * 50}
+                  strokeDashoffset={
+                    2 * Math.PI * 50 - 
+                    ((publishStatus.completedDestinations + publishStatus.failedDestinations) / (publishStatus.totalDestinations || 1)) * (2 * Math.PI * 50)
+                  }
+                  strokeLinecap="round"
+                />
+              </svg>
+              {/* Inner Text */}
+              <div className="absolute flex flex-col items-center justify-center">
+                <span className="text-2xl font-black text-foreground">
+                  {Math.round(((publishStatus.completedDestinations + publishStatus.failedDestinations) / (publishStatus.totalDestinations || 1)) * 100)}%
+                </span>
+                <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+                  {publishStatus.completedDestinations + publishStatus.failedDestinations} / {publishStatus.totalDestinations} Done
+                </span>
+              </div>
+            </div>
+
+            {/* Time Stats */}
+            <div className="grid grid-cols-2 gap-8 text-center w-full max-w-[280px]">
+              <div className="flex flex-col">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Elapsed Time</span>
+                <span className="text-lg font-bold text-foreground mt-0.5">{elapsedSeconds}s</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Est. Remaining</span>
+                <span className="text-lg font-bold text-foreground mt-0.5">{getEstimatedTimeRemaining()}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Destinations Detailed List */}
+          <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Publishing Destinations</h4>
+            {publishStatus.destinations.map((dest) => {
+              const platConfig = PLATFORMS_CONFIG.find(p => p.id === dest.platform.toLowerCase());
+              const Icon = platConfig?.icon || HelpCircle;
+              
+              return (
+                <div key={dest.id} className="flex items-center justify-between p-2.5 rounded-xl border border-border/30 bg-muted/10">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div 
+                      className="p-1.5 rounded-lg shrink-0 flex items-center justify-center text-white" 
+                      style={{ backgroundColor: platConfig?.color || '#a3a3a3' }}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-xs font-bold text-foreground truncate">{dest.accountName}</span>
+                      <span className="text-[10px] text-muted-foreground capitalize">{dest.platform}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {dest.status === 'QUEUED' && (
+                      <Badge variant="outline" className="text-[10px] font-bold py-0.5 px-2 bg-muted/30 border-muted text-muted-foreground">
+                        Queued
+                      </Badge>
+                    )}
+                    {dest.status === 'PUBLISHING' && (
+                      <Badge variant="outline" className="text-[10px] font-bold py-0.5 px-2 bg-amber-500/10 border-amber-500/30 text-amber-500 flex items-center gap-1">
+                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                        Publishing
+                      </Badge>
+                    )}
+                    {dest.status === 'PUBLISHED' && (
+                      <Badge variant="outline" className="text-[10px] font-bold py-0.5 px-2 bg-emerald-500/10 border-emerald-500/30 text-emerald-500 flex items-center gap-1">
+                        <Check className="h-2.5 w-2.5" />
+                        Success
+                      </Badge>
+                    )}
+                    {dest.status === 'FAILED' && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Badge variant="outline" className="text-[10px] font-bold py-0.5 px-2 bg-rose-500/10 border-rose-500/30 text-rose-500 flex items-center gap-1 cursor-help">
+                              <AlertCircle className="h-2.5 w-2.5" />
+                              Failed
+                            </Badge>
+                          </TooltipTrigger>
+                          {dest.error && (
+                            <TooltipContent side="top" className="max-w-[200px] text-[11px] p-2 bg-popover border border-border">
+                              {dest.error}
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <DialogFooter className="mt-6 pt-4 border-t border-border/40">
+            {publishStatus.status !== 'publishing' ? (
+              <Button 
+                onClick={() => setIsPublishProgressOpen(false)} 
+                className="w-full rounded-xl font-bold bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                Close Progress View
+              </Button>
+            ) : (
+              <div className="w-full text-center text-[11px] text-muted-foreground italic">
+                Please do not close this browser tab while publishing is in progress...
+              </div>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

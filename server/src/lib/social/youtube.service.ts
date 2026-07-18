@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { createOAuthState } from './oauth-state.service.js';
+import { getMediaBuffer } from './storage.service.js';
+
 
 export function getYouTubeAuthorizationUrl(clientIdStr: string, groupId: string): string {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -98,9 +100,8 @@ export async function publishToYouTube({
 }): Promise<string> {
   // Direct insert YouTube video requires a multipart or resumable upload.
   // To make it simple and reliable in this script context, we use a metadata insert or trigger YouTube API upload
-  // Normally YouTube requires raw bytes to upload. Let's download the file buffer from the public videoUrl first.
-  const videoFileResponse = await axios.get(videoUrl, { responseType: 'arraybuffer' });
-  const videoBuffer = Buffer.from(videoFileResponse.data);
+  // Normally YouTube requires raw bytes to upload. We retrieve the file buffer (local file first).
+  const videoBuffer = await getMediaBuffer(videoUrl);
 
   // Initialize YouTube upload
   const initResponse = await axios.post(

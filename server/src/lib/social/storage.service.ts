@@ -2,6 +2,7 @@ import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import axios from 'axios';
 import { PATHS } from '../paths.js';
 
 let _s3Client: S3Client | null = null;
@@ -60,3 +61,37 @@ export async function uploadSocialMediaFile(file: Express.Multer.File): Promise<
     return `${process.env.STORAGE_ENDPOINT}/${bucket}/${filename}`;
   }
 }
+
+export async function getMediaBuffer(mediaUrl: string): Promise<Buffer> {
+  const provider = process.env.STORAGE_PROVIDER || 'local';
+  
+  if (provider === 'local') {
+    try {
+      // Check if it's a public-uploads file (social uploads)
+      if (mediaUrl.includes('/public-uploads/')) {
+        const parts = mediaUrl.split('/public-uploads/');
+        const filename = parts[parts.length - 1];
+        const localPath = path.join(PATHS.UPLOADS_ROOT, 'social', filename);
+        if (fs.existsSync(localPath)) {
+          return fs.readFileSync(localPath);
+        }
+      }
+      // Check if it's a general uploads file
+      if (mediaUrl.includes('/uploads/')) {
+        const parts = mediaUrl.split('/uploads/');
+        const subPath = parts[parts.length - 1];
+        const localPath = path.join(PATHS.UPLOADS_ROOT, subPath);
+        if (fs.existsSync(localPath)) {
+          return fs.readFileSync(localPath);
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[getMediaBuffer] Failed to read local file for ${mediaUrl}:`, err.message);
+    }
+  }
+
+  // Fallback to HTTP download
+  const response = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+  return Buffer.from(response.data);
+}
+
