@@ -2963,6 +2963,7 @@ export default function SocialPublishPage() {
                       platform={activePlatform}
                       text={getPlatformCaption(activePlatform) || "What would you like to share?"}
                       image={composerMediaUrls[0] || null}
+                      mediaType={composerMediaType}
                       accountName={accounts.find(a => a.platform.toLowerCase() === activePlatform)?.displayName || accounts.find(a => a.platform.toLowerCase() === activePlatform)?.platformUsername || activePlatform}
                       postType={activePlatform === "instagram" ? instagramType : activePlatform === "facebook" ? facebookType : activePlatform === "youtube" ? youtubeType : "post"}
                     />
@@ -3105,11 +3106,12 @@ interface PreviewCardProps {
   platform: string;
   text: string;
   image: string | null;
+  mediaType?: string;
   accountName?: string;
   postType?: "post" | "reel" | "story" | "short" | "video";
 }
 
-function PreviewCard({ platform, text, image, accountName, postType = "post" }: PreviewCardProps) {
+function PreviewCard({ platform, text, image, mediaType = "image", accountName, postType = "post" }: PreviewCardProps) {
   const avatar = "https://api.dicebear.com/7.x/identicon/svg?seed=hirdanmarketing";
   const displayName = accountName || "Your Account";
   const handle = displayName.toLowerCase().replace(/\s+/g, "");
@@ -3122,7 +3124,13 @@ function PreviewCard({ platform, text, image, accountName, postType = "post" }: 
           <div className="flex-1 min-w-0">
             <div className="text-sm"><span className="font-semibold text-neutral-900">{displayName}</span>{" "}<span className="text-neutral-400">@{handle}</span></div>
             <p className="text-sm text-neutral-800 mt-1 whitespace-pre-wrap">{text}</p>
-            {image && <img src={image} className="mt-3 rounded-xl w-full object-cover max-h-64" alt="X preview" />}
+            {image && (
+              mediaType === "video" ? (
+                <video src={image} controls className="mt-3 rounded-xl w-full object-cover max-h-64" muted playsInline />
+              ) : (
+                <img src={image} className="mt-3 rounded-xl w-full object-cover max-h-64" alt="X preview" />
+              )
+            )}
             <div className="flex justify-between mt-3 text-neutral-400 max-w-[280px]">
               <MessageCircle size={16} /><Repeat2 size={16} /><Heart size={16} /><BarChart2 size={16} /><Bookmark size={16} /><Share2 size={16} />
             </div>
@@ -3136,7 +3144,13 @@ function PreviewCard({ platform, text, image, accountName, postType = "post" }: 
     if (postType === "reel") {
       return (
         <div className="bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800" style={{ aspectRatio: "9/16" }}>
-          {image ? <img src={image} className="absolute inset-0 w-full h-full object-cover opacity-80" alt="Facebook Reel" /> : (
+          {image ? (
+            mediaType === "video" ? (
+              <video src={image} className="absolute inset-0 w-full h-full object-cover opacity-80" muted loop autoPlay playsInline />
+            ) : (
+              <img src={image} className="absolute inset-0 w-full h-full object-cover opacity-80" alt="Facebook Reel" />
+            )
+          ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><Play className="h-10 w-10" /><span className="text-[10px]">Upload a video for Reel</span></div>
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
@@ -3157,7 +3171,13 @@ function PreviewCard({ platform, text, image, accountName, postType = "post" }: 
     if (postType === "story") {
       return (
         <div className="bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800" style={{ aspectRatio: "9/16" }}>
-          {image ? <img src={image} className="absolute inset-0 w-full h-full object-cover" alt="Facebook Story" /> : (
+          {image ? (
+            mediaType === "video" ? (
+              <video src={image} className="absolute inset-0 w-full h-full object-cover" muted loop autoPlay playsInline />
+            ) : (
+              <img src={image} className="absolute inset-0 w-full h-full object-cover" alt="Facebook Story" />
+            )
+          ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><ImageIcon className="h-10 w-10" /><span className="text-[10px]">Upload media for Story</span></div>
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/30" />
@@ -3174,7 +3194,13 @@ function PreviewCard({ platform, text, image, accountName, postType = "post" }: 
           <div><div className="text-sm font-semibold text-neutral-900">{displayName}</div><div className="text-xs text-neutral-400">Just Now · 🌐</div></div>
         </div>
         <p className="px-4 pb-3 text-sm text-neutral-800 whitespace-pre-wrap">{text}</p>
-        {image && <img src={image} className="w-full object-cover max-h-64" alt="Facebook preview" />}
+        {image && (
+          mediaType === "video" ? (
+            <video src={image} controls className="w-full object-cover max-h-64" muted playsInline />
+          ) : (
+            <img src={image} className="w-full object-cover max-h-64" alt="Facebook preview" />
+          )
+        )}
         <div className="flex justify-around py-2 border-t border-neutral-100 text-sm text-neutral-500 font-medium bg-neutral-50/50">
           <span className="flex items-center gap-1"><ThumbsUp size={15} />Like</span>
           <span className="flex items-center gap-1"><MessageCircle size={15} />Comment</span>
@@ -3188,7 +3214,13 @@ function PreviewCard({ platform, text, image, accountName, postType = "post" }: 
     if (postType === "reel") {
       return (
         <div className="bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800" style={{ aspectRatio: "9/16" }}>
-          {image ? <img src={image} className="absolute inset-0 w-full h-full object-cover opacity-90" alt="Instagram Reel" /> : (
+          {image ? (
+            mediaType === "video" ? (
+              <video src={image} className="absolute inset-0 w-full h-full object-cover opacity-90" muted loop autoPlay playsInline />
+            ) : (
+              <img src={image} className="absolute inset-0 w-full h-full object-cover opacity-90" alt="Instagram Reel" />
+            )
+          ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><Play className="h-10 w-10" /><span className="text-[10px]">Upload a video for Reel</span></div>
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
@@ -3209,7 +3241,13 @@ function PreviewCard({ platform, text, image, accountName, postType = "post" }: 
     if (postType === "story") {
       return (
         <div className="bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800" style={{ aspectRatio: "9/16" }}>
-          {image ? <img src={image} className="absolute inset-0 w-full h-full object-cover" alt="Instagram Story" /> : (
+          {image ? (
+            mediaType === "video" ? (
+              <video src={image} className="absolute inset-0 w-full h-full object-cover" muted loop autoPlay playsInline />
+            ) : (
+              <img src={image} className="absolute inset-0 w-full h-full object-cover" alt="Instagram Story" />
+            )
+          ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><ImageIcon className="h-10 w-10" /><span className="text-[10px]">Upload media for Story</span></div>
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/30" />
@@ -3225,7 +3263,13 @@ function PreviewCard({ platform, text, image, accountName, postType = "post" }: 
           <div className="flex items-center gap-2"><img src={avatar} className="w-8 h-8 rounded-full" alt="Avatar" /><span className="text-sm font-semibold">@{handle}</span></div>
           <MoreHorizontal size={16} className="text-neutral-500" />
         </div>
-        {image ? <img src={image} className="w-full aspect-square object-cover" alt="Instagram preview" /> : (
+        {image ? (
+          mediaType === "video" ? (
+            <video src={image} controls className="w-full aspect-square object-cover" muted playsInline />
+          ) : (
+            <img src={image} className="w-full aspect-square object-cover" alt="Instagram preview" />
+          )
+        ) : (
           <div className="w-full aspect-square bg-neutral-100 flex items-center justify-center text-neutral-300"><ImageIcon size={36} /></div>
         )}
         <div className="flex items-center gap-3 px-3 pt-3 text-neutral-700"><Heart size={19} /><MessageCircle size={19} /><Send size={19} /><div className="flex-1" /><Bookmark size={19} /></div>
@@ -3242,7 +3286,13 @@ function PreviewCard({ platform, text, image, accountName, postType = "post" }: 
           <div><div className="text-sm font-semibold text-neutral-900">{displayName}</div><div className="text-xs text-neutral-400">1h · 🌐</div></div>
         </div>
         <p className="text-sm text-neutral-800 mb-3 whitespace-pre-wrap">{text}</p>
-        {image && <img src={image} className="w-full rounded-lg object-cover max-h-64" alt="LinkedIn preview" />}
+        {image && (
+          mediaType === "video" ? (
+            <video src={image} controls className="w-full rounded-lg object-cover max-h-64" muted playsInline />
+          ) : (
+            <img src={image} className="w-full rounded-lg object-cover max-h-64" alt="LinkedIn preview" />
+          )
+        )}
         <div className="flex justify-around pt-3 mt-3 border-t border-neutral-100 text-xs text-neutral-500">
           <span className="flex flex-col items-center gap-1"><ThumbsUp size={16} />Like</span>
           <span className="flex flex-col items-center gap-1"><MessageCircle size={16} />Comment</span>
@@ -3261,7 +3311,13 @@ function PreviewCard({ platform, text, image, accountName, postType = "post" }: 
           <span className="font-semibold border-b-2 border-white pb-1">For You</span>
           <Search size={14} className="text-white ml-2" />
         </div>
-        {image ? <img src={image} className="absolute inset-0 w-full h-full object-cover top-12" style={{ height: "calc(100% - 3rem)", top: "3rem" }} alt="TikTok preview" /> : (
+        {image ? (
+          mediaType === "video" ? (
+            <video src={image} className="absolute inset-0 w-full h-full object-cover top-12" style={{ height: "calc(100% - 3rem)", top: "3rem" }} muted loop autoPlay playsInline />
+          ) : (
+            <img src={image} className="absolute inset-0 w-full h-full object-cover top-12" style={{ height: "calc(100% - 3rem)", top: "3rem" }} alt="TikTok preview" />
+          )
+        ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><ImageIcon className="h-8 w-8" /><span className="text-[10px]">No media attached</span></div>
         )}
         <div className="absolute right-3 bottom-24 flex flex-col items-center gap-4 text-white z-10">
@@ -3280,7 +3336,13 @@ function PreviewCard({ platform, text, image, accountName, postType = "post" }: 
     if (postType === "short" || postType === "post") {
       return (
         <div className="bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800 text-left" style={{ aspectRatio: "9/16" }}>
-          {image ? <img src={image} className="absolute inset-0 w-full h-full object-cover opacity-80" alt="YouTube Short" /> : (
+          {image ? (
+            mediaType === "video" ? (
+              <video src={image} className="absolute inset-0 w-full h-full object-cover opacity-80" muted loop autoPlay playsInline />
+            ) : (
+              <img src={image} className="absolute inset-0 w-full h-full object-cover opacity-80" alt="YouTube Short" />
+            )
+          ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><Play className="h-8 w-8" /><span className="text-[10px]">Upload a video for Short</span></div>
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
@@ -3305,7 +3367,13 @@ function PreviewCard({ platform, text, image, accountName, postType = "post" }: 
     return (
       <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden w-full select-none text-left">
         <div className="relative bg-black aspect-video flex items-center justify-center">
-          {image ? <img src={image} className="w-full h-full object-cover opacity-80" alt="YouTube Video" /> : (
+          {image ? (
+            mediaType === "video" ? (
+              <video src={image} className="w-full h-full object-cover opacity-80" muted loop autoPlay playsInline />
+            ) : (
+              <img src={image} className="w-full h-full object-cover opacity-80" alt="YouTube Video" />
+            )
+          ) : (
             <div className="flex flex-col items-center justify-center text-neutral-500 gap-2 w-full h-full"><Play className="h-10 w-10" /><span className="text-[10px]">Upload a thumbnail or video</span></div>
           )}
           <div className="absolute inset-0 flex items-center justify-center">
@@ -3339,7 +3407,13 @@ function PreviewCard({ platform, text, image, accountName, postType = "post" }: 
           <div className="flex-1 min-w-0">
             <div className="text-sm"><span className="font-semibold text-neutral-900">{displayName}</span>{" "}<span className="text-neutral-400 text-xs">21h</span></div>
             <p className="text-sm text-neutral-800 mt-0.5 whitespace-pre-wrap">{text}</p>
-            {image && <img src={image} className="mt-3 rounded-xl w-full object-cover max-h-64" alt="Threads preview" />}
+            {image && (
+              mediaType === "video" ? (
+                <video src={image} controls className="mt-3 rounded-xl w-full object-cover max-h-64" muted playsInline />
+              ) : (
+                <img src={image} className="mt-3 rounded-xl w-full object-cover max-h-64" alt="Threads preview" />
+              )
+            )}
             <div className="flex gap-4 mt-3 text-neutral-500 max-w-[200px]">
               <Heart size={17} /><MessageCircle size={17} /><Repeat2 size={17} /><Send size={17} />
             </div>

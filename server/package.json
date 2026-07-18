@@ -1,6 +1,6 @@
 {
   "name": "agency-flow-pro-server",
-  "version": "2.26.15",
+  "version": "2.26.16",
   "private": true,
   "type": "module",
   "scripts": {
