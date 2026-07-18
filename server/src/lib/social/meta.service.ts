@@ -246,6 +246,8 @@ export async function publishToFacebookPage({
     await axios.post(upload_url, videoBuffer, {
       headers: {
         Authorization: `OAuth ${pageAccessToken}`,
+        offset: '0',
+        file_size: videoBuffer.length.toString(),
         'Content-Type': 'application/octet-stream',
       },
     });
