@@ -403,14 +403,14 @@ export default function ComingSoon() {
         .cs-email-input {
           flex: 1;
           padding: 14px 18px;
-          background: transparent;
-          border: none;
-          color: #333333;
-          font-size: 15px;
-          font-family: 'Inter', sans-serif;
-          outline: none;
+          background: transparent !important;
+          border: none !important;
+          color: #333333 !important;
+          font-size: 15px !important;
+          font-family: 'Inter', sans-serif !important;
+          outline: none !important;
         }
-        .cs-email-input::placeholder { color: #888888; }
+        .cs-email-input::placeholder { color: #888888 !important; }
         .cs-notify-btn {
           padding: 14px 22px;
           background: #504289;
@@ -639,7 +639,7 @@ export default function ComingSoon() {
           .cs-main { padding: 2rem 1.5rem; }
           .cs-title { font-size: 2rem; }
           .cs-notify-row { flex-direction: column; border-radius: 10px; overflow: visible; background: none; border: none; gap: 0.75rem; }
-          .cs-email-input { border: 1px solid rgba(80, 66, 137, 0.15); border-radius: 10px; background: #ffffff; }
+          .cs-email-input { border: 1px solid rgba(80, 66, 137, 0.15) !important; border-radius: 10px !important; background: #ffffff !important; color: #333333 !important; }
           .cs-notify-btn { border-radius: 10px; }
           .cs-footer { flex-direction: column; gap: 0.5rem; text-align: center; padding: 1.25rem; }
           .cs-countdown { gap: 0.3rem; }
