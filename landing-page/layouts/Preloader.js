@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useSettings } from "@/components/SettingsProvider";
 
 const Preloader = () => {
@@ -9,16 +10,8 @@ const Preloader = () => {
   const [visible, setVisible] = useState(true);
 
   // Skip preloader entirely on legal pages — they have their own self-contained layout
-  const [isLegalPage, setIsLegalPage] = useState(false);
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const path = window.location.pathname;
-      if (path === "/privacy-policy" || path === "/terms-of-service") {
-        setIsLegalPage(true);
-        setVisible(false);
-      }
-    }
-  }, []);
+  const pathname = usePathname() || "";
+  const isLegalPage = pathname === "/privacy-policy" || pathname === "/terms-of-service";
 
   // Read settings from cache on mount
   useEffect(() => {
