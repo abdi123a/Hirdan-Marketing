@@ -1,5 +1,7 @@
 import axios from 'axios';
+import FormData from 'form-data';
 import { createOAuthState } from './oauth-state.service.js';
+import { getMediaBuffer } from './storage.service.js';
 
 export function getXAuthorizationUrl(clientIdStr: string, groupId: string, codeChallenge: string): string {
   const clientId = process.env.X_CLIENT_ID;
@@ -87,21 +89,82 @@ export async function refreshXToken(refreshToken: string): Promise<{ access_toke
   };
 }
 
+async function uploadXMedia(accessToken: string, mediaUrl: string, mediaType: string): Promise<string> {
+  const buffer = await getMediaBuffer(mediaUrl);
+  const isVideo = mediaType === 'video';
+
+  if (isVideo) {
+    // 1. INIT
+    const initRes = await axios.post('https://upload.twitter.com/1.1/media/upload.json', null, {
+      params: {
+        command: 'INIT',
+        media_type: 'video/mp4',
+        total_bytes: buffer.length,
+      },
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const mediaId = initRes.data.media_id_string;
+
+    // 2. APPEND
+    await axios.post('https://upload.twitter.com/1.1/media/upload.json', buffer, {
+      params: { command: 'APPEND', media_id: mediaId, segment_index: 0 },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/octet-stream',
+      },
+    });
+
+    // 3. FINALIZE
+    const finalRes = await axios.post('https://upload.twitter.com/1.1/media/upload.json', null, {
+      params: { command: 'FINALIZE', media_id: mediaId },
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    // Optional: poll for processing status if needed
+    if (finalRes.data.processing_info?.state === 'pending') {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+
+    return finalRes.data.media_id_string;
+  } else {
+    // Image upload (supports JPG, PNG, GIF)
+    const form = new FormData();
+    form.append('media', buffer, { filename: 'media.jpg' });
+    const res = await axios.post('https://upload.twitter.com/1.1/media/upload.json', form, {
+      headers: {
+        ...form.getHeaders(),
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    return res.data.media_id_string;
+  }
+}
+
 export async function publishToX({
   accessToken,
   caption,
   mediaUrls,
+  mediaType = 'image',
 }: {
   accessToken: string;
   caption: string;
   mediaUrls?: string[];
+  mediaType?: string;
 }): Promise<string> {
-  const payload: Record<string, any> = {
-    text: caption,
-  };
+  const payload: any = { text: caption };
 
   if (mediaUrls && mediaUrls.length > 0) {
-    payload.text = `${caption}\n\n${mediaUrls[0]}`;
+    const mediaIds: string[] = [];
+    const limit = mediaType === 'video' ? 1 : 4; // X limits: 1 video, 4 images
+
+    for (let i = 0; i < Math.min(mediaUrls.length, limit); i++) {
+      const id = await uploadXMedia(accessToken, mediaUrls[i], mediaType);
+      mediaIds.push(id);
+    }
+
+    if (mediaIds.length > 0) {
+      payload.media = { media_ids: mediaIds };
+    }
   }
 
   const { data } = await axios.post('https://api.twitter.com/2/tweets', payload, {
@@ -115,11 +178,6 @@ export async function publishToX({
 }
 
 export async function getXInsights(accessToken: string): Promise<{ followers: number; reach: number | null; impressions: number | null; profileVisits: number | null }> {
-  // FIX (made-up analytics): previously reach/impressions were followers*2 /
-  // followers*3 — invented, not measured. X's real impressions/profile-visit
-  // metrics require the paid Analytics/Enterprise API tier, which this basic
-  // v2 users/me call doesn't have access to. Returning real followers, honest
-  // null for the rest, rather than a fabricated number.
   try {
     const { data } = await axios.get('https://api.twitter.com/2/users/me', {
       params: { 'user.fields': 'public_metrics' },
@@ -133,10 +191,6 @@ export async function getXInsights(accessToken: string): Promise<{ followers: nu
 
     return {
       followers: metrics.followers_count || 0,
-      // Real per-tweet impressions ARE available via GET /2/tweets/:id with
-      // public_metrics.impression_count on X's higher API tiers — worth wiring
-      // in at the post level if your app has that access. Account-level reach
-      // isn't exposed on the basic tier used here.
       reach: null,
       impressions: null,
       profileVisits: null,

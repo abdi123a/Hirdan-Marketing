@@ -223,7 +223,7 @@ export default function AddUserPage() {
           </CardHeader>
           <CardContent className="space-y-5 pt-6">
             {conflictUser && !isEdit && (
-              <Alert variant="destructive" className="bg-destructive/5 border-destructive/20 py-3">
+              <Alert variant="destructive" className="bg-destructive/5 border-destructive/20">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle className="text-sm">Account Already Exists</AlertTitle>
                 <AlertDescription className="text-xs flex flex-col gap-2">

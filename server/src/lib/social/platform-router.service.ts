@@ -119,35 +119,46 @@ export async function publishPostToPlatform(post: SocialPost, account: SocialAcc
       });
 
     case 'linkedin':
+      // ✅ Pass mediaType to support video & multi-image
       return await linkedin.publishToLinkedIn({
         accessToken,
         authorUrn: account.platformUserId,
         caption,
         mediaUrls,
+        mediaType,
       });
 
-    case 'youtube':
+    case 'youtube': {
       if (mediaUrls.length === 0) {
         throw new Error('YouTube requires a video URL to upload');
       }
+      // ✅ Retrieve dynamic privacy from the post's platformContent
+      const youtubeContent = (post.platformContent as any)?.youtube || {};
+      const privacy = youtubeContent.privacy || 'public';
       return await youtube.publishToYouTube({
         accessToken,
         videoUrl: mediaUrls[0],
         caption,
+        privacy,
       });
+    }
 
     case 'x':
+      // ✅ Pass mediaType to support native image/video attachments
       return await x.publishToX({
         accessToken,
         caption,
         mediaUrls,
+        mediaType,
       });
 
     case 'pinterest':
+      // ✅ Pass mediaType to support video pins
       return await pinterest.publishToPinterest({
         accessToken,
         caption,
         mediaUrls,
+        mediaType,
       });
 
     default:

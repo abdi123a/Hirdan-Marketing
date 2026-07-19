@@ -1,39 +1,37 @@
 import axios from 'axios';
 import { createOAuthState } from './oauth-state.service.js';
+import { getMediaBuffer } from './storage.service.js';
 
-// FIX (LinkedIn images don't actually post): registerLinkedInImageUpload +
-// uploadLinkedInImageBinary implement LinkedIn's real native-image flow —
-// register the upload, PUT the binary bytes to the returned URL, then reference
-// the resulting asset URN in the post. Previously publishToLinkedIn skipped all
-// of this and just set shareMediaCategory: 'ARTICLE' with the image URL as
-// originalUrl, which publishes a link-preview card (or fails), never an actual
-// photo post.
-async function registerLinkedInImageUpload(accessToken: string, authorUrn: string): Promise<{ uploadUrl: string; asset: string }> {
-  const { data } = await axios.post('https://api.linkedin.com/v2/assets?action=registerUpload', {
-    registerUploadRequest: {
-      recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
-      owner: authorUrn,
-      serviceRelationships: [
-        { relationshipType: 'OWNER', identifier: 'urn:li:userGeneratedContent' },
-      ],
+async function registerLinkedInUpload(
+  accessToken: string,
+  authorUrn: string,
+  recipe: string
+): Promise<{ uploadUrl: string; asset: string }> {
+  const { data } = await axios.post(
+    'https://api.linkedin.com/v2/assets?action=registerUpload',
+    {
+      registerUploadRequest: {
+        recipes: [recipe],
+        owner: authorUrn,
+        serviceRelationships: [{ relationshipType: 'OWNER', identifier: 'urn:li:userGeneratedContent' }],
+      },
     },
-  }, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
 
   const uploadUrl = data.value.uploadMechanism['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest'].uploadUrl;
   const asset = data.value.asset;
   return { uploadUrl, asset };
 }
 
-async function uploadLinkedInImageBinary(uploadUrl: string, accessToken: string, imageUrl: string): Promise<void> {
-  const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-  const imageBuffer = Buffer.from(imageResponse.data);
-
-  await axios.put(uploadUrl, imageBuffer, {
+async function uploadLinkedInBinary(uploadUrl: string, accessToken: string, mediaUrl: string): Promise<void> {
+  const buffer = await getMediaBuffer(mediaUrl);
+  await axios.put(uploadUrl, buffer, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/octet-stream',
@@ -55,7 +53,7 @@ export function getLinkedInAuthorizationUrl(clientIdStr: string, groupId: string
     client_id: clientId,
     redirect_uri: redirectUri,
     state,
-    scope: 'w_member_social,r_liteprofile', // standard publishing scopes
+    scope: 'w_member_social,r_liteprofile',
   });
 
   return `https://www.linkedin.com/oauth/v2/authorization?${params.toString()}`;
@@ -70,17 +68,20 @@ export async function exchangeLinkedInCodeForToken(code: string): Promise<{ acce
     throw new Error('LinkedIn credentials are not fully configured');
   }
 
-  const { data } = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', new URLSearchParams({
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: redirectUri,
-    client_id: clientId,
-    client_secret: clientSecret,
-  }).toString(), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
+  const { data } = await axios.post(
+    'https://www.linkedin.com/oauth/v2/accessToken',
+    new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectUri,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }).toString(),
+    {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    }
+  );
 
-  // Get user profile (URN)
   const profileResponse = await axios.get('https://api.linkedin.com/v2/me', {
     headers: { Authorization: `Bearer ${data.access_token}` },
   });
@@ -101,11 +102,13 @@ export async function publishToLinkedIn({
   authorUrn,
   caption,
   mediaUrls,
+  mediaType = 'image',
 }: {
   accessToken: string;
   authorUrn: string;
   caption: string;
   mediaUrls?: string[];
+  mediaType?: string;
 }): Promise<string> {
   const requestBody: Record<string, any> = {
     author: authorUrn,
@@ -122,18 +125,28 @@ export async function publishToLinkedIn({
   };
 
   if (mediaUrls && mediaUrls.length > 0) {
-    // Register the upload, PUT the actual image bytes, then reference the
-    // resulting asset URN as a native IMAGE share (not an ARTICLE link card).
-    const { uploadUrl, asset } = await registerLinkedInImageUpload(accessToken, authorUrn);
-    await uploadLinkedInImageBinary(uploadUrl, accessToken, mediaUrls[0]);
+    const isVideo = mediaType === 'video';
+    const mediaItems = [];
 
-    requestBody.specificContent['com.linkedin.ugc.ShareContent'].shareMediaCategory = 'IMAGE';
-    requestBody.specificContent['com.linkedin.ugc.ShareContent'].media = [
-      {
-        status: 'READY',
-        media: asset,
-      },
-    ];
+    if (isVideo) {
+      // LinkedIn only supports one video per post
+      const recipe = 'urn:li:digitalmediaRecipe:feedshare-video';
+      const { uploadUrl, asset } = await registerLinkedInUpload(accessToken, authorUrn, recipe);
+      await uploadLinkedInBinary(uploadUrl, accessToken, mediaUrls[0]);
+      mediaItems.push({ status: 'READY', media: asset });
+      requestBody.specificContent['com.linkedin.ugc.ShareContent'].shareMediaCategory = 'VIDEO';
+    } else {
+      // Multiple images (carousel)
+      const recipe = 'urn:li:digitalmediaRecipe:feedshare-image';
+      for (const url of mediaUrls) {
+        const { uploadUrl, asset } = await registerLinkedInUpload(accessToken, authorUrn, recipe);
+        await uploadLinkedInBinary(uploadUrl, accessToken, url);
+        mediaItems.push({ status: 'READY', media: asset });
+      }
+      requestBody.specificContent['com.linkedin.ugc.ShareContent'].shareMediaCategory = 'IMAGE';
+    }
+
+    requestBody.specificContent['com.linkedin.ugc.ShareContent'].media = mediaItems;
   }
 
   const { data } = await axios.post('https://api.linkedin.com/v2/ugcPosts', requestBody, {
@@ -148,15 +161,6 @@ export async function publishToLinkedIn({
 }
 
 export async function getLinkedInInsights(accessToken: string): Promise<{ followers: number; reach: number | null; impressions: number | null; profileVisits: number | null }> {
-  // FIX (made-up analytics): this used to fabricate reach/impressions/profileVisits
-  // as arbitrary multiples of follower count (followers*3, followers*5, etc.), and
-  // even faked the follower count itself to 1 if the network-size call failed
-  // ("prevent fallback to mock data" — but a hardcoded 1 IS mock data). Personal
-  // LinkedIn profiles have no public reach/impressions API — only LinkedIn Company
-  // Pages get real analytics via the Organization Page Statistics API. Since this
-  // account model only stores a personal person URN, we return real followers
-  // where obtainable and null (honestly "not available") for the rest, rather
-  // than a number that looks real but isn't.
   try {
     const profileResponse = await axios.get('https://api.linkedin.com/v2/me', {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -172,16 +176,11 @@ export async function getLinkedInInsights(accessToken: string): Promise<{ follow
       });
       followers = networkResponse.data?.firstDegreeConnectionSize || 0;
     } catch {
-      // Not supported for this app's scopes on a personal profile — we genuinely
-      // don't know the follower count, so say so instead of guessing 1.
       followersAvailable = false;
     }
 
     return {
       followers: followersAvailable ? followers : 0,
-      // Personal-profile reach/impressions/profile-visit metrics aren't exposed
-      // by any LinkedIn public API today. If you upgrade this account model to
-      // Company Pages, wire in the Organization Page Statistics API here instead.
       reach: null,
       impressions: null,
       profileVisits: null,

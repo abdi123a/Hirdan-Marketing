@@ -178,7 +178,14 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
       };
     } else if (platform === 'tiktok') {
       const d = await tiktok.exchangeTikTokCodeForToken(code);
-      tokenData = { accessToken: d.access_token, refreshToken: d.refresh_token, expiresIn: d.expires_in, userId: d.open_id, username: d.username };
+      tokenData = { 
+        accessToken: d.access_token, 
+        refreshToken: d.refresh_token, 
+        expiresIn: d.expires_in, 
+        userId: d.open_id, 
+        username: d.username,
+        avatarUrl: d.avatarUrl || null
+      };
     } else if (platform === 'linkedin') {
       const d = await linkedin.exchangeLinkedInCodeForToken(code);
       tokenData = { accessToken: d.access_token, refreshToken: null, expiresIn: d.expires_in, userId: d.urn, username: d.name };

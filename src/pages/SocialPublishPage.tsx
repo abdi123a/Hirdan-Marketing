@@ -389,6 +389,7 @@ export default function SocialPublishPage() {
 
   const [youtubeTitle, setYoutubeTitle] = useState("");
   const [youtubeType, setYoutubeType] = useState<"short" | "video">("short");
+  const [youtubePrivacy, setYoutubePrivacy] = useState<string>("public");
   const [threadsTopic, setThreadsTopic] = useState("");
   const [threadsLocation, setThreadsLocation] = useState("");
 
@@ -594,6 +595,7 @@ export default function SocialPublishPage() {
     setPinterestTitle("");
     setPinterestLink("");
     setYoutubeTitle("");
+    setYoutubePrivacy("public");
     setThreadsTopic("");
     setThreadsLocation("");
     setPostTags([]);
@@ -721,7 +723,8 @@ export default function SocialPublishPage() {
           youtube: {
             caption: getPlatformCaption("youtube"),
             title: youtubeTitle,
-            type: youtubeType
+            type: youtubeType,
+            privacy: youtubePrivacy
           },
           x: {
             caption: getPlatformCaption("x")
@@ -977,6 +980,9 @@ export default function SocialPublishPage() {
     if (pc.youtube) {
       setYoutubeTitle(pc.youtube.title || "");
       setYoutubeType(pc.youtube.type || "short");
+      setYoutubePrivacy(pc.youtube.privacy || "public");
+    } else {
+      setYoutubePrivacy("public");
     }
     if (pc.threads) {
       setThreadsTopic(pc.threads.topic || "");
@@ -3075,9 +3081,27 @@ export default function SocialPublishPage() {
                                   </div>
                                 )}
                                 {plat === "youtube" && (
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-xs text-muted-foreground w-16 shrink-0">Title</span>
-                                    <input value={youtubeTitle} onChange={e => setYoutubeTitle(e.target.value)} placeholder="Video title..." className="flex-1 border border-border/50 rounded-lg px-3 py-2 text-xs outline-none focus:border-primary bg-background" />
+                                  <div className="space-y-3">
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-xs text-muted-foreground w-16 shrink-0">Title</span>
+                                      <input value={youtubeTitle} onChange={e => setYoutubeTitle(e.target.value)} placeholder="Video title..." className="flex-1 border border-border/50 rounded-lg px-3 py-2 text-xs outline-none focus:border-primary bg-background" />
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-xs text-muted-foreground w-16 shrink-0">Privacy</span>
+                                      <select
+                                        id="youtube-privacy"
+                                        value={youtubePrivacy}
+                                        onChange={(e) => setYoutubePrivacy(e.target.value)}
+                                        className="flex-1 border border-border/50 rounded-lg px-3 py-2 text-xs outline-none focus:border-primary bg-background text-foreground"
+                                      >
+                                        <option value="public">Public</option>
+                                        <option value="unlisted">Unlisted</option>
+                                        <option value="private">Private</option>
+                                      </select>
+                                    </div>
+                                    <div className="pl-16 text-[10px] text-muted-foreground">
+                                      Public: Visible to everyone. Unlisted: Anyone with the link can view. Private: Only you can view.
+                                    </div>
                                   </div>
                                 )}
                                 {plat === "threads" && (

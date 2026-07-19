@@ -58,6 +58,7 @@ async function seed() {
     { name: 'Instagram Business', platform: 'instagram', group: 'Acme Corporate', color: 'purple', username: 'acme_corporate' },
     { name: 'LinkedIn Company', platform: 'linkedin', group: 'Acme Corporate', color: 'blue', username: 'acme-technologies' },
     { name: 'YouTube Channel', platform: 'youtube', group: 'Acme Media', color: 'red', username: 'AcmeTechTV' },
+    { name: 'TikTok Profile', platform: 'tiktok', group: 'Acme Media', color: 'black', username: 'acmemarketing' },
   ];
 
   const accounts = [];
@@ -88,6 +89,7 @@ async function seed() {
     instagram: 24300,
     linkedin: 8400,
     youtube: 42000,
+    tiktok: 31200,
   };
 
   const dailyGrowth: Record<string, number> = {
@@ -95,6 +97,7 @@ async function seed() {
     instagram: 45,
     linkedin: 20,
     youtube: 110,
+    tiktok: 95,
   };
 
   console.log('📈 Seeding 30 days of metric history...');

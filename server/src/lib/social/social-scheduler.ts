@@ -239,6 +239,61 @@ export async function syncAccount(accountId: string): Promise<void> {
 
   const platform = account.platform.toLowerCase();
   
+  if (isRealSync && platform === 'tiktok') {
+    try {
+      const decryptedToken = decryptToken(account.accessTokenEnc);
+      const axios = (await import('axios')).default;
+      const { getTikTokCreatorInfo } = await import('./tiktok.service.js');
+      
+      let username = account.displayName;
+      let avatarUrl = account.avatarUrl;
+
+      // Try user/info
+      try {
+        const { data: infoData } = await axios.get('https://open.tiktokapis.com/v2/user/info/', {
+          params: { fields: 'open_id,union_id,avatar_url,display_name' },
+          headers: { Authorization: `Bearer ${decryptedToken}` },
+        });
+        const user = infoData?.data?.user;
+        if (user) {
+          username = user.display_name || username;
+          avatarUrl = user.avatar_url || avatarUrl;
+        }
+      } catch (err) {
+        console.warn('Failed to fetch TikTok user info during sync:', err);
+      }
+
+      // Try creator_info
+      try {
+        const creatorInfo = await getTikTokCreatorInfo(decryptedToken);
+        if (creatorInfo) {
+          if (!username || username === 'TikTok User' || username === 'Unknown Account') {
+            username = creatorInfo.creator_nickname || creatorInfo.creator_username || username;
+          }
+          if (!avatarUrl) {
+            avatarUrl = creatorInfo.creator_avatar_url || avatarUrl;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch TikTok creator info during sync:', err);
+      }
+
+      // Update the account details if changed
+      if (username !== account.displayName || avatarUrl !== account.avatarUrl) {
+        await prisma.socialAccount.update({
+          where: { id: account.id },
+          data: {
+            displayName: username,
+            platformUsername: username,
+            avatarUrl,
+          },
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to update TikTok account details on sync:', err);
+    }
+  }
+  
   if (isRealSync && platform === 'youtube') {
     // If the sum of daily reach in DB is greater than the current lifetime views, it is invalid mock data.
     // We clear it so it gets seeded correctly using scaled values.

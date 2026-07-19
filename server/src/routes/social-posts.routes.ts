@@ -347,7 +347,11 @@ router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
         publishedAt: hasErrors ? null : new Date(),
         errorMessage: hasErrors ? errorsList.join('; ') : null,
       },
-      include: { destinations: true },
+      include: {
+        destinations: {
+          include: { socialAccount: true },
+        },
+      },
     });
 
     res.json(finalPost);
@@ -427,7 +431,11 @@ router.post('/posts/:id/retry', authenticate, async (req, res, next) => {
         publishedAt: hasErrors ? null : new Date(),
         errorMessage: hasErrors ? errorsList.join('; ') : null,
       },
-      include: { destinations: true },
+      include: {
+        destinations: {
+          include: { socialAccount: true },
+        },
+      },
     });
 
     res.json(finalPost);

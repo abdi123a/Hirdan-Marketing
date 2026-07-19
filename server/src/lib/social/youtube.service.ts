@@ -2,26 +2,20 @@ import axios from 'axios';
 import { createOAuthState } from './oauth-state.service.js';
 import { getMediaBuffer } from './storage.service.js';
 
-
 export function getYouTubeAuthorizationUrl(clientIdStr: string, groupId: string): string {
   const clientId = process.env.GOOGLE_CLIENT_ID;
-  if (!clientId) {
-    throw new Error('GOOGLE_CLIENT_ID is not configured');
-  }
-
+  if (!clientId) throw new Error('GOOGLE_CLIENT_ID is not configured');
   const redirectUri = process.env.GOOGLE_REDIRECT_URI || '';
   const state = createOAuthState('youtube', clientIdStr, groupId);
-
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
     scope: 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
-    access_type: 'offline', // forces refresh token to be returned
-    prompt: 'consent',     // forces consent screen so refresh token is always returned
+    access_type: 'offline',
+    prompt: 'consent',
     state,
   });
-
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
@@ -29,91 +23,48 @@ export async function exchangeYouTubeCodeForToken(code: string): Promise<{ acces
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const redirectUri = process.env.GOOGLE_REDIRECT_URI || '';
-
-  if (!clientId || !clientSecret) {
-    throw new Error('Google/YouTube credentials are not fully configured');
-  }
+  if (!clientId || !clientSecret) throw new Error('Google/YouTube credentials are not fully configured');
 
   const { data } = await axios.post('https://oauth2.googleapis.com/token', new URLSearchParams({
-    code,
-    client_id: clientId,
-    client_secret: clientSecret,
-    redirect_uri: redirectUri,
-    grant_type: 'authorization_code',
-  }).toString(), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
+    code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code',
+  }).toString(), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
 
-  // Fetch channel info
   const channelResponse = await axios.get('https://www.googleapis.com/youtube/v3/channels', {
-    params: {
-      part: 'snippet',
-      mine: true,
-    },
+    params: { part: 'snippet', mine: true },
     headers: { Authorization: `Bearer ${data.access_token}` },
   });
-
   const channel = channelResponse.data?.items?.[0];
-  const channelId = channel?.id || 'YouTubeChannel';
-  const name = channel?.snippet?.title || 'YouTube Channel';
-
-  return {
-    access_token: data.access_token,
-    refresh_token: data.refresh_token, // will be offline refresh token
-    expires_in: data.expires_in,
-    channelId,
-    name,
-  };
+  return { access_token: data.access_token, refresh_token: data.refresh_token, expires_in: data.expires_in, channelId: channel?.id || 'YouTubeChannel', name: channel?.snippet?.title || 'YouTube Channel' };
 }
 
 export async function refreshYouTubeToken(refreshToken: string): Promise<{ access_token: string; expires_in: number }> {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    throw new Error('Google/YouTube credentials are not fully configured');
-  }
-
+  if (!clientId || !clientSecret) throw new Error('Google/YouTube credentials are not fully configured');
   const { data } = await axios.post('https://oauth2.googleapis.com/token', new URLSearchParams({
-    client_id: clientId,
-    client_secret: clientSecret,
-    refresh_token: refreshToken,
-    grant_type: 'refresh_token',
-  }).toString(), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
-
-  return {
-    access_token: data.access_token,
-    expires_in: data.expires_in,
-  };
+    client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token',
+  }).toString(), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  return { access_token: data.access_token, expires_in: data.expires_in };
 }
 
 export async function publishToYouTube({
   accessToken,
   videoUrl,
   caption,
+  privacy = 'public', // Added privacy parameter
 }: {
   accessToken: string;
   videoUrl: string;
   caption: string;
+  privacy?: 'public' | 'unlisted' | 'private';
 }): Promise<string> {
-  // Direct insert YouTube video requires a multipart or resumable upload.
-  // To make it simple and reliable in this script context, we use a metadata insert or trigger YouTube API upload
-  // Normally YouTube requires raw bytes to upload. We retrieve the file buffer (local file first).
   const videoBuffer = await getMediaBuffer(videoUrl);
 
-  // Initialize YouTube upload
   const initResponse = await axios.post(
     'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
     {
-      snippet: {
-        title: caption.substring(0, 100) || 'New Social Media Video',
-        description: caption,
-      },
-      status: {
-        privacyStatus: 'public',
-      },
+      snippet: { title: caption.substring(0, 100) || 'New Social Media Video', description: caption },
+      status: { privacyStatus: privacy }, // Now dynamic
     },
     {
       headers: {
@@ -126,45 +77,25 @@ export async function publishToYouTube({
   );
 
   const uploadUrl = initResponse.headers.location;
-  if (!uploadUrl) {
-    throw new Error('Failed to get YouTube video upload URL');
-  }
+  if (!uploadUrl) throw new Error('Failed to get YouTube video upload URL');
 
-  // Upload actual video buffer
   const uploadResponse = await axios.put(uploadUrl, videoBuffer, {
-    headers: {
-      'Content-Type': 'video/*',
-      'Content-Length': videoBuffer.length.toString(),
-    },
+    headers: { 'Content-Type': 'video/*', 'Content-Length': videoBuffer.length.toString() },
   });
-
   return uploadResponse.data.id;
 }
 
-export async function getYouTubeInsights(accessToken: string): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number }> {
+export async function getYouTubeInsights(accessToken: string): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number | null }> {
   try {
     const { data } = await axios.get('https://www.googleapis.com/youtube/v3/channels', {
-      params: {
-        part: 'statistics',
-        mine: true,
-      },
+      params: { part: 'statistics', mine: true },
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-
     const channel = data?.items?.[0];
-    if (!channel) {
-      return { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
-    }
-
+    if (!channel) return { followers: 0, reach: 0, impressions: 0, profileVisits: null };
     const followers = parseInt(channel.statistics?.subscriberCount, 10) || 0;
     const views = parseInt(channel.statistics?.viewCount, 10) || 0;
-
-    return {
-      followers,
-      reach: views,
-      impressions: views,
-      profileVisits: 0,
-    };
+    return { followers, reach: views, impressions: views, profileVisits: null };
   } catch (err: any) {
     console.error('Failed to fetch YouTube insights:', err.message);
     throw err;
