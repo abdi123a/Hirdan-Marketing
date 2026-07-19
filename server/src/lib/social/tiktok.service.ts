@@ -183,31 +183,50 @@ function resolvePrivacyLevel(requested: string, allowed: string[]): string {
  */
 async function initTikTokPublish({
   accessToken,
-  videoUrl,
+  mediaUrls,
+  mediaType,
   caption,
   privacyLevel,
   creatorInfo,
 }: {
   accessToken: string;
-  videoUrl: string;
+  mediaUrls: string[];
+  mediaType: string;
   caption: string;
   privacyLevel: string;
   creatorInfo: TikTokCreatorInfo;
 }): Promise<{ ok: boolean; publishId?: string; errorCode?: string; errorMessage?: string }> {
-  const { data } = await axios.post('https://open.tiktokapis.com/v2/post/publish/video/init/', {
+  const isVideo = mediaType === 'video';
+  const endpoint = isVideo
+    ? 'https://open.tiktokapis.com/v2/post/publish/video/init/'
+    : 'https://open.tiktokapis.com/v2/post/publish/content/init/';
+
+  const payload: Record<string, any> = {
     post_info: {
       title: caption,
       privacy_level: privacyLevel,
-      video_cover_timestamp_ms: 1000,
       disable_duet: creatorInfo.duet_disabled,
       disable_comment: creatorInfo.comment_disabled,
       disable_stitch: creatorInfo.stitch_disabled,
     },
-    source_info: {
+  };
+
+  if (isVideo) {
+    payload.post_info.video_cover_timestamp_ms = 1000;
+    payload.source_info = {
       source: 'PULL_FROM_URL',
-      video_url: videoUrl,
-    },
-  }, {
+      video_url: mediaUrls[0],
+    };
+  } else {
+    payload.post_mode = 'DIRECT_POST';
+    payload.media_type = 'PHOTO';
+    payload.source_info = {
+      source: 'PULL_FROM_URL',
+      photo_images: mediaUrls,
+    };
+  }
+
+  const { data } = await axios.post(endpoint, payload, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
@@ -223,19 +242,31 @@ async function initTikTokPublish({
 export async function publishToTikTok({
   accessToken,
   videoUrl,
+  mediaUrls,
+  mediaType = 'video',
   caption,
   privacyLevel = 'PUBLIC_TO_EVERYONE',
 }: {
   accessToken: string;
-  videoUrl: string;
+  videoUrl?: string;
+  mediaUrls?: string[];
+  mediaType?: string;
   caption: string;
   privacyLevel?: string;
 }): Promise<string> {
+  const resolvedMediaUrls = mediaUrls && mediaUrls.length > 0
+    ? mediaUrls
+    : (videoUrl ? [videoUrl] : []);
+
+  if (resolvedMediaUrls.length === 0) {
+    throw new Error('TikTok requires at least one media URL to publish');
+  }
+
   // Step 1: query creator_info — required before every publish call, and the
   // only way to know what this account is actually allowed to do.
   const creatorInfo = await getTikTokCreatorInfo(accessToken);
 
-  if (creatorInfo.max_video_post_duration_sec === 0) {
+  if (creatorInfo.max_video_post_duration_sec === 0 && mediaType === 'video') {
     throw new Error('TikTok reports posting is currently disabled for this creator account');
   }
 
@@ -253,7 +284,14 @@ export async function publishToTikTok({
   const resolvedPrivacyLevel = resolvePrivacyLevel(requestedPrivacyLevel, creatorInfo.privacy_level_options);
 
   // Step 2: init the actual publish with a privacy_level this account can use.
-  let result = await initTikTokPublish({ accessToken, videoUrl, caption, privacyLevel: resolvedPrivacyLevel, creatorInfo });
+  let result = await initTikTokPublish({
+    accessToken,
+    mediaUrls: resolvedMediaUrls,
+    mediaType,
+    caption,
+    privacyLevel: resolvedPrivacyLevel,
+    creatorInfo,
+  });
 
   // Safety net: even if we didn't already force SELF_ONLY (e.g. appIsAudited
   // is true but this particular app/account still hasn't cleared audit),
@@ -263,7 +301,14 @@ export async function publishToTikTok({
       `TikTok rejected privacy_level=${resolvedPrivacyLevel} as unaudited client, retrying with SELF_ONLY`
     );
     const fallbackLevel = resolvePrivacyLevel('SELF_ONLY', creatorInfo.privacy_level_options);
-    result = await initTikTokPublish({ accessToken, videoUrl, caption, privacyLevel: fallbackLevel, creatorInfo });
+    result = await initTikTokPublish({
+      accessToken,
+      mediaUrls: resolvedMediaUrls,
+      mediaType,
+      caption,
+      privacyLevel: fallbackLevel,
+      creatorInfo,
+    });
   }
 
   if (!result.ok) {

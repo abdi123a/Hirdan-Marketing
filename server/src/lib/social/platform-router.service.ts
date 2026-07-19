@@ -110,11 +110,12 @@ export async function publishPostToPlatform(post: SocialPost, account: SocialAcc
 
     case 'tiktok':
       if (mediaUrls.length === 0) {
-        throw new Error('TikTok requires a video URL to publish');
+        throw new Error('TikTok requires at least one media URL to publish');
       }
       return await tiktok.publishToTikTok({
         accessToken,
-        videoUrl: mediaUrls[0],
+        mediaUrls,
+        mediaType,
         caption,
       });
 

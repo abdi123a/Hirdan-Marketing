@@ -343,7 +343,7 @@ export async function getMetaInsights(accountId: string, token: string, platform
       followers: pageData.followers_count || pageData.fan_count || 0,
       reach: reachVal,
       impressions: reachVal,
-      profileVisits: null, // FIXED: no real profile visits metric
+      profileVisits: null,
     };
   } else {
     const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
