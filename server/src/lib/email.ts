@@ -99,6 +99,7 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
   const agencyName = settings?.agencyName || 'Hirdan Marketing';
   const primaryColor = settings?.primaryColor || '#504289';
   const logo = settings?.logo || null;
+  const whiteLogo = settings?.whiteLogo || null;
   const website = settings?.website || 'hirdanmarketing.com';
   const address = settings?.address || '';
   const phone = settings?.phone || '';
@@ -115,6 +116,15 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
   if (logo) {
     const logoUrl = logo.startsWith('http') ? logo : `${apiBaseUrl}${logo}`;
     logoHtml = `<img src="${logoUrl}" alt="${agencyName}" class="logo-img" style="max-height: 48px; width: auto; display: inline-block;" />`;
+  }
+
+  // White Logo for Footer
+  let footerLogoHtml = '';
+  if (whiteLogo) {
+    const whiteLogoUrl = whiteLogo.startsWith('http') ? whiteLogo : `${apiBaseUrl}${whiteLogo}`;
+    footerLogoHtml = `<img src="${whiteLogoUrl}" alt="${agencyName}" class="footer-logo-img" style="max-height: 38px; width: auto; display: inline-block;" />`;
+  } else {
+    footerLogoHtml = `<p class="footer-text" style="color: #ffffff; font-size: 15px; font-weight: 800; margin: 0; text-transform: uppercase; letter-spacing: 1.5px;"><strong>${agencyName}</strong></p>`;
   }
 
   // Address block formatting
@@ -204,7 +214,8 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
       }
       .footer {
         padding: 28px 20px 24px 20px !important;
-        border-radius: 0 0 16px 16px !important;
+        border-radius: 20px !important;
+        margin: 16px 12px 12px 12px !important;
       }
     }
   </style>
@@ -230,7 +241,7 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
       </div>
       
       <!-- Premium Rounded Dark Footer -->
-      <div class="footer" style="background-color: ${primaryColor}; color: #ffffff; padding: 40px 40px 32px 40px; text-align: center; position: relative; border-radius: 0 0 20px 20px; -webkit-border-radius: 0 0 20px 20px;">
+      <div class="footer" style="background-color: ${primaryColor}; color: #ffffff; padding: 40px 40px 32px 40px; text-align: center; position: relative; border-radius: 20px; -webkit-border-radius: 20px; margin: 0 20px 20px 20px;">
         <!-- Floating Gold Accent Divider -->
         <table align="center" cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto 24px auto; width: 60px; height: 4px; border-collapse: collapse;">
           <tr>
@@ -239,7 +250,9 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
         </table>
 
         ${socialHtml}
-        <p class="footer-text" style="color: #ffffff; font-size: 15px; font-weight: 800; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 1.5px;"><strong>${agencyName}</strong></p>
+        <div style="margin-bottom: 14px;">
+          ${footerLogoHtml}
+        </div>
         ${addressHtml}
         ${contactHtml}
         
@@ -552,40 +565,40 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
   const followUpType = options.followUpType || 'GENTLE_REMINDER';
 
   let badgeLabel = 'PROFORMA FOLLOW-UP';
-  let badgeBg = '#e0f2fe';
-  let badgeTextColor = '#0369a1';
-  let heroIcon = 'https://img.icons8.com/fluency/96/appointment-reminders.png';
-  let heroTitle = `Follow-Up: Proforma Estimate ${options.proformaNumber}`;
+  let badgeBg = '#eff6ff';
+  let badgeTextColor = '#1d4ed8';
+  let badgeBorderColor = '#3b82f6';
+  let heroTitle = `Follow-Up: Proforma Estimate <strong>${options.proformaNumber}</strong>`;
   let heroSubtitle = `We hope this message finds you well. We are following up regarding your proforma estimate.`;
 
   if (followUpType === 'GENTLE_REMINDER') {
-    badgeLabel = 'GENTLE REMINDER';
-    badgeBg = '#e0f2fe';
-    badgeTextColor = '#0369a1';
-    heroIcon = 'https://img.icons8.com/fluency/96/appointment-reminders.png';
-    heroTitle = `Friendly Reminder: Proforma Estimate ${options.proformaNumber}`;
-    heroSubtitle = `Just checking in to see if you have any questions about the estimate we prepared for you.`;
+    badgeLabel = 'Gentle Reminder';
+    badgeBg = '#eff6ff';
+    badgeTextColor = '#1d4ed8';
+    badgeBorderColor = '#3b82f6';
+    heroTitle = `Follow-up regarding Proforma Estimate <strong>${options.proformaNumber}</strong>`;
+    heroSubtitle = `We are checking in to see if you have any questions or require any adjustments to the estimate we prepared for you.`;
   } else if (followUpType === 'EXPIRING_SOON') {
-    badgeLabel = 'EXPIRING SOON';
-    badgeBg = '#fef3c7';
+    badgeLabel = 'Validity Notice';
+    badgeBg = '#fffbeb';
     badgeTextColor = '#b45309';
-    heroIcon = 'https://img.icons8.com/fluency/96/future.png';
-    heroTitle = `Proforma Estimate ${options.proformaNumber} is Expiring Soon`;
-    heroSubtitle = `This estimate is approaching its validity date. Please review and approve it to lock in your project terms.`;
+    badgeBorderColor = '#f59e0b';
+    heroTitle = `Proforma Estimate <strong>${options.proformaNumber}</strong> is expiring soon`;
+    heroSubtitle = `This estimate is approaching its validity date. Please review and approve it to confirm your project terms.`;
   } else if (followUpType === 'DEPOSIT_REQUIRED') {
-    badgeLabel = 'DEPOSIT REQUEST';
-    badgeBg = '#f3e8ff';
-    badgeTextColor = '#7e22ce';
-    heroIcon = 'https://img.icons8.com/fluency/96/card-in-use.png';
-    heroTitle = `Deposit Required for Proforma Estimate ${options.proformaNumber}`;
-    heroSubtitle = `Ready to kick off? To commence work, please review and accept your proforma estimate.`;
+    badgeLabel = 'Action Required';
+    badgeBg = '#faf5ff';
+    badgeTextColor = '#6b21a8';
+    badgeBorderColor = '#8b5cf6';
+    heroTitle = `Deposit required for Proforma Estimate <strong>${options.proformaNumber}</strong>`;
+    heroSubtitle = `To commence work on your project, please review the estimate and approve it to initiate the next steps.`;
   } else if (followUpType === 'FINAL_NOTICE') {
-    badgeLabel = 'FINAL NOTICE';
-    badgeBg = '#fee2e2';
+    badgeLabel = 'Final Notice';
+    badgeBg = '#fef2f2';
     badgeTextColor = '#b91c1c';
-    heroIcon = 'https://img.icons8.com/fluency/96/alarm-clock.png';
-    heroTitle = `Final Follow-Up: Proforma Estimate ${options.proformaNumber}`;
-    heroSubtitle = `This is our final follow-up regarding your pending estimate. We'd love to help bring your project to life!`;
+    badgeBorderColor = '#ef4444';
+    heroTitle = `Final follow-up for Proforma Estimate <strong>${options.proformaNumber}</strong>`;
+    heroSubtitle = `This is our final follow-up regarding your pending estimate. Please let us know if you would like to proceed with the proposed scope.`;
   }
 
   // Format currency value helper
@@ -603,10 +616,10 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
   } else {
     bodyTextHtml = `
       <p style="font-size: 15px; color: #334155; line-height: 1.7; margin: 0 0 16px 0;">
-        Dear <strong>${options.clientName}</strong>,
+        Dear ${options.clientName},
       </p>
       <p style="font-size: 14px; color: #334155; line-height: 1.6; margin: 0 0 20px 0;">
-        This is a quick follow-up regarding <strong>Proforma Estimate ${options.proformaNumber}</strong> issued by <strong>${agencyName}</strong>.
+        This is a quick follow-up regarding Proforma Estimate <strong>${options.proformaNumber}</strong> issued by ${agencyName}.
       </p>
     `;
   }
@@ -675,17 +688,16 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
 
   const contentHtml = `
     <!-- Hero Banner -->
-    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 14px; margin-bottom: 24px; overflow: hidden;">
+    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid ${badgeBorderColor}; border-radius: 12px; margin-bottom: 28px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03); overflow: hidden;">
       <tr>
-        <td style="padding: 32px 24px; text-align: center;">
-          <div style="display: inline-block; background-color: ${badgeBg}; color: ${badgeTextColor}; font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 20px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;">
+        <td style="padding: 24px 28px;">
+          <div style="display: inline-block; background-color: ${badgeBg}; color: ${badgeTextColor}; font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 6px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; font-family: sans-serif;">
             ${badgeLabel}
           </div>
-          <img src="${heroIcon}" width="48" height="48" style="display: block; margin: 0 auto 12px auto;" alt="${badgeLabel}" />
-          <h1 style="margin: 0 0 8px 0; font-size: 22px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; line-height: 1.3;">
+          <h1 style="margin: 0 0 8px 0; font-size: 18px; font-weight: 500; color: #0f172a; letter-spacing: -0.3px; line-height: 1.4; font-family: sans-serif;">
             ${heroTitle}
           </h1>
-          <p style="margin: 0; font-size: 14px; color: #475569; line-height: 1.6; max-width: 440px; margin: 0 auto;">
+          <p style="margin: 0; font-size: 13.5px; color: #475569; line-height: 1.6; font-family: sans-serif;">
             ${heroSubtitle}
           </p>
         </td>
