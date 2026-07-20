@@ -644,7 +644,7 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
 
   // Format currency value helper (stored in cents, divide by 100)
   const numAmount = (typeof options.amount === 'number' ? options.amount : parseFloat(options.amount || '0')) / 100;
-  const displayAmount = options.formattedAmount || `${currencySymbol}${numAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const displayAmount = options.formattedAmount || `${currencySymbol}${numAmount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
   // Custom Message block formatted directly as actual body text paragraphs
   let bodyTextHtml = '';
@@ -681,8 +681,8 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
       <tr style="border-bottom: 1px solid #f1f5f9; background-color: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
         <td style="padding: 12px 16px; font-size: 13px; font-weight: 600; color: #0f172a;">${item.description}</td>
         <td style="padding: 12px 16px; font-size: 13px; color: #64748b; text-align: center;">${item.quantity}</td>
-        <td style="padding: 12px 16px; font-size: 13px; color: #64748b; text-align: right;">${currencySymbol}${((item.unitPrice || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td style="padding: 12px 16px; font-size: 13px; font-weight: 700; color: #0f172a; text-align: right;">${currencySymbol}${(item.quantity * (item.unitPrice || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td style="padding: 12px 16px; font-size: 13px; color: #64748b; text-align: right;">${currencySymbol}${((item.unitPrice || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</td>
+        <td style="padding: 12px 16px; font-size: 13px; font-weight: 700; color: #0f172a; text-align: right;">${currencySymbol}${(item.quantity * (item.unitPrice || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</td>
       </tr>
     `).join('');
 
@@ -801,7 +801,7 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
                 <tr>
                   <td colspan="2" style="padding-top: 12px; border-top: 1px dashed #e2e8f0; margin-top: 12px;">
                     <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Initial Deposit Required</span>
-                    <p style="margin: 2px 0 0 0; font-size: 14px; font-weight: 800; color: #059669;">${currencySymbol}${((options.deposit || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p style="margin: 2px 0 0 0; font-size: 14px; font-weight: 800; color: #059669;">${currencySymbol}${((options.deposit || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</p>
                   </td>
                 </tr>
               ` : ''}
