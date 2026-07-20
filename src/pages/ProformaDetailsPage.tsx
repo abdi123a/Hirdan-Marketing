@@ -57,6 +57,8 @@ export default function ProformaDetailsPage() {
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [emailMode, setEmailMode] = useState<"standard" | "followup">("standard");
+  const [followUpPreset, setFollowUpPreset] = useState<"GENTLE_REMINDER" | "EXPIRING_SOON" | "DEPOSIT_REQUIRED" | "FINAL_NOTICE">("GENTLE_REMINDER");
 
 
   const [isConverting, setIsConverting] = useState(false);
@@ -71,7 +73,7 @@ export default function ProformaDetailsPage() {
     });
   }, [fetchProformas, fetchClients]);
 
-  const proforma = useMemo(() => proformas.find((p) => p.id === id), [proformas, id]);
+  const proforma = useMemo(() => proformas.find((p) => p.id === id || (p as any)._dbId === id || p.proformaNumber === id), [proformas, id]);
   const client = useMemo(() => clients.find((c) => c.company === proforma?.client || c.name === proforma?.client), [clients, proforma]);
 
   useEffect(() => {

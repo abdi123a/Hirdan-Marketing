@@ -157,12 +157,12 @@ router.post('/', authenticate, async (req: Request, res: Response, next) => {
     });
 
     if (existing) {
-      // If token is still valid (not revoked and not expired), return it
-      if (!existing.revokedAt && existing.expiresAt > new Date()) {
+      // If token is still valid and is already short (<= 12 chars), return it
+      if (!existing.revokedAt && existing.expiresAt > new Date() && existing.token.length <= 12) {
         res.json({ token: existing.token });
         return;
       }
-      // If it's expired or revoked, remove it so we can create a fresh one
+      // If it's expired, revoked, or an old 64-char long token, remove it to generate a fresh 8-char short token
       await prisma.verificationToken.delete({ where: { id: existing.id } });
     }
 
@@ -201,7 +201,7 @@ router.get('/:token', verifyLimiter, async (req: Request, res: Response, next) =
             date: true,
             status: true,
             amount: true,
-            client: { select: { name: true, company: true } },
+            client: { select: { name: true, company: true, userId: true } },
           },
         },
         proforma: {
@@ -210,7 +210,7 @@ router.get('/:token', verifyLimiter, async (req: Request, res: Response, next) =
             date: true,
             status: true,
             amount: true,
-            client: { select: { name: true, company: true } },
+            client: { select: { name: true, company: true, userId: true } },
           },
         },
         subscription: {
@@ -220,7 +220,7 @@ router.get('/:token', verifyLimiter, async (req: Request, res: Response, next) =
             startDate: true,
             endDate: true,
             amount: true,
-            client: { select: { name: true, company: true } },
+            client: { select: { name: true, company: true, userId: true } },
           },
         },
         monthlyReport: {
@@ -229,7 +229,7 @@ router.get('/:token', verifyLimiter, async (req: Request, res: Response, next) =
             month: true,
             year: true,
             status: true,
-            client: { select: { name: true, company: true } },
+            client: { select: { name: true, company: true, userId: true } },
           },
         },
         hrDocument: {
@@ -314,9 +314,12 @@ router.get('/:token', verifyLimiter, async (req: Request, res: Response, next) =
       };
     }
 
+    const hasLoginAccess = !!raw.client?.userId;
+
     res.json({
       verified: true,
       type,
+      hasLoginAccess,
       document: {
         ...documentDetails,
         clientMask,

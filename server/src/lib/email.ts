@@ -122,10 +122,17 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
     ? `<p class="footer-text" style="color: #cbd5e1; font-size: 13px; line-height: 1.5; margin: 4px 0;">${address.replace(/\n/g, '<br>')}</p>` 
     : '';
 
-  // Contact details formatting
-  const contactInfo = [phone, adminEmail].filter(Boolean).join(' &bull; ');
+  // Contact details formatting with explicit link styling for high contrast
+  const phoneFormatted = phone
+    ? `<a href="tel:${phone}" style="color: #e2e8f0 !important; text-decoration: none; font-weight: 500;">${phone}</a>`
+    : '';
+  const emailFormatted = adminEmail
+    ? `<a href="mailto:${adminEmail}" target="_blank" style="color: #f6b317 !important; text-decoration: underline; text-decoration-color: #f6b317; font-weight: 700;">${adminEmail}</a>`
+    : '';
+
+  const contactInfo = [phoneFormatted, emailFormatted].filter(Boolean).join(' <span style="color: #94a3b8; margin: 0 4px;">&bull;</span> ');
   const contactHtml = contactInfo
-    ? `<p class="footer-text" style="color: #cbd5e1; font-size: 13px; line-height: 1.5; margin: 4px 0;">${contactInfo}</p>`
+    ? `<p class="footer-text" style="color: #e2e8f0; font-size: 13px; line-height: 1.6; margin: 6px 0;">${contactInfo}</p>`
     : '';
 
   // Social Links rendering
@@ -138,7 +145,7 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
         .filter(p => socials[p])
         .map(p => {
           const label = p.charAt(0).toUpperCase() + p.slice(1);
-          return `<a href="${socials[p]}" class="footer-link" target="_blank" style="color: #ffffff; text-decoration: none; font-weight: 500; margin: 0 8px; font-size: 13px;">${label}</a>`;
+          return `<a href="${socials[p]}" class="footer-link" target="_blank" style="color: #ffffff !important; text-decoration: none; font-weight: 500; margin: 0 8px; font-size: 13px;">${label}</a>`;
         });
       if (links.length > 0) {
         socialHtml = `<div class="social-icons" style="margin-bottom: 16px; color: #cbd5e1;">${links.join(' &bull; ')}</div>`;
@@ -181,6 +188,13 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
       color: ${primaryColor};
       text-decoration: none;
     }
+    .footer a {
+      color: #ffffff !important;
+    }
+    .footer a[href^="mailto:"] {
+      color: #f6b317 !important;
+      text-decoration: underline !important;
+    }
     @media only screen and (max-width: 600px) {
       .content {
         padding: 24px !important;
@@ -189,7 +203,8 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
         padding: 24px !important;
       }
       .footer {
-        padding: 24px !important;
+        padding: 28px 20px 24px 20px !important;
+        border-radius: 0 0 16px 16px !important;
       }
     }
   </style>
@@ -197,9 +212,9 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
 <body style="background-color: #f6f9fc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; -webkit-font-smoothing: antialiased;">
   ${preheaderHtml}
   <div class="wrapper" style="background-color: #f6f9fc; padding: 40px 20px;">
-    <div class="container" style="background-color: #ffffff; border-radius: 12px; border: 1px solid #e8ebf0; box-shadow: 0 4px 12px rgba(80, 66, 137, 0.03); max-width: 580px; margin: 0 auto; overflow: hidden;">
+    <div class="container" style="background-color: #ffffff; border-radius: 20px; border: 1px solid #e8ebf0; box-shadow: 0 8px 24px rgba(80, 66, 137, 0.06); max-width: 580px; margin: 0 auto; overflow: hidden;">
       <!-- Top Branding Color Bar -->
-      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%; height: 6px; border-collapse: collapse; overflow: hidden;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%; height: 6px; border-collapse: collapse; overflow: hidden; border-radius: 20px 20px 0 0;">
         <tr>
           <td width="70%" bgcolor="${primaryColor}" style="background-color: ${primaryColor}; height: 6px; padding: 0; line-height: 1px; font-size: 1px;">&nbsp;</td>
           <td width="30%" bgcolor="#f6b317" style="background-color: #f6b317; height: 6px; padding: 0; line-height: 1px; font-size: 1px;">&nbsp;</td>
@@ -214,30 +229,29 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
         ${actionButtonHtml}
       </div>
       
-      <!-- Premium Dark True Footer -->
-      <div class="footer" style="background-color: ${primaryColor}; color: #ffffff; padding: 40px 40px 32px 40px; text-align: center; position: relative;">
-        <!-- Floating Accent Line -->
-        <table align="center" cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto 24px auto; width: 70%; height: 4px; border-collapse: collapse;">
+      <!-- Premium Rounded Dark Footer -->
+      <div class="footer" style="background-color: ${primaryColor}; color: #ffffff; padding: 40px 40px 32px 40px; text-align: center; position: relative; border-radius: 0 0 20px 20px; -webkit-border-radius: 0 0 20px 20px;">
+        <!-- Floating Gold Accent Divider -->
+        <table align="center" cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto 24px auto; width: 60px; height: 4px; border-collapse: collapse;">
           <tr>
             <td bgcolor="#f6b317" style="background-color: #f6b317; height: 4px; border-radius: 4px; line-height: 1px; font-size: 1px;">&nbsp;</td>
           </tr>
         </table>
 
         ${socialHtml}
-        <p class="footer-text" style="color: #ffffff; font-size: 14px; font-weight: 800; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 1px;"><strong>${agencyName}</strong></p>
+        <p class="footer-text" style="color: #ffffff; font-size: 15px; font-weight: 800; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 1.5px;"><strong>${agencyName}</strong></p>
         ${addressHtml}
         ${contactHtml}
         
-        <p class="footer-text" style="font-size: 11px; color: #cbd5e1; margin: 12px 0; font-style: italic; font-weight: 500;">
+        <p class="footer-text" style="font-size: 12px; color: #cbd5e1; margin: 14px 0 18px 0; font-style: italic; font-weight: 500;">
           Empowering your brand's future through strategic digital growth
         </p>
 
-        <div class="footer-links" style="margin-top: 16px; color: #ffffff;">
-          <a href="https://${website}" class="footer-link" target="_blank" style="color: #f6b317; text-decoration: none; font-weight: 600; margin: 0 8px; font-size: 13px;">Website</a>
-          &bull;
-          <a href="https://app.${website}" class="footer-link" target="_blank" style="color: #f6b317; text-decoration: none; font-weight: 600; margin: 0 8px; font-size: 13px;">Client Portal</a>
+        <div class="footer-links" style="margin-top: 18px; color: #ffffff;">
+          <a href="https://${website}" class="footer-link" target="_blank" style="color: #ffffff !important; background-color: rgba(255, 255, 255, 0.12); text-decoration: none; font-weight: 600; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Website ↗</a>
+          <a href="https://app.${website}" class="footer-link" target="_blank" style="color: #f6b317 !important; background-color: rgba(246, 179, 23, 0.15); text-decoration: none; font-weight: 700; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Client Portal ↗</a>
         </div>
-        <p class="footer-text" style="margin-top: 24px; font-size: 10px; color: #cbd5e1; opacity: 0.6; line-height: 1.5; margin: 4px 0;">
+        <p class="footer-text" style="margin-top: 28px; font-size: 10.5px; color: #cbd5e1; opacity: 0.7; line-height: 1.5;">
           This is an automated transactional message. Please do not reply directly to this email.
         </p>
       </div>
@@ -521,6 +535,19 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
   const primaryColor = settings?.primaryColor || '#504289';
   const colorHex = primaryColor.replace('#', '');
   const currencySymbol = (settings as any)?.currencySymbol || settings?.currency || '$';
+  const website = settings?.website || 'hirdanmarketing.com';
+
+  // Check if client has login access (has a User account)
+  const clientRecord = await prisma.client.findFirst({
+    where: {
+      OR: [
+        { email: options.clientEmail },
+        { name: options.clientName }
+      ]
+    },
+    select: { userId: true }
+  });
+  const hasLoginAccess = !!clientRecord?.userId;
 
   const followUpType = options.followUpType || 'GENTLE_REMINDER';
 
@@ -565,19 +592,24 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
   const numAmount = typeof options.amount === 'number' ? options.amount : parseFloat(options.amount || '0');
   const displayAmount = options.formattedAmount || `${currencySymbol}${numAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-  // Custom Note block
-  const customNoteHtml = options.customNote
-    ? `
-      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8fafc; border-left: 4px solid ${primaryColor}; border-radius: 8px; margin-bottom: 24px;">
-        <tr>
-          <td style="padding: 18px 20px;">
-            <p style="margin: 0 0 6px 0; font-size: 11px; font-weight: 800; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 1px;">Note from ${agencyName}</p>
-            <p style="margin: 0; font-size: 14px; color: #334155; line-height: 1.6; white-space: pre-line;">${options.customNote}</p>
-          </td>
-        </tr>
-      </table>
-    `
-    : '';
+  // Custom Message block formatted directly as actual body text paragraphs
+  let bodyTextHtml = '';
+  if (options.customNote && options.customNote.trim()) {
+    bodyTextHtml = options.customNote
+      .trim()
+      .split('\n\n')
+      .map(para => `<p style="font-size: 15px; color: #334155; line-height: 1.7; margin: 0 0 16px 0;">${para.replace(/\n/g, '<br>')}</p>`)
+      .join('');
+  } else {
+    bodyTextHtml = `
+      <p style="font-size: 15px; color: #334155; line-height: 1.7; margin: 0 0 16px 0;">
+        Dear <strong>${options.clientName}</strong>,
+      </p>
+      <p style="font-size: 14px; color: #334155; line-height: 1.6; margin: 0 0 20px 0;">
+        This is a quick follow-up regarding <strong>Proforma Estimate ${options.proformaNumber}</strong> issued by <strong>${agencyName}</strong>.
+      </p>
+    `;
+  }
 
   // Items table
   let itemsHtml = '';
@@ -611,15 +643,30 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
     `;
   }
 
-  // CTA button
+  // CTA button redirection flow
   let ctaHtml = '';
-  if (options.verificationUrl) {
+  const clientLoginUrl = `https://app.${website}/client/login`;
+  
+  if (hasLoginAccess) {
     ctaHtml = `
-      <div style="text-align: center; margin: 28px 0;">
-        <a href="${options.verificationUrl}" style="display: inline-block; background-color: ${primaryColor}; color: #ffffff !important; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 36px; border-radius: 10px; letter-spacing: 0.3px; box-shadow: 0 4px 12px rgba(80, 66, 137, 0.2);">
-          Review &amp; Accept Proforma →
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${clientLoginUrl}" style="display: inline-block; background-color: ${primaryColor}; color: #ffffff !important; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 36px; border-radius: 12px; letter-spacing: 0.3px; box-shadow: 0 4px 14px rgba(80, 66, 137, 0.25);">
+          Log In to Portal to Approve →
         </a>
-        <p style="margin: 8px 0 0 0; font-size: 12px; color: #64748b;">
+        ${options.verificationUrl ? `
+          <p style="margin: 12px 0 0 0; font-size: 12px; color: #64748b;">
+            Or verify document online: <a href="${options.verificationUrl}" style="color: ${primaryColor}; font-weight: 600; text-decoration: underline;">Verify Document ${options.proformaNumber} ↗</a>
+          </p>
+        ` : ''}
+      </div>
+    `;
+  } else if (options.verificationUrl) {
+    ctaHtml = `
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${options.verificationUrl}" style="display: inline-block; background-color: ${primaryColor}; color: #ffffff !important; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 36px; border-radius: 12px; letter-spacing: 0.3px; box-shadow: 0 4px 14px rgba(80, 66, 137, 0.25);">
+          Verify Proforma Online →
+        </a>
+        <p style="margin: 12px 0 0 0; font-size: 12px; color: #64748b;">
           Or copy link: <a href="${options.verificationUrl}" style="color: ${primaryColor}; word-break: break-all;">${options.verificationUrl}</a>
         </p>
       </div>
@@ -645,14 +692,7 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
       </tr>
     </table>
 
-    <p style="font-size: 15px; color: #334155; line-height: 1.7; margin: 0 0 20px 0;">
-      Dear <strong>${options.clientName}</strong>,
-    </p>
-    <p style="font-size: 14px; color: #334155; line-height: 1.6; margin: 0 0 20px 0;">
-      This is a quick follow-up regarding <strong>Proforma Estimate ${options.proformaNumber}</strong> issued by <strong>${agencyName}</strong>.
-    </p>
-
-    ${customNoteHtml}
+    ${bodyTextHtml}
 
     <!-- Summary Details Box -->
     <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03);">
@@ -702,7 +742,7 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
         <td style="padding: 16px 20px;">
           <p style="margin: 0 0 10px 0; font-size: 12px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.8px;">⚡ Next Steps</p>
           <p style="margin: 0 0 6px 0; font-size: 13px; color: #475569; line-height: 1.5;">
-            <strong>1. Review & Approve:</strong> Click the button above to view and accept the proposal online.
+            <strong>1. Review & Approve:</strong> ${hasLoginAccess ? 'Log in to your client portal' : 'Click the button above'} to view and accept the proposal online.
           </p>
           <p style="margin: 0 0 6px 0; font-size: 13px; color: #475569; line-height: 1.5;">
             <strong>2. Automatic Invoicing:</strong> Once accepted, an official invoice will be issued for payment.

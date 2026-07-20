@@ -191,6 +191,7 @@ export interface PublicVerificationDocument {
 
 export interface Proforma {
   id: string;
+  proformaNumber?: string;
   client: string;
   clientEmail?: string;
   amount: string;
@@ -512,7 +513,7 @@ interface AgencyStore {
 
   updateSettings: (settings: Partial<AgencySettings>) => Promise<void>;
   getVerificationToken: (documentType: 'invoice' | 'proforma' | 'subscription' | 'monthly_report' | 'hr_document', documentId: string) => Promise<string>;
-  verifyDocument: (token: string) => Promise<{ type: 'invoice' | 'proforma' | 'subscription' | 'monthly_report' | 'hr_document'; document: PublicVerificationDocument } | null>;
+  verifyDocument: (token: string) => Promise<{ type: 'invoice' | 'proforma' | 'subscription' | 'monthly_report' | 'hr_document'; document: PublicVerificationDocument; hasLoginAccess?: boolean } | null>;
 
   fetchClients: () => Promise<void>;
   fetchProjects: () => Promise<void>;
@@ -584,7 +585,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.27.12",
+  appVersion: "2.28.0",
   versionHistory: [
     {
       version: "2.23.0",
@@ -873,6 +874,7 @@ export const useAgencyStore = create<AgencyStore>()(
           const res = await apiFetch<{ proformas: any[] }>('/proformas');
           const mapped = res.proformas.map(p => ({
             id: p.proformaNumber || p.id,
+            proformaNumber: p.proformaNumber,
             client: p.client?.company || p.client?.name || 'Unknown',
             clientEmail: p.client?.email || '',
             amount: formatCurrency((p.amount || 0) / 100),
@@ -2100,6 +2102,7 @@ export const useAgencyStore = create<AgencyStore>()(
           const res = await apiFetch<{
             verified: boolean;
             type: 'invoice' | 'proforma' | 'subscription' | 'monthly_report' | 'hr_document';
+            hasLoginAccess?: boolean;
             document: any;
           }>(`/verify/${token}`);
           if (res.verified && res.document) {
@@ -2124,7 +2127,7 @@ export const useAgencyStore = create<AgencyStore>()(
               dateCreated: d.dateCreated,
               docType: d.docType,
             };
-            return { type: res.type, document: mappedDoc };
+            return { type: res.type, document: mappedDoc, hasLoginAccess: res.hasLoginAccess };
           }
           return null;
         } catch (error) {

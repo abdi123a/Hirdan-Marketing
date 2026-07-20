@@ -1,5 +1,6 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useAgencyStore, type PublicVerificationDocument } from "@/lib/store";
+import { useAuthStore } from "@/lib/auth-store";
 import { formatDate } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import {
@@ -17,8 +18,10 @@ import {
 
 export default function VerifyDocumentPage() {
   const { token } = useParams<{ token: string }>();
+  const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuthStore();
   const { verifyDocument, settings, fetchSettings } = useAgencyStore();
-  const [result, setResult] = useState<{ type: "invoice" | "proforma" | "subscription" | "monthly_report" | "hr_document"; document: PublicVerificationDocument } | null>(null);
+  const [result, setResult] = useState<{ type: "invoice" | "proforma" | "subscription" | "monthly_report" | "hr_document"; document: PublicVerificationDocument; hasLoginAccess?: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -29,6 +32,14 @@ export default function VerifyDocumentPage() {
         if (token) {
           const res = await verifyDocument(token);
           setResult(res as any);
+          
+          if (res && res.type === "proforma" && res.hasLoginAccess) {
+            if (isAuthenticated && user?.role === "client") {
+              navigate("/client/portal", { replace: true });
+            } else {
+              navigate("/client/login", { replace: true });
+            }
+          }
         }
       } catch (error) {
         console.error("Failed to load verification data:", error);
@@ -37,7 +48,7 @@ export default function VerifyDocumentPage() {
       }
     };
     fetchData();
-  }, [token, verifyDocument, fetchSettings]);
+  }, [token, verifyDocument, fetchSettings, isAuthenticated, user, navigate]);
 
   const accent = settings.primaryColor || "#504188";
   const secondary = "#f6b317";

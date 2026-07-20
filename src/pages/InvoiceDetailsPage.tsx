@@ -56,7 +56,7 @@ export default function InvoiceDetailsPage() {
   const [emailBody, setEmailBody] = useState("");
   const [isSendingEmail, setIsSendingEmail] = useState(false);
 
-  const invoice = useMemo(() => invoices.find((i) => i.id === id), [invoices, id]);
+  const invoice = useMemo(() => invoices.find((i) => i.id === id || (i as any)._dbId === id || i.invoiceNumber === id), [invoices, id]);
   const client = useMemo(() => clients.find((c) => c.company === invoice?.client || c.name === invoice?.client), [clients, invoice]);
 
   useEffect(() => {
