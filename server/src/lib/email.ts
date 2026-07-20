@@ -198,6 +198,26 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
       color: ${primaryColor};
       text-decoration: none;
     }
+    @keyframes gentle-bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+    @keyframes gentle-swing {
+      0%, 100% { transform: rotate(0deg); }
+      20% { transform: rotate(8deg); }
+      40% { transform: rotate(-8deg); }
+      60% { transform: rotate(4deg); }
+      80% { transform: rotate(-4deg); }
+    }
+    .animated-icon {
+      animation: gentle-bounce 2.5s infinite ease-in-out;
+      display: inline-block;
+    }
+    .animated-swing {
+      animation: gentle-swing 2.5s infinite ease-in-out;
+      display: inline-block;
+      transform-origin: top center;
+    }
     .footer a {
       color: #ffffff !important;
     }
@@ -262,7 +282,7 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
 
         <div class="footer-links" style="margin-top: 18px; color: #ffffff;">
           <a href="https://${website}" class="footer-link" target="_blank" style="color: #ffffff !important; background-color: rgba(255, 255, 255, 0.12); text-decoration: none; font-weight: 600; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Website ↗</a>
-          <a href="https://app.${website}" class="footer-link" target="_blank" style="color: #f6b317 !important; background-color: rgba(246, 179, 23, 0.15); text-decoration: none; font-weight: 700; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Client Portal ↗</a>
+          <a href="https://app.${website}/client/login" class="footer-link" target="_blank" style="color: #f6b317 !important; background-color: rgba(246, 179, 23, 0.15); text-decoration: none; font-weight: 700; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Client Portal ↗</a>
         </div>
         <p class="footer-text" style="margin-top: 28px; font-size: 10.5px; color: #cbd5e1; opacity: 0.7; line-height: 1.5;">
           This is an automated transactional message. Please do not reply directly to this email.
@@ -311,7 +331,10 @@ export async function generateWelcomeEmailHtml(options: WelcomeEmailOptions): Pr
   const primaryColor = settings?.primaryColor || '#504289';
   const website     = settings?.website     || 'hirdanmarketing.com';
 
-  const portalUrl = options.portalUrl || `https://app.${website}`;
+  let portalUrl = options.portalUrl || `https://app.${website}/client/login`;
+  if (portalUrl && !portalUrl.includes('/client/login')) {
+    portalUrl = portalUrl.replace(/\/$/, '') + '/client/login';
+  }
   const colorHex = primaryColor.replace('#', '');
 
   // Feature cards data with Icons8 names
@@ -570,6 +593,8 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
   let badgeBorderColor = '#3b82f6';
   let heroTitle = `Follow-Up: Proforma Estimate <strong>${options.proformaNumber}</strong>`;
   let heroSubtitle = `We hope this message finds you well. We are following up regarding your proforma estimate.`;
+  let iconUrl = 'https://img.icons8.com/fluency/96/bell.png';
+  let animationClass = 'animated-swing';
 
   if (followUpType === 'GENTLE_REMINDER') {
     badgeLabel = 'Gentle Reminder';
@@ -578,6 +603,8 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
     badgeBorderColor = '#3b82f6';
     heroTitle = `Follow-up regarding Proforma Estimate <strong>${options.proformaNumber}</strong>`;
     heroSubtitle = `We are checking in to see if you have any questions or require any adjustments to the estimate we prepared for you.`;
+    iconUrl = 'https://img.icons8.com/fluency/96/bell.png';
+    animationClass = 'animated-swing';
   } else if (followUpType === 'EXPIRING_SOON') {
     badgeLabel = 'Validity Notice';
     badgeBg = '#fffbeb';
@@ -585,6 +612,8 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
     badgeBorderColor = '#f59e0b';
     heroTitle = `Proforma Estimate <strong>${options.proformaNumber}</strong> is expiring soon`;
     heroSubtitle = `This estimate is approaching its validity date. Please review and approve it to confirm your project terms.`;
+    iconUrl = 'https://img.icons8.com/fluency/96/hourglass.png';
+    animationClass = 'animated-icon';
   } else if (followUpType === 'DEPOSIT_REQUIRED') {
     badgeLabel = 'Action Required';
     badgeBg = '#faf5ff';
@@ -592,6 +621,8 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
     badgeBorderColor = '#8b5cf6';
     heroTitle = `Deposit required for Proforma Estimate <strong>${options.proformaNumber}</strong>`;
     heroSubtitle = `To commence work on your project, please review the estimate and approve it to initiate the next steps.`;
+    iconUrl = 'https://img.icons8.com/fluency/96/card-in-use.png';
+    animationClass = 'animated-icon';
   } else if (followUpType === 'FINAL_NOTICE') {
     badgeLabel = 'Final Notice';
     badgeBg = '#fef2f2';
@@ -599,6 +630,8 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
     badgeBorderColor = '#ef4444';
     heroTitle = `Final follow-up for Proforma Estimate <strong>${options.proformaNumber}</strong>`;
     heroSubtitle = `This is our final follow-up regarding your pending estimate. Please let us know if you would like to proceed with the proposed scope.`;
+    iconUrl = 'https://img.icons8.com/fluency/96/alert.png';
+    animationClass = 'animated-icon';
   }
 
   // Format currency value helper
@@ -687,17 +720,28 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
   }
 
   const contentHtml = `
-    <!-- Hero Banner -->
-    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid ${badgeBorderColor}; border-radius: 12px; margin-bottom: 28px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03); overflow: hidden;">
+    <!-- Hero Banner (Centered Onboarding Style Card) -->
+    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 16px; margin-bottom: 28px; overflow: hidden;">
       <tr>
-        <td style="padding: 24px 28px;">
-          <div style="display: inline-block; background-color: ${badgeBg}; color: ${badgeTextColor}; font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 6px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; font-family: sans-serif;">
+        <td style="padding: 36px 28px; text-align: center;">
+          <!-- Animated Icon -->
+          <div style="margin-bottom: 16px; display: inline-block;">
+            <img src="${iconUrl}" width="54" height="54" class="${animationClass}" style="display: block; margin: 0 auto;" alt="${badgeLabel}" />
+          </div>
+          
+          <!-- Pill Badge -->
+          <br/>
+          <div style="display: inline-block; background-color: ${badgeBg}; border: 1px solid ${badgeBorderColor}20; color: ${badgeTextColor}; font-size: 11px; font-weight: 800; padding: 6px 14px; border-radius: 20px; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
             ${badgeLabel}
           </div>
-          <h1 style="margin: 0 0 8px 0; font-size: 18px; font-weight: 500; color: #0f172a; letter-spacing: -0.3px; line-height: 1.4; font-family: sans-serif;">
+          
+          <!-- Hero Title -->
+          <h1 style="margin: 0 0 10px 0; font-size: 22px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; line-height: 1.3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
             ${heroTitle}
           </h1>
-          <p style="margin: 0; font-size: 13.5px; color: #475569; line-height: 1.6; font-family: sans-serif;">
+          
+          <!-- Hero Subtitle -->
+          <p style="margin: 0; font-size: 14.5px; color: #475569; line-height: 1.6; max-width: 440px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
             ${heroSubtitle}
           </p>
         </td>
