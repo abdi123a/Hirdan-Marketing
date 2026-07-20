@@ -42,6 +42,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiFetch } from "@/lib/api-client";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import RichTextEditor from "@/components/RichTextEditor";
 
 export default function ProformaDetailsPage() {
   const { id } = useParams<{ id: string }>();
@@ -51,6 +52,7 @@ export default function ProformaDetailsPage() {
   const [verificationToken, setVerificationToken] = useState<string>("");
   const [loadingToken, setLoadingToken] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
+  const richTextRef = useRef<HTMLDivElement>(null);
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [emailTo, setEmailTo] = useState("");
   const [emailCc, setEmailCc] = useState("");
@@ -205,17 +207,23 @@ export default function ProformaDetailsPage() {
     const cName = proforma?.client || "Client";
     const pNumber = proforma?.id || "";
 
+    let bodyContent = "";
     if (mode === "followup") {
       const content = getFollowUpContent(preset, pNumber, cName, aName, proforma?.dueDate ? formatDate(proforma.dueDate) : undefined);
       setEmailSubject(content.subject);
+      bodyContent = content.body;
       setEmailBody(content.body);
     } else {
       setEmailSubject(`Proforma Estimate ${pNumber} from ${aName}`);
-      setEmailBody(
-        `Hi ${cName},\n\nPlease find attached proforma ${pNumber} for your review.\n\nYou can also view and verify the document online at:\n${verificationUrl}\n\nBest regards,\n${aName}`
-      );
+      bodyContent = `Hi ${cName},\n\nPlease find attached proforma ${pNumber} for your review.\n\nYou can also view and verify the document online at:\n${verificationUrl}\n\nBest regards,\n${aName}`;
+      setEmailBody(bodyContent);
     }
     setIsEmailModalOpen(true);
+    setTimeout(() => {
+      if (richTextRef.current) {
+        richTextRef.current.innerHTML = bodyContent.replace(/\n/g, "<br>");
+      }
+    }, 150);
   };
 
   const handleSelectPreset = (preset: "GENTLE_REMINDER" | "EXPIRING_SOON" | "DEPOSIT_REQUIRED" | "FINAL_NOTICE") => {
@@ -226,6 +234,9 @@ export default function ProformaDetailsPage() {
     const content = getFollowUpContent(preset, pNumber, cName, aName, proforma?.dueDate ? formatDate(proforma.dueDate) : undefined);
     setEmailSubject(content.subject);
     setEmailBody(content.body);
+    if (richTextRef.current) {
+      richTextRef.current.innerHTML = content.body.replace(/\n/g, "<br>");
+    }
   };
 
   const handleSendToClient = () => {
@@ -312,18 +323,19 @@ export default function ProformaDetailsPage() {
 
       // Call API
       const dbId = proforma._dbId || proforma.id;
+      const currentBody = richTextRef.current?.innerHTML || emailBody;
       const response = await apiFetch<{ success: boolean; message?: string }>(`/proformas/${dbId}/send-email`, {
         method: "POST",
         body: JSON.stringify({
           to: emailTo,
           cc: emailCc,
           subject: emailSubject,
-          body: emailBody,
+          body: currentBody,
           pdfBase64: base64Data,
           filename: `Proforma_${proforma.id}.pdf`,
           isFollowUp: emailMode === "followup",
           followUpType: followUpPreset,
-          customNote: emailBody,
+          customNote: currentBody,
           verificationUrl,
         }),
       });
@@ -712,13 +724,12 @@ export default function ProformaDetailsPage() {
               <Label htmlFor="email-body" className="text-xs">
                 {emailMode === "followup" ? "Custom Message / Personal Note" : "Message Body"}
               </Label>
-              <Textarea
-                id="email-body"
-                rows={5}
-                placeholder="Type message..."
-                className="resize-none text-xs leading-relaxed"
-                value={emailBody}
-                onChange={(e) => setEmailBody(e.target.value)}
+              <RichTextEditor
+                editorRef={richTextRef}
+                minHeight="110px"
+                maxHeight="220px"
+                placeholder="Write a message..."
+                onChange={(html) => setEmailBody(html)}
               />
             </div>
 

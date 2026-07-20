@@ -591,7 +591,7 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
   let badgeBg = '#eff6ff';
   let badgeTextColor = '#1d4ed8';
   let badgeBorderColor = '#3b82f6';
-  let heroTitle = `Follow-Up: Proforma Estimate <strong>${options.proformaNumber}</strong>`;
+  let heroTitle = `Follow-Up: Proforma Estimate <strong style="font-weight: 700; color: #0f172a;">${options.proformaNumber}</strong>`;
   let heroSubtitle = `We hope this message finds you well. We are following up regarding your proforma estimate.`;
   let iconUrl = 'https://img.icons8.com/fluency/96/bell.png';
   let animationClass = 'animated-swing';
@@ -601,7 +601,7 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
     badgeBg = '#eff6ff';
     badgeTextColor = '#1d4ed8';
     badgeBorderColor = '#3b82f6';
-    heroTitle = `Follow-up regarding Proforma Estimate <strong>${options.proformaNumber}</strong>`;
+    heroTitle = `Follow-up regarding Proforma Estimate <strong style="font-weight: 700; color: #0f172a;">${options.proformaNumber}</strong>`;
     heroSubtitle = `We are checking in to see if you have any questions or require any adjustments to the estimate we prepared for you.`;
     iconUrl = 'https://img.icons8.com/fluency/96/bell.png';
     animationClass = 'animated-swing';
@@ -610,7 +610,7 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
     badgeBg = '#fffbeb';
     badgeTextColor = '#b45309';
     badgeBorderColor = '#f59e0b';
-    heroTitle = `Proforma Estimate <strong>${options.proformaNumber}</strong> is expiring soon`;
+    heroTitle = `Proforma Estimate <strong style="font-weight: 700; color: #0f172a;">${options.proformaNumber}</strong> is expiring soon`;
     heroSubtitle = `This estimate is approaching its validity date. Please review and approve it to confirm your project terms.`;
     iconUrl = 'https://img.icons8.com/fluency/96/hourglass.png';
     animationClass = 'animated-icon';
@@ -619,7 +619,7 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
     badgeBg = '#faf5ff';
     badgeTextColor = '#6b21a8';
     badgeBorderColor = '#8b5cf6';
-    heroTitle = `Deposit required for Proforma Estimate <strong>${options.proformaNumber}</strong>`;
+    heroTitle = `Deposit required for Proforma Estimate <strong style="font-weight: 700; color: #0f172a;">${options.proformaNumber}</strong>`;
     heroSubtitle = `To commence work on your project, please review the estimate and approve it to initiate the next steps.`;
     iconUrl = 'https://img.icons8.com/fluency/96/card-in-use.png';
     animationClass = 'animated-icon';
@@ -628,7 +628,7 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
     badgeBg = '#fef2f2';
     badgeTextColor = '#b91c1c';
     badgeBorderColor = '#ef4444';
-    heroTitle = `Final follow-up for Proforma Estimate <strong>${options.proformaNumber}</strong>`;
+    heroTitle = `Final follow-up for Proforma Estimate <strong style="font-weight: 700; color: #0f172a;">${options.proformaNumber}</strong>`;
     heroSubtitle = `This is our final follow-up regarding your pending estimate. Please let us know if you would like to proceed with the proposed scope.`;
     iconUrl = 'https://img.icons8.com/fluency/96/alert.png';
     animationClass = 'animated-icon';
@@ -641,18 +641,27 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
   // Custom Message block formatted directly as actual body text paragraphs
   let bodyTextHtml = '';
   if (options.customNote && options.customNote.trim()) {
-    bodyTextHtml = options.customNote
-      .trim()
-      .split('\n\n')
-      .map(para => `<p style="font-size: 15px; color: #334155; line-height: 1.7; margin: 0 0 16px 0;">${para.replace(/\n/g, '<br>')}</p>`)
-      .join('');
+    const isHtml = /<\/?[a-z][\s\S]*>/i.test(options.customNote);
+    if (isHtml) {
+      bodyTextHtml = `
+        <div style="font-size: 15px; color: #334155; line-height: 1.7; margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+          ${options.customNote.trim()}
+        </div>
+      `;
+    } else {
+      bodyTextHtml = options.customNote
+        .trim()
+        .split('\n\n')
+        .map(para => `<p style="font-size: 15px; color: #334155; line-height: 1.7; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">${para.replace(/\n/g, '<br>')}</p>`)
+        .join('');
+    }
   } else {
     bodyTextHtml = `
-      <p style="font-size: 15px; color: #334155; line-height: 1.7; margin: 0 0 16px 0;">
+      <p style="font-size: 15px; color: #334155; line-height: 1.7; margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
         Dear ${options.clientName},
       </p>
-      <p style="font-size: 14px; color: #334155; line-height: 1.6; margin: 0 0 20px 0;">
-        This is a quick follow-up regarding Proforma Estimate <strong>${options.proformaNumber}</strong> issued by ${agencyName}.
+      <p style="font-size: 14px; color: #334155; line-height: 1.6; margin: 0 0 20px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+        This is a quick follow-up regarding Proforma Estimate <strong style="font-weight: 700; color: #0f172a;">${options.proformaNumber}</strong> issued by ${agencyName}.
       </p>
     `;
   }
@@ -731,17 +740,17 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
           
           <!-- Pill Badge -->
           <br/>
-          <div style="display: inline-block; background-color: ${badgeBg}; border: 1px solid ${badgeBorderColor}20; color: ${badgeTextColor}; font-size: 11px; font-weight: 800; padding: 6px 14px; border-radius: 20px; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+          <div style="display: inline-block; background-color: ${badgeBg}; color: ${badgeTextColor}; font-size: 11px; font-weight: 700; padding: 6px 16px; border-radius: 20px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             ${badgeLabel}
           </div>
           
           <!-- Hero Title -->
-          <h1 style="margin: 0 0 10px 0; font-size: 22px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; line-height: 1.3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+          <h2 style="margin: 0 0 10px 0; font-size: 24px; font-weight: 500; color: #1e293b; letter-spacing: -0.3px; line-height: 1.3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             ${heroTitle}
-          </h1>
+          </h2>
           
           <!-- Hero Subtitle -->
-          <p style="margin: 0; font-size: 14.5px; color: #475569; line-height: 1.6; max-width: 440px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+          <p style="margin: 0; font-size: 14.5px; color: #475569; line-height: 1.6; max-width: 440px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
             ${heroSubtitle}
           </p>
         </td>

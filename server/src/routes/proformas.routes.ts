@@ -353,6 +353,10 @@ router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response,
     const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
 
+    // Sanitize rich text inputs
+    const cleanBody = sanitizeRichText(body);
+    const cleanCustomNote = customNote ? sanitizeRichText(customNote) : cleanBody;
+
     // Generate styled branding HTML
     let emailHtml = '';
     if (isFollowUp) {
@@ -363,19 +367,20 @@ router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response,
         amount: targetProforma.amount,
         date: targetProforma.date ? new Date(targetProforma.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : undefined,
         dueDate: targetProforma.dueDate ? new Date(targetProforma.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : undefined,
-        customNote: customNote || body,
+        customNote: cleanCustomNote,
         verificationUrl,
         followUpType: followUpType || 'GENTLE_REMINDER',
         items: targetProforma.items,
         deposit: targetProforma.deposit ?? undefined,
       });
     } else {
+      const isHtml = /<\/?[a-z][\s\S]*>/i.test(cleanBody);
       emailHtml = await generateEmailHtml({
         title: subject,
         preheader: subject,
-        contentHtml: `
-          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6; white-space: pre-line;">${body}</p>
-        `,
+        contentHtml: isHtml
+          ? `<div style="margin: 0 0 16px; color: #475569; line-height: 1.6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">${cleanBody}</div>`
+          : `<p style="margin: 0 0 16px; color: #475569; line-height: 1.6; white-space: pre-line; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">${cleanBody}</p>`,
       });
     }
 
@@ -423,5 +428,45 @@ router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response,
     next(error);
   }
 });
+
+function sanitizeRichText(html: string): string {
+  // Remove all dangerous tags entirely (script, style, iframe, object, etc.)
+  const stripped = html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+    .replace(/<object[\s\S]*?>/gi, "")
+    .replace(/<embed[\s\S]*?>/gi, "")
+    .replace(/<form[\s\S]*?<\/form>/gi, "")
+    .replace(/<input[\s\S]*?>/gi, "")
+    .replace(/<link[\s\S]*?>/gi, "")
+    .replace(/<meta[\s\S]*?>/gi, "");
+
+  // Strip all HTML attributes from all remaining tags EXCEPT safe ones (keeps whitelist of tags and attributes)
+  const noAttribs = stripped.replace(/<(\w+)([^>]*?)(\/?)>/g, (_match: string, tag: string, attrs: string, selfClose: string) => {
+    const safeTags = new Set(["b","strong","i","em","u","s","strike","ul","ol","li","br","p","span","div","font"]);
+    if (safeTags.has(tag.toLowerCase())) {
+      const allowedAttrs: string[] = [];
+      const styleMatch = attrs.match(/style\s*=\s*["']([^"']*)["']/i);
+      const faceMatch = attrs.match(/face\s*=\s*["']([^"']*)["']/i);
+      const colorMatch = attrs.match(/color\s*=\s*["']([^"']*)["']/i);
+      if (styleMatch) allowedAttrs.push(styleMatch[0]);
+      if (faceMatch) allowedAttrs.push(faceMatch[0]);
+      if (colorMatch) allowedAttrs.push(colorMatch[0]);
+      const attrStr = allowedAttrs.length > 0 ? " " + allowedAttrs.join(" ") : "";
+      return `<${tag.toLowerCase()}${attrStr}${selfClose}>`;
+    }
+    return ""; // strip unknown/unsafe opening tags
+  });
+
+  // Also strip closing tags not in our whitelist
+  const cleanClosing = noAttribs.replace(/<\/(\w+)>/g, (_match: string, tag: string) => {
+    const safeTags = new Set(["b","strong","i","em","u","s","strike","ul","ol","li","p","span","div","font"]);
+    if (safeTags.has(tag.toLowerCase())) return `</${tag.toLowerCase()}>`;
+    return "";
+  });
+
+  return cleanClosing.trim();
+}
 
 export default router;
