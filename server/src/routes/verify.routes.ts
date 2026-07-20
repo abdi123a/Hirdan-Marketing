@@ -7,9 +7,26 @@ import rateLimit from 'express-rate-limit';
 
 const router = Router();
 
-// Secure token generation using crypto API
-function generateSecureToken(): string {
-  return crypto.randomBytes(32).toString('hex');
+// Secure short token generation
+async function generateUniqueVerifyToken(): Promise<string> {
+  const length = 8;
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let attempts = 0;
+  while (attempts < 10) {
+    const bytes = crypto.randomBytes(length);
+    let token = "";
+    for (let i = 0; i < length; i++) {
+      token += chars[bytes[i] % chars.length];
+    }
+    const exists = await prisma.verificationToken.findUnique({
+      where: { token },
+    });
+    if (!exists) {
+      return token;
+    }
+    attempts++;
+  }
+  return crypto.randomBytes(6).toString('hex');
 }
 
 const verifyLimiter = rateLimit({
@@ -150,7 +167,7 @@ router.post('/', authenticate, async (req: Request, res: Response, next) => {
     }
 
     // Create new token
-    const token = generateSecureToken();
+    const token = await generateUniqueVerifyToken();
     const newToken = await prisma.verificationToken.create({
       data: {
         token,

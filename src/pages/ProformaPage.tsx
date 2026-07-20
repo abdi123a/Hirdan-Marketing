@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, MoreHorizontal, Edit, Trash2, Search, FileText, Eye, FileDown, CheckCircle2, Clock, Send } from "lucide-react";
+import { Plus, MoreHorizontal, Edit, Trash2, Search, FileText, Eye, FileDown, CheckCircle2, Clock, Send, BellRing } from "lucide-react";
 import { useAgencyStore, Proforma } from "@/lib/store";
 import { useState, useMemo, useEffect } from "react";
 import {
@@ -304,6 +304,9 @@ export default function ProformaPage() {
                         <DropdownMenuSeparator />
                         <DropdownMenuItem className="gap-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); navigate(`/dashboard/proforma/view/${pro.id}`); }}>
                           <Eye className="h-4 w-4" /> View
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="gap-2 cursor-pointer text-amber-700 dark:text-amber-400 font-semibold" onClick={(e) => { e.stopPropagation(); navigate(`/dashboard/proforma/view/${pro.id}`); }}>
+                          <BellRing className="h-4 w-4 text-amber-500" /> Send Follow-up
                         </DropdownMenuItem>
                         <DropdownMenuItem className="gap-2 cursor-pointer" onClick={(e) => { e.stopPropagation(); navigate(`/dashboard/proforma/edit/${pro.id}`); }}>
                           <Edit className="h-4 w-4" /> Edit

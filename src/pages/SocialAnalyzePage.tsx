@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, getFullUrl } from "@/lib/api-client";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -204,6 +204,71 @@ const CompareRow = ({ label, curr, prev }: { label: string; curr: number; prev: 
     </div>
   );
 };
+// ─────────────────────────── Post Thumbnail Helper ─────────────────────────────
+const getFirstMediaUrl = (mediaUrls: any): string | null => {
+  if (!mediaUrls) return null;
+  if (Array.isArray(mediaUrls)) {
+    return mediaUrls.length > 0 && typeof mediaUrls[0] === 'string' ? mediaUrls[0] : null;
+  }
+  if (typeof mediaUrls === 'string') {
+    if (mediaUrls.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(mediaUrls);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed[0];
+      } catch (e) {}
+    }
+    return mediaUrls;
+  }
+  return null;
+};
+
+const PostThumbnail = ({ mediaUrls, mediaType }: { mediaUrls: any; mediaType?: string | null }) => {
+  const [imgError, setImgError] = useState(false);
+  const rawUrl = getFirstMediaUrl(mediaUrls);
+
+  if (!rawUrl || imgError) {
+    const isVid = mediaType === "video" || mediaType === "reel" || mediaType === "short";
+    const IconComponent = isVid ? Video : (mediaType === "image" || mediaType === "carousel" ? Image : BarChart2);
+    return (
+      <div className="h-16 w-16 rounded-xl bg-muted/80 flex items-center justify-center shrink-0 border border-border/50 shadow-sm">
+        <IconComponent className="h-5 w-5 text-muted-foreground/70" />
+      </div>
+    );
+  }
+
+  const resolved = getFullUrl(rawUrl);
+  const isVideoFile =
+    mediaType === "video" ||
+    mediaType === "reel" ||
+    mediaType === "short" ||
+    /\.(mp4|mov|webm|m4v|ogv|avi)(\?.*)?$/i.test(rawUrl);
+
+  if (isVideoFile) {
+    return (
+      <div className="relative h-16 w-16 shrink-0 rounded-xl overflow-hidden border border-border/50 shadow-sm bg-black/90 flex items-center justify-center">
+        <video
+          src={resolved}
+          className="h-full w-full object-cover"
+          muted
+          preload="metadata"
+          onError={() => setImgError(true)}
+        />
+        <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
+          <Play className="h-4 w-4 text-white fill-white opacity-80" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={resolved}
+      className="h-16 w-16 rounded-xl object-cover shrink-0 border border-border/50 shadow-sm"
+      alt=""
+      onError={() => setImgError(true)}
+    />
+  );
+};
 
 // ─────────────────────────── Main Component ──────────────────────────────────
 export default function SocialAnalyzePage() {
@@ -231,12 +296,26 @@ export default function SocialAnalyzePage() {
   const [chartMetric, setChartMetric] = useState<"followers"|"reach"|"impressions"|"engagementRate">("followers");
 
   useEffect(() => {
-    apiFetch<any>("/clients")
-      .then(r => {
-        const list = Array.isArray(r) ? r : (r.clients || []);
+    Promise.all([
+      apiFetch<any>("/clients"),
+      apiFetch<any>("/social/accounts?limit=1000").catch(() => null),
+    ]).then(([clientsRes, accountsRes]) => {
+      const list: Client[] = Array.isArray(clientsRes) ? clientsRes : (clientsRes?.clients || []);
+      const accs = Array.isArray(accountsRes) ? accountsRes : (accountsRes?.accounts || []);
+      const clientIdsWithAccounts = new Set<string>();
+      accs.forEach((acc: any) => {
+        if (acc.clientId) clientIdsWithAccounts.add(acc.clientId);
+      });
+
+      const filtered = list.filter(c => clientIdsWithAccounts.has(c.id) || ((c as any)._count?.socialAccounts ?? 0) > 0);
+      if (filtered.length > 0) {
+        setClients(filtered);
+        setSelectedClient(filtered[0].id);
+      } else {
         setClients(list);
         if (list.length > 0) setSelectedClient(list[0].id);
-      }).catch(() => {});
+      }
+    }).catch(() => {});
   }, []);
 
   const fetchAnalytics = useCallback(async () => {
@@ -865,12 +944,10 @@ export default function SocialAnalyzePage() {
                     ) : posts.length === 0 ? (
                       <div className="py-12"><NoData msg="No posts found — try adjusting your filters"/></div>
                     ) : posts.map(post => {
-                      const media = Array.isArray(post.mediaUrls)?post.mediaUrls[0]:(typeof post.mediaUrls==="string"?post.mediaUrls:null);
                       return (
                         <div key={post.id} className="p-4 hover:bg-muted/5 transition-all">
                           <div className="flex items-start gap-3">
-                            {media ? <img src={media} className="h-16 w-16 rounded-xl object-cover shrink-0 border border-border/50 shadow-sm" alt=""/> :
-                              <div className="h-16 w-16 rounded-xl bg-muted flex items-center justify-center shrink-0 border border-border/50"><BarChart2 className="h-5 w-5 text-muted-foreground"/></div>}
+                            <PostThumbnail mediaUrls={post.mediaUrls} mediaType={post.mediaType} />
                             <div className="flex-1 min-w-0">
                               <p className="text-xs font-semibold line-clamp-2 leading-normal">{post.caption||"(no caption)"}</p>
                               <div className="flex items-center gap-1.5 mt-1 flex-wrap">

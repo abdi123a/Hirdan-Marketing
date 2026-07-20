@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { apiFetch } from "@/lib/api-client";
 import { useAgencyStore } from "@/lib/store";
 import { useAuthStore } from "@/lib/auth-store";
+import { getShortShareUrl } from "@/lib/short-url";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -464,8 +465,7 @@ export default function FileTransfer() {
         });
 
         // Store active transfer
-        const linkDomain = import.meta.env.VITE_SHORT_LINK_DOMAIN || (import.meta.env.PROD ? "https://hirdan.cc" : window.location.origin);
-        const shareUrl = `${linkDomain.replace(/\/$/, "")}/f/${data.shareId}`;
+        const shareUrl = getShortShareUrl(data.shareId);
         const activeItem = {
           id: data.id,
           shareId: data.shareId,
@@ -550,8 +550,7 @@ export default function FileTransfer() {
   });
 
   const handleCopyLink = (shareId: string) => {
-    const linkDomain = import.meta.env.VITE_SHORT_LINK_DOMAIN || (import.meta.env.PROD ? "https://hirdan.cc" : window.location.origin);
-    const shareUrl = `${linkDomain.replace(/\/$/, "")}/f/${shareId}`;
+    const shareUrl = getShortShareUrl(shareId);
     navigator.clipboard.writeText(shareUrl).then(() => {
       setCopiedId(shareId);
       toast.success("Link copied to clipboard!");

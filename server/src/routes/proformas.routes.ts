@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
-import { sendEmail, generateEmailHtml } from '../lib/email.js';
+import { sendEmail, generateEmailHtml, generateProformaFollowUpEmailHtml } from '../lib/email.js';
 import { createNotification } from '../lib/notifications.js';
 import { auditLog } from '../lib/audit.js';
 
@@ -336,11 +336,15 @@ router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response,
           { id: req.params.id as string },
           { proformaNumber: req.params.id as string }
         ]
-      }
+      },
+      include: {
+        client: true,
+        items: { orderBy: { position: 'asc' } },
+      },
     });
     if (!targetProforma) throw AppError.notFound('Proforma not found');
 
-    const { to, cc, subject, body, pdfBase64, filename } = req.body;
+    const { to, cc, subject, body, pdfBase64, filename, isFollowUp, followUpType, customNote, verificationUrl } = req.body;
     if (!to || !subject || !body || !pdfBase64) {
       throw AppError.badRequest('Missing required fields: to, subject, body, and pdfBase64 are required.');
     }
@@ -350,13 +354,30 @@ router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response,
     const buffer = Buffer.from(base64Data, 'base64');
 
     // Generate styled branding HTML
-    const emailHtml = await generateEmailHtml({
-      title: subject,
-      preheader: subject,
-      contentHtml: `
-        <p style="margin: 0 0 16px; color: #475569; line-height: 1.6; white-space: pre-line;">${body}</p>
-      `,
-    });
+    let emailHtml = '';
+    if (isFollowUp) {
+      emailHtml = await generateProformaFollowUpEmailHtml({
+        clientName: targetProforma.client?.name || targetProforma.client?.company || 'Valued Client',
+        clientEmail: to,
+        proformaNumber: targetProforma.proformaNumber || targetProforma.id,
+        amount: targetProforma.amount,
+        date: targetProforma.date ? new Date(targetProforma.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : undefined,
+        dueDate: targetProforma.dueDate ? new Date(targetProforma.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : undefined,
+        customNote: customNote || body,
+        verificationUrl,
+        followUpType: followUpType || 'GENTLE_REMINDER',
+        items: targetProforma.items,
+        deposit: targetProforma.deposit ?? undefined,
+      });
+    } else {
+      emailHtml = await generateEmailHtml({
+        title: subject,
+        preheader: subject,
+        contentHtml: `
+          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6; white-space: pre-line;">${body}</p>
+        `,
+      });
+    }
 
     // cc can be comma separated, let's split it into an array
     const ccList = typeof cc === 'string'
@@ -381,7 +402,23 @@ router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response,
       throw AppError.badRequest(result.error ?? 'Failed to send email.');
     }
 
-    res.json({ success: true, message: 'Email sent successfully', emailId: result.id });
+    if (targetProforma.status === 'DRAFT') {
+      await prisma.proforma.update({
+        where: { id: targetProforma.id },
+        data: { status: 'SENT' },
+      });
+    }
+
+    const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
+    auditLog({
+      action: isFollowUp ? 'proforma.send_followup' : 'proforma.send_email',
+      success: true,
+      userId: req.user!.userId,
+      clientId: targetProforma.clientId,
+      ip
+    });
+
+    res.json({ success: true, message: isFollowUp ? 'Follow-up email sent successfully' : 'Email sent successfully', emailId: result.id });
   } catch (error) {
     next(error);
   }

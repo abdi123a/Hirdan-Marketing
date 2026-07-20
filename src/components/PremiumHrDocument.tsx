@@ -3,6 +3,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { useRef, useEffect } from "react";
 import { ProtectedBrandingImage } from "./ProtectedBrandingImage";
 import { QRCodeSVG } from "qrcode.react";
+import { getShortVerificationUrl } from "@/lib/short-url";
 
 interface PremiumHrDocumentProps {
   docType: 'WORK_CERTIFICATE' | 'SALARY_CERTIFICATE' | 'PAYSLIP' | 'WARNING_CERTIFICATE' | 'INTERNSHIP_ACCEPTED_CERTIFICATE' | 'INTERNSHIP_LETTER';
@@ -749,7 +750,7 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings, verifi
                 boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
               }}>
                 <QRCodeSVG
-                  value={`${window.location.origin}/verify/${verificationToken}`}
+                  value={getShortVerificationUrl(verificationToken)}
                   size={52}
                   level="H"
                   fgColor={primaryColor}

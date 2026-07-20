@@ -3,7 +3,7 @@ import { useAuthStore } from './auth-store';
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 // Helper to ensure path concatenation is safe (no double slashes, ensures leading slash)
-function getFullUrl(endpoint: string): string {
+export function getFullUrl(endpoint: string): string {
   // If the endpoint is already an absolute URL, return it
   if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) return endpoint;
 

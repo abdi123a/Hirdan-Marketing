@@ -23,6 +23,7 @@ import { useMemo, useState, useEffect, useRef } from "react";
 
 import { PremiumInvoice } from "@/components/PremiumInvoice";
 import { formatDate } from "@/lib/utils";
+import { getShortVerificationUrl } from "@/lib/short-url";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -183,7 +184,7 @@ export default function InvoiceDetailsPage() {
     );
   }
 
-  const verificationUrl = verificationToken ? `${window.location.origin}/verify/${verificationToken}` : "";
+  const verificationUrl = verificationToken ? getShortVerificationUrl(verificationToken) : "";
 
   const handleCopyLink = async () => {
     if (!verificationUrl) return;

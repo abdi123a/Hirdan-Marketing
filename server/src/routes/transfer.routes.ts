@@ -12,6 +12,7 @@ import { PATHS } from "../lib/paths.js";
 import { sendEmail, generateEmailHtml } from "../lib/email.js";
 import { AppError } from "../lib/errors.js";
 import { env } from "../config/env.js";
+import { getShortShareUrl } from "../lib/short-url.js";
 
 // ---- Helpers --------------------------------------------------------
 
@@ -278,9 +279,7 @@ router.post(
         },
       });
 
-      const defaultDomain = env.NODE_ENV === "production" ? "https://hirdan.cc" : env.FRONTEND_URL || "http://localhost:5173";
-      const linkBaseUrl = env.SHORT_LINK_DOMAIN || defaultDomain;
-      const shareUrl = `${linkBaseUrl.replace(/\/$/, "")}/f/${record.shareId}`;
+      const shareUrl = getShortShareUrl(record.shareId);
 
       res.status(201).json({
         id: record.id,
@@ -529,9 +528,7 @@ router.post(
 
       const { recipientEmail, recipientName, customMessage } = parsed.data;
 
-      const defaultDomain = env.NODE_ENV === "production" ? "https://hirdan.cc" : env.FRONTEND_URL || "http://localhost:5173";
-      const linkBaseUrl = env.SHORT_LINK_DOMAIN || defaultDomain;
-      const shareUrl = `${linkBaseUrl.replace(/\/$/, "")}/f/${record.shareId}`;
+      const shareUrl = getShortShareUrl(record.shareId);
 
       // Escape dynamic content before embedding in HTML to prevent injection
       const safeFileName = escapeHtml(record.fileName);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -221,12 +222,23 @@ function getWeekDays(date: Date) {
 }
 
 export default function SocialPublishPage() {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuthStore();
   const [posts, setPosts] = useState<SocialPost[]>([]);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [clientIdsWithAccounts, setClientIdsWithAccounts] = useState<Set<string>>(new Set());
   const [campaigns, setCampaigns] = useState<SocialCampaign[]>([]);
+
+  const clientsWithAccounts = useMemo(() => {
+    return clients.filter(c => {
+      const hasInSet = clientIdsWithAccounts.has(c.id);
+      const count = (c as any)._count?.socialAccounts;
+      const hasInCount = typeof count === "number" && count > 0;
+      return hasInSet || hasInCount;
+    });
+  }, [clients, clientIdsWithAccounts]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -408,11 +420,12 @@ export default function SocialPublishPage() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [postsData, clientsData, campaignsData, teamData] = await Promise.all([
+      const [postsData, clientsData, campaignsData, teamData, socialAccountsData] = await Promise.all([
         apiFetch<{ posts: SocialPost[] }>("/social/posts?limit=1000"),
         apiFetch<any>("/clients"),
         apiFetch<any>("/social/campaigns"),
         apiFetch<any>("/team"),
+        apiFetch<any>("/social/accounts?limit=1000").catch(() => null),
       ]);
       setPosts(postsData?.posts || []);
       const clientsList = Array.isArray(clientsData)
@@ -421,6 +434,15 @@ export default function SocialPublishPage() {
       setClients(clientsList);
       setCampaigns(campaignsData || []);
       setTeamMembers(teamData?.team || []);
+
+      const accs = Array.isArray(socialAccountsData)
+        ? socialAccountsData
+        : (socialAccountsData?.accounts || []);
+      const accountClientIds = new Set<string>();
+      accs.forEach((acc: any) => {
+        if (acc.clientId) accountClientIds.add(acc.clientId);
+      });
+      setClientIdsWithAccounts(accountClientIds);
     } catch (err: any) {
       toast({
         title: "Error loading publisher workspace",
@@ -1815,7 +1837,7 @@ export default function SocialPublishPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Clients</SelectItem>
-              {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.company || c.name}</SelectItem>)}
+              {clientsWithAccounts.map(c => <SelectItem key={c.id} value={c.id}>{c.company || c.name}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={platformFilter} onValueChange={setPlatformFilter}>
@@ -2749,9 +2771,27 @@ export default function SocialPublishPage() {
                       </SelectTrigger>
                       <SelectContent className="rounded-xl">
                         <SelectItem value="none">Select a Client...</SelectItem>
-                        {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.company || c.name}</SelectItem>)}
+                        {clientsWithAccounts.map(c => <SelectItem key={c.id} value={c.id}>{c.company || c.name}</SelectItem>)}
+                        {composerClient && !clientsWithAccounts.some(c => c.id === composerClient) && (
+                          clients.filter(c => c.id === composerClient).map(c => <SelectItem key={c.id} value={c.id}>{c.company || c.name}</SelectItem>)
+                        )}
                       </SelectContent>
                     </Select>
+                    {clientsWithAccounts.length === 0 && (
+                      <p className="text-[11px] text-amber-500 mt-1 flex items-center gap-1 font-medium">
+                        No clients have connected social accounts.
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleOpenChange(false);
+                            navigate("/dashboard/social-media/accounts");
+                          }}
+                          className="underline hover:text-amber-400 cursor-pointer font-bold bg-transparent border-none p-0"
+                        >
+                          Connect accounts here
+                        </button>
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">

@@ -23,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles, Plus, Image, Video, SwitchCamera, ListFilter, Brain, Wand2 } from "lucide-react";
 import { Trash2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { getShortVerificationUrl } from "@/lib/short-url";
 import { QRCodeSVG } from "qrcode.react";
 import { Copy, ExternalLink, ShieldCheck as VerifiedIcon } from "lucide-react";
 
@@ -477,7 +478,7 @@ export default function SubscriptionDetailsPage() {
                 <>
                   <div className="p-3 bg-white rounded-2xl shadow-sm border border-border/50 mb-4">
                     <QRCodeSVG
-                      value={`${window.location.origin}/verify/${verificationToken}`}
+                      value={getShortVerificationUrl(verificationToken)}
                       size={140}
                       level="H"
                       fgColor={settings.primaryColor || "#000000"}
@@ -489,7 +490,7 @@ export default function SubscriptionDetailsPage() {
                       variant="outline"
                       className="w-full h-9 text-xs font-bold gap-2"
                       onClick={() => {
-                        navigator.clipboard.writeText(`${window.location.origin}/verify/${verificationToken}`);
+                        navigator.clipboard.writeText(getShortVerificationUrl(verificationToken));
                         toast({ title: "Link copied", description: "Verification URL copied to clipboard." });
                       }}
                     >
@@ -498,7 +499,7 @@ export default function SubscriptionDetailsPage() {
                     <Button
                       variant="ghost"
                       className="w-full h-9 text-xs font-bold gap-2"
-                      onClick={() => window.open(`${window.location.origin}/verify/${verificationToken}`, "_blank")}
+                      onClick={() => window.open(getShortVerificationUrl(verificationToken), "_blank")}
                     >
                       <ExternalLink className="h-3.5 w-3.5" /> View Public Page
                     </Button>

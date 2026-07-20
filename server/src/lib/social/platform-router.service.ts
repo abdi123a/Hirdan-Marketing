@@ -70,6 +70,7 @@ export async function publishPostToPlatform(post: SocialPost, account: SocialAcc
       }
       const fbContent = (post.platformContent as any)?.facebook || {};
       const fbType: string = fbContent.type || 'post';
+      console.log('[DEBUG] Facebook postType:', fbType, 'mediaType:', mediaType);
       return await meta.publishToFacebookPage({
         pageId: account.pageId,
         pageAccessToken: accessToken,

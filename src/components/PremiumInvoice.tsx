@@ -3,6 +3,7 @@ import { useAgencyStore } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { deriveSubtotalFromTotal, parseAmountNumber, sumItems } from "@/lib/money";
 import { useState, useEffect, useRef } from "react";
+import { getShortVerificationUrl } from "@/lib/short-url";
 
 import { ProtectedBrandingImage } from "./ProtectedBrandingImage";
  
@@ -105,7 +106,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
   }, [documentType, data.id, getVerificationToken]);
 
   const verificationUrl = verificationToken
-    ? `${window.location.origin}/verify/${verificationToken}`
+    ? getShortVerificationUrl(verificationToken)
     : '';
 
   useEffect(() => {

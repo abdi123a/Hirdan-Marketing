@@ -4,7 +4,9 @@ type AuditEvent =
   | { action: 'auth.forgot_password'; success: boolean; email?: string; ip?: string }
   | { action: 'auth.reset_password'; success: boolean; userId: string; email?: string; ip?: string }
   | { action: 'invoice.create'; success: boolean; userId: string; invoiceId?: string; clientId?: string; ip?: string }
-  | { action: 'document.upload'; success: boolean; userId: string; clientId?: string; documentId?: string; ip?: string };
+  | { action: 'document.upload'; success: boolean; userId: string; clientId?: string; documentId?: string; ip?: string }
+  | { action: 'proforma.send_email'; success: boolean; userId: string; proformaId?: string; clientId?: string; ip?: string }
+  | { action: 'proforma.send_followup'; success: boolean; userId: string; proformaId?: string; clientId?: string; ip?: string };
 
 export function auditLog(event: AuditEvent) {
   // Minimal structured audit logging (ship this to your log pipeline in production)

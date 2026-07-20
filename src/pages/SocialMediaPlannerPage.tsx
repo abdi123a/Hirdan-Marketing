@@ -2065,10 +2065,24 @@ export default function SocialMediaPlannerPage() {
   const navigate = useNavigate();
   const { clients, fetchClients } = useAgencyStore();
   const [selectedClient, setSelectedClient] = useState<string>("");
+  const [connectedClientIds, setConnectedClientIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (clients.length === 0) fetchClients();
+    apiFetch<any>("/social/accounts?limit=1000")
+      .then(res => {
+        const accs = Array.isArray(res) ? res : (res?.accounts || []);
+        const set = new Set<string>();
+        accs.forEach((a: any) => { if (a.clientId) set.add(a.clientId); });
+        setConnectedClientIds(set);
+      })
+      .catch(() => {});
   }, [clients.length, fetchClients]);
+
+  const clientsWithAccounts = useMemo(() => {
+    const filtered = clients.filter(c => connectedClientIds.has(c.id) || ((c as any)._count?.socialAccounts ?? 0) > 0);
+    return filtered.length > 0 ? filtered : clients;
+  }, [clients, connectedClientIds]);
 
   const client = clients.find(c => c.id === selectedClient);
 
@@ -2103,7 +2117,7 @@ export default function SocialMediaPlannerPage() {
                   <SelectValue placeholder="Choose a client to plan for..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {clients.map(c => (
+                  {clientsWithAccounts.map(c => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.company || c.name}
                     </SelectItem>

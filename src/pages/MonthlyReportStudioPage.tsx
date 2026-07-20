@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { QRCodeSVG } from "qrcode.react";
+import { getShortVerificationUrl } from "@/lib/short-url";
 
 const PDF_PAGE_WIDTH = 1520;
 const PDF_PAGE_HEIGHT = 1080;
@@ -227,7 +228,7 @@ export default function MonthlyReportStudioPage() {
           boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
         }}>
           <QRCodeSVG
-            value={`${window.location.origin}/verify/${verificationToken}`}
+            value={getShortVerificationUrl(verificationToken)}
             size={48}
             level="H"
             fgColor={brandPrimary}

@@ -172,6 +172,22 @@ app.get(['/f/:shareId', '/share/:shareId'], async (req, res, next) => {
   }
 });
 
+app.get(['/v/:token', '/verify/:token'], async (req, res, next) => {
+  try {
+    const token = req.params.token as string;
+    const record = await prisma.verificationToken.findUnique({
+      where: { token },
+    });
+    if (!record) {
+      return res.status(404).send('Verification link not found or expired.');
+    }
+    const frontendUrl = env.FRONTEND_URL || 'http://localhost:5173';
+    return res.redirect(`${frontendUrl.replace(/\/$/, '')}/v/${token}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── 404 Handler ──────────────────────────────────────────────────
 
 app.use((req, _res, next) => {

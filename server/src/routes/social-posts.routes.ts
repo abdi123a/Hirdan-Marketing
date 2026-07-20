@@ -16,10 +16,12 @@ router.post('/posts', authenticate, async (req, res, next) => {
   try {
     const { clientId, caption, platformContent, mediaUrls, mediaType, accountIds, scheduledFor, campaignId, status } = req.body;
 
-    if (!clientId || !caption || !accountIds || !Array.isArray(accountIds)) {
-      res.status(400).json({ error: 'Missing required fields: clientId, caption, accountIds' });
+    if (!clientId || !accountIds || !Array.isArray(accountIds)) {
+      res.status(400).json({ error: 'Missing required fields: clientId, accountIds' });
       return;
     }
+
+    const safeCaption = caption ?? '';
 
     // FIX: previously created destinations with platform: 'UNKNOWN' and then
     // patched each one individually in a follow-up loop (N extra queries, plus
@@ -40,7 +42,7 @@ router.post('/posts', authenticate, async (req, res, next) => {
     const post = await prisma.socialPost.create({
       data: {
         clientId: clientId as string,
-        caption,
+        caption: safeCaption,
         platformContent: platformContent || {},
         mediaUrls: mediaUrls || [],
         mediaType: mediaType || 'image',
@@ -179,7 +181,7 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
       await prisma.socialPost.update({
         where: { id: id as string },
         data: {
-          caption,
+          caption: caption !== undefined ? (caption ?? '') : undefined,
           platformContent: platformContent || {},
           mediaUrls: mediaUrls || [],
           mediaType: mediaType || 'image',
@@ -195,7 +197,7 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
       await prisma.socialPost.update({
         where: { id: id as string },
         data: {
-          caption,
+          caption: caption !== undefined ? (caption ?? '') : undefined,
           platformContent: platformContent || {},
           mediaUrls: mediaUrls || [],
           mediaType: mediaType || 'image',
@@ -340,12 +342,21 @@ router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
       }
     }
 
+    // Check resulting statuses of all destinations for this post
+    const allDests = await prisma.socialPostDestination.findMany({
+      where: { postId: id as string },
+    });
+    const totalDests = allDests.length;
+    const publishedDests = allDests.filter((d) => d.status === 'PUBLISHED').length;
+    const failedDests = allDests.filter((d) => d.status === 'FAILED').length;
+    const isAllPublished = totalDests > 0 && publishedDests === totalDests;
+
     const finalPost = await prisma.socialPost.update({
       where: { id: id as string },
       data: {
-        status: hasErrors ? 'FAILED' : 'PUBLISHED',
-        publishedAt: hasErrors ? null : new Date(),
-        errorMessage: hasErrors ? errorsList.join('; ') : null,
+        status: isAllPublished ? 'PUBLISHED' : (failedDests > 0 ? 'FAILED' : 'PUBLISHING'),
+        publishedAt: isAllPublished ? new Date() : null,
+        errorMessage: isAllPublished ? null : (errorsList.length > 0 ? errorsList.join('; ') : null),
       },
       include: {
         destinations: {
@@ -424,12 +435,21 @@ router.post('/posts/:id/retry', authenticate, async (req, res, next) => {
       }
     }
 
+    // Check resulting statuses of all destinations for this post
+    const allDests = await prisma.socialPostDestination.findMany({
+      where: { postId: id as string },
+    });
+    const totalDests = allDests.length;
+    const publishedDests = allDests.filter((d) => d.status === 'PUBLISHED').length;
+    const failedDests = allDests.filter((d) => d.status === 'FAILED').length;
+    const isAllPublished = totalDests > 0 && publishedDests === totalDests;
+
     const finalPost = await prisma.socialPost.update({
       where: { id: id as string },
       data: {
-        status: hasErrors ? 'FAILED' : 'PUBLISHED',
-        publishedAt: hasErrors ? null : new Date(),
-        errorMessage: hasErrors ? errorsList.join('; ') : null,
+        status: isAllPublished ? 'PUBLISHED' : (failedDests > 0 ? 'FAILED' : 'PUBLISHING'),
+        publishedAt: isAllPublished ? new Date() : null,
+        errorMessage: isAllPublished ? null : (errorsList.length > 0 ? errorsList.join('; ') : null),
       },
       include: {
         destinations: {

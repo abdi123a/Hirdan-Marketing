@@ -12,6 +12,7 @@ import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { auditLog } from '../lib/audit.js';
 import { sendEmail, generateEmailHtml } from '../lib/email.js';
+import { getShortDomainBase } from '../lib/short-url.js';
 
 const router = Router();
 
@@ -518,9 +519,9 @@ router.post(
           },
         });
 
-        // Build reset URL using APP_URL env or fallback
-        const appUrl = process.env.APP_URL || process.env.FRONTEND_URL || 'https://app.hirdanmarketing.com';
-        const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
+        // Build reset URL using short domain base
+        const appUrl = env.SHORT_LINK_DOMAIN || process.env.APP_URL || getShortDomainBase();
+        const resetUrl = `${appUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`;
 
         const contentHtml = `
           <p style="margin: 0 0 16px 0;">Hi <strong>${user.name}</strong>,</p>

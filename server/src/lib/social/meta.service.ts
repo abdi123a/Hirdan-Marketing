@@ -124,6 +124,67 @@ export async function getPagesWithInstagram(userAccessToken: string): Promise<Me
   }));
 }
 
+async function publishVideoToMetaResumable({
+  pageId,
+  pageAccessToken,
+  url,
+  caption,
+  endpointType,
+}: {
+  pageId: string;
+  pageAccessToken: string;
+  url: string;
+  caption?: string;
+  endpointType: 'video_reels' | 'video_stories';
+}): Promise<string> {
+  // Step 1: Initialize the upload session
+  const initRes = await axios.post(`${GRAPH_URL}/${pageId}/${endpointType}`, null, {
+    params: {
+      upload_phase: 'start',
+      access_token: pageAccessToken,
+    },
+  });
+
+  const { video_id, upload_url } = initRes.data;
+  if (!video_id || !upload_url) {
+    throw new Error(`Failed to initialize Facebook video upload session for ${endpointType}`);
+  }
+
+  // Step 2: Download the video file from the CDN URL
+  const videoRes = await axios.get(url, { responseType: 'arraybuffer' });
+  const videoBuffer = Buffer.from(videoRes.data);
+
+  // Step 3: Upload the binary data to the upload URL
+  await axios.post(upload_url, videoBuffer, {
+    headers: {
+      'Authorization': `OAuth ${pageAccessToken}`,
+      'offset': '0',
+      'file_size': videoBuffer.length.toString(),
+      'Content-Type': 'application/octet-stream',
+    },
+  });
+
+  // Step 4: Finalize and publish the video
+  const finishParams: Record<string, any> = {
+    upload_phase: 'finish',
+    video_id,
+    access_token: pageAccessToken,
+  };
+
+  if (endpointType === 'video_reels') {
+    finishParams.video_state = 'PUBLISHED';
+    if (caption) {
+      finishParams.description = caption;
+    }
+  }
+
+  const publishRes = await axios.post(`${GRAPH_URL}/${pageId}/${endpointType}`, null, {
+    params: finishParams,
+  });
+
+  return publishRes.data.video_id || publishRes.data.post_id || publishRes.data.id || video_id;
+}
+
 export async function publishToFacebookPage({
   pageId,
   pageAccessToken,
@@ -141,28 +202,31 @@ export async function publishToFacebookPage({
 }): Promise<string> {
   const url = mediaUrls && mediaUrls.length > 0 ? mediaUrls[0] : null;
 
-  // --- REEL (FIXED: removed upload_phase) ---
+  // --- REEL ---
   if (postType === 'reel') {
+    console.log('[DEBUG] Entering REEL branch');
     if (!url) throw new Error('Facebook Reel requires a video URL');
-    const { data } = await axios.post(`${GRAPH_URL}/${pageId}/video_reels`, null, {
-      params: {
-        video_state: 'PUBLISHED',
-        description: caption,
-        file_url: url,
-        access_token: pageAccessToken,
-      },
+    return await publishVideoToMetaResumable({
+      pageId,
+      pageAccessToken,
+      url,
+      caption,
+      endpointType: 'video_reels',
     });
-    return data.video_id || data.id;
   }
 
   // --- STORY ---
   if (postType === 'story') {
+    console.log('[DEBUG] Entering STORY branch');
     if (!url) throw new Error('Facebook Story requires a media URL');
     if (mediaType === 'video') {
-      const { data } = await axios.post(`${GRAPH_URL}/${pageId}/video_stories`, null, {
-        params: { file_url: url, access_token: pageAccessToken },
+      return await publishVideoToMetaResumable({
+        pageId,
+        pageAccessToken,
+        url,
+        caption,
+        endpointType: 'video_stories',
       });
-      return data.id;
     } else {
       const { data } = await axios.post(`${GRAPH_URL}/${pageId}/photo_stories`, null, {
         params: { url, access_token: pageAccessToken },
@@ -192,10 +256,14 @@ export async function publishToFacebookPage({
 
   // --- SINGLE VIDEO ---
   if (mediaType === 'video' && url) {
+    const videoParams: Record<string, any> = { file_url: url, access_token: pageAccessToken };
+    if (caption) {
+      videoParams.description = caption;
+    }
     const { data } = await axios.post(`${GRAPH_URL}/${pageId}/videos`, null, {
-      params: { file_url: url, description: caption, access_token: pageAccessToken },
+      params: videoParams,
     });
-    return data.id;
+    return data.id || data.video_id;
   }
 
   // --- SINGLE IMAGE ---
@@ -346,11 +414,41 @@ export async function getMetaInsights(accountId: string, token: string, platform
       profileVisits: null,
     };
   } else {
-    const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
-      params: { metric: 'reach,impressions', period: 'day', access_token: token },
-    });
-    const reachVal = data.data.find((item: any) => item.name === 'reach')?.values[0]?.value ?? 0;
-    const impressionsVal = data.data.find((item: any) => item.name === 'impressions')?.values[0]?.value ?? 0;
+    let reachVal = 0;
+    let impressionsVal = 0;
+
+    // 1. Try to fetch reach and impressions using the standard legacy query
+    try {
+      const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
+        params: { metric: 'reach,impressions', period: 'day', access_token: token },
+      });
+      reachVal = data.data.find((item: any) => item.name === 'reach')?.values[0]?.value ?? 0;
+      impressionsVal = data.data.find((item: any) => item.name === 'impressions')?.values[0]?.value ?? 0;
+    } catch (e) {
+      // If legacy query fails (due to impressions deprecation in v22+), fetch reach separately
+      try {
+        const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
+          params: { metric: 'reach', period: 'day', access_token: token },
+        });
+        reachVal = data.data.find((item: any) => item.name === 'reach')?.values[0]?.value ?? 0;
+      } catch (err) {
+        console.error('Error fetching Instagram reach:', err);
+      }
+    }
+
+    // 2. Fetch views using metric_type=total_value
+    try {
+      const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
+        params: { metric: 'views', period: 'day', metric_type: 'total_value', access_token: token },
+      });
+      const viewsVal = data.data.find((item: any) => item.name === 'views')?.values[0]?.value ?? 0;
+      if (viewsVal > 0) {
+        impressionsVal = viewsVal;
+      }
+    } catch (err) {
+      console.error('Error fetching Instagram views:', err);
+    }
+
     const { data: igData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
       params: { fields: 'followers_count', access_token: token },
     });
@@ -358,17 +456,85 @@ export async function getMetaInsights(accountId: string, token: string, platform
   }
 }
 
-export async function getMetaPostInsights(platformPostId: string, token: string, platform: 'facebook' | 'instagram'): Promise<{ impressions: number; reach: number; likes: number; comments: number; shares: number; saved: number }> {
-  const metricList = platform === 'instagram' ? 'impressions,reach,likes,comments,saved,shares' : 'post_impressions,post_reactions_by_type_total,post_comments_by_type';
-  const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/insights`, {
-    params: { metric: metricList, access_token: token },
-  });
-  const metrics: Record<string, number> = {};
-  for (const item of data.data) metrics[item.name] = item.values[0]?.value ?? 0;
+export async function getMetaPostInsights(
+  platformPostId: string,
+  token: string,
+  platform: 'facebook' | 'instagram'
+): Promise<{ impressions: number; reach: number; likes: number; comments: number; shares: number; saved: number; views: number }> {
+  let likes = 0;
+  let comments = 0;
+  let shares = 0;
+  let saved = 0;
+  let impressions = 0;
+  let reach = 0;
+  let views = 0;
 
-  if (platform === 'instagram') {
-    return { impressions: metrics.impressions || 0, reach: metrics.reach || 0, likes: metrics.likes || 0, comments: metrics.comments || 0, shares: metrics.shares || 0, saved: metrics.saved || 0 };
+  if (platform === 'facebook') {
+    // 1. Fetch basic post fields for Facebook Page Post (likes, comments, shares)
+    try {
+      const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}`, {
+        params: {
+          fields: 'likes.summary(true),comments.summary(true),shares',
+          access_token: token,
+        },
+      });
+      likes = data.likes?.summary?.total_count ?? 0;
+      comments = data.comments?.summary?.total_count ?? 0;
+      shares = data.shares?.count ?? 0;
+    } catch (err: any) {
+      console.warn(`[Meta] Could not fetch basic Facebook post fields for ${platformPostId}:`, err.message);
+    }
+
+    // 2. Fetch Facebook post insights (impressions & reach)
+    try {
+      const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/insights`, {
+        params: {
+          metric: 'post_impressions,post_impressions_unique',
+          access_token: token,
+        },
+      });
+      for (const item of data.data || []) {
+        const val = item.values?.[0]?.value ?? 0;
+        if (item.name === 'post_impressions') impressions = Number(val) || 0;
+        if (item.name === 'post_impressions_unique') reach = Number(val) || 0;
+      }
+    } catch (err: any) {
+      console.warn(`[Meta] Could not fetch Facebook post insights for ${platformPostId}:`, err.message);
+    }
   } else {
-    return { impressions: metrics.post_impressions || 0, reach: metrics.post_impressions || 0, likes: metrics.post_reactions_by_type_total || 0, comments: metrics.post_comments_by_type || 0, shares: 0, saved: 0 };
+    // 1. Fetch basic Instagram media fields (like_count, comments_count)
+    try {
+      const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}`, {
+        params: {
+          fields: 'like_count,comments_count',
+          access_token: token,
+        },
+      });
+      likes = data.like_count ?? 0;
+      comments = data.comments_count ?? 0;
+    } catch (err: any) {
+      console.warn(`[Meta] Could not fetch basic Instagram media fields for ${platformPostId}:`, err.message);
+    }
+
+    // 2. Fetch Instagram media insights (impressions, reach, saved, shares)
+    try {
+      const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/insights`, {
+        params: {
+          metric: 'impressions,reach,saved,shares',
+          access_token: token,
+        },
+      });
+      for (const item of data.data || []) {
+        const val = item.values?.[0]?.value ?? 0;
+        if (item.name === 'impressions') impressions = Number(val) || 0;
+        if (item.name === 'reach') reach = Number(val) || 0;
+        if (item.name === 'saved') saved = Number(val) || 0;
+        if (item.name === 'shares') shares = Number(val) || 0;
+      }
+    } catch (err: any) {
+      console.warn(`[Meta] Could not fetch Instagram post insights for ${platformPostId}:`, err.message);
+    }
   }
+
+  return { impressions, reach, likes, comments, shares, saved, views };
 }

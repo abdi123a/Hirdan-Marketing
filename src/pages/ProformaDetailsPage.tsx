@@ -17,12 +17,16 @@ import {
   Handshake,
   FileText,
   Trash2,
-  Loader2
+  Loader2,
+  BellRing,
+  Send,
+  Sparkles
 } from "lucide-react";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { PremiumInvoice } from "@/components/PremiumInvoice";
 import { formatDate } from "@/lib/utils";
+import { getShortVerificationUrl } from "@/lib/short-url";
 import { parseAmountNumber, sumItems } from "@/lib/money";
 import {
   Dialog,
@@ -134,7 +138,7 @@ export default function ProformaDetailsPage() {
         s === 'Sent' ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
           "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
 
-  const verificationUrl = verificationToken ? `${window.location.origin}/verify/${verificationToken}` : "";
+  const verificationUrl = verificationToken ? getShortVerificationUrl(verificationToken) : "";
 
 
   const handleCopyLink = async () => {
@@ -157,18 +161,73 @@ export default function ProformaDetailsPage() {
     }
   };
 
-  const handleSendToClient = () => {
-    const email = proforma.clientEmail || client?.email || "";
+  const getFollowUpContent = (
+    type: "GENTLE_REMINDER" | "EXPIRING_SOON" | "DEPOSIT_REQUIRED" | "FINAL_NOTICE",
+    pNumber: string,
+    cName: string,
+    aName: string,
+    dueDate?: string
+  ) => {
+    switch (type) {
+      case "GENTLE_REMINDER":
+        return {
+          subject: `Friendly Reminder: Proforma Estimate ${pNumber} — ${aName}`,
+          body: `Hi ${cName},\n\nJust checking in to see if you had a chance to review Proforma Estimate ${pNumber}.\n\nPlease let us know if you have any questions or if you'd like any adjustments to the scope.\n\nBest regards,\n${aName}`
+        };
+      case "EXPIRING_SOON":
+        return {
+          subject: `Expiring Soon: Proforma Estimate ${pNumber} — ${aName}`,
+          body: `Hi ${cName},\n\nThis is a gentle reminder that Proforma Estimate ${pNumber}${dueDate ? ` is set to expire on ${dueDate}` : ' is expiring soon'}.\n\nTo lock in these project terms and timeline, please review and accept the estimate online.\n\nBest regards,\n${aName}`
+        };
+      case "DEPOSIT_REQUIRED":
+        return {
+          subject: `Deposit Required for Proforma Estimate ${pNumber} — ${aName}`,
+          body: `Hi ${cName},\n\nWe're excited to get started on your project! To kick off work on Proforma Estimate ${pNumber}, please review and accept the estimate so we can process your initial deposit.\n\nBest regards,\n${aName}`
+        };
+      case "FINAL_NOTICE":
+        return {
+          subject: `Final Follow-Up: Proforma Estimate ${pNumber} — ${aName}`,
+          body: `Hi ${cName},\n\nThis is our final follow-up regarding Proforma Estimate ${pNumber}.\n\nIf you'd still like to move forward with this project, please approve the estimate online or let us know how we can assist.\n\nBest regards,\n${aName}`
+        };
+    }
+  };
+
+  const handleOpenEmailModal = (mode: "standard" | "followup" = "standard", preset: "GENTLE_REMINDER" | "EXPIRING_SOON" | "DEPOSIT_REQUIRED" | "FINAL_NOTICE" = "GENTLE_REMINDER") => {
+    const email = proforma?.clientEmail || client?.email || "";
     setEmailTo(email);
     setEmailCc("");
-    setEmailSubject(`Proforma ${proforma.id} from ${settings.agencyName || "Hirdan Marketing"}`);
-    setEmailBody(
-      `Hi ${proforma.client},\n\n` +
-      `Please find attached proforma ${proforma.id} for your review.\n\n` +
-      `You can also view and verify the document online at:\n${verificationUrl}\n\n` +
-      `Best regards,\n${settings.agencyName || "Hirdan Marketing"}`
-    );
+    setEmailMode(mode);
+    setFollowUpPreset(preset);
+
+    const aName = settings.agencyName || "Hirdan Marketing";
+    const cName = proforma?.client || "Client";
+    const pNumber = proforma?.id || "";
+
+    if (mode === "followup") {
+      const content = getFollowUpContent(preset, pNumber, cName, aName, proforma?.dueDate ? formatDate(proforma.dueDate) : undefined);
+      setEmailSubject(content.subject);
+      setEmailBody(content.body);
+    } else {
+      setEmailSubject(`Proforma Estimate ${pNumber} from ${aName}`);
+      setEmailBody(
+        `Hi ${cName},\n\nPlease find attached proforma ${pNumber} for your review.\n\nYou can also view and verify the document online at:\n${verificationUrl}\n\nBest regards,\n${aName}`
+      );
+    }
     setIsEmailModalOpen(true);
+  };
+
+  const handleSelectPreset = (preset: "GENTLE_REMINDER" | "EXPIRING_SOON" | "DEPOSIT_REQUIRED" | "FINAL_NOTICE") => {
+    setFollowUpPreset(preset);
+    const aName = settings.agencyName || "Hirdan Marketing";
+    const cName = proforma?.client || "Client";
+    const pNumber = proforma?.id || "";
+    const content = getFollowUpContent(preset, pNumber, cName, aName, proforma?.dueDate ? formatDate(proforma.dueDate) : undefined);
+    setEmailSubject(content.subject);
+    setEmailBody(content.body);
+  };
+
+  const handleSendToClient = () => {
+    handleOpenEmailModal("standard");
   };
 
   const handleConfirmSendEmail = async () => {
@@ -247,7 +306,7 @@ export default function ProformaDetailsPage() {
       const pdfDataUri = pdf.output('datauristring');
       const base64Data = pdfDataUri.split(',')[1] || pdfDataUri;
 
-      toast({ title: "Sending Email", description: "Delivering email with PDF attachment..." });
+      toast({ title: emailMode === "followup" ? "Sending Follow-Up Email" : "Sending Email", description: "Delivering email with PDF attachment..." });
 
       // Call API
       const dbId = proforma._dbId || proforma.id;
@@ -260,6 +319,10 @@ export default function ProformaDetailsPage() {
           body: emailBody,
           pdfBase64: base64Data,
           filename: `Proforma_${proforma.id}.pdf`,
+          isFollowUp: emailMode === "followup",
+          followUpType: followUpPreset,
+          customNote: emailBody,
+          verificationUrl,
         }),
       });
 
@@ -267,7 +330,10 @@ export default function ProformaDetailsPage() {
         throw new Error(response.message || "Failed to send email");
       }
 
-      toast({ title: "Email Sent", description: `Successfully sent email to ${emailTo}.` });
+      toast({
+        title: emailMode === "followup" ? "Follow-Up Sent 🎉" : "Email Sent",
+        description: `Successfully sent ${emailMode === "followup" ? "follow-up" : "email"} to ${emailTo}.`
+      });
       setIsEmailModalOpen(false);
     } catch (err: any) {
       console.error(err);
@@ -365,10 +431,17 @@ export default function ProformaDetailsPage() {
 
             <Button
               variant="outline"
-              onClick={handleSendToClient}
+              onClick={() => handleOpenEmailModal("standard")}
               className="h-10 px-4 gap-2 rounded-xl"
             >
               <Mail className="h-4 w-4" /> Email client
+            </Button>
+            <Button
+              variant="hero"
+              onClick={() => handleOpenEmailModal("followup", "GENTLE_REMINDER")}
+              className="h-10 px-4 gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-md"
+            >
+              <BellRing className="h-4 w-4" /> Follow-up
             </Button>
             <Button
               variant="outline"
@@ -449,9 +522,16 @@ export default function ProformaDetailsPage() {
               <Button
                 variant="outline"
                 className="w-full h-10 gap-2 rounded-xl"
-                onClick={handleSendToClient}
+                onClick={() => handleOpenEmailModal("standard")}
               >
                 <Mail className="h-4 w-4" /> Email client
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full h-10 gap-2 rounded-xl border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                onClick={() => handleOpenEmailModal("followup", "GENTLE_REMINDER")}
+              >
+                <BellRing className="h-4 w-4 text-amber-500" /> Send Follow-up Email
               </Button>
               <Button
                 variant="outline"
@@ -511,62 +591,159 @@ export default function ProformaDetailsPage() {
       </div>
 
       <Dialog open={isEmailModalOpen} onOpenChange={setIsEmailModalOpen}>
-        <DialogContent className="sm:max-w-[480px]">
+        <DialogContent className="sm:max-w-[560px]">
           <DialogHeader>
-            <DialogTitle>Send Proforma via Email</DialogTitle>
+            <DialogTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2 text-lg">
+                {emailMode === "followup" ? (
+                  <>
+                    <BellRing className="h-5 w-5 text-amber-500" /> Proforma Follow-Up Email
+                  </>
+                ) : (
+                  <>
+                    <Mail className="h-5 w-5 text-primary" /> Send Proforma Document
+                  </>
+                )}
+              </span>
+            </DialogTitle>
             <DialogDescription>
-              Confirm recipient details and email content. The proforma PDF will be attached automatically.
+              {emailMode === "followup"
+                ? "Send a high-converting, styled follow-up email to remind client about this proforma."
+                : "Confirm recipient details and email content. The proforma PDF will be attached automatically."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="email-to">Client Email</Label>
-              <Input
-                id="email-to"
-                placeholder="client@example.com"
-                value={emailTo}
-                onChange={(e) => setEmailTo(e.target.value)}
-              />
+
+          {/* Mode Switcher Tabs */}
+          <div className="flex border-b border-border mb-2">
+            <button
+              type="button"
+              onClick={() => handleOpenEmailModal("standard")}
+              className={`flex-1 py-2 px-3 text-xs font-bold transition-colors border-b-2 ${
+                emailMode === "standard"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Standard Email
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenEmailModal("followup", followUpPreset)}
+              className={`flex-1 py-2 px-3 text-xs font-bold transition-colors border-b-2 flex items-center justify-center gap-1.5 ${
+                emailMode === "followup"
+                  ? "border-amber-500 text-amber-600 dark:text-amber-400"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Follow-Up Template
+            </button>
+          </div>
+
+          {emailMode === "followup" && (
+            <div className="space-y-2 bg-amber-500/5 dark:bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+              <Label className="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                Follow-Up Strategy & Presets
+              </Label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { key: "GENTLE_REMINDER", label: "Friendly Reminder", desc: "Polite check-in" },
+                  { key: "EXPIRING_SOON", label: "Expiring Soon", desc: "Urgency alert" },
+                  { key: "DEPOSIT_REQUIRED", label: "Deposit Request", desc: "Kickoff payment" },
+                  { key: "FINAL_NOTICE", label: "Final Follow-Up", desc: "Last notice" },
+                ].map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => handleSelectPreset(p.key as any)}
+                    className={`p-2 text-left rounded-lg border text-xs transition-all ${
+                      followUpPreset === p.key
+                        ? "bg-amber-500 text-white border-amber-600 font-bold shadow-sm"
+                        : "bg-background border-border text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <div>{p.label}</div>
+                    <div className={`text-[10px] font-normal ${followUpPreset === p.key ? "text-amber-100" : "text-muted-foreground"}`}>
+                      {p.desc}
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="email-cc">CC (comma-separated)</Label>
-              <Input
-                id="email-cc"
-                placeholder="info@yourcompany.com, team@yourcompany.com"
-                value={emailCc}
-                onChange={(e) => setEmailCc(e.target.value)}
-              />
+          )}
+
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="email-to" className="text-xs">Client Email</Label>
+                <Input
+                  id="email-to"
+                  placeholder="client@example.com"
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="email-cc" className="text-xs">CC (optional)</Label>
+                <Input
+                  id="email-cc"
+                  placeholder="team@yourcompany.com"
+                  value={emailCc}
+                  onChange={(e) => setEmailCc(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="email-subject">Subject</Label>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="email-subject" className="text-xs">Subject Line</Label>
               <Input
                 id="email-subject"
                 placeholder="Email subject"
                 value={emailSubject}
                 onChange={(e) => setEmailSubject(e.target.value)}
+                className="h-9 text-xs font-medium"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="email-body">Message</Label>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="email-body" className="text-xs">
+                {emailMode === "followup" ? "Custom Message / Personal Note" : "Message Body"}
+              </Label>
               <Textarea
                 id="email-body"
-                rows={6}
-                placeholder="Email message..."
-                className="resize-none"
+                rows={5}
+                placeholder="Type message..."
+                className="resize-none text-xs leading-relaxed"
                 value={emailBody}
                 onChange={(e) => setEmailBody(e.target.value)}
               />
             </div>
+
+            {emailMode === "followup" && (
+              <p className="text-[11px] text-muted-foreground bg-muted/40 p-2.5 rounded-lg border border-border/50">
+                ✨ <strong>Note:</strong> This follow-up will render a branded email card featuring proforma details, itemized breakdown, interactive review button, and the PDF attachment.
+              </p>
+            )}
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEmailModalOpen(false)} disabled={isSendingEmail}>
               Cancel
             </Button>
-            <Button onClick={handleConfirmSendEmail} disabled={isSendingEmail}>
+            <Button
+              onClick={handleConfirmSendEmail}
+              disabled={isSendingEmail}
+              className={emailMode === "followup" ? "bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white" : ""}
+            >
               {isSendingEmail ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Sending...
+                </>
+              ) : emailMode === "followup" ? (
+                <>
+                  <Send className="mr-2 h-4 w-4" /> Send Follow-Up
                 </>
               ) : (
                 "Send Email"

@@ -182,6 +182,7 @@ function AppRoutes() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/verify/:token" element={<VerifyDocumentPage />} />
+      <Route path="/v/:token" element={<VerifyDocumentPage />} />
       <Route path="/share/:shareId" element={<ShareDownload />} />
       <Route path="/f/:shareId" element={<ShareDownload />} />
 

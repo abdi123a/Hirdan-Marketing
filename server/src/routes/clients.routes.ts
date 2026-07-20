@@ -36,6 +36,7 @@ router.get('/', async (req: Request, res: Response, next) => {
             projects: true,
             invoices: true,
             subscriptions: true,
+            socialAccounts: true,
           },
         },
         // Only include invoices for aggregation if user is ADMIN
