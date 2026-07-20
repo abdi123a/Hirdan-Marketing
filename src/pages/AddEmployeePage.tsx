@@ -712,7 +712,7 @@ export default function AddEmployeePage() {
                       <Label htmlFor="emp-email">Email Address <span className="text-destructive">*</span></Label>
                       <div className="relative">
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input id="emp-email" type="email" placeholder="john@agencyflow.com" className={`pl-9 ${errors.email ? "border-destructive" : ""}`} value={form.email} onChange={(e) => setField("email", e.target.value)} />
+                        <Input id="emp-email" type="email" placeholder="john@hirdanmarketing.com" className={`pl-9 ${errors.email ? "border-destructive" : ""}`} value={form.email} onChange={(e) => setField("email", e.target.value)} />
                       </div>
                       {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
                     </div>

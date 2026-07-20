@@ -170,7 +170,7 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
   if (options.actionButton) {
     actionButtonHtml = `
       <div class="btn-container" style="text-align: center; margin: 32px 0;">
-        <a href="${options.actionButton.url}" class="btn" style="background-color: ${primaryColor}; border-radius: 8px; color: #ffffff !important; display: inline-block; font-size: 16px; font-weight: 600; line-height: 50px; text-align: center; text-decoration: none; width: 220px; -webkit-text-size-adjust: none;">${options.actionButton.label}</a>
+        <a href="${options.actionButton.url}" class="btn" style="background-color: ${primaryColor}; border-radius: 12px; color: #ffffff !important; display: inline-block; font-size: 16px; font-weight: 600; line-height: 50px; text-align: center; text-decoration: none; width: 220px; -webkit-text-size-adjust: none;">${options.actionButton.label}</a>
       </div>
     `;
   }
@@ -245,7 +245,7 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
   <div class="wrapper" style="background-color: #f6f9fc; padding: 40px 20px;">
     <div class="container" style="background-color: #ffffff; border-radius: 20px; border: 1px solid #e8ebf0; box-shadow: 0 8px 24px rgba(80, 66, 137, 0.06); max-width: 580px; margin: 0 auto; overflow: hidden;">
       <!-- Top Branding Color Bar -->
-      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%; height: 6px; border-collapse: collapse; overflow: hidden; border-radius: 20px 20px 0 0;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%; height: 6px; border-collapse: separate; border-spacing: 0; overflow: hidden; border-radius: 20px 20px 0 0;">
         <tr>
           <td width="70%" bgcolor="${primaryColor}" style="background-color: ${primaryColor}; height: 6px; padding: 0; line-height: 1px; font-size: 1px;">&nbsp;</td>
           <td width="30%" bgcolor="#f6b317" style="background-color: #f6b317; height: 6px; padding: 0; line-height: 1px; font-size: 1px;">&nbsp;</td>
@@ -281,8 +281,8 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
         </p>
 
         <div class="footer-links" style="margin-top: 18px; color: #ffffff;">
-          <a href="https://${website}" class="footer-link" target="_blank" style="color: #ffffff !important; background-color: rgba(255, 255, 255, 0.12); text-decoration: none; font-weight: 600; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Website ↗</a>
-          <a href="https://app.${website}/client/login" class="footer-link" target="_blank" style="color: #f6b317 !important; background-color: rgba(246, 179, 23, 0.15); text-decoration: none; font-weight: 700; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Client Portal ↗</a>
+          <a href="https://${website}" class="footer-link" target="_blank" style="color: #ffffff !important; background-color: rgba(255, 255, 255, 0.12); text-decoration: none; font-weight: 600; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Website <span style="font-size: 9px; font-weight: bold; margin-left: 2px;">↗</span></a>
+          <a href="https://app.${website}/client/login" class="footer-link" target="_blank" style="color: #f6b317 !important; background-color: rgba(246, 179, 23, 0.15); text-decoration: none; font-weight: 700; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Client Portal <span style="font-size: 9px; font-weight: bold; margin-left: 2px;">↗</span></a>
         </div>
         <p class="footer-text" style="margin-top: 28px; font-size: 10.5px; color: #cbd5e1; opacity: 0.7; line-height: 1.5;">
           This is an automated transactional message. Please do not reply directly to this email.
@@ -376,15 +376,17 @@ export async function generateWelcomeEmailHtml(options: WelcomeEmailOptions): Pr
   for (let i = 0; i < features.length; i += 2) {
     const cells = features.slice(i, i + 2).map(f => `
       <td width="50%" style="padding: 8px; vertical-align: top;">
-        <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 12px;">
-          <tr>
-            <td style="padding: 20px;">
-              <img src="https://img.icons8.com/ios-filled/60/${colorHex}/${f.icon}.png" width="30" height="30" style="display: block; margin-bottom: 12px;" alt="${f.title}" />
-              <p style="margin: 0 0 5px 0; font-size: 14px; font-weight: 700; color: #0f172a;">${f.title}</p>
-              <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5; font-weight: 500;">${f.desc}</p>
-            </td>
-          </tr>
-        </table>
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
+          <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
+            <tr>
+              <td style="padding: 20px;">
+                <img src="https://img.icons8.com/ios-filled/60/${colorHex}/${f.icon}.png" width="30" height="30" style="display: block; margin-bottom: 12px;" alt="${f.title}" />
+                <p style="margin: 0 0 5px 0; font-size: 14px; font-weight: 700; color: #0f172a;">${f.title}</p>
+                <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5; font-weight: 500;">${f.desc}</p>
+              </td>
+            </tr>
+          </table>
+        </div>
       </td>
     `).join('');
     featureRows.push(`<tr>${cells}</tr>`);
@@ -419,19 +421,21 @@ export async function generateWelcomeEmailHtml(options: WelcomeEmailOptions): Pr
 
   const contentHtml = `
     <!-- Hero Banner -->
-    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 14px; margin-bottom: 28px; overflow: hidden;">
-      <tr>
-        <td style="padding: 36px 28px; text-align: center;">
-          <img src="https://img.icons8.com/fluency/96/handshake.png" width="48" height="48" style="margin-bottom: 12px;" alt="Welcome" />
-          <h1 style="margin: 0 0 10px 0; font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; line-height: 1.2;">
-            Welcome aboard, ${options.clientName}!
-          </h1>
-          <p style="margin: 0; font-size: 14px; color: #475569; line-height: 1.6; max-width: 420px; margin: 0 auto;">
-            We've set up your client portal. We're thrilled to partner with you and look forward to building something great together.
-          </p>
-        </td>
-      </tr>
-    </table>
+    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; margin-bottom: 28px; overflow: hidden;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
+        <tr>
+          <td style="padding: 36px 28px; text-align: center;">
+            <img src="https://img.icons8.com/fluency/96/handshake.png" width="48" height="48" style="margin-bottom: 12px;" alt="Welcome" />
+            <h1 style="margin: 0 0 10px 0; font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; line-height: 1.2;">
+              Welcome aboard, ${options.clientName}!
+            </h1>
+            <p style="margin: 0; font-size: 14px; color: #475569; line-height: 1.6; max-width: 420px; margin: 0 auto;">
+              We've set up your client portal. We're thrilled to partner with you and look forward to building something great together.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </div>
 
     <!-- Intro -->
     <p style="font-size: 15px; color: #334155; line-height: 1.7; margin: 0 0 24px 0;">
@@ -439,41 +443,43 @@ export async function generateWelcomeEmailHtml(options: WelcomeEmailOptions): Pr
     </p>
 
     <!-- Credentials Box -->
-    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid ${primaryColor}; border-radius: 12px; margin-bottom: 28px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
-      <tr>
-        <td style="padding: 24px 28px;">
-          <p style="margin: 0 0 16px 0; font-size: 11px; font-weight: 800; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 1.5px; display: flex; align-items: center;">
-            <img src="https://img.icons8.com/ios-filled/30/${colorHex}/lock.png" width="12" height="12" style="margin-right: 6px; vertical-align: middle;" />
-            <span style="vertical-align: middle;">Your Login Credentials</span>
-          </p>
-          <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
-            <tr>
-              <td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9;">
-                <p style="margin: 0 0 4px 0; font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Email Address</p>
-                <p style="margin: 0; font-size: 15px; font-weight: 700; color: #0f172a; font-family: monospace;">
-                  <a href="mailto:${options.clientEmail}" style="color: ${primaryColor}; text-decoration: none;">${options.clientEmail}</a>
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding: 12px 0 0 0;">
-                <p style="margin: 0 0 4px 0; font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Temporary Password</p>
-                <span style="display: inline-block; background-color: #f8fafc; border: 1px dashed #cbd5e1; padding: 6px 12px; border-radius: 6px; font-size: 18px; font-weight: 800; color: #0f172a; font-family: monospace; letter-spacing: 1.5px;">
-                  ${options.tempPassword}
-                </span>
-              </td>
-            </tr>
-          </table>
-          <p style="margin: 14px 0 0 0; font-size: 11px; color: #64748b; line-height: 1.5;">
-            🔒 This is a temporary password. You will be prompted to change it when you first log in.
-          </p>
-        </td>
-      </tr>
-    </table>
+    <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-left: 4px solid ${primaryColor}; border-radius: 16px; margin-bottom: 28px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); overflow: hidden;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
+        <tr>
+          <td style="padding: 24px 28px;">
+            <p style="margin: 0 0 16px 0; font-size: 11px; font-weight: 800; color: ${primaryColor}; text-transform: uppercase; letter-spacing: 1.5px; display: flex; align-items: center;">
+              <img src="https://img.icons8.com/ios-filled/30/${colorHex}/lock.png" width="12" height="12" style="margin-right: 6px; vertical-align: middle;" />
+              <span style="vertical-align: middle;">Your Login Credentials</span>
+            </p>
+            <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
+              <tr>
+                <td style="padding: 10px 0; border-bottom: 1px solid #f1f5f9;">
+                  <p style="margin: 0 0 4px 0; font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Email Address</p>
+                  <p style="margin: 0; font-size: 15px; font-weight: 700; color: #0f172a; font-family: monospace;">
+                    <a href="mailto:${options.clientEmail}" style="color: ${primaryColor}; text-decoration: none;">${options.clientEmail}</a>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0 0 0;">
+                  <p style="margin: 0 0 4px 0; font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Temporary Password</p>
+                  <span style="display: inline-block; background-color: #f8fafc; border: 1px dashed #cbd5e1; padding: 6px 12px; border-radius: 6px; font-size: 18px; font-weight: 800; color: #0f172a; font-family: monospace; letter-spacing: 1.5px;">
+                    ${options.tempPassword}
+                  </span>
+                </td>
+              </tr>
+            </table>
+            <p style="margin: 14px 0 0 0; font-size: 11px; color: #64748b; line-height: 1.5;">
+              🔒 This is a temporary password. You will be prompted to change it when you first log in.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </div>
 
     <!-- CTA Button -->
     <div style="text-align: center; margin-bottom: 32px;">
-      <a href="${portalUrl}" style="display: inline-block; background-color: ${primaryColor}; color: #ffffff; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 36px; border-radius: 10px; letter-spacing: 0.3px;">
+      <a href="${portalUrl}" style="display: inline-block; background-color: ${primaryColor}; color: #ffffff; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 36px; border-radius: 12px; letter-spacing: 0.3px;">
         Login to Your Portal →
       </a>
     </div>
@@ -509,16 +515,18 @@ export async function generateWelcomeEmailHtml(options: WelcomeEmailOptions): Pr
     </table>
 
     <!-- Security Notice -->
-    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; margin-bottom: 8px;">
-      <tr>
-        <td style="padding: 16px 18px; background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; border-left: 4px solid #f59e0b;">
-          <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 800; color: #92400e; text-transform: uppercase; letter-spacing: 0.5px;">⚠️ Security Notice</p>
-          <p style="margin: 0; font-size: 13px; color: #78350f; line-height: 1.6;">
-            Please change your temporary password immediately after your first login. Never share your login credentials with anyone. If you have trouble accessing your portal, contact us at <a href="mailto:${settings?.adminEmail || ''}" style="color: #92400e; font-weight: 700;">${settings?.adminEmail || agencyName}</a>.
-          </p>
-        </td>
-      </tr>
-    </table>
+    <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 16px; margin-bottom: 8px; overflow: hidden;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
+        <tr>
+          <td style="padding: 16px 18px;">
+            <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 800; color: #92400e; text-transform: uppercase; letter-spacing: 0.5px;">⚠️ Security Notice</p>
+            <p style="margin: 0; font-size: 13px; color: #78350f; line-height: 1.6;">
+              Please change your temporary password immediately after your first login. Never share your login credentials with anyone. If you have trouble accessing your portal, contact us at <a href="mailto:${settings?.adminEmail || ''}" style="color: #92400e; font-weight: 700;">${settings?.adminEmail || agencyName}</a>.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </div>
 
     <!-- Sign-off -->
     <p style="font-size: 15px; color: #334155; line-height: 1.7; margin: 24px 0 0 0;">
@@ -588,9 +596,9 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
   const followUpType = options.followUpType || 'GENTLE_REMINDER';
 
   let badgeLabel = 'PROFORMA FOLLOW-UP';
-  let badgeBg = '#eff6ff';
-  let badgeTextColor = '#1d4ed8';
-  let badgeBorderColor = '#3b82f6';
+  let badgeBg = '#faf5ff';
+  let badgeTextColor = primaryColor;
+  let badgeBorderColor = primaryColor;
   let heroTitle = `Follow-Up: Proforma Estimate <strong style="font-weight: 700; color: #0f172a;">${options.proformaNumber}</strong>`;
   let heroSubtitle = `We hope this message finds you well. We are following up regarding your proforma estimate.`;
   let iconUrl = 'https://img.icons8.com/fluency/96/bell.png';
@@ -598,11 +606,11 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
 
   if (followUpType === 'GENTLE_REMINDER') {
     badgeLabel = 'Gentle Reminder';
-    badgeBg = '#eff6ff';
-    badgeTextColor = '#1d4ed8';
-    badgeBorderColor = '#3b82f6';
+    badgeBg = '#faf5ff';
+    badgeTextColor = primaryColor;
+    badgeBorderColor = primaryColor;
     heroTitle = `Follow-up regarding Proforma Estimate <strong style="font-weight: 700; color: #0f172a;">${options.proformaNumber}</strong>`;
-    heroSubtitle = `We are checking in to see if you have any questions or require any adjustments to the estimate we prepared for you.`;
+    heroSubtitle = `Just checking in to see if you have questions or need adjustments.`;
     iconUrl = 'https://img.icons8.com/fluency/96/bell.png';
     animationClass = 'animated-swing';
   } else if (followUpType === 'EXPIRING_SOON') {
@@ -681,19 +689,21 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
     itemsHtml = `
       <div style="margin-bottom: 24px;">
         <p style="margin: 0 0 10px 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.8px;">Item Summary</p>
-        <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
-          <thead>
-            <tr style="background-color: #f1f5f9; text-align: left;">
-              <th style="padding: 10px 16px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase;">Description</th>
-              <th style="padding: 10px 16px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; text-align: center;">Qty</th>
-              <th style="padding: 10px 16px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; text-align: right;">Rate</th>
-              <th style="padding: 10px 16px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; text-align: right;">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemRows}
-          </tbody>
-        </table>
+        <div style="border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff; margin-bottom: 24px;">
+          <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
+            <thead>
+              <tr style="background-color: #f1f5f9; text-align: left;">
+                <th style="padding: 10px 16px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase;">Description</th>
+                <th style="padding: 10px 16px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; text-align: center;">Qty</th>
+                <th style="padding: 10px 16px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; text-align: right;">Rate</th>
+                <th style="padding: 10px 16px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; text-align: right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemRows}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
   }
@@ -710,7 +720,7 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
         </a>
         ${options.verificationUrl ? `
           <p style="margin: 12px 0 0 0; font-size: 12px; color: #64748b;">
-            Or verify document online: <a href="${options.verificationUrl}" style="color: ${primaryColor}; font-weight: 600; text-decoration: underline;">Verify Document ${options.proformaNumber} ↗</a>
+            Or verify document online: <a href="${options.verificationUrl}" style="color: ${primaryColor}; font-weight: 600; text-decoration: underline;">Verify Document ${options.proformaNumber} <span style="font-size: 9px; font-weight: bold; margin-left: 2px;">↗</span></a>
           </p>
         ` : ''}
       </div>
@@ -730,94 +740,100 @@ export async function generateProformaFollowUpEmailHtml(options: ProformaFollowU
 
   const contentHtml = `
     <!-- Hero Banner (Centered Onboarding Style Card) -->
-    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 16px; margin-bottom: 28px; overflow: hidden;">
-      <tr>
-        <td style="padding: 36px 28px; text-align: center;">
-          <!-- Animated Icon -->
-          <div style="margin-bottom: 16px; display: inline-block;">
-            <img src="${iconUrl}" width="54" height="54" class="${animationClass}" style="display: block; margin: 0 auto;" alt="${badgeLabel}" />
-          </div>
-          
-          <!-- Pill Badge -->
-          <br/>
-          <div style="display: inline-block; background-color: ${badgeBg}; color: ${badgeTextColor}; font-size: 11px; font-weight: 700; padding: 6px 16px; border-radius: 20px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            ${badgeLabel}
-          </div>
-          
-          <!-- Hero Title -->
-          <h2 style="margin: 0 0 10px 0; font-size: 24px; font-weight: 500; color: #1e293b; letter-spacing: -0.3px; line-height: 1.3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            ${heroTitle}
-          </h2>
-          
-          <!-- Hero Subtitle -->
-          <p style="margin: 0; font-size: 14.5px; color: #475569; line-height: 1.6; max-width: 440px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-            ${heroSubtitle}
-          </p>
-        </td>
-      </tr>
-    </table>
+    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; margin-bottom: 28px; overflow: hidden;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
+        <tr>
+          <td style="padding: 36px 28px; text-align: center;">
+            <!-- Animated Icon -->
+            <div style="margin-bottom: 16px; display: inline-block;">
+              <img src="${iconUrl}" width="54" height="54" class="${animationClass}" style="display: block; margin: 0 auto;" alt="${badgeLabel}" />
+            </div>
+            
+            <!-- Pill Badge -->
+            <br/>
+            <div style="display: inline-block; background-color: ${badgeBg}; color: ${badgeTextColor}; font-size: 11px; font-weight: 700; padding: 6px 16px; border-radius: 20px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+              ${badgeLabel}
+            </div>
+            
+            <!-- Hero Title -->
+            <h2 style="margin: 0 0 10px 0; font-size: 24px; font-weight: 500; color: #1e293b; letter-spacing: -0.3px; line-height: 1.3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+              ${heroTitle}
+            </h2>
+            
+            <!-- Hero Subtitle -->
+            <p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.6; max-width: 440px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+              ${heroSubtitle}
+            </p>
+          </td>
+        </tr>
+      </table>
+    </div>
 
     ${bodyTextHtml}
 
     <!-- Summary Details Box -->
-    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03);">
-      <tr>
-        <td style="padding: 20px 24px;">
-          <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
-            <tr>
-              <td style="padding-bottom: 12px; border-bottom: 1px solid #f1f5f9;">
-                <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Proforma Number</span>
-                <p style="margin: 2px 0 0 0; font-size: 16px; font-weight: 800; color: #0f172a;">${options.proformaNumber}</p>
-              </td>
-              <td style="padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; text-align: right;">
-                <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Total Estimate</span>
-                <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: 900; color: ${primaryColor};">${displayAmount}</p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding-top: 12px;">
-                <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Issued Date</span>
-                <p style="margin: 2px 0 0 0; font-size: 13px; font-weight: 600; color: #334155;">${options.date || 'As per record'}</p>
-              </td>
-              <td style="padding-top: 12px; text-align: right;">
-                <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Valid Until</span>
-                <p style="margin: 2px 0 0 0; font-size: 13px; font-weight: 700; color: #0f172a;">${options.dueDate || 'Upon receipt'}</p>
-              </td>
-            </tr>
-            ${options.deposit && options.deposit > 0 ? `
+    <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03); overflow: hidden;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
+        <tr>
+          <td style="padding: 20px 24px;">
+            <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
               <tr>
-                <td colspan="2" style="padding-top: 12px; border-top: 1px dashed #e2e8f0; margin-top: 12px;">
-                  <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Initial Deposit Required</span>
-                  <p style="margin: 2px 0 0 0; font-size: 14px; font-weight: 800; color: #059669;">${currencySymbol}${options.deposit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <td style="padding-bottom: 12px; border-bottom: 1px solid #f1f5f9;">
+                  <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Proforma Number</span>
+                  <p style="margin: 2px 0 0 0; font-size: 16px; font-weight: 800; color: #0f172a;">${options.proformaNumber}</p>
+                </td>
+                <td style="padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; text-align: right;">
+                  <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Total Estimate</span>
+                  <p style="margin: 2px 0 0 0; font-size: 18px; font-weight: 900; color: ${primaryColor};">${displayAmount}</p>
                 </td>
               </tr>
-            ` : ''}
-          </table>
-        </td>
-      </tr>
-    </table>
+              <tr>
+                <td style="padding-top: 12px;">
+                  <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Issued Date</span>
+                  <p style="margin: 2px 0 0 0; font-size: 13px; font-weight: 600; color: #334155;">${options.date || 'As per record'}</p>
+                </td>
+                <td style="padding-top: 12px; text-align: right;">
+                  <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Valid Until</span>
+                  <p style="margin: 2px 0 0 0; font-size: 13px; font-weight: 700; color: #0f172a;">${options.dueDate || 'Upon receipt'}</p>
+                </td>
+              </tr>
+              ${options.deposit && options.deposit > 0 ? `
+                <tr>
+                  <td colspan="2" style="padding-top: 12px; border-top: 1px dashed #e2e8f0; margin-top: 12px;">
+                    <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px;">Initial Deposit Required</span>
+                    <p style="margin: 2px 0 0 0; font-size: 14px; font-weight: 800; color: #059669;">${currencySymbol}${options.deposit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </td>
+                </tr>
+              ` : ''}
+            </table>
+          </td>
+        </tr>
+      </table>
+    </div>
 
     ${itemsHtml}
 
     ${ctaHtml}
 
     <!-- Simple Steps Box -->
-    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; background-color: #f8fafc; border: 1px solid #f1f5f9; border-radius: 10px; margin-bottom: 24px;">
-      <tr>
-        <td style="padding: 16px 20px;">
-          <p style="margin: 0 0 10px 0; font-size: 12px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.8px;">⚡ Next Steps</p>
-          <p style="margin: 0 0 6px 0; font-size: 13px; color: #475569; line-height: 1.5;">
-            <strong>1. Review & Approve:</strong> ${hasLoginAccess ? 'Log in to your client portal' : 'Click the button above'} to view and accept the proposal online.
-          </p>
-          <p style="margin: 0 0 6px 0; font-size: 13px; color: #475569; line-height: 1.5;">
-            <strong>2. Automatic Invoicing:</strong> Once accepted, an official invoice will be issued for payment.
-          </p>
-          <p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.5;">
-            <strong>3. PDF Attached:</strong> A complete PDF copy of the proforma estimate is also attached to this email.
-          </p>
-        </td>
-      </tr>
-    </table>
+    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; margin-bottom: 24px; overflow: hidden;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
+        <tr>
+          <td style="padding: 16px 20px;">
+            <p style="margin: 0 0 10px 0; font-size: 12px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.8px;">⚡ Next Steps</p>
+            <p style="margin: 0 0 6px 0; font-size: 13px; color: #475569; line-height: 1.5;">
+              <strong>1. Review & Approve:</strong> ${hasLoginAccess ? 'Log in to your client portal' : 'Click the button above'} to view and accept the proposal online.
+            </p>
+            <p style="margin: 0 0 6px 0; font-size: 13px; color: #475569; line-height: 1.5;">
+              <strong>2. Automatic Invoicing:</strong> Once accepted, an official invoice will be issued for payment.
+            </p>
+            <p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.5;">
+              <strong>3. PDF Attached:</strong> A complete PDF copy of the proforma estimate is also attached to this email.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </div>
 
     <p style="font-size: 14px; color: #334155; line-height: 1.6; margin: 20px 0 0 0;">
       If you need any adjustments to the scope or have questions, simply reply to this email or contact us at <a href="mailto:${settings?.adminEmail || ''}" style="color: ${primaryColor}; font-weight: 600;">${settings?.adminEmail || 'our team'}</a>.

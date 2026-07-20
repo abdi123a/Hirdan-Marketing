@@ -21,7 +21,7 @@ export const AgencyAppearanceManager = () => {
     // Update document title
     if (settings.agencyName) {
       const path = location.pathname;
-      let suffix = 'AgencyFlow';
+      let suffix = 'Hirdan Marketing';
       
       if (path.startsWith('/dashboard')) {
         suffix = 'Dashboard';

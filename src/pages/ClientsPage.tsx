@@ -159,7 +159,7 @@ export default function ClientsPage() {
                           if (c.website) {
                             window.open(c.website.startsWith('http') ? c.website : `https://${c.website}`, '_blank');
                           } else {
-                            toast({ title: "Portal Access", description: `Portal link: portal.agencyflow.com/${c.id}` });
+                            toast({ title: "Portal Access", description: `Portal link: portal.hirdanmarketing.com/${c.id}` });
                           }
                         }}>
                           <Globe className="h-4 w-4" /> View Portal

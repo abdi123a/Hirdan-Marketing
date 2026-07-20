@@ -504,8 +504,8 @@ async function sendPaymentConfirmationEmail(invoiceId: string) {
       <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
         We have successfully received and processed your payment for invoice <strong>${inv.invoiceNumber}</strong>.
       </p>
-      <div style="background-color: #f8fafc; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
-        <table cellpadding="0" cellspacing="0" border="0" width="100%">
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; margin-bottom: 24px; overflow: hidden;">
+        <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
           <tr>
             <td style="color: #64748b; font-size: 14px; padding-bottom: 8px;"><strong>Invoice Date:</strong></td>
             <td style="color: #334155; font-size: 14px; padding-bottom: 8px; text-align: right;">${inv.date.toISOString().split('T')[0]}</td>
@@ -521,24 +521,26 @@ async function sendPaymentConfirmationEmail(invoiceId: string) {
         </table>
       </div>
       <h3 style="color: #334155; font-size: 16px; margin: 24px 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">Invoice Summary</h3>
-      <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse; margin-bottom: 24px;">
-        <thead>
-          <tr style="background-color: #f1f5f9;">
-            <th style="padding: 8px 12px; text-align: left; color: #475569; font-size: 13px;">Description</th>
-            <th style="padding: 8px 12px; text-align: center; color: #475569; font-size: 13px; width: 60px;">Qty</th>
-            <th style="padding: 8px 12px; text-align: right; color: #475569; font-size: 13px; width: 100px;">Price</th>
-            <th style="padding: 8px 12px; text-align: right; color: #475569; font-size: 13px; width: 100px;">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${itemsRows}
-          <tr>
-            <td colspan="2"></td>
-            <td style="padding: 12px 8px; font-weight: bold; color: #334155; text-align: right;">Total Paid:</td>
-            <td style="padding: 12px 8px; font-weight: bold; color: #10b981; text-align: right; font-size: 16px;">${amountFormatted}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div style="border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; background-color: #ffffff; margin-bottom: 24px;">
+        <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
+          <thead>
+            <tr style="background-color: #f1f5f9;">
+              <th style="padding: 12px; text-align: left; color: #475569; font-size: 13px;">Description</th>
+              <th style="padding: 12px; text-align: center; color: #475569; font-size: 13px; width: 60px;">Qty</th>
+              <th style="padding: 12px; text-align: right; color: #475569; font-size: 13px; width: 100px;">Price</th>
+              <th style="padding: 12px; text-align: right; color: #475569; font-size: 13px; width: 100px;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsRows}
+            <tr>
+              <td colspan="2"></td>
+              <td style="padding: 12px 8px; font-weight: bold; color: #334155; text-align: right;">Total Paid:</td>
+              <td style="padding: 12px 8px; font-weight: bold; color: #10b981; text-align: right; font-size: 16px;">${amountFormatted}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       ${attachmentText}
     `;
 

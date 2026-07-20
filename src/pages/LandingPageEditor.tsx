@@ -1593,7 +1593,7 @@ export default function LandingPageEditor() {
                     <Input
                       value={staticContent.seoTitle || ""}
                       onChange={(e) => setStaticContent((prev: any) => ({ ...prev, seoTitle: e.target.value }))}
-                      placeholder="e.g. AgencyFlow - Premium SMM Agency"
+                      placeholder="e.g. Hirdan Marketing - Premium Agency"
                       className="rounded-xl"
                     />
                   </div>
@@ -1816,7 +1816,7 @@ export default function LandingPageEditor() {
 
                   <div className="space-y-2">
                     <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-[#504289] uppercase tracking-wider">
-                      <img src="assets/img/bale.png" alt="bale" className="h-2.5" onerror="this.style.display='none'" />
+                      <img src="assets/img/bale.png" alt="bale" className="h-2.5" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                       {staticContent.aboutSubtitle || "Who We Are"}
                     </span>
                     <h3 className="text-base font-extrabold text-[#101828] leading-tight">

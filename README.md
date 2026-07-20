@@ -1,8 +1,8 @@
 # Hirdan Marketing Management
 
-[![Version](https://img.shields.io/badge/version-2.22.1-blue.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/package.json)
-[![Node Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/package.json)
-[![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/LICENSE)
+[![Version](https://img.shields.io/badge/version-2.22.1-blue.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/hirdan-marketing/package.json)
+[![Node Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/hirdan-marketing/package.json)
+[![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg?style=flat-square)](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/hirdan-marketing/LICENSE)
 
 A premium, all-in-one digital marketing agency platform featuring a Next.js landing page, a React CRM admin dashboard & client portal, and a robust Express backend. Designed to automate and manage client onboarding, tasks, invoices, document verification, and content planning.
 
@@ -14,13 +14,13 @@ A premium, all-in-one digital marketing agency platform featuring a Next.js land
 
 | Component / File | Description | Location |
 |---|---|---|
-| 🌐 **CRM Frontend** | Vite + React + TypeScript + Tailwind CSS / Shadcn UI | [src/](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/src) |
-| 🗄️ **Backend API** | Express + TypeScript + Prisma ORM + PostgreSQL | [server/](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/server) |
-| 📄 **Landing Page** | Next.js marketing site for Hirdan Marketing | [landing-page/](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/landing-page) |
-| ⚙️ **CI/CD Workflow** | Automated build and deploy workflow via SSH & Rsync | [deploy.yml](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/.github/workflows/deploy.yml) |
-| 📜 **Contributing Guide** | Internal development guidelines | [CONTRIBUTING.md](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/CONTRIBUTING.md) |
-| 🔒 **Security Policy** | Vulnerability reporting procedure | [SECURITY.md](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/SECURITY.md) |
-| 🔑 **License** | Proprietary license terms | [LICENSE](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/LICENSE) |
+| 🌐 **CRM Frontend** | Vite + React + TypeScript + Tailwind CSS / Shadcn UI | [src/](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/hirdan-marketing/src) |
+| 🗄️ **Backend API** | Express + TypeScript + Prisma ORM + PostgreSQL | [server/](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/hirdan-marketing/server) |
+| 📄 **Landing Page** | Next.js marketing site for Hirdan Marketing | [landing-page/](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/hirdan-marketing/landing-page) |
+| ⚙️ **CI/CD Workflow** | Automated build and deploy workflow via SSH & Rsync | [deploy.yml](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/hirdan-marketing/.github/workflows/deploy.yml) |
+| 📜 **Contributing Guide** | Internal development guidelines | [CONTRIBUTING.md](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/hirdan-marketing/CONTRIBUTING.md) |
+| 🔒 **Security Policy** | Vulnerability reporting procedure | [SECURITY.md](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/hirdan-marketing/SECURITY.md) |
+| 🔑 **License** | Proprietary license terms | [LICENSE](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/hirdan-marketing/LICENSE) |
 
 ---
 
@@ -37,7 +37,7 @@ A premium, all-in-one digital marketing agency platform featuring a Next.js land
 ## Project Structure & Architecture
 
 ```
-agency-flow-pro/
+hirdan-marketing/
 ├── landing-page/      # Next.js Static Landing Page (hirdanmarketing.com)
 ├── server/            # Node.js + Express API Backend (api.hirdanmarketing.com)
 ├── src/               # Vite + React Frontend Dashboard (app.hirdanmarketing.com)
@@ -159,4 +159,4 @@ Every push to the `clean-version` branch will run the deployment pipeline:
 
 ## License
 
-This project is proprietary and confidential. All rights reserved by Hirdan Marketing. Unauthorized copying or distribution of these files is strictly prohibited. See the [LICENSE](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/agency-flow-pro/LICENSE) file for more information.
+This project is proprietary and confidential. All rights reserved by Hirdan Marketing. Unauthorized copying or distribution of these files is strictly prohibited. See the [LICENSE](file:///Users/abdihakim/Documents/Hirdanmarketing/untitled%20folder/Agency/hirdan-marketing/LICENSE) file for more information.

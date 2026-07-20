@@ -544,23 +544,23 @@ router.post(
           ${
             // Custom message takes priority. If not present, fallback to upload message.
             safeCustomMessage ? `
-            <div style="margin-bottom: 24px; padding: 20px 24px; background: linear-gradient(135deg, #fef9f0 0%, #fff8ed 100%); border-radius: 12px; border-left: 4px solid #f59e0b; border: 1px solid #fde68a;">
+            <div style="margin-bottom: 24px; padding: 20px 24px; background: linear-gradient(135deg, #fef9f0 0%, #fff8ed 100%); border-radius: 16px; border-left: 4px solid #f59e0b; border: 1px solid #fde68a;">
               <p style="margin: 0 0 8px 0; font-size: 11px; color: #92400e; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;">📬 Message from your agency</p>
               <div style="font-size: 15px; color: #1e293b; line-height: 1.7; margin: 0;">${safeCustomMessage}</div>
             </div>` : (safeUploadMessage ? `
-            <div style="margin-bottom: 24px; padding: 20px 24px; background: linear-gradient(135deg, #fef9f0 0%, #fff8ed 100%); border-radius: 12px; border-left: 4px solid #f59e0b; border: 1px solid #fde68a;">
+            <div style="margin-bottom: 24px; padding: 20px 24px; background: linear-gradient(135deg, #fef9f0 0%, #fff8ed 100%); border-radius: 16px; border-left: 4px solid #f59e0b; border: 1px solid #fde68a;">
               <p style="margin: 0 0 8px 0; font-size: 11px; color: #92400e; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;">📬 Message from your agency</p>
               <div style="font-size: 15px; color: #1e293b; line-height: 1.7; margin: 0;">${safeUploadMessage}</div>
             </div>` : "")
           }
-          <div style="margin-bottom: 24px; padding: 20px; background-color: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+          <div style="margin-bottom: 24px; padding: 20px; background-color: #f8fafc; border-radius: 16px; border: 1px solid #e2e8f0;">
             <p style="margin: 0 0 8px 0; font-size: 13px; color: #64748b; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em;">File Details</p>
             <p style="margin: 0 0 6px 0; font-size: 16px; font-weight: bold; color: #0f172a;">${safeFileName}</p>
             <p style="margin: 0 0 12px 0; font-size: 14px; color: #475569; font-family: monospace;">Size: ${formatBytes(record.fileSize)}</p>
             <p style="margin: 0; font-size: 13px; color: #64748b;">Available until: ${new Date(record.expiresAt).toLocaleDateString()}</p>
           </div>
           <div style="text-align: center; margin: 32px 0;">
-            <a href="${safeShareUrl}" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #d97706, #f59e0b); color: #000; font-weight: bold; text-decoration: none; border-radius: 8px; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);">Download Shared File</a>
+            <a href="${safeShareUrl}" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #d97706, #f59e0b); color: #000; font-weight: bold; text-decoration: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);">Download Shared File</a>
           </div>
         `,
       });

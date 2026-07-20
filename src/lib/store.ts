@@ -585,7 +585,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.29.2",
+  appVersion: "2.29.3",
   versionHistory: [
     {
       version: "2.23.0",
@@ -2166,7 +2166,7 @@ export const useAgencyStore = create<AgencyStore>()(
       },
     }),
     {
-      name: 'agency-data-sync-v2',
+      name: 'hirdan-data-sync-v2',
       // Only persist settings.
       // All entity lists and tokens are always fetched or generated via backend.
       partialize: (state) => ({

@@ -1461,7 +1461,7 @@ export default function SettingsPage() {
                   <div>
                     <h4 className="font-bold text-lg text-primary">Universal Formatting Active</h4>
                     <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                      Changes made here will apply **universally** across the entire AgencyFlow system. 
+                      Changes made here will apply **universally** across the entire Hirdan Marketing system. 
                       All dashboards, invoices, and reports will automatically use **{formData.currency}** formatting 
                       and the **{formData.timezone}** timezone.
                     </p>

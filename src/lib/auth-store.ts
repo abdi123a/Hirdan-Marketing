@@ -136,7 +136,7 @@ export const useAuthStore = create<AuthStore>()(
       },
     }),
     {
-      name: 'agency-auth-storage',
+      name: 'hirdan-auth-storage',
       partialize: (state) => ({ 
         user: state.user, 
         isAuthenticated: state.isAuthenticated 
