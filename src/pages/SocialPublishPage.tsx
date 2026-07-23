@@ -115,6 +115,7 @@ interface SocialPost {
     socialAccountId: string;
     platform: string;
     status: string;
+    platformPostId?: string | null;
     lastError: string | null;
     socialAccount: { displayName: string; platformUsername?: string };
   }>;
