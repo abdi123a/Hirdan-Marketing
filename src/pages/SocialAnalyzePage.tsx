@@ -5,6 +5,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { apiFetch, getFullUrl } from "@/lib/api-client";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { capStatus, capAvailable, capOf, type Capabilities, type MetricKey, type EffectiveStatus } from "@/lib/platform-capabilities";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -184,10 +185,14 @@ const KPICard = ({ label, value, growth, icon: Icon, color, isRate = false, suff
             </h3>
             <div className="flex items-center gap-1.5 flex-wrap">
               {growth != null && <Delta value={growth} />}
-              {platforms && platforms.length > 0 && platforms.length < 4 && (
-                <span className="text-[8px] font-bold text-muted-foreground bg-muted/60 border border-border/60 px-1 py-0.5 rounded">
-                  {platforms.map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' + ')}
-                </span>
+              {platforms && platforms.length > 0 && platforms.length < 5 && (
+                <div className="flex items-center gap-1 bg-muted/60 border border-border/60 px-1.5 py-0.5 rounded-full shadow-2xs">
+                  {platforms.map((p: string) => (
+                    <span key={p} title={p.charAt(0).toUpperCase() + p.slice(1)} className="inline-flex items-center">
+                      {getPlatformIcon(p, "h-3.5 w-3.5 object-contain")}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           </>
@@ -317,11 +322,45 @@ export default function SocialAnalyzePage() {
 
   // Global filters
   const [activeTab, setActiveTab] = useState("overview");
-  const [dateRange, setDateRange] = useState<7|30|90>(30);
+  const [dateMode, setDateMode] = useState<"preset" | "custom">("preset");
+  const [dateRange, setDateRange] = useState<number>(30);
+  const [customStartDate, setCustomStartDate] = useState<string>("");
+  const [customEndDate, setCustomEndDate] = useState<string>("");
+  const [tempStartDate, setTempStartDate] = useState<string>(
+    () => new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0]
+  );
+  const [tempEndDate, setTempEndDate] = useState<string>(
+    () => new Date().toISOString().split("T")[0]
+  );
+  const [isCustomDateOpen, setIsCustomDateOpen] = useState<boolean>(false);
   const [platformFilter, setPlatformFilter] = useState("ALL");
   const [contentTypeFilter, setContentTypeFilter] = useState("ALL");
   const [postSearch, setPostSearch] = useState("");
   const [chartMetric, setChartMetric] = useState<"followers"|"reach"|"impressions"|"engagementRate">("followers");
+
+  const dateRangeText = useMemo(() => {
+    if (dateMode === "custom" && customStartDate && customEndDate) {
+      return `${customStartDate} to ${customEndDate}`;
+    }
+    return `${dateRange} days`;
+  }, [dateMode, customStartDate, customEndDate, dateRange]);
+
+  const getAnalyticsQueryString = useCallback(() => {
+    const params = new URLSearchParams();
+    if (dateMode === "custom" && customStartDate && customEndDate) {
+      params.set("startDate", customStartDate);
+      params.set("endDate", customEndDate);
+      const fromT = new Date(customStartDate).getTime();
+      const toT = new Date(customEndDate).getTime();
+      const calculatedDays = Math.max(1, Math.round((toT - fromT) / 86400000));
+      params.set("days", String(calculatedDays));
+    } else {
+      params.set("days", String(dateRange));
+    }
+    params.set("platform", platformFilter);
+    params.set("contentType", contentTypeFilter);
+    return params.toString();
+  }, [dateMode, customStartDate, customEndDate, dateRange, platformFilter, contentTypeFilter]);
 
   useEffect(() => {
     Promise.all([
@@ -350,8 +389,9 @@ export default function SocialAnalyzePage() {
     if (!selectedClient) return;
     setIsLoading(true);
     try {
+      const q = getAnalyticsQueryString();
       const res = await apiFetch<FullAnalytics>(
-        `/social/analytics/${selectedClient}/full?days=${dateRange}&platform=${platformFilter}&contentType=${contentTypeFilter}`
+        `/social/analytics/${selectedClient}/full?${q}`
       );
       setAnalytics(res);
     } catch (err: any) {
@@ -359,30 +399,31 @@ export default function SocialAnalyzePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedClient, dateRange, platformFilter, contentTypeFilter]);
+  }, [selectedClient, getAnalyticsQueryString]);
 
   const fetchPosts = useCallback(async () => {
     if (!selectedClient) return;
     setPostsLoading(true);
     try {
+      const q = getAnalyticsQueryString();
       const res = await apiFetch<any>(
-        `/social/analytics/${selectedClient}/posts?page=${postPage}&limit=${POST_LIMIT}&sortBy=${postSort}&platform=${platformFilter}&contentType=${contentTypeFilter}&search=${postSearch}&days=${dateRange}`
+        `/social/analytics/${selectedClient}/posts?page=${postPage}&limit=${POST_LIMIT}&sortBy=${postSort}&search=${postSearch}&${q}`
       );
       setPosts(res.posts || []);
       setPostsTotal(res.total || 0);
     } catch { /* handled */ } finally {
       setPostsLoading(false);
     }
-  }, [selectedClient, postPage, postSort, platformFilter, contentTypeFilter, postSearch, dateRange]);
+  }, [selectedClient, postPage, postSort, postSearch, getAnalyticsQueryString]);
 
   useEffect(() => {
     if (selectedClient) { fetchAnalytics(); setPostPage(1); }
     else { setAnalytics(null); setPosts([]); }
-  }, [selectedClient, dateRange, platformFilter, contentTypeFilter]);
+  }, [selectedClient, getAnalyticsQueryString]);
 
   useEffect(() => {
     if (selectedClient) fetchPosts();
-  }, [selectedClient, postPage, postSort, platformFilter, contentTypeFilter, postSearch, dateRange]);
+  }, [selectedClient, postPage, postSort, postSearch, getAnalyticsQueryString]);
 
   const handleRefresh = async () => {
     if (!selectedClient || isRefreshing) return;
@@ -450,8 +491,11 @@ export default function SocialAnalyzePage() {
     } else {
       for (const t of (analytics?.bestTimes||[])) grid[t.day][t.hour] = t.engagement;
     }
+    const flat: { day: number; hour: number; value: number }[] = [];
+    for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) if (grid[d][h] > 0) flat.push({ day: d, hour: h, value: grid[d][h] });
+    const topSlots = flat.slice().sort((a, b) => b.value - a.value).slice(0, 5);
     const maxVal = Math.max(...grid.flat(), 1);
-    return { grid, maxVal, source: actHeatmap.length > 0 ? 'import' as const : 'posts' as const };
+    return { grid, maxVal, topSlots, hasData: flat.length > 0, source: actHeatmap.length > 0 ? 'import' as const : 'posts' as const };
   }, [analytics]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -501,13 +545,118 @@ export default function SocialAnalyzePage() {
             {/* Date range */}
             <div className="flex items-center gap-1.5">
               <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-              <div className="flex bg-muted/30 border border-border rounded-lg p-0.5 gap-0.5">
+              <div className="flex bg-muted/30 border border-border rounded-lg p-0.5 gap-0.5 items-center">
                 {([7,30,90] as const).map(d => (
-                  <button key={d} onClick={() => setDateRange(d)}
-                    className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${dateRange===d?"bg-primary text-primary-foreground shadow":"text-muted-foreground hover:text-foreground"}`}>
+                  <button key={d} onClick={() => { setDateMode("preset"); setDateRange(d); }}
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-all ${dateMode==="preset" && dateRange===d ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}>
                     {d}D
                   </button>
                 ))}
+
+                <Popover open={isCustomDateOpen} onOpenChange={setIsCustomDateOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      className={`px-2.5 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${dateMode==="custom" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"}`}>
+                      <span>Custom</span>
+                      {dateMode === "custom" && customStartDate && customEndDate && (
+                        <span className="text-[10px] opacity-90 font-medium">({customStartDate} to {customEndDate})</span>
+                      )}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-4 rounded-2xl shadow-xl border border-border bg-card" align="start">
+                    <div className="space-y-4 min-w-[280px]">
+                      <div className="flex items-center justify-between border-b border-border/40 pb-2">
+                        <h4 className="font-bold text-xs flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-primary" /> Select Custom Date Range
+                        </h4>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-semibold text-muted-foreground uppercase">Start Date</label>
+                          <Input
+                            type="date"
+                            value={tempStartDate}
+                            onChange={(e) => setTempStartDate(e.target.value)}
+                            className="h-8 text-xs rounded-lg"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-semibold text-muted-foreground uppercase">End Date</label>
+                          <Input
+                            type="date"
+                            value={tempEndDate}
+                            onChange={(e) => setTempEndDate(e.target.value)}
+                            className="h-8 text-xs rounded-lg"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Quick presets inside popover */}
+                      <div className="flex items-center gap-1 flex-wrap pt-1 border-t border-border/40">
+                        <span className="text-[10px] text-muted-foreground font-semibold mr-1">Presets:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const now = new Date();
+                            const end = now.toISOString().split("T")[0];
+                            const start = new Date(now.getTime() - 14 * 86400000).toISOString().split("T")[0];
+                            setTempStartDate(start);
+                            setTempEndDate(end);
+                          }}
+                          className="text-[10px] px-2 py-0.5 rounded bg-muted/60 hover:bg-muted font-medium transition-colors">
+                          Last 14D
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const now = new Date();
+                            const end = now.toISOString().split("T")[0];
+                            const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+                            setTempStartDate(start);
+                            setTempEndDate(end);
+                          }}
+                          className="text-[10px] px-2 py-0.5 rounded bg-muted/60 hover:bg-muted font-medium transition-colors">
+                          This Month
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const now = new Date();
+                            const firstOfPrev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                            const lastOfPrev = new Date(now.getFullYear(), now.getMonth(), 0);
+                            setTempStartDate(firstOfPrev.toISOString().split("T")[0]);
+                            setTempEndDate(lastOfPrev.toISOString().split("T")[0]);
+                          }}
+                          className="text-[10px] px-2 py-0.5 rounded bg-muted/60 hover:bg-muted font-medium transition-colors">
+                          Last Month
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs px-2.5 rounded-lg"
+                          onClick={() => setIsCustomDateOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs px-3 rounded-lg"
+                          disabled={!tempStartDate || !tempEndDate || tempStartDate > tempEndDate}
+                          onClick={() => {
+                            setCustomStartDate(tempStartDate);
+                            setCustomEndDate(tempEndDate);
+                            setDateMode("custom");
+                            setIsCustomDateOpen(false);
+                          }}>
+                          Apply Range
+                        </Button>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
             {/* Platform */}
@@ -579,7 +728,7 @@ export default function SocialAnalyzePage() {
               <div className="space-y-6">
                 <div>
                   <h2 className="text-lg font-bold">Overview</h2>
-                  <p className="text-xs text-muted-foreground">Key performance indicators for the last {dateRange} days</p>
+                  <p className="text-xs text-muted-foreground">Key performance indicators for {dateRangeText}</p>
                 </div>
                 {/* Adaptive KPI cards — only metrics this platform can report */}
                 {(() => {
@@ -608,7 +757,7 @@ export default function SocialAnalyzePage() {
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <div>
                           <CardTitle className="text-sm font-bold flex items-center gap-1.5"><TrendingUp className="h-4 w-4 text-primary"/>Performance Over Time</CardTitle>
-                          <CardDescription className="text-xs">Last {dateRange} days</CardDescription>
+                          <CardDescription className="text-xs">{dateRangeText}</CardDescription>
                         </div>
                         <div className="flex gap-1 flex-wrap">
                           {(["followers","reach","impressions","engagementRate"] as const).map(m => (
@@ -685,7 +834,7 @@ export default function SocialAnalyzePage() {
                 <Card className="rounded-2xl shadow-sm border border-border/80">
                   <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
                     <CardTitle className="text-sm font-bold flex items-center gap-1.5"><BarChart3 className="h-4 w-4 text-violet-500"/>Period Comparison</CardTitle>
-                    <CardDescription className="text-xs">Current {dateRange}D vs. previous {dateRange}D</CardDescription>
+                    <CardDescription className="text-xs">Current ({dateRangeText}) vs. previous period</CardDescription>
                   </CardHeader>
                   <CardContent className="p-6">
                     {analytics.monthlyComparison ? (
@@ -724,7 +873,7 @@ export default function SocialAnalyzePage() {
                 <Card className="rounded-2xl shadow-sm border border-border/80">
                   <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
                     <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Activity className="h-4 w-4 text-primary"/>Engagement Trend</CardTitle>
-                    <CardDescription className="text-xs">Daily engagement breakdown over {dateRange} days</CardDescription>
+                    <CardDescription className="text-xs">Daily engagement breakdown over {dateRangeText}</CardDescription>
                   </CardHeader>
                   <CardContent className="p-6">
                     <div className="h-72 w-full">
@@ -905,7 +1054,7 @@ export default function SocialAnalyzePage() {
                 <Card className="rounded-2xl shadow-sm border border-border/80">
                   <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
                     <CardTitle className="text-sm font-bold">Daily Reach Trend</CardTitle>
-                    <CardDescription className="text-xs">Reach progression over {dateRange} days</CardDescription>
+                    <CardDescription className="text-xs">Reach progression over {dateRangeText}</CardDescription>
                   </CardHeader>
                   <CardContent className="p-6">
                     <div className="h-52 w-full">
@@ -1128,15 +1277,15 @@ export default function SocialAnalyzePage() {
             {/* ══════════════ BEST TIME ══════════════ */}
             {activeTab === "besttime" && (
               <div className="space-y-6">
-                <div><h2 className="text-lg font-bold">Best Posting Time</h2><p className="text-xs text-muted-foreground">Optimal publishing times based on your historical engagement</p></div>
+                <div><h2 className="text-lg font-bold">Best Posting Time</h2><p className="text-xs text-muted-foreground">{heatmapGrid.source === 'import' ? "When your followers are most active — from imported TikTok Studio data" : "Optimal publishing times based on your historical engagement"}</p></div>
 
                 <Card className="rounded-2xl shadow-sm border border-border/80">
                   <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
-                    <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Clock className="h-4 w-4 text-amber-500"/>Engagement Heatmap</CardTitle>
-                    <CardDescription className="text-xs">Darker = more engagement at that day/hour</CardDescription>
+                    <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Clock className="h-4 w-4 text-amber-500"/>{heatmapGrid.source === 'import' ? "Follower Activity Heatmap" : "Engagement Heatmap"}</CardTitle>
+                    <CardDescription className="text-xs">Darker = more {heatmapGrid.source === 'import' ? "active followers" : "engagement"} at that day/hour</CardDescription>
                   </CardHeader>
                   <CardContent className="p-6 overflow-x-auto">
-                    {analytics.bestTimes.length > 0 ? (
+                    {heatmapGrid.hasData ? (
                       <div>
                         <div className="flex gap-1 mb-1 pl-10">
                           {Array.from({length:24},(_,h)=>(
@@ -1153,7 +1302,7 @@ export default function SocialAnalyzePage() {
                               return (
                                 <div
                                   key={hour}
-                                  title={`${DAYS_FULL[day]} ${hour}:00 — ${val} engagement`}
+                                  title={`${DAYS_FULL[day]} ${hour}:00 — ${fmtN(val)} ${heatmapGrid.source === 'import' ? "active followers" : "engagement"}`}
                                   className="w-7 h-7 rounded-sm shrink-0 border border-border/20 cursor-pointer hover:scale-110 transition-transform"
                                   style={{
                                     background: intensity>0
@@ -1167,34 +1316,34 @@ export default function SocialAnalyzePage() {
                         ))}
                       </div>
                     ) : (
-                      <NoData msg="Publish at least 5 posts to generate the heatmap — sync metrics to refresh"/>
+                      <NoData msg="Publish content — or import TikTok Studio data — to generate the heatmap"/>
                     )}
                   </CardContent>
                 </Card>
 
                 {/* Top 5 slots */}
-                {analytics.bestTimes.length > 0 && (
+                {heatmapGrid.topSlots.length > 0 && (
                   <Card className="rounded-2xl shadow-sm border border-border/80">
                     <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
-                      <CardTitle className="text-sm font-bold">Top 5 Best Posting Slots</CardTitle>
+                      <CardTitle className="text-sm font-bold">Top 5 {heatmapGrid.source === 'import' ? "Most Active Slots" : "Best Posting Slots"}</CardTitle>
                     </CardHeader>
                     <CardContent className="p-0">
-                      {analytics.bestTimes.slice(0,5).map((t:any,i:number) => {
+                      {heatmapGrid.topSlots.map((t, i) => {
                         const hr = t.hour===0?12:t.hour>12?t.hour-12:t.hour;
                         const ap = t.hour<12?"AM":"PM";
-                        const maxE = analytics.bestTimes[0]?.engagement||1;
+                        const maxE = heatmapGrid.topSlots[0]?.value||1;
                         return (
                           <div key={i} className="flex items-center gap-4 px-6 py-4 border-b border-border/40 last:border-0 hover:bg-muted/5">
                             <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-black text-primary shrink-0">#{i+1}</div>
                             <div className="flex-1 min-w-0">
                               <p className="font-bold text-sm">{DAYS_FULL[t.day]}</p>
-                              <p className="text-xs text-muted-foreground">{hr}:00 {ap} · {t.posts} post{t.posts!==1?"s":""} analyzed</p>
+                              <p className="text-xs text-muted-foreground">{hr}:00 {ap}</p>
                             </div>
                             <div className="flex items-center gap-3">
                               <div className="w-32 h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div className="h-full bg-primary rounded-full" style={{width:`${(t.engagement/maxE)*100}%`}}/>
+                                <div className="h-full bg-primary rounded-full" style={{width:`${(t.value/maxE)*100}%`}}/>
                               </div>
-                              <span className="text-xs font-bold text-primary w-16 text-right">{fmtN(t.engagement)} eng.</span>
+                              <span className="text-xs font-bold text-primary w-20 text-right">{fmtN(t.value)} {heatmapGrid.source === 'import' ? "active" : "eng."}</span>
                             </div>
                           </div>
                         );
@@ -1491,20 +1640,20 @@ export default function SocialAnalyzePage() {
                               const formData = new FormData();
                               Array.from(files).forEach(f => formData.append('files', f));
                               try {
-                                const res = await fetch(`/api/social/import/tiktok/${tiktokAcct.id}`, {
+                                // Route through apiFetch so the auth token comes from the
+                                // in-memory store (it is deliberately NOT in localStorage) and
+                                // 401s trigger a refresh. 'SKIP' lets the browser set the
+                                // multipart boundary for FormData.
+                                const data = await apiFetch<any>(`/social/import/tiktok/${tiktokAcct.id}`, {
                                   method: 'POST',
-                                  headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                                  headers: { 'Content-Type': 'SKIP' },
                                   body: formData,
                                 });
-                                const data = await res.json();
-                                if (data.success) {
-                                  toast({ title: "✅ Import Complete", description: `Imported ${data.summary?.files?.filter((f: any) => f.rows > 0).length || 0} file(s) successfully.` });
-                                  fetchAnalytics();
-                                } else {
-                                  toast({ title: "Import Failed", description: data.error || "Unknown error", variant: "destructive" });
-                                }
+                                const okFiles = data.summary?.files?.filter((f: any) => f.rows > 0).length || 0;
+                                toast({ title: "✅ Import Complete", description: `Imported ${okFiles} file(s) successfully.` });
+                                fetchAnalytics();
                               } catch (err: any) {
-                                toast({ title: "Import Failed", description: err.message, variant: "destructive" });
+                                toast({ title: "Import Failed", description: err.message || "Unknown error", variant: "destructive" });
                               }
                               e.target.value = '';
                             }}

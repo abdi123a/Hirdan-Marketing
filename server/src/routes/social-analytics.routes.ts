@@ -38,16 +38,32 @@ const matchesPlatform = (destinations: any[] | undefined, platformFilter: string
 router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => {
   try {
     const { clientId } = req.params;
-    const days = Math.min(parseInt(req.query.days as string) || 30, 365);
     const platformFilter = (req.query.platform as string || 'ALL').toUpperCase();
     const contentTypeFilter = req.query.contentType as string;
+    const startDateParam = req.query.startDate as string | undefined;
+    const endDateParam = req.query.endDate as string | undefined;
 
-    const now = new Date();
-    const todayUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-    const since = new Date(todayUTC);
-    since.setUTCDate(since.getUTCDate() - days);
-    const prevSince = new Date(since);
-    prevSince.setUTCDate(prevSince.getUTCDate() - days);
+    let since: Date;
+    let until: Date;
+    let prevSince: Date;
+    let days: number;
+
+    if (startDateParam && endDateParam) {
+      since = new Date(startDateParam);
+      until = new Date(endDateParam);
+      until.setHours(23, 59, 59, 999);
+      const diffMs = until.getTime() - since.getTime();
+      days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+      prevSince = new Date(since.getTime() - diffMs);
+    } else {
+      days = Math.min(parseInt(req.query.days as string) || 30, 365);
+      const now = new Date();
+      until = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
+      since = new Date(until);
+      since.setUTCDate(since.getUTCDate() - days);
+      prevSince = new Date(since);
+      prevSince.setUTCDate(prevSince.getUTCDate() - days);
+    }
 
     // ── Accounts ──
     const accWhere: any = { clientId, isActive: true };
@@ -478,17 +494,28 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
     const { clientId } = req.params as { clientId: string };
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+    const skip = (page - 1) * limit;
     const sortBy = (req.query.sortBy as string) || 'engagement';
     const platform = req.query.platform as string;
     const contentType = req.query.contentType as string;
     const search = req.query.search as string;
-    const days = parseInt(req.query.days as string) || 30;
-    const skip = (page - 1) * limit;
+    const startDateParam = req.query.startDate as string | undefined;
+    const endDateParam = req.query.endDate as string | undefined;
 
-    const now = new Date();
-    const todayUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-    const since = new Date(todayUTC);
-    since.setUTCDate(since.getUTCDate() - days);
+    let since: Date;
+    let until: Date;
+
+    if (startDateParam && endDateParam) {
+      since = new Date(startDateParam);
+      until = new Date(endDateParam);
+      until.setHours(23, 59, 59, 999);
+    } else {
+      const days = parseInt(req.query.days as string) || 30;
+      const now = new Date();
+      until = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59));
+      since = new Date(until);
+      since.setUTCDate(since.getUTCDate() - days);
+    }
 
     const where: any = { clientId, status: 'PUBLISHED' };
     if (contentType && contentType !== 'ALL') where.mediaType = contentType;
@@ -506,7 +533,7 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
 
     const platformFilter = (platform || 'ALL').toUpperCase();
     const scheduledScores = posts
-      .filter(p => p.publishedAt && new Date(p.publishedAt) >= since)
+      .filter(p => p.publishedAt && new Date(p.publishedAt) >= since && new Date(p.publishedAt) <= until)
       .filter(p => matchesPlatform(p.destinations, platformFilter))
       .map(p => {
         const ins = scopedInsights(p.insights, platformFilter);

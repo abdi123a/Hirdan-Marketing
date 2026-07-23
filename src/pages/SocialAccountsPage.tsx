@@ -12,7 +12,7 @@ import {
   Plus, Settings, RefreshCw, Trash2, CheckCircle2, AlertTriangle,
   Link as LinkIcon, Building2, Search, ChevronDown, ChevronUp,
   Activity, Users, Zap, ShieldAlert, Clock, BarChart3, ArrowRight,
-  Globe, X, Check, ExternalLink, AlertCircle, Sparkles,
+  Globe, X, Check, ExternalLink, AlertCircle, Sparkles, Upload, FileText,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -55,6 +55,10 @@ const PLATFORMS = [
   { id: "threads",   label: "Meta Threads",        color: "#000000", bg: "bg-zinc-50 text-zinc-950"  },
   { id: "pinterest", label: "Pinterest Board",     color: "#BD081C", bg: "bg-red-50 text-red-700"   },
 ];
+
+// Platforms whose analytics can be imported from an official XLSX export.
+// TikTok Studio today; extend as we add Meta Business Suite / YouTube exporters.
+const IMPORTABLE_PLATFORMS = ["tiktok"];
 
 const CAPABILITIES: Record<string, Record<string, boolean>> = {
   facebook:  { Publishing: true, Analytics: true, Comments: true, Messages: true, Reels: true, Stories: true },
@@ -157,6 +161,14 @@ export default function SocialAccountsPage() {
   const [wizardPlatform, setWizardPlatform] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
 
+  // Import Analytics Data dialog
+  const [importOpen, setImportOpen] = useState(false);
+  const [importClientId, setImportClientId] = useState("");
+  const [importAccountId, setImportAccountId] = useState("");
+  const [importFiles, setImportFiles] = useState<File[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
+
   useEffect(() => { fetchData(); }, []);
 
   // Show toast for OAuth callbacks
@@ -228,6 +240,74 @@ export default function SocialAccountsPage() {
     }
   };
 
+  // Clients who have connected social media accounts only
+  const clientsWithAccounts = useMemo(() => {
+    if (!data?.workspaces) return [];
+    const workspacesWithAccounts = data.workspaces.filter(w => (w.accounts && w.accounts.length > 0) || w.accountCount > 0);
+    const clientIdsWithAccounts = new Set(workspacesWithAccounts.map(w => w.clientId));
+
+    const list = clients.filter(c => clientIdsWithAccounts.has(c.id) || ((c as any)._count?.socialAccounts ?? 0) > 0);
+    for (const ws of workspacesWithAccounts) {
+      if (!list.some(c => c.id === ws.clientId)) {
+        list.push({
+          id: ws.clientId,
+          name: ws.clientName,
+          company: ws.clientCompany || ws.clientName,
+        });
+      }
+    }
+    return list;
+  }, [clients, data]);
+
+  // Clients to show in the Import Analytics Data dropdown.
+  // Shows only clients who have connected social media accounts (or falls back to all clients if none connected yet).
+  const importSelectClients = useMemo(() => {
+    return clientsWithAccounts.length > 0 ? clientsWithAccounts : clients;
+  }, [clientsWithAccounts, clients]);
+
+  // Validates that importClientId is actually in the allowed clients list
+  const activeImportClientId = useMemo(() => {
+    return importSelectClients.some(c => c.id === importClientId) ? importClientId : "";
+  }, [importSelectClients, importClientId]);
+
+  // Accounts eligible for XLSX import within the chosen client
+  const importWorkspace = data?.workspaces.find(w => w.clientId === importClientId);
+  const importableAccounts = (importWorkspace?.accounts || []).filter(a => IMPORTABLE_PLATFORMS.includes(a.platform.toLowerCase()));
+  const selectedImportAccount = importableAccounts.find(a => a.id === importAccountId);
+
+  const openImport = (presetClientId?: string) => {
+    setImportResult(null);
+    setImportFiles([]);
+    setImportAccountId("");
+    setImportClientId(presetClientId || "");
+    setImportOpen(true);
+  };
+
+  const handleImport = async () => {
+    if (!importAccountId || importFiles.length === 0) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const formData = new FormData();
+      importFiles.forEach(f => formData.append("files", f));
+      // 'SKIP' lets the browser set the multipart boundary; apiFetch attaches the
+      // in-memory auth token (deliberately not stored in localStorage).
+      const res = await apiFetch<any>(`/social/import/tiktok/${importAccountId}`, {
+        method: "POST",
+        headers: { "Content-Type": "SKIP" },
+        body: formData,
+      });
+      setImportResult(res.summary);
+      const okFiles = (res.summary?.files || []).filter((f: any) => f.rows > 0).length;
+      toast({ title: "✅ Import Complete", description: `Imported ${okFiles} file(s) into ${selectedImportAccount?.platformUsername || "the account"}.` });
+      fetchData();
+    } catch (err: any) {
+      toast({ title: "Import Failed", description: err.message || "Unknown error", variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   // Filtered + sorted workspaces
   const filteredWorkspaces = useMemo(() => {
     if (!data) return [];
@@ -278,6 +358,9 @@ export default function SocialAccountsPage() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={fetchData} className="rounded-xl gap-2 border-border">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+          <Button variant="outline" onClick={() => openImport()} className="rounded-xl gap-2 px-4 font-bold border-violet-200 text-violet-700 hover:bg-violet-50">
+            <Upload className="h-4 w-4" /> Import Data
           </Button>
           <Button onClick={() => { setWizardStep(1); setWizardClientId(""); setWizardPlatform(""); setWizardOpen(true); }} className="rounded-xl gap-2 px-5 shadow-md font-bold">
             <Plus className="h-4 w-4" /> Connect Social Account
@@ -860,6 +943,112 @@ export default function SocialAccountsPage() {
                   </Button>
                 </div>
               </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Import Analytics Data Dialog ── */}
+      <Dialog open={importOpen} onOpenChange={open => { setImportOpen(open); if (!open) { setImportResult(null); setImportFiles([]); } }}>
+        <DialogContent className="sm:max-w-lg rounded-2xl p-0 overflow-hidden">
+          <DialogHeader className="border-b border-border/40 bg-muted/5 px-7 py-5">
+            <DialogTitle className="font-black text-lg flex items-center gap-2"><Upload className="h-5 w-5 text-violet-600" /> Import Analytics Data</DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">Upload an official analytics export (TikTok Studio) to enrich an account with reach, demographics, and per-video metrics the API can't provide.</p>
+          </DialogHeader>
+
+          <div className="p-6 space-y-5">
+            {importResult ? (
+              /* ── Success summary ── */
+              <div className="space-y-4">
+                <div className="flex flex-col items-center text-center gap-2 py-1">
+                  <div className="h-12 w-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center"><CheckCircle2 className="h-6 w-6 text-emerald-600" /></div>
+                  <h3 className="font-bold">Import Complete</h3>
+                  <p className="text-xs text-muted-foreground">Added to <strong>{selectedImportAccount?.displayName || selectedImportAccount?.platformUsername}</strong>.</p>
+                </div>
+                <div className="rounded-xl border border-border/60 divide-y divide-border/40 text-sm overflow-hidden">
+                  {(importResult.files || []).map((f: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between px-4 py-2.5">
+                      <span className="truncate flex items-center gap-2"><FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />{f.filename}</span>
+                      <span className={`text-xs font-bold shrink-0 ${f.type === 'unknown' ? 'text-amber-600' : 'text-emerald-600'}`}>{f.type === 'unknown' ? 'skipped' : `${f.rows} rows`}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  {[["Days", importResult.dailyDates], ["Demo", importResult.demographics], ["Activity", importResult.activityCells], ["Videos", importResult.videos]].map(([l, v]: any) => (
+                    <div key={l} className="rounded-lg bg-muted/40 border border-border/50 p-2"><p className="text-lg font-black">{v ?? 0}</p><p className="text-[9px] uppercase font-bold text-muted-foreground">{l}</p></div>
+                  ))}
+                </div>
+                {(importResult.warnings || []).length > 0 && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-[11px] text-amber-700">
+                    {importResult.warnings.slice(0, 3).map((w: string, i: number) => <div key={i}>⚠️ {w}</div>)}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1 rounded-xl" onClick={() => { setImportResult(null); setImportFiles([]); }}>Import More</Button>
+                  <Button className="flex-1 rounded-xl" onClick={() => setImportOpen(false)}>Done</Button>
+                </div>
+              </div>
+            ) : (
+              /* ── Selection + upload ── */
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">1 · Business / Client</label>
+                  <Select value={activeImportClientId || undefined} onValueChange={v => { setImportClientId(v); setImportAccountId(""); }}>
+                    <SelectTrigger className="rounded-xl h-10"><SelectValue placeholder="Select a Client" /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {importSelectClients.map(c => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.company || c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {clientsWithAccounts.length === 0 && (
+                    <p className="text-[11px] text-amber-600 font-medium mt-1">No clients have connected social media accounts.</p>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">2 · Social Account</label>
+                  <Select value={importAccountId || undefined} onValueChange={setImportAccountId} disabled={!activeImportClientId}>
+                    <SelectTrigger className="rounded-xl h-10"><SelectValue placeholder={activeImportClientId ? "Select an account" : "Choose a client first"} /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {importableAccounts.map(a => (
+                        <SelectItem key={a.id} value={a.id}>
+                          <span className="flex items-center gap-2"><PlatformIcon platform={a.platform} cls="h-4 w-4 object-contain" />{a.displayName || a.platformUsername}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {activeImportClientId && importableAccounts.length === 0 && (
+                    <p className="text-[11px] text-amber-600">This client has no importable account. Only TikTok supports XLSX import today — connect a TikTok account first.</p>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">3 · Upload TikTok Studio Files</label>
+                  <label className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-7 transition-all ${importAccountId ? 'border-border/70 hover:border-violet-300 hover:bg-violet-50/40 cursor-pointer' : 'border-border/30 opacity-50 pointer-events-none'}`}>
+                    <input type="file" multiple accept=".xlsx,.xls,.csv" className="hidden" disabled={!importAccountId}
+                      onChange={e => setImportFiles(prev => [...prev, ...Array.from(e.target.files || [])])} />
+                    <Upload className="h-6 w-6 text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground text-center">Click to add XLSX files<br /><span className="text-[10px]">FollowerHistory · Overview · Viewers · Content · Gender · Territories · Activity</span></p>
+                  </label>
+                  {importFiles.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {importFiles.map((f, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-muted border border-border/50 rounded-full pl-2 pr-1 py-0.5">
+                          <FileText className="h-3 w-3" />{f.name}
+                          <button type="button" onClick={() => setImportFiles(prev => prev.filter((_, idx) => idx !== i))} className="hover:text-red-500"><X className="h-3 w-3" /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <Button onClick={handleImport} disabled={!importAccountId || importFiles.length === 0 || importing} className="w-full rounded-xl gap-2 font-bold shadow-md">
+                  {importing ? <><RefreshCw className="h-4 w-4 animate-spin" /> Importing…</> : <><Upload className="h-4 w-4" /> Import {importFiles.length > 0 ? `${importFiles.length} File(s)` : 'Data'}</>}
+                </Button>
+              </>
             )}
           </div>
         </DialogContent>
