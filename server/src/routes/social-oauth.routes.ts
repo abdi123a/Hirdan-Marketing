@@ -86,9 +86,7 @@ router.get('/oauth/connect', authenticate, async (req, res, next) => {
     } else if (platform === 'youtube') {
       authUrl = youtube.getYouTubeAuthorizationUrl(clientId, groupId);
     } else if (platform === 'x') {
-      const codeVerifier = randomBytes(32).toString('hex');
-      res.cookie('x_code_verifier', codeVerifier, { maxAge: 10 * 60 * 1000, httpOnly: true, secure: process.env.NODE_ENV === 'production' });
-      authUrl = x.getXAuthorizationUrl(clientId, groupId, codeVerifier);
+      authUrl = x.getXAuthorizationUrl(clientId, groupId);
     } else if (platform === 'pinterest') {
       authUrl = pinterest.getPinterestAuthorizationUrl(clientId, groupId);
     } else {
@@ -193,7 +191,7 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
       const d = await youtube.exchangeYouTubeCodeForToken(code);
       tokenData = { accessToken: d.access_token, refreshToken: d.refresh_token, expiresIn: d.expires_in, userId: d.channelId, username: d.name };
     } else if (platform === 'x') {
-      const codeVerifier = req.cookies.x_code_verifier || '';
+      const codeVerifier = (verified as any).codeVerifier || req.cookies?.x_code_verifier || '';
       const d = await x.exchangeXCodeForToken(code, codeVerifier);
       tokenData = { accessToken: d.access_token, refreshToken: d.refresh_token, expiresIn: d.expires_in, userId: d.platformUserId, username: d.username };
     } else if (platform === 'pinterest') {
@@ -233,8 +231,10 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
 
     res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?connected=true`);
   } catch (err: any) {
+    console.error(`[OAuth Callback Error] Platform: ${req.params.platform}:`, err?.response?.data || err?.message || err);
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?error=${encodeURIComponent(err.message)}`);
+    const errorMsg = err?.response?.data?.error_description || err?.response?.data?.error || err.message || 'OAuth authentication failed';
+    res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?error=${encodeURIComponent(errorMsg)}`);
   }
 });
 

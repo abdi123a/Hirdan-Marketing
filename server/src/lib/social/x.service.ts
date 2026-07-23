@@ -1,16 +1,19 @@
+import { createHash, randomBytes } from 'crypto';
 import axios from 'axios';
 import FormData from 'form-data';
 import { createOAuthState } from './oauth-state.service.js';
 import { getMediaBuffer } from './storage.service.js';
 
-export function getXAuthorizationUrl(clientIdStr: string, groupId: string, codeChallenge: string): string {
+export function getXAuthorizationUrl(clientIdStr: string, groupId: string, existingCodeVerifier?: string): string {
   const clientId = process.env.X_CLIENT_ID;
   if (!clientId) {
     throw new Error('X_CLIENT_ID is not configured');
   }
 
   const redirectUri = process.env.X_REDIRECT_URI || '';
-  const state = createOAuthState('x', clientIdStr, groupId);
+  const codeVerifier = existingCodeVerifier || randomBytes(32).toString('base64url');
+  const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
+  const state = createOAuthState('x', clientIdStr, groupId, { codeVerifier });
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -18,12 +21,13 @@ export function getXAuthorizationUrl(clientIdStr: string, groupId: string, codeC
     redirect_uri: redirectUri,
     state,
     code_challenge: codeChallenge,
-    code_challenge_method: 'plain',
+    code_challenge_method: 's256',
     scope: 'tweet.read tweet.write users.read offline.access',
   });
 
   return `https://twitter.com/i/oauth2/authorize?${params.toString()}`;
 }
+
 
 export async function exchangeXCodeForToken(code: string, codeVerifier: string): Promise<{ access_token: string; refresh_token: string; expires_in: number; platformUserId: string; username: string }> {
   const clientId = process.env.X_CLIENT_ID;
