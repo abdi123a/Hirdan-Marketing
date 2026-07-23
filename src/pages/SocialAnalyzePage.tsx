@@ -600,7 +600,6 @@ export default function SocialAnalyzePage() {
                     </div>
                   );
                 })()}
-                </div>
 
                 {/* Chart + Pie */}
                 <div className="grid lg:grid-cols-3 gap-6">
