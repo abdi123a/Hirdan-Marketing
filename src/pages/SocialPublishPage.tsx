@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/lib/auth-store";
 import { useAgencyStore } from "@/lib/store";
+import { contentTypesFor, validateContentTypeMedia, TIKTOK_POST_MODES, type TikTokPostMode, type ContentType } from "@/lib/platform-capabilities";
 import {
   Plus, Calendar, Clock, RefreshCw, Trash2, Sparkles, Image as ImageIcon, Loader2, Heart, MessageSquare, Share2, HelpCircle, ArrowLeft, X, Settings,
   Tag, Tags, ChevronDown, Zap, Music, ShoppingBag, Eye, Link as LinkIcon, Link2, Link2Off, Maximize2, Minimize2, ChevronUp, MoreHorizontal, Search, Disc, Volume2, Smile, FileText, Check, Bookmark,
@@ -393,17 +394,23 @@ export default function SocialPublishPage() {
 
   const [tiktokTitle, setTiktokTitle] = useState("");
   const [tiktokAutomatic, setTiktokAutomatic] = useState("automatic");
+  const [tiktokPostMode, setTiktokPostMode] = useState<TikTokPostMode>("direct");
+  const [tiktokType, setTiktokType] = useState<"video" | "photo">("video");
 
   const [linkedinFirstComment, setLinkedinFirstComment] = useState("");
+  const [linkedinType, setLinkedinType] = useState<string>("post");
 
   const [pinterestTitle, setPinterestTitle] = useState("");
   const [pinterestLink, setPinterestLink] = useState("");
+  const [pinterestType, setPinterestType] = useState<string>("pin");
 
   const [youtubeTitle, setYoutubeTitle] = useState("");
   const [youtubeType, setYoutubeType] = useState<"short" | "video">("short");
   const [youtubePrivacy, setYoutubePrivacy] = useState<string>("public");
   const [threadsTopic, setThreadsTopic] = useState("");
   const [threadsLocation, setThreadsLocation] = useState("");
+  const [threadsType, setThreadsType] = useState<string>("post");
+  const [xType, setXType] = useState<string>("post");
 
   // Debounce search input
   useEffect(() => {
@@ -731,7 +738,9 @@ export default function SocialPublishPage() {
           tiktok: {
             caption: getPlatformCaption("tiktok"),
             title: tiktokTitle,
-            automatic: tiktokAutomatic
+            type: tiktokType,
+            automatic: tiktokAutomatic,
+            postMode: tiktokPostMode,
           },
           linkedin: {
             caption: getPlatformCaption("linkedin"),
@@ -2666,22 +2675,31 @@ export default function SocialPublishPage() {
             <span className="text-xs font-semibold text-slate-300">selected</span>
           </div>
           <div className="flex items-center gap-2">
-            <select onChange={e => { if (e.target.value) { handleBulkChangeStatus(e.target.value); e.target.value = ""; } }}
-              className="text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-lg py-1.5 px-2.5 font-semibold outline-none hover:bg-slate-700 cursor-pointer">
-              <option value="">Change Status...</option>
-              {["DRAFT", "AWAITING_APPROVAL", "SCHEDULED", "PUBLISHED"].map(s => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
-            </select>
-            <select onChange={e => { if (e.target.value) { handleBulkMoveSchedule(Number(e.target.value)); e.target.value = ""; } }}
-              className="text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-lg py-1.5 px-2.5 font-semibold outline-none hover:bg-slate-700 cursor-pointer">
-              <option value="">Shift Schedule...</option>
-              <option value="1">+1 Day</option><option value="2">+2 Days</option><option value="7">+1 Week</option>
-              <option value="-1">-1 Day</option><option value="-7">-1 Week</option>
-            </select>
-            <select onChange={e => { if (e.target.value) { handleBulkAssignWriter(e.target.value); e.target.value = ""; } }}
-              className="text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-lg py-1.5 px-2.5 font-semibold outline-none hover:bg-slate-700 cursor-pointer">
-              <option value="">Assign Writer...</option>
-              {teamMembers.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-            </select>
+            <Select onValueChange={v => { handleBulkChangeStatus(v); }}>
+              <SelectTrigger size="xs" className="w-auto bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700 hover:border-slate-600 shadow-none">
+                <SelectValue placeholder="Change Status..." />
+              </SelectTrigger>
+              <SelectContent>
+                {["DRAFT", "AWAITING_APPROVAL", "SCHEDULED", "PUBLISHED"].map(s => <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select onValueChange={v => { handleBulkMoveSchedule(Number(v)); }}>
+              <SelectTrigger size="xs" className="w-auto bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700 hover:border-slate-600 shadow-none">
+                <SelectValue placeholder="Shift Schedule..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">+1 Day</SelectItem><SelectItem value="2">+2 Days</SelectItem><SelectItem value="7">+1 Week</SelectItem>
+                <SelectItem value="-1">-1 Day</SelectItem><SelectItem value="-7">-1 Week</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select onValueChange={v => { handleBulkAssignWriter(v); }}>
+              <SelectTrigger size="xs" className="w-auto bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700 hover:border-slate-600 shadow-none">
+                <SelectValue placeholder="Assign Writer..." />
+              </SelectTrigger>
+              <SelectContent>
+                {teamMembers.map(m => <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <Button variant="ghost" size="sm" onClick={handleBulkDuplicate} className="text-slate-300 hover:text-white hover:bg-slate-800 h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5">
               <Copy className="h-3 w-3" />Duplicate
             </Button>
@@ -3037,27 +3055,51 @@ export default function SocialPublishPage() {
                                 {/* Post type selector + sync toggle */}
                                 <div className="flex items-center justify-between flex-wrap gap-2">
                                   <div className="flex items-center gap-4">
-                                    {(plat === "instagram" || plat === "facebook") && (
-                                      ["Post", "Reel", "Story"].map(opt => (
-                                        <label key={opt} className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-foreground">
+                                    {(() => {
+                                      const types = contentTypesFor(plat);
+                                      if (types.length <= 1) return null;
+                                      const currentType = plat === 'instagram' ? instagramType
+                                        : plat === 'facebook' ? facebookType
+                                        : plat === 'youtube' ? youtubeType
+                                        : plat === 'tiktok' ? tiktokType
+                                        : plat === 'linkedin' ? linkedinType
+                                        : plat === 'x' ? xType
+                                        : plat === 'threads' ? threadsType
+                                        : plat === 'pinterest' ? pinterestType
+                                        : 'post';
+                                      const setType = (val: string) => {
+                                        if (plat === 'instagram') setInstagramType(val as any);
+                                        else if (plat === 'facebook') setFacebookType(val as any);
+                                        else if (plat === 'youtube') setYoutubeType(val as any);
+                                        else if (plat === 'tiktok') setTiktokType(val as any);
+                                        else if (plat === 'linkedin') setLinkedinType(val);
+                                        else if (plat === 'x') setXType(val);
+                                        else if (plat === 'threads') setThreadsType(val);
+                                        else if (plat === 'pinterest') setPinterestType(val);
+                                      };
+                                      return types.map(ct => (
+                                        <label key={ct.id} className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-foreground" title={ct.hint || ''}>
                                           <input type="radio" name={`${plat}-type`}
-                                            checked={(plat === "instagram" ? instagramType : facebookType) === opt.toLowerCase()}
-                                            onChange={() => plat === "instagram" ? setInstagramType(opt.toLowerCase() as any) : setFacebookType(opt.toLowerCase() as any)}
+                                            checked={currentType === ct.id}
+                                            onChange={() => setType(ct.id)}
                                             className="accent-primary" />
-                                          {opt}
+                                          {ct.label}
                                         </label>
-                                      ))
-                                    )}
-                                    {plat === "youtube" && (
-                                      (["Short", "Video"] as const).map(opt => (
-                                        <label key={opt} className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-foreground">
-                                          <input type="radio" name="youtube-type"
-                                            checked={youtubeType === opt.toLowerCase()}
-                                            onChange={() => setYoutubeType(opt.toLowerCase() as "short" | "video")}
-                                            className="accent-primary" />
-                                          {opt}
-                                        </label>
-                                      ))
+                                      ));
+                                    })()}
+                                    {plat === 'tiktok' && (
+                                      <div className="ml-2 pl-2 border-l border-border/40">
+                                        <Select value={tiktokPostMode} onValueChange={v => setTiktokPostMode(v as TikTokPostMode)}>
+                                          <SelectTrigger size="xs" className="w-auto min-w-[140px] shadow-none">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {TIKTOK_POST_MODES.map(mode => (
+                                              <SelectItem key={mode.id} value={mode.id}>{mode.label}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
                                     )}
                                   </div>
                                   <button type="button" onClick={() => togglePlatformSync(plat)}
@@ -3128,16 +3170,18 @@ export default function SocialPublishPage() {
                                     </div>
                                     <div className="flex items-center gap-3">
                                       <span className="text-xs text-muted-foreground w-16 shrink-0">Privacy</span>
-                                      <select
-                                        id="youtube-privacy"
-                                        value={youtubePrivacy}
-                                        onChange={(e) => setYoutubePrivacy(e.target.value)}
-                                        className="flex-1 border border-border/50 rounded-lg px-3 py-2 text-xs outline-none focus:border-primary bg-background text-foreground"
-                                      >
-                                        <option value="public">Public</option>
-                                        <option value="unlisted">Unlisted</option>
-                                        <option value="private">Private</option>
-                                      </select>
+                                      <div className="flex-1">
+                                        <Select value={youtubePrivacy} onValueChange={setYoutubePrivacy}>
+                                          <SelectTrigger size="sm" className="w-full shadow-none border-border/50">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="public">Public</SelectItem>
+                                            <SelectItem value="unlisted">Unlisted</SelectItem>
+                                            <SelectItem value="private">Private</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
                                     </div>
                                     <div className="pl-16 text-[10px] text-muted-foreground">
                                       Public: Visible to everyone. Unlisted: Anyone with the link can view. Private: Only you can view.
@@ -3210,7 +3254,7 @@ export default function SocialPublishPage() {
                         accountName={previewAccount?.displayName || activePlatform}
                         platformUsername={previewAccount?.platformUsername}
                         avatarUrl={previewAccount?.avatarUrl}
-                        postType={activePlatform === "instagram" ? instagramType : activePlatform === "facebook" ? facebookType : activePlatform === "youtube" ? youtubeType : "post"}
+                        postType={activePlatform === "instagram" ? instagramType : activePlatform === "facebook" ? facebookType : activePlatform === "youtube" ? youtubeType : activePlatform === "tiktok" ? tiktokType : activePlatform === "linkedin" ? linkedinType : activePlatform === "x" ? xType : activePlatform === "threads" ? threadsType : activePlatform === "pinterest" ? pinterestType : "post"}
                       />
                     );
                   })() : (
@@ -3226,12 +3270,15 @@ export default function SocialPublishPage() {
           {/* Composer Sticky Footer */}
           <div className="flex items-center justify-between px-6 py-4 border-t border-border/40 shrink-0 bg-background">
             <div className="flex items-center gap-3">
-              <select value={publishNow ? "now" : "schedule"} onChange={e => setPublishNow(e.target.value === "now")}
-                disabled={isSubmitting}
-                className="border border-border/50 bg-background rounded-xl px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-                <option value="now">Publish Now</option>
-                <option value="schedule">Schedule</option>
-              </select>
+              <Select value={publishNow ? "now" : "schedule"} onValueChange={v => setPublishNow(v === "now")} disabled={isSubmitting}>
+                <SelectTrigger size="sm" className="w-auto min-w-[130px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="now">Publish Now</SelectItem>
+                  <SelectItem value="schedule">Schedule</SelectItem>
+                </SelectContent>
+              </Select>
               {!publishNow && (
                 <div className="flex items-center gap-2 border border-border/50 bg-muted/20 rounded-xl px-3 py-1.5">
                   <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -3464,13 +3511,18 @@ export default function SocialPublishPage() {
             </div>
             <div className="space-y-2">
               <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Optimize Tone For</label>
-              <select value={aiTargetPlatform} onChange={e => setAiTargetPlatform(e.target.value)} className="w-full border border-border bg-background rounded-xl p-2.5 text-sm outline-none focus:border-primary">
-                <option value="instagram">Instagram (Engaging, hashtags, spacing)</option>
-                <option value="facebook">Facebook (Friendly, informational)</option>
-                <option value="linkedin">LinkedIn (Professional, thought-provoking)</option>
-                <option value="x">X / Twitter (Short, high impact)</option>
-                <option value="tiktok">TikTok (Trendy, short, action-focused)</option>
-              </select>
+              <Select value={aiTargetPlatform} onValueChange={setAiTargetPlatform}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="instagram">Instagram (Engaging, hashtags, spacing)</SelectItem>
+                  <SelectItem value="facebook">Facebook (Friendly, informational)</SelectItem>
+                  <SelectItem value="linkedin">LinkedIn (Professional, thought-provoking)</SelectItem>
+                  <SelectItem value="x">X / Twitter (Short, high impact)</SelectItem>
+                  <SelectItem value="tiktok">TikTok (Trendy, short, action-focused)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>

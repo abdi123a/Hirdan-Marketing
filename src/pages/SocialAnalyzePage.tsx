@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { apiFetch, getFullUrl } from "@/lib/api-client";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { capStatus, capAvailable, capOf, type Capabilities, type MetricKey, type EffectiveStatus } from "@/lib/platform-capabilities";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip,
   CartesianGrid, BarChart, Bar, Legend, PieChart, Pie, Cell,
@@ -13,34 +14,41 @@ import {
 import {
   Users, Eye, TrendingUp, UserPlus, RefreshCw, BarChart2, Heart, MessageSquare,
   Share2, Search, Calendar, Filter, Download, Bookmark, Play, ThumbsUp, ThumbsDown,
-  ArrowUp, ArrowDown, Minus, ChevronLeft, ChevronRight, Activity, Zap, Target,
+  ArrowUp, ArrowDown, Minus, ChevronLeft, ChevronRight, Activity, Zap, Target, Upload, Lock, Info,
   Globe, Clock, CheckCircle2, XCircle, AlertCircle, FileText, Repeat2, LayoutGrid,
   Image, Video, Film, BookOpen, Layers, List, BarChart3, Cpu, Sparkles, Send,
   MapPin, Hash, MousePointer, TrendingDown, SortDesc,
 } from "lucide-react";
 
 // ─────────────────────────── Types ───────────────────────────────────────────
-interface KPI {
+interface NullableKPI {
   current: number;
-  previous: number;
-  change: number;
-  growth: number;
+  previous: number | null;
+  change: number | null;
+  growth: number | null;
+  isNew?: boolean;
 }
 
 interface FullAnalytics {
+  capabilities: Capabilities;
+  provenance: { imported: string[]; lastImportedAt: string | null };
   kpis: {
-    followers: KPI;
-    reach: KPI;
-    impressions: KPI;
-    profileVisits: KPI;
-    engagementRate: { current: number; previous: number; change: number };
-    engagement: { likes: number; comments: number; shares: number; saved: number; views: number; total: number };
+    followers: NullableKPI | null;
+    reach: NullableKPI | null;
+    impressions: NullableKPI | null;
+    profileVisits: NullableKPI | null;
+    videoViews: NullableKPI | null;
+    engagementRate: { current: number; previous: number; change: number } | null;
+    engagement: { likes: number | null; comments: number | null; shares: number | null; saved: number | null; views: number | null; total: number };
+    viewers: { new: number; returning: number } | null;
     publishing: { published: number; scheduled: number; draft: number; failed: number; pendingApproval: number };
   };
   chartData: any[];
   engagementTrend: any[];
   contentTypePerformance: any[];
   bestTimes: any[];
+  activityHeatmap: { weekday: number; hour: number; activeFollowers: number }[];
+  demographics: { gender: any[]; country: any[]; age: any[] };
   platformComparison: any[];
   platformBreakdown: any[];
   topPosts: TopPost[];
@@ -52,7 +60,7 @@ interface FullAnalytics {
 
 interface TopPost {
   id: string; caption: string; mediaUrls: any; mediaType: string | null;
-  publishedAt: string | null; destinations: any[];
+  publishedAt: string | null; destinations: any[]; imported?: boolean; link?: string | null;
   likes: number; comments: number; shares: number; saved: number;
   views: number; reach: number; impressions: number; engagement: number; engagementRate: number;
 }
@@ -60,7 +68,8 @@ interface TopPost {
 interface AccountRow {
   id: string; platform: string; displayName: string; platformUsername: string;
   avatarUrl: string | null; healthStatus: string; healthMessage: string | null; updatedAt: string;
-  latestMetrics: { followers: number; reach: number; impressions: number; profileVisits: number; engagementRate: number; date: string } | null;
+  lastImportedAt?: string | null; source?: string;
+  latestMetrics: { followers: number | null; reach: number | null; impressions: number | null; profileVisits: number | null; videoViews: number | null; engagementRate: number | null; date: string } | null;
 }
 
 interface Client { id: string; name: string; company: string }
@@ -97,10 +106,11 @@ const TABS = [
 ];
 
 // ─────────────────────────── Utilities ───────────────────────────────────────
-const fmtN = (n: number) => {
+const fmtN = (n: number | null | undefined): string => {
+  if (n == null) return "—";
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
   if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
-  return n?.toLocaleString() ?? "0";
+  return n.toLocaleString();
 };
 
 const getPlatformIcon = (platform: string, cls = "h-4 w-4 rounded-sm object-contain") => {
@@ -115,7 +125,8 @@ const getPlatformIcon = (platform: string, cls = "h-4 w-4 rounded-sm object-cont
   return src ? <img src={src} className={cls} alt={platform} /> : <BarChart2 className={cls} />;
 };
 
-const Delta = ({ value, suffix = "%" }: { value: number; suffix?: string }) => {
+const Delta = ({ value, suffix = "%" }: { value: number | null | undefined; suffix?: string }) => {
+  if (value == null) return null;
   if (value > 0) return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full"><ArrowUp size={9}/>{Math.abs(value).toFixed(1)}{suffix}</span>;
   if (value < 0) return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-red-500 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded-full"><ArrowDown size={9}/>{Math.abs(value).toFixed(1)}{suffix}</span>;
   return <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-neutral-400 bg-neutral-50 border border-neutral-200 px-1.5 py-0.5 rounded-full"><Minus size={9}/>0{suffix}</span>;
@@ -141,7 +152,7 @@ const SectionLock = ({ title, desc }: { title: string; desc: string }) => (
 );
 
 // ─────────────────────────── KPI Card ────────────────────────────────────────
-const KPICard = ({ label, value, growth, icon: Icon, color, isRate = false, suffix = "" }: any) => {
+const KPICard = ({ label, value, growth, icon: Icon, color, isRate = false, suffix = "", status, note, platforms }: any) => {
   const colors: Record<string, string> = {
     blue: "bg-blue-50 text-blue-600 border-blue-100",
     emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
@@ -151,19 +162,36 @@ const KPICard = ({ label, value, growth, icon: Icon, color, isRate = false, suff
     indigo: "bg-indigo-50 text-indigo-600 border-indigo-100",
     teal: "bg-teal-50 text-teal-600 border-teal-100",
   };
+  const isUnavailable = status === 'locked' || status === 'importable';
   return (
-    <Card className="rounded-2xl shadow-sm border border-border/80 hover:shadow-md transition-all duration-200 cursor-default group">
+    <Card className={`rounded-2xl shadow-sm border border-border/80 hover:shadow-md transition-all duration-200 cursor-default group ${isUnavailable ? 'opacity-55 grayscale-[30%]' : ''}`}>
       <CardContent className="p-5 space-y-3">
         <div className="flex items-start justify-between">
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider leading-tight">{label}</p>
-          <div className={`h-8 w-8 rounded-xl flex items-center justify-center border shadow-sm shrink-0 ${colors[color] || colors.blue}`}>
-            <Icon className="h-3.5 w-3.5" />
+          <div className={`h-8 w-8 rounded-xl flex items-center justify-center border shadow-sm shrink-0 ${isUnavailable ? 'bg-muted text-muted-foreground border-border' : (colors[color] || colors.blue)}`}>
+            {isUnavailable ? <Lock className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}
           </div>
         </div>
-        <h3 className="text-2xl font-black text-foreground tracking-tight leading-none">
-          {isRate ? `${Number(value).toFixed(1)}%` : fmtN(value)}{suffix}
-        </h3>
-        {growth !== undefined && <Delta value={growth} />}
+        {isUnavailable ? (
+          <>
+            <h3 className="text-lg font-bold text-muted-foreground/50 tracking-tight leading-none">—</h3>
+            {note && <p className="text-[9px] text-muted-foreground leading-tight">{note}</p>}
+          </>
+        ) : (
+          <>
+            <h3 className="text-2xl font-black text-foreground tracking-tight leading-none">
+              {isRate ? `${Number(value ?? 0).toFixed(1)}%` : fmtN(value)}{suffix}
+            </h3>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {growth != null && <Delta value={growth} />}
+              {platforms && platforms.length > 0 && platforms.length < 4 && (
+                <span className="text-[8px] font-bold text-muted-foreground bg-muted/60 border border-border/60 px-1 py-0.5 rounded">
+                  {platforms.map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' + ')}
+                </span>
+              )}
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );
@@ -387,6 +415,7 @@ export default function SocialAnalyzePage() {
 
   // Derived values
   const kpis = analytics?.kpis;
+  const caps = analytics?.capabilities;
   const connectedPlatforms = useMemo(
     () => Array.from(new Set((analytics?.accounts||[]).map(a => a.platform.toLowerCase()))),
     [analytics]
@@ -395,14 +424,34 @@ export default function SocialAnalyzePage() {
   const pieData = (analytics?.platformBreakdown||[]).filter(p => p.followers > 0 || p.reach > 0)
     .map(p => ({ name: p.platform, value: p.followers || p.reach || 1 }));
 
-  // Heatmap data
+  // Helper: build KPI card props from the capability + kpi value blocks.
+  const capKpi = (key: MetricKey, label: string, kpiData: NullableKPI | null | undefined, icon: any, color: string, opts?: { isRate?: boolean }) => {
+    const cap = capOf(caps, key);
+    if (!cap) return null; // metric doesn't exist for any active platform — omit entirely
+    return {
+      label,
+      value: kpiData?.current ?? 0,
+      growth: kpiData?.growth,
+      icon,
+      color,
+      isRate: opts?.isRate,
+      status: cap.status,
+      note: cap.note,
+      platforms: cap.platforms,
+    };
+  };
+
+  // Heatmap: prefer real active-followers from imported data, fall back to post-engagement
   const heatmapGrid = useMemo(() => {
     const grid: number[][] = Array(7).fill(null).map(() => Array(24).fill(0));
-    for (const t of (analytics?.bestTimes||[])) {
-      grid[t.day][t.hour] = t.engagement;
+    const actHeatmap = analytics?.activityHeatmap || [];
+    if (actHeatmap.length > 0) {
+      for (const a of actHeatmap) grid[a.weekday][a.hour] = a.activeFollowers;
+    } else {
+      for (const t of (analytics?.bestTimes||[])) grid[t.day][t.hour] = t.engagement;
     }
     const maxVal = Math.max(...grid.flat(), 1);
-    return { grid, maxVal };
+    return { grid, maxVal, source: actHeatmap.length > 0 ? 'import' as const : 'posts' as const };
   }, [analytics]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -532,14 +581,25 @@ export default function SocialAnalyzePage() {
                   <h2 className="text-lg font-bold">Overview</h2>
                   <p className="text-xs text-muted-foreground">Key performance indicators for the last {dateRange} days</p>
                 </div>
-                {/* 6 KPI cards */}
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-                  <KPICard label={platformFilter === "YOUTUBE" ? "Total Subscribers" : "Total Followers"} value={kpis!.followers.current} growth={kpis!.followers.growth} icon={Users} color="blue"/>
-                  <KPICard label="Total Reach" value={kpis!.reach.current} growth={kpis!.reach.growth} icon={TrendingUp} color="emerald"/>
-                  <KPICard label="Impressions" value={kpis!.impressions.current} growth={kpis!.impressions.growth} icon={Eye} color="purple"/>
-                  <KPICard label="Profile Visits" value={platformFilter === "YOUTUBE" ? 0 : kpis!.profileVisits.current} growth={platformFilter === "YOUTUBE" ? undefined : kpis!.profileVisits.growth} icon={UserPlus} color="amber"/>
-                  <KPICard label="Engagement Rate" value={kpis!.engagementRate.current} growth={kpis!.engagementRate.change} icon={Activity} color="rose" isRate/>
-                  <KPICard label="Posts Published" value={kpis!.publishing.published} icon={Zap} color="indigo"/>
+                {/* Adaptive KPI cards — only metrics this platform can report */}
+                {(() => {
+                  const cards = [
+                    capKpi('followers', platformFilter === "YOUTUBE" ? "Total Subscribers" : "Total Followers", kpis?.followers, Users, "blue"),
+                    capKpi('reach', "Total Reach", kpis?.reach, TrendingUp, "emerald"),
+                    capKpi('impressions', "Impressions", kpis?.impressions, Eye, "purple"),
+                    capKpi('profileVisits', "Profile Visits", kpis?.profileVisits, UserPlus, "amber"),
+                    capKpi('videoViews', "Video Views", kpis?.videoViews, Play, "teal"),
+                    capKpi('engagementRate', "Engagement Rate", kpis?.engagementRate ? { current: kpis.engagementRate.current, previous: kpis.engagementRate.previous, change: kpis.engagementRate.change, growth: kpis.engagementRate.change } : null, Activity, "rose", { isRate: true }),
+                    // Posts Published is always real (local data)
+                    { label: "Posts Published", value: kpis?.publishing.published ?? 0, growth: undefined, icon: Zap, color: "indigo" },
+                  ].filter(Boolean);
+                  const cols = cards.length <= 4 ? "xl:grid-cols-4" : cards.length <= 5 ? "xl:grid-cols-5" : "xl:grid-cols-6";
+                  return (
+                    <div className={`grid grid-cols-2 md:grid-cols-3 ${cols} gap-4`}>
+                      {cards.map((c: any) => <KPICard key={c.label} {...c} />)}
+                    </div>
+                  );
+                })()}
                 </div>
 
                 {/* Chart + Pie */}
@@ -652,12 +712,12 @@ export default function SocialAnalyzePage() {
                 {/* Breakdown cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
                   {[
-                    { label:"Likes", value:kpis!.engagement.likes, icon:Heart, color:"rose" },
-                    { label:"Comments", value:kpis!.engagement.comments, icon:MessageSquare, color:"blue" },
-                    { label:"Shares", value:kpis!.engagement.shares, icon:Share2, color:"emerald" },
-                    { label:"Saves", value:kpis!.engagement.saved, icon:Bookmark, color:"amber" },
-                    { label:"Video Views", value:kpis!.engagement.views, icon:Play, color:"purple" },
-                    { label:"Total Engaged", value:kpis!.engagement.total, icon:Activity, color:"indigo" },
+                    { label:"Likes", value:kpis?.engagement.likes ?? 0, icon:Heart, color:"rose" },
+                    { label:"Comments", value:kpis?.engagement.comments ?? 0, icon:MessageSquare, color:"blue" },
+                    { label:"Shares", value:kpis?.engagement.shares ?? 0, icon:Share2, color:"emerald" },
+                    { label:"Saves", value:kpis?.engagement.saved ?? 0, icon:Bookmark, color:"amber" },
+                    { label:"Video Views", value:kpis?.engagement.views ?? 0, icon:Play, color:"purple" },
+                    { label:"Total Engaged", value:kpis?.engagement.total ?? 0, icon:Activity, color:"indigo" },
                   ].map(c => <KPICard key={c.label} {...c} growth={undefined}/>)}
                 </div>
 
@@ -698,12 +758,12 @@ export default function SocialAnalyzePage() {
                     </CardHeader>
                     <CardContent className="p-6 space-y-4">
                       <div className="flex items-end gap-3">
-                        <span className="text-4xl font-black text-foreground">{kpis!.engagementRate.current.toFixed(2)}%</span>
-                        <Delta value={kpis!.engagementRate.change}/>
+                        <span className="text-4xl font-black text-foreground">{(kpis?.engagementRate?.current ?? 0).toFixed(2)}%</span>
+                        <Delta value={kpis?.engagementRate?.change ?? 0}/>
                       </div>
-                      <p className="text-xs text-muted-foreground">vs. {kpis!.engagementRate.previous.toFixed(2)}% in the previous period</p>
+                      <p className="text-xs text-muted-foreground">vs. {(kpis?.engagementRate?.previous ?? 0).toFixed(2)}% in the previous period</p>
                       <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full" style={{width:`${Math.min(kpis!.engagementRate.current*10,100)}%`}}/>
+                        <div className="h-full bg-gradient-to-r from-emerald-400 to-emerald-600 rounded-full" style={{width:`${Math.min((kpis?.engagementRate?.current ?? 0)*10,100)}%`}}/>
                       </div>
                     </CardContent>
                   </Card>
@@ -748,10 +808,10 @@ export default function SocialAnalyzePage() {
                 <div><h2 className="text-lg font-bold">{platformFilter === "YOUTUBE" ? "Subscribers Analytics" : "Followers Analytics"}</h2><p className="text-xs text-muted-foreground">Audience growth and distribution</p></div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   {[
-                    { label: platformFilter === "YOUTUBE" ? "Current Subscribers" : "Current Followers", value:kpis!.followers.current, icon:Users, color:"blue" },
-                    { label:"Net Change", value:Math.abs(kpis!.followers.change), icon:kpis!.followers.change>=0?ArrowUp:ArrowDown, color:kpis!.followers.change>=0?"emerald":"rose" },
-                    { label:"Growth %", value:Math.abs(kpis!.followers.growth), icon:TrendingUp, color:"indigo", suffix:"%" },
-                    { label:"Prev. Period", value:kpis!.followers.previous, icon:Clock, color:"amber" },
+                    { label: platformFilter === "YOUTUBE" ? "Current Subscribers" : "Current Followers", value:kpis?.followers?.current ?? 0, icon:Users, color:"blue" },
+                    { label:"Net Change", value:kpis?.followers?.change != null ? Math.abs(kpis.followers.change) : 0, icon:(kpis?.followers?.change ?? 0)>=0?ArrowUp:ArrowDown, color:(kpis?.followers?.change ?? 0)>=0?"emerald":"rose" },
+                    { label:"Growth", value:kpis?.followers?.growth != null ? Math.abs(kpis.followers.growth) : 0, icon:TrendingUp, color:"indigo", suffix:"%" },
+                    ...(kpis?.followers?.isNew ? [] : [{ label:"Prev. Period", value:kpis?.followers?.previous ?? 0, icon:Clock, color:"amber" }]),
                   ].map(c => <KPICard key={c.label} growth={undefined} {...c} isRate={"suffix" in c}/>)}
                 </div>
 
@@ -813,10 +873,10 @@ export default function SocialAnalyzePage() {
               <div className="space-y-6">
                 <div><h2 className="text-lg font-bold">Reach & Impressions</h2><p className="text-xs text-muted-foreground">Content visibility and exposure metrics</p></div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <KPICard label="Total Reach" value={kpis!.reach.current} growth={kpis!.reach.growth} icon={TrendingUp} color="emerald"/>
-                  <KPICard label="Impressions" value={kpis!.impressions.current} growth={kpis!.impressions.growth} icon={Eye} color="purple"/>
-                  <KPICard label="Reach Change" value={Math.abs(kpis!.reach.change)} growth={undefined} icon={kpis!.reach.change>=0?ArrowUp:ArrowDown} color={kpis!.reach.change>=0?"emerald":"rose"}/>
-                  <KPICard label="Frequency" value={kpis!.reach.current>0?parseFloat((kpis!.impressions.current/kpis!.reach.current).toFixed(2)):0} growth={undefined} icon={Repeat2} color="amber"/>
+                  <KPICard label="Total Reach" value={kpis?.reach?.current ?? 0} growth={kpis?.reach?.growth} icon={TrendingUp} color="emerald"/>
+                  <KPICard label="Impressions" value={kpis?.impressions?.current ?? 0} growth={kpis?.impressions?.growth} icon={Eye} color="purple"/>
+                  <KPICard label="Reach Change" value={kpis?.reach?.change != null ? Math.abs(kpis.reach.change) : 0} growth={undefined} icon={(kpis?.reach?.change ?? 0)>=0?ArrowUp:ArrowDown} color={(kpis?.reach?.change ?? 0)>=0?"emerald":"rose"}/>
+                  <KPICard label="Frequency" value={(kpis?.reach?.current ?? 0)>0?parseFloat(((kpis?.impressions?.current ?? 0)/(kpis?.reach?.current ?? 1)).toFixed(2)):0} growth={undefined} icon={Repeat2} color="amber"/>
                 </div>
 
                 <Card className="rounded-2xl shadow-sm border border-border/80">
@@ -858,9 +918,6 @@ export default function SocialAnalyzePage() {
                             <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
                             <Tooltip content={<ChartTip/>}/>
                             <Line type="monotone" dataKey="reach" name="Reach" stroke="#10b981" strokeWidth={2.5} dot={false} activeDot={{r:5}}/>
-                            {platformFilter !== "YOUTUBE" && (
-                              <Line type="monotone" dataKey="profileVisits" name="Profile Visits" stroke="#f59e0b" strokeWidth={2} dot={false}/>
-                            )}
                           </LineChart>
                         </ResponsiveContainer>
                       ) : <NoData/>}
@@ -991,19 +1048,17 @@ export default function SocialAnalyzePage() {
               <div className="space-y-6">
                 <div><h2 className="text-lg font-bold">Video & Story Analytics</h2><p className="text-xs text-muted-foreground">Performance metrics for video and story content</p></div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <KPICard label="Video Views" value={kpis!.engagement.views} growth={undefined} icon={Play} color="purple"/>
-                  <KPICard label="Saves" value={kpis!.engagement.saved} growth={undefined} icon={Bookmark} color="amber"/>
-                  <KPICard label="Shares" value={kpis!.engagement.shares} growth={undefined} icon={Share2} color="emerald"/>
-                  <KPICard label="Comments" value={kpis!.engagement.comments} growth={undefined} icon={MessageSquare} color="blue"/>
+                  <KPICard label="Video Views" value={kpis?.engagement.views ?? 0} growth={undefined} icon={Play} color="purple"/>
+                  <KPICard label="Saves" value={kpis?.engagement.saved ?? 0} growth={undefined} icon={Bookmark} color="amber"/>
+                  <KPICard label="Shares" value={kpis?.engagement.shares ?? 0} growth={undefined} icon={Share2} color="emerald"/>
+                  <KPICard label="Comments" value={kpis?.engagement.comments ?? 0} growth={undefined} icon={MessageSquare} color="blue"/>
                 </div>
-                <SectionLock
-                  title="Advanced Video Analytics"
-                  desc="Watch time, completion rate, 3-second views, average watch duration, and retention rate require extended Meta/YouTube API permissions. These will be available after connecting a Business account and requesting the video_insights permission."
-                />
-                <SectionLock
-                  title="Story Analytics"
-                  desc="Story reach, replies, forward/back taps, exits, and completion rate require Instagram Professional account access and the instagram_manage_insights permission scope."
-                />
+                {capStatus(caps, 'story') === 'locked' && (
+                  <SectionLock
+                    title="Story Analytics"
+                    desc="Story insights require the instagram_manage_insights permission. Reconnect Instagram with insights enabled to view story reach, replies, and completion data."
+                  />
+                )}
               </div>
             )}
 
@@ -1011,14 +1066,63 @@ export default function SocialAnalyzePage() {
             {activeTab === "audience" && (
               <div className="space-y-6">
                 <div><h2 className="text-lg font-bold">Audience Insights</h2><p className="text-xs text-muted-foreground">Who is following your client's accounts</p></div>
-                <SectionLock
-                  title="Age & Gender Demographics"
-                  desc="Age groups (13–17, 18–24, 25–34, 35–44, 45–54, 55+) and gender breakdown require the Instagram Business Account 'instagram_manage_insights' permission and Facebook Page Insights advanced access."
-                />
-                <SectionLock
-                  title="Top Countries & Cities"
-                  desc="Geographic audience data (Top Countries/Cities with Followers and Growth) requires Business-level access to the Audience API endpoint on Facebook/Instagram. Enable advanced data access in Meta Business Suite."
-                />
+
+                {/* Gender demographics */}
+                {capAvailable(caps, 'demoGender') && (analytics?.demographics?.gender?.length ?? 0) > 0 ? (
+                  <Card className="rounded-2xl shadow-sm border border-border/80">
+                    <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                      <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Users className="h-4 w-4 text-violet-500"/>Gender Distribution</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <div className="space-y-3">
+                        {analytics!.demographics.gender.map((g: any) => (
+                          <div key={g.label} className="flex items-center gap-3">
+                            <span className="text-sm font-medium w-20 capitalize">{g.label}</span>
+                            <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full bg-violet-400 rounded-full" style={{width:`${(g.fraction*100)}%`}}/>
+                            </div>
+                            <span className="text-sm font-bold w-14 text-right">{(g.fraction*100).toFixed(1)}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : capStatus(caps, 'demoGender') === 'locked' ? (
+                  <SectionLock title="Gender Demographics" desc="Requires instagram_manage_insights or advanced Facebook Page access. Reconnect with the required permissions to view." />
+                ) : capStatus(caps, 'demoGender') === 'importable' ? (
+                  <SectionLock title="Gender Demographics" desc="Import your TikTok Studio export to see gender breakdown." />
+                ) : null}
+
+                {/* Top Countries */}
+                {capAvailable(caps, 'demoCountry') && (analytics?.demographics?.country?.length ?? 0) > 0 ? (
+                  <Card className="rounded-2xl shadow-sm border border-border/80">
+                    <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
+                      <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Globe className="h-4 w-4 text-blue-500"/>Top Countries</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <div className="space-y-3">
+                        {analytics!.demographics.country.slice(0, 10).map((c: any) => (
+                          <div key={c.label} className="flex items-center gap-3">
+                            <span className="text-sm font-medium w-20 uppercase">{c.label}</span>
+                            <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full bg-blue-400 rounded-full" style={{width:`${(c.fraction*100)}%`}}/>
+                            </div>
+                            <span className="text-sm font-bold w-14 text-right">{(c.fraction*100).toFixed(1)}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : capStatus(caps, 'demoCountry') === 'locked' ? (
+                  <SectionLock title="Top Countries" desc="Geographic data requires Business-level access. Enable advanced data access in Meta Business Suite." />
+                ) : capStatus(caps, 'demoCountry') === 'importable' ? (
+                  <SectionLock title="Top Countries" desc="Import your TikTok Studio export to see top countries." />
+                ) : null}
+
+                {/* If nothing is available at all */}
+                {!capOf(caps, 'demoGender') && !capOf(caps, 'demoCountry') && (
+                  <NoData msg="Audience demographics are not available for the selected platform" />
+                )}
               </div>
             )}
 
@@ -1207,7 +1311,6 @@ export default function SocialAnalyzePage() {
                         ].map(r => (
                           <div key={r.label} className="flex items-center gap-3 text-sm">
                             <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${r.color}`}/>
-                            <span className="text-muted-foreground flex-1">{r.label}</span>
                             <span className="font-bold tabular-nums">{r.val}</span>
                           </div>
                         ))}
@@ -1246,10 +1349,16 @@ export default function SocialAnalyzePage() {
               <div className="space-y-6">
                 <div><h2 className="text-lg font-bold">Account Analytics</h2><p className="text-xs text-muted-foreground">Detailed metrics for every connected social account</p></div>
                 <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
-                  {(analytics.accounts||[]).map((acc) => {
+                  {(analytics?.accounts||[]).map((acc) => {
                     const m = acc.latestMetrics;
                     const isHealthy = acc.healthStatus === "healthy";
-                    const er = m?.engagementRate || 0;
+                    const plat = acc.platform?.toLowerCase();
+                    const acctMetrics = [
+                      { label: plat === "youtube" ? "Subscribers" : "Followers", value: m?.followers },
+                      ...(m?.reach != null ? [{ label: "Reach", value: m.reach }] : []),
+                      ...(m?.impressions != null ? [{ label: "Impressions", value: m.impressions }] : []),
+                    ].filter(metric => metric.value != null);
+                    const gridCols = acctMetrics.length <= 2 ? "grid-cols-2" : "grid-cols-3";
                     return (
                       <Card key={acc.id} className="rounded-2xl shadow-sm border border-border/80 overflow-hidden">
                         <div className="flex items-center gap-3 p-5 border-b border-border/40">
@@ -1266,30 +1375,30 @@ export default function SocialAnalyzePage() {
                             {isHealthy?"Connected":"Issue"}
                           </span>
                         </div>
-                        <div className="grid grid-cols-2 gap-0 divide-x divide-y divide-border/40">
-                          {[
-                            { label: acc.platform?.toLowerCase() === "youtube" ? "Subscribers" : "Followers", value:m?.followers||0 },
-                            { label:"Reach", value:m?.reach||0 },
-                            { label:"Impressions", value:m?.impressions||0 },
-                            { label:"Profile Visits", value: acc.platform?.toLowerCase() === "youtube" ? 0 : (m?.profileVisits||0) },
-                          ].map(metric => (
+                        <div className={`grid ${gridCols} gap-0 divide-x divide-y divide-border/40`}>
+                          {acctMetrics.map(metric => (
                             <div key={metric.label} className="p-4 text-center">
                               <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">{metric.label}</p>
                               <p className="text-lg font-black text-foreground mt-1">{fmtN(metric.value)}</p>
                             </div>
                           ))}
                         </div>
-                        {er > 0 && (
+                        {m?.engagementRate != null && m.engagementRate > 0 && (
                           <div className="px-5 py-3 border-t border-border/40 bg-muted/5 flex items-center gap-3">
                             <span className="text-xs text-muted-foreground">Engagement Rate</span>
                             <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                              <div className="h-full bg-emerald-500 rounded-full" style={{width:`${Math.min(er*10,100)}%`}}/>
+                              <div className="h-full bg-emerald-500 rounded-full" style={{width:`${Math.min(m.engagementRate*10,100)}%`}}/>
                             </div>
-                            <span className="text-xs font-bold text-emerald-600">{er.toFixed(1)}%</span>
+                            <span className="text-xs font-bold text-emerald-600">{m.engagementRate.toFixed(1)}%</span>
                           </div>
                         )}
                         <div className="px-5 pb-3 pt-1 text-[10px] text-muted-foreground flex flex-col gap-2">
                           <div>Last sync: {m?.date ? new Date(m.date).toLocaleDateString() : "Never"}</div>
+                          {acc.lastImportedAt && (
+                            <div className="flex items-center gap-1 text-[10px] text-violet-600 bg-violet-50/50 border border-violet-100 px-2 py-1 rounded font-medium">
+                              <Upload size={10}/> Imported from {acc.platform} Studio · {new Date(acc.lastImportedAt).toLocaleDateString()}
+                            </div>
+                          )}
                           {acc.healthStatus !== "healthy" && acc.healthMessage && (
                             <div className="text-[10px] text-red-600 bg-red-50/50 border border-red-100 px-2 py-1 rounded font-medium">
                               ⚠️ {acc.healthMessage}
@@ -1340,35 +1449,74 @@ export default function SocialAnalyzePage() {
             {/* ══════════════ EXPORT ══════════════ */}
             {activeTab === "export" && (
               <div className="space-y-6">
-                <div><h2 className="text-lg font-bold">Export Reports</h2><p className="text-xs text-muted-foreground">Download your analytics data in various formats</p></div>
-                <div className="grid md:grid-cols-3 gap-5">
-                  {[
-                    { format:"CSV", icon:FileText, desc:"Raw data export for spreadsheets. Includes all posts, metrics, and engagement data.", action:exportCSV, available:true },
-                    { format:"PDF Report", icon:BookOpen, desc:"Full analytics report with charts and AI insights formatted for clients.", action:()=>toast({title:"PDF Export",description:"PDF export coming soon — currently available as CSV."}), available:false },
-                    { format:"Excel", icon:Layers, desc:"Comprehensive Excel workbook with multiple sheets for each analytics section.", action:()=>toast({title:"Excel Export",description:"Excel export coming soon — use CSV for now."}), available:false },
-                  ].map(e => (
-                    <Card key={e.format} className={`rounded-2xl shadow-sm border ${e.available?"border-border/80 hover:shadow-md cursor-pointer":"border-border/40 opacity-60"} transition-all`}>
+                <div><h2 className="text-lg font-bold">Export Reports</h2><p className="text-xs text-muted-foreground">Download your analytics data</p></div>
+                <div className="grid md:grid-cols-2 gap-5">
+                  <Card className="rounded-2xl shadow-sm border border-border/80 hover:shadow-md cursor-pointer transition-all">
+                    <CardContent className="p-6 flex flex-col items-center text-center gap-4">
+                      <div className="h-14 w-14 rounded-2xl flex items-center justify-center bg-primary/10 text-primary">
+                        <FileText className="h-6 w-6"/>
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-sm">CSV</h3>
+                        <p className="text-xs text-muted-foreground mt-1">Raw data export for spreadsheets. Includes all posts, metrics, and engagement data.</p>
+                      </div>
+                      <Button onClick={exportCSV} className="rounded-xl w-full gap-2"><Download className="h-4 w-4"/>Export Now</Button>
+                    </CardContent>
+                  </Card>
+
+                  {/* TikTok Studio Import panel */}
+                  {connectedPlatforms.includes('tiktok') && (
+                    <Card className="rounded-2xl shadow-sm border border-violet-200 hover:shadow-md transition-all">
                       <CardContent className="p-6 flex flex-col items-center text-center gap-4">
-                        <div className={`h-14 w-14 rounded-2xl flex items-center justify-center ${e.available?"bg-primary/10 text-primary":"bg-muted text-muted-foreground"}`}>
-                          <e.icon className="h-6 w-6"/>
+                        <div className="h-14 w-14 rounded-2xl flex items-center justify-center bg-violet-50 text-violet-600 border border-violet-100">
+                          <Upload className="h-6 w-6"/>
                         </div>
                         <div>
-                          <h3 className="font-bold text-sm">{e.format}</h3>
-                          <p className="text-xs text-muted-foreground mt-1">{e.desc}</p>
-                          {!e.available && <span className="text-[10px] bg-amber-50 text-amber-600 border border-amber-100 px-2 py-0.5 rounded-full font-bold mt-2 inline-block">Coming Soon</span>}
+                          <h3 className="font-bold text-sm">Import TikTok Studio Data</h3>
+                          <p className="text-xs text-muted-foreground mt-1">Upload XLSX exports from TikTok Studio Analytics to enrich your dashboard with reach, demographics, and per-video metrics.</p>
+                          {analytics?.provenance?.lastImportedAt && (
+                            <p className="text-[10px] text-violet-600 mt-2">Last imported: {new Date(analytics.provenance.lastImportedAt).toLocaleDateString()}</p>
+                          )}
                         </div>
-                        <Button
-                          onClick={e.action}
-                          variant={e.available?"default":"outline"}
-                          className={`rounded-xl w-full gap-2 ${e.available?"":"opacity-50"}`}
-                          disabled={!e.available&&false}
-                        >
-                          <Download className="h-4 w-4"/>
-                          {e.available?"Export Now":"Coming Soon"}
-                        </Button>
+                        <label className="w-full">
+                          <input
+                            type="file"
+                            multiple
+                            accept=".xlsx,.xls,.csv"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const files = e.target.files;
+                              if (!files?.length) return;
+                              const tiktokAcct = analytics?.accounts?.find(a => a.platform.toLowerCase() === 'tiktok');
+                              if (!tiktokAcct) { toast({ title: "No TikTok account", description: "Connect a TikTok account first.", variant: "destructive" }); return; }
+                              const formData = new FormData();
+                              Array.from(files).forEach(f => formData.append('files', f));
+                              try {
+                                const res = await fetch(`/api/social/import/tiktok/${tiktokAcct.id}`, {
+                                  method: 'POST',
+                                  headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                                  body: formData,
+                                });
+                                const data = await res.json();
+                                if (data.success) {
+                                  toast({ title: "✅ Import Complete", description: `Imported ${data.summary?.files?.filter((f: any) => f.rows > 0).length || 0} file(s) successfully.` });
+                                  fetchAnalytics();
+                                } else {
+                                  toast({ title: "Import Failed", description: data.error || "Unknown error", variant: "destructive" });
+                                }
+                              } catch (err: any) {
+                                toast({ title: "Import Failed", description: err.message, variant: "destructive" });
+                              }
+                              e.target.value = '';
+                            }}
+                          />
+                          <Button variant="outline" className="rounded-xl w-full gap-2 border-violet-200 text-violet-600 hover:bg-violet-50" asChild>
+                            <span><Upload className="h-4 w-4"/>Upload XLSX Files</span>
+                          </Button>
+                        </label>
                       </CardContent>
                     </Card>
-                  ))}
+                  )}
                 </div>
 
                 {/* What's included */}

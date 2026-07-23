@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/components/ui/use-toast";
 import { apiFetch } from "@/lib/api-client";
 import { AccountsSkeleton } from "@/components/ui/PageSkeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Plus, Settings, RefreshCw, Trash2, CheckCircle2, AlertTriangle,
   Link as LinkIcon, Building2, Search, ChevronDown, ChevronUp,
@@ -426,15 +427,16 @@ export default function SocialAccountsPage() {
                 ))}
               </div>
               {/* Sort */}
-              <select
-                value={sortBy}
-                onChange={e => setSortBy(e.target.value as any)}
-                className="text-xs font-semibold border border-border bg-background rounded-xl px-3 py-2 focus:outline-none"
-              >
-                <option value="alpha">A → Z</option>
-                <option value="recent_sync">Recent Sync</option>
-                <option value="recent_publish">Recent Publish</option>
-              </select>
+              <Select value={sortBy} onValueChange={v => setSortBy(v as any)}>
+                <SelectTrigger size="xs" className="w-auto min-w-[110px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="alpha">A → Z</SelectItem>
+                  <SelectItem value="recent_sync">Recent Sync</SelectItem>
+                  <SelectItem value="recent_publish">Recent Publish</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

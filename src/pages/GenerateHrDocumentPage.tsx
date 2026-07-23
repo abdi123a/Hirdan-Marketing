@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { 
   ArrowLeft, Download, Mail, Check, AlertCircle, Loader2, Landmark, 
@@ -698,16 +699,16 @@ export default function GenerateHrDocumentPage() {
                     <div className="space-y-3 pt-2 border-t border-border/40">
                       <div className="space-y-1.5">
                         <Label htmlFor="warning-level" className="text-xs font-semibold">Warning Level</Label>
-                        <select
-                          id="warning-level"
-                          value={docFields.warningLevel}
-                          onChange={(e) => handleFieldChange("warningLevel", e.target.value)}
-                          className="w-full border border-input bg-background rounded-xl px-3 py-2 text-xs font-medium focus:ring-2 focus:ring-primary/20"
-                        >
-                          <option value="1st Warning">1st Warning</option>
-                          <option value="2nd Warning">2nd Warning</option>
-                          <option value="Final Warning">Final Warning</option>
-                        </select>
+                        <Select value={docFields.warningLevel} onValueChange={v => handleFieldChange("warningLevel", v)}>
+                          <SelectTrigger size="sm" className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1st Warning">1st Warning</SelectItem>
+                            <SelectItem value="2nd Warning">2nd Warning</SelectItem>
+                            <SelectItem value="Final Warning">Final Warning</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
 
                       <div className="space-y-1.5">

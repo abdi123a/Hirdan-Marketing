@@ -1289,12 +1289,18 @@ model SocialAccount {
   groupName        String?   @map("group_name")
   groupColor       String?   @map("group_color")
   isActive         Boolean   @default(true) @map("is_active")
+  // Last time an analytics export (e.g. TikTok Studio XLSX) was imported for
+  // this account — powers the "Imported · updated {date}" provenance chip.
+  lastImportedAt   DateTime? @map("last_imported_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
   client        Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
   destinations  SocialPostDestination[]
   insightsDaily AccountInsightDaily[]
+  demographics  AccountDemographic[]
+  activity      AccountActivity[]
+  importedPosts ImportedPost[]
 
   @@unique([clientId, platform, platformUserId])
   @@index([clientId])
@@ -1331,8 +1337,12 @@ model SocialPostDestination {
   postId          String    @map("post_id")
   socialAccountId String    @map("social_account_id")
   platform        String
-  status          String    @default("QUEUED") // QUEUED|PUBLISHING|PUBLISHED|FAILED
+  status          String    @default("QUEUED") // QUEUED|PUBLISHING|PUBLISHED|FAILED|DRAFT
   platformPostId  String?   @map("platform_post_id")
+  // Canonical public URL of the published item (e.g. TikTok video link). For
+  // TikTok this lets us store/resolve the real numeric video id used to match
+  // TikTok Studio export rows back to the post we published.
+  platformPostUrl String?   @map("platform_post_url") @db.Text
   publishedAt     DateTime? @map("published_at")
   lastError       String?   @map("last_error") @db.Text
   attempts        Int       @default(0)
@@ -1364,6 +1374,17 @@ model AccountInsightDaily {
   lifetimeViewsSnapshot Int? @map("lifetime_views_snapshot")
   engagementRate  Decimal? @map("engagement_rate") @db.Decimal(5, 2)
 
+  // Extra daily metrics populated by imported exports (e.g. TikTok Studio XLSX).
+  // Nullable so live-API rows (which don't provide them) stay honestly empty.
+  videoViews       Int?    @map("video_views")
+  likes            Int?
+  comments         Int?
+  shares           Int?
+  newViewers       Int?    @map("new_viewers")
+  returningViewers Int?    @map("returning_viewers")
+  // Provenance: 'api' = fetched live from the platform, 'import' = uploaded export.
+  source           String  @default("api")
+
   account SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
 
   @@unique([socialAccountId, date])
@@ -1393,6 +1414,69 @@ model PostInsight {
   @@unique([postId, platform])
   @@index([postId])
   @@map("post_insights")
+}
+
+// Audience demographics for an account (gender / country / age splits). Populated
+// from imported analytics exports (TikTok Studio) or, later, platform APIs. Each
+// row is one slice: e.g. kind='gender' label='Male' fraction=0.62.
+model AccountDemographic {
+  id              String   @id @default(uuid())
+  socialAccountId String   @map("social_account_id")
+  kind            String // 'gender' | 'country' | 'age'
+  label           String // 'Male' | 'US' | '18-24' | 'Others'
+  fraction        Float // 0..1
+  source          String   @default("import")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  account SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialAccountId, kind, label])
+  @@index([socialAccountId])
+  @@map("account_demographics")
+}
+
+// Follower active-time heatmap: average active followers per weekday+hour.
+// Aggregated at import time from TikTok Studio's FollowerActivity export.
+model AccountActivity {
+  id              String   @id @default(uuid())
+  socialAccountId String   @map("social_account_id")
+  weekday         Int // 0=Sun .. 6=Sat
+  hour            Int // 0..23
+  activeFollowers Int      @map("active_followers")
+  source          String   @default("import")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  account SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialAccountId, weekday, hour])
+  @@index([socialAccountId])
+  @@map("account_activity")
+}
+
+// Per-video/post metrics imported from an export (TikTok Studio "Content"), for
+// content the account posted natively (not through our scheduler). Kept separate
+// from social_posts so imported native content never pollutes the composer/queue.
+// Keyed by the platform's own id (TikTok video id parsed from the video link).
+model ImportedPost {
+  id              String    @id @default(uuid())
+  socialAccountId String    @map("social_account_id")
+  platform        String
+  externalId      String    @map("external_id")
+  title           String?   @db.Text
+  link            String?   @db.Text
+  postedAt        DateTime? @map("posted_at")
+  likes           Int?
+  comments        Int?
+  shares          Int?
+  views           Int?
+  source          String    @default("import")
+  importedAt      DateTime  @default(now()) @map("imported_at")
+
+  account SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialAccountId, externalId])
+  @@index([socialAccountId])
+  @@map("imported_posts")
 }
 
 model SocialCampaign {

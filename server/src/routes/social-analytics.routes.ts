@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { collectDailyInsights } from '../lib/social/social-scheduler.js';
+import { computeCapabilities, METRIC_AVAILABILITY, type MetricKey } from '../lib/social/metric-availability.js';
 
 const router = Router();
 
@@ -73,16 +74,22 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       }),
     ]);
 
-    const cleanMetric = (m: any) => {
-      const plat = (m.account?.platform || '').toLowerCase();
-      if (['facebook', 'instagram', 'youtube'].includes(plat)) {
-        return { ...m, profileVisits: 0 };
-      }
-      return m;
-    };
+    // No fake zeroing. Metric truthfulness is enforced by the capability registry
+    // below: a metric no platform in view can report is returned as `null`, never 0.
+    const currentMetrics = rawCurrentMetrics;
+    const prevMetrics = rawPrevMetrics;
 
-    const currentMetrics = rawCurrentMetrics.map(cleanMetric);
-    const prevMetrics = rawPrevMetrics.map(cleanMetric);
+    // ── Capabilities: the single source of truth for what's real in this view ──
+    const activePlatforms = platformFilter !== 'ALL'
+      ? [platformFilter.toLowerCase()]
+      : Array.from(new Set(accounts.map(a => a.platform.toLowerCase())));
+    const importedPlatforms = new Set(
+      accounts.filter(a => a.lastImportedAt).map(a => a.platform.toLowerCase()),
+    );
+    const caps = computeCapabilities(activePlatforms, importedPlatforms);
+    const can = (key: MetricKey) => caps.metrics[key]?.status === 'available';
+    // Gate a value behind availability so unavailable metrics serialize as null.
+    const gate = <T,>(key: MetricKey, value: T): T | null => (can(key) ? value : null);
 
     // ── Posts ──
     const postWhere: any = { clientId };
@@ -111,17 +118,30 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     // ── Per-account latest ──
     const accountsWithLatest = await Promise.all(
       accounts.map(async acc => {
-        const [latest, before] = await Promise.all([
+        const [latest, before, latestFollowers, beforeFollowers] = await Promise.all([
           prisma.accountInsightDaily.findFirst({ where: { socialAccountId: acc.id }, orderBy: { date: 'desc' } }),
           prisma.accountInsightDaily.findFirst({ where: { socialAccountId: acc.id, date: { lt: since } }, orderBy: { date: 'desc' } }),
+          // Followers can be null on rows sourced from files that don't carry them
+          // (e.g. a Viewers-only day), so read the latest row that actually has a
+          // follower count rather than whichever row happens to be newest.
+          prisma.accountInsightDaily.findFirst({ where: { socialAccountId: acc.id, followers: { not: null } }, orderBy: { date: 'desc' } }),
+          prisma.accountInsightDaily.findFirst({ where: { socialAccountId: acc.id, followers: { not: null }, date: { lt: since } }, orderBy: { date: 'desc' } }),
         ]);
-        return { ...acc, latest, before };
+        return { ...acc, latest, before, latestFollowers, beforeFollowers };
       })
     );
 
+    // ── Imported (export-backed) data — already platform-scoped via accountIds ──
+    const [demoRows, activityRows, importedVideos] = await Promise.all([
+      prisma.accountDemographic.findMany({ where: { socialAccountId: { in: accountIds } } }),
+      prisma.accountActivity.findMany({ where: { socialAccountId: { in: accountIds } } }),
+      prisma.importedPost.findMany({ where: { socialAccountId: { in: accountIds } }, orderBy: { views: 'desc' } }),
+    ]);
+    const platformOf = new Map(accounts.map(a => [a.id, a.platform.toLowerCase()]));
+
     // ── KPIs ──
-    const currFollowers = accountsWithLatest.reduce((s, a) => s + (a.latest?.followers || 0), 0);
-    const prevFollowers = accountsWithLatest.reduce((s, a) => s + (a.before?.followers || 0), 0);
+    const currFollowers = accountsWithLatest.reduce((s, a) => s + (a.latestFollowers?.followers || 0), 0);
+    const prevFollowers = accountsWithLatest.reduce((s, a) => s + (a.beforeFollowers?.followers || 0), 0);
     const currReach = sum(currentMetrics, 'reach');
     const prevReach = sum(prevMetrics, 'reach');
     const currImpressions = sum(currentMetrics, 'impressions');
@@ -132,13 +152,20 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     const recentInsights = recentPosts.flatMap(p => scopedInsights(p.insights, platformFilter));
     const prevInsights = prevPeriodPosts.flatMap(p => scopedInsights(p.insights, platformFilter));
 
-    const currLikes = sum(recentInsights, 'likes');
-    const currComments = sum(recentInsights, 'comments');
-    const currShares = sum(recentInsights, 'shares');
+    // Engagement combines per-post insights (Facebook/Instagram) with imported
+    // daily account totals (TikTok Studio has no per-post API, so its daily
+    // likes/comments/shares live on AccountInsightDaily rows). A platform
+    // contributes to only one of the two, so there's no double counting.
+    const currLikes = sum(recentInsights, 'likes') + sum(currentMetrics, 'likes');
+    const currComments = sum(recentInsights, 'comments') + sum(currentMetrics, 'comments');
+    const currShares = sum(recentInsights, 'shares') + sum(currentMetrics, 'shares');
     const currSaved = sum(recentInsights, 'saved');
-    const currViews = sum(recentInsights, 'views');
+    const currViews = sum(recentInsights, 'views') + sum(currentMetrics, 'videoViews');
     const currEngagement = currLikes + currComments + currShares + currSaved;
-    const prevEngagement = sum(prevInsights, 'likes') + sum(prevInsights, 'comments') + sum(prevInsights, 'shares') + sum(prevInsights, 'saved');
+    const prevEngagement =
+      sum(prevInsights, 'likes') + sum(prevInsights, 'comments') + sum(prevInsights, 'shares') + sum(prevInsights, 'saved') +
+      sum(prevMetrics, 'likes') + sum(prevMetrics, 'comments') + sum(prevMetrics, 'shares');
+    // One engagement-rate definition everywhere: engagement ÷ reach × 100.
     const currER = currReach > 0 ? parseFloat(((currEngagement / currReach) * 100).toFixed(2)) : 0;
     const prevER = prevReach > 0 ? parseFloat(((prevEngagement / prevReach) * 100).toFixed(2)) : 0;
 
@@ -165,22 +192,21 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
 
     // ── Chart data (by date, aggregated) ──
     const dateMap: Record<string, any> = {};
-    for (const m of currentMetrics) {
+    for (const m of currentMetrics as any[]) {
       const ds = m.date.toISOString().split('T')[0];
-      if (!dateMap[ds]) dateMap[ds] = { date: ds, followers: 0, reach: 0, impressions: 0, profileVisits: 0, engagementRate: 0, _n: 0 };
+      if (!dateMap[ds]) dateMap[ds] = { date: ds, followers: 0, reach: 0, impressions: 0, profileVisits: 0, videoViews: 0, _eng: 0 };
       dateMap[ds].followers += m.followers || 0;
       dateMap[ds].reach += m.reach || 0;
       dateMap[ds].impressions += m.impressions || 0;
       dateMap[ds].profileVisits += m.profileVisits || 0;
-      dateMap[ds].engagementRate += Number(m.engagementRate) || 0;
-      dateMap[ds]._n += 1;
+      dateMap[ds].videoViews += m.videoViews || 0;
+      dateMap[ds]._eng += (m.likes || 0) + (m.comments || 0) + (m.shares || 0);
     }
     const chartData = Object.values(dateMap)
       .map((d: any) => {
-        d.engagementRate = d.followers > 0
-          ? parseFloat(((d.reach / d.followers) * 100).toFixed(2))
-          : d._n > 0 ? parseFloat((d.engagementRate / d._n).toFixed(2)) : 0;
-        delete d._n;
+        // Unified engagement-rate definition: engagement ÷ reach × 100.
+        d.engagementRate = d.reach > 0 ? parseFloat(((d._eng / d.reach) * 100).toFixed(2)) : 0;
+        delete d._eng;
         return d;
       })
       .sort((a: any, b: any) => a.date.localeCompare(b.date));
@@ -216,6 +242,14 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
         ctMap[t].impressions += ins.impressions || 0;
       }
     }
+    // Fold imported TikTok videos into the "video" content-type bucket.
+    for (const v of importedVideos) {
+      const t = 'video';
+      if (!ctMap[t]) ctMap[t] = { type: t, count: 0, reach: 0, engagement: 0, views: 0, saved: 0, impressions: 0 };
+      ctMap[t].count += 1;
+      ctMap[t].engagement += (v.likes || 0) + (v.comments || 0) + (v.shares || 0);
+      ctMap[t].views += v.views || 0;
+    }
     const contentTypePerformance = Object.values(ctMap).map((t: any) => ({
       type: t.type, count: t.count,
       avgReach: t.count > 0 ? Math.round(t.reach / t.count) : 0,
@@ -245,11 +279,11 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     for (const acc of accountsWithLatest) {
       const p = acc.platform.toLowerCase();
       if (!platMap[p]) platMap[p] = { platform: p, followers: 0, reach: 0, impressions: 0, engagement: 0, posts: 0, growth: 0 };
-      platMap[p].followers += acc.latest?.followers || 0;
+      platMap[p].followers += acc.latestFollowers?.followers || 0;
       platMap[p].reach += acc.latest?.reach || 0;
       platMap[p].impressions += acc.latest?.impressions || 0;
-      const prev = acc.before?.followers || 0;
-      const curr = acc.latest?.followers || 0;
+      const prev = acc.beforeFollowers?.followers || 0;
+      const curr = acc.latestFollowers?.followers || 0;
       if (prev > 0) platMap[p].growth = parseFloat(((curr - prev) / prev * 100).toFixed(1));
     }
     for (const p of recentPosts) {
@@ -268,8 +302,8 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       }
     }
 
-    // ── Top posts ──
-    const topPosts = recentPosts.map(p => {
+    // ── Top posts (scheduled posts + imported native videos) ──
+    const scheduledTop = recentPosts.map(p => {
       const ins = scopedInsights(p.insights, platformFilter);
       const likes = sum(ins, 'likes'), comments = sum(ins, 'comments'), shares = sum(ins, 'shares'),
         saved = sum(ins, 'saved'), views = sum(ins, 'views'), reach = sum(ins, 'reach'), impressions = sum(ins, 'impressions');
@@ -277,10 +311,24 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       const er = reach > 0 ? parseFloat(((engagement / reach) * 100).toFixed(2)) : 0;
       return {
         id: p.id, caption: p.caption, mediaUrls: p.mediaUrls, mediaType: p.mediaType,
-        publishedAt: p.publishedAt, destinations: p.destinations,
+        publishedAt: p.publishedAt, destinations: p.destinations, imported: false, link: null as string | null,
         likes, comments, shares, saved, views, reach, impressions, engagement, engagementRate: er,
       };
-    }).sort((a, b) => b.engagement - a.engagement).slice(0, 50);
+    });
+    // Imported TikTok videos are already platform-scoped via accountIds.
+    const importedTop = importedVideos.map(v => {
+      const likes = v.likes || 0, comments = v.comments || 0, shares = v.shares || 0, views = v.views || 0;
+      const engagement = likes + comments + shares;
+      const plat = platformOf.get(v.socialAccountId) || 'tiktok';
+      return {
+        id: `imported:${v.id}`, caption: v.title || '', mediaUrls: null as any, mediaType: 'video',
+        publishedAt: v.postedAt, destinations: [{ platform: plat, status: 'PUBLISHED', platformPostId: v.externalId }],
+        imported: true, link: v.link,
+        likes, comments, shares, saved: 0, views, reach: 0, impressions: 0, engagement,
+        engagementRate: views > 0 ? parseFloat(((engagement / views) * 100).toFixed(2)) : 0,
+      };
+    });
+    const topPosts = [...scheduledTop, ...importedTop].sort((a, b) => b.engagement - a.engagement).slice(0, 50);
 
     // ── AI Insights ──
     const DAYS_NAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -316,35 +364,103 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       platform: p.platform, followers: p.followers, reach: p.reach, impressions: p.impressions,
     }));
 
+    // ── Demographics (imported exports) ──
+    const demoByKind = (kind: string) => demoRows
+      .filter(d => d.kind === kind)
+      .map(d => ({ label: d.label, fraction: d.fraction, platform: platformOf.get(d.socialAccountId) || null }))
+      .sort((a, b) => b.fraction - a.fraction);
+    const demographics = {
+      gender: can('demoGender') ? demoByKind('gender') : [],
+      country: can('demoCountry') ? demoByKind('country') : [],
+      age: can('demoAge') ? demoByKind('age') : [],
+    };
+
+    // ── Real active-times heatmap (imported active-followers), preferred over
+    // the post-derived bestTimes when present. ──
+    const activityHeatmap = can('activity') && activityRows.length
+      ? activityRows.map(a => ({ weekday: a.weekday, hour: a.hour, activeFollowers: a.activeFollowers }))
+      : [];
+
+    // ── Provenance (import freshness) ──
+    const importedAccounts = accountsWithLatest.filter(a => a.lastImportedAt);
+    const lastImportedAt = importedAccounts.length
+      ? importedAccounts.map(a => a.lastImportedAt!).sort((x, y) => y.getTime() - x.getTime())[0]
+      : null;
+
+    // ── KPI builders: gate by capability, guard change/growth without a baseline ──
+    const kpi = (key: MetricKey, curr: number, prev: number) => {
+      if (!can(key)) return null;
+      const hasBase = prev > 0;
+      return {
+        current: curr,
+        previous: hasBase ? prev : null,
+        change: hasBase ? curr - prev : null,
+        growth: hasBase ? pct(curr, prev) : null,
+        isNew: !hasBase,
+      };
+    };
+    const currVideoViews = sum(currentMetrics, 'videoViews');
+    const prevVideoViews = sum(prevMetrics, 'videoViews');
+
+    // Per-account capability (what a single platform can report, not the union).
+    const acctCan = (platform: string, key: MetricKey): boolean => {
+      const decl = METRIC_AVAILABILITY[platform]?.[key];
+      if (decl === 'live') return true;
+      if (decl === 'import') return importedPlatforms.has(platform);
+      return false;
+    };
+
     // ── Response ──
     res.json({
+      capabilities: caps,
+      provenance: { imported: Array.from(importedPlatforms), lastImportedAt },
       kpis: {
-        followers: { current: currFollowers, previous: prevFollowers, change: currFollowers - prevFollowers, growth: pct(currFollowers, prevFollowers) },
-        reach: { current: currReach, previous: prevReach, change: currReach - prevReach, growth: pct(currReach, prevReach) },
-        impressions: { current: currImpressions, previous: prevImpressions, change: currImpressions - prevImpressions, growth: pct(currImpressions, prevImpressions) },
-        profileVisits: { current: currVisits, previous: prevVisits, change: currVisits - prevVisits, growth: pct(currVisits, prevVisits) },
-        engagementRate: { current: currER, previous: prevER, change: parseFloat((currER - prevER).toFixed(2)) },
-        engagement: { likes: currLikes, comments: currComments, shares: currShares, saved: currSaved, views: currViews, total: currEngagement },
+        followers: kpi('followers', currFollowers, prevFollowers),
+        reach: kpi('reach', currReach, prevReach),
+        impressions: kpi('impressions', currImpressions, prevImpressions),
+        profileVisits: kpi('profileVisits', currVisits, prevVisits),
+        videoViews: kpi('videoViews', currVideoViews, prevVideoViews),
+        engagementRate: can('engagementRate')
+          ? { current: currER, previous: prevER, change: parseFloat((currER - prevER).toFixed(2)) }
+          : null,
+        engagement: {
+          likes: can('likes') ? currLikes : null,
+          comments: can('comments') ? currComments : null,
+          shares: can('shares') ? currShares : null,
+          saved: can('saved') ? currSaved : null,
+          views: (can('videoViews') || can('views')) ? currViews : null,
+          total: currEngagement,
+        },
+        viewers: can('newReturning')
+          ? { new: sum(currentMetrics, 'newViewers'), returning: sum(currentMetrics, 'returningViewers') }
+          : null,
         publishing,
       },
       chartData,
       engagementTrend,
       contentTypePerformance,
       bestTimes,
+      activityHeatmap,
+      demographics,
       platformComparison: Object.values(platMap),
       platformBreakdown,
       topPosts,
       publishing: { ...publishing, successRate, weeklyActivity },
       accounts: accountsWithLatest.map(a => {
-        const isExcluded = ['facebook', 'instagram', 'youtube'].includes(a.platform.toLowerCase());
+        const plat = a.platform.toLowerCase();
+        const L: any = a.latest;
         return {
           id: a.id, platform: a.platform, displayName: a.displayName, platformUsername: a.platformUsername,
           avatarUrl: a.avatarUrl, healthStatus: a.healthStatus, healthMessage: a.healthMessage, updatedAt: a.updatedAt,
-          latestMetrics: a.latest ? {
-            followers: a.latest.followers || 0, reach: a.latest.reach || 0,
-            impressions: a.latest.impressions || 0,
-            profileVisits: isExcluded ? 0 : (a.latest.profileVisits || 0),
-            engagementRate: Number(a.latest.engagementRate) || 0, date: a.latest.date,
+          lastImportedAt: a.lastImportedAt, source: a.lastImportedAt ? 'import' : 'api',
+          latestMetrics: L ? {
+            followers: a.latestFollowers?.followers ?? null,
+            reach: acctCan(plat, 'reach') ? (L.reach ?? null) : null,
+            impressions: acctCan(plat, 'impressions') ? (L.impressions ?? null) : null,
+            profileVisits: acctCan(plat, 'profileVisits') ? (L.profileVisits ?? null) : null,
+            videoViews: acctCan(plat, 'videoViews') ? (L.videoViews ?? null) : null,
+            engagementRate: acctCan(plat, 'engagementRate') ? (Number(L.engagementRate) || null) : null,
+            date: L.date,
           } : null,
         };
       }),
@@ -359,7 +475,7 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
 // ── 2. Paginated top posts (for Content tab) ────────────────────────────────
 router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) => {
   try {
-    const { clientId } = req.params;
+    const { clientId } = req.params as { clientId: string };
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
     const sortBy = (req.query.sortBy as string) || 'engagement';
@@ -388,17 +504,49 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
       take: 500, // fetch all then sort
     });
 
-    const withScores = posts
+    const platformFilter = (platform || 'ALL').toUpperCase();
+    const scheduledScores = posts
       .filter(p => p.publishedAt && new Date(p.publishedAt) >= since)
-      .filter(p => matchesPlatform(p.destinations, (platform || 'ALL').toUpperCase()))
+      .filter(p => matchesPlatform(p.destinations, platformFilter))
       .map(p => {
-        const ins = scopedInsights(p.insights, (platform || 'ALL').toUpperCase());
+        const ins = scopedInsights(p.insights, platformFilter);
         const likes = sum(ins, 'likes'), comments = sum(ins, 'comments'),
           shares = sum(ins, 'shares'), saved = sum(ins, 'saved'),
           views = sum(ins, 'views'), reach = sum(ins, 'reach'), impressions = sum(ins, 'impressions');
         const engagement = likes + comments + shares + saved;
-        return { ...p, engagement, likes, comments, shares, saved, views, reach, impressions, engagementRate: reach > 0 ? parseFloat(((engagement / reach) * 100).toFixed(2)) : 0 };
+        return { ...p, imported: false, link: null as string | null, engagement, likes, comments, shares, saved, views, reach, impressions, engagementRate: reach > 0 ? parseFloat(((engagement / reach) * 100).toFixed(2)) : 0 };
       });
+
+    // Imported native videos (TikTok Studio). A curated top set — included
+    // regardless of the day window, but honoring platform / content-type / search.
+    let importedScores: any[] = [];
+    if ((!contentType || contentType === 'ALL' || contentType === 'video')) {
+      const accts = await prisma.socialAccount.findMany({ where: { clientId, isActive: true }, select: { id: true, platform: true } });
+      const acctPlat = new Map(accts.map(a => [a.id, a.platform.toLowerCase()]));
+      const eligibleIds = accts
+        .filter(a => platformFilter === 'ALL' || a.platform.toUpperCase() === platformFilter)
+        .map(a => a.id);
+      if (eligibleIds.length) {
+        const vids = await prisma.importedPost.findMany({ where: { socialAccountId: { in: eligibleIds } } });
+        importedScores = vids
+          .filter(v => !search || (v.title || '').toLowerCase().includes(search.toLowerCase()))
+          .map(v => {
+            const likes = v.likes || 0, comments = v.comments || 0, shares = v.shares || 0, views = v.views || 0;
+            const engagement = likes + comments + shares;
+            const plat = acctPlat.get(v.socialAccountId) || 'tiktok';
+            return {
+              id: `imported:${v.id}`, clientId, caption: v.title || '', mediaUrls: null, mediaType: 'video',
+              publishedAt: v.postedAt, status: 'PUBLISHED',
+              destinations: [{ platform: plat, status: 'PUBLISHED', platformPostId: v.externalId }],
+              imported: true, link: v.link,
+              engagement, likes, comments, shares, saved: 0, views, reach: 0, impressions: 0,
+              engagementRate: views > 0 ? parseFloat(((engagement / views) * 100).toFixed(2)) : 0,
+            };
+          });
+      }
+    }
+
+    const withScores: any[] = [...scheduledScores, ...importedScores];
 
     if (sortBy === 'likes') withScores.sort((a, b) => b.likes - a.likes);
     else if (sortBy === 'views') withScores.sort((a, b) => b.views - a.views);

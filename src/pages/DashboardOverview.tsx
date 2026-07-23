@@ -48,6 +48,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { apiFetch } from "@/lib/api-client";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { QuickAddExpenseModal } from "@/components/QuickAddExpenseModal";
 import { EXPENSE_CATEGORIES } from "./ExpensesPage";
 import {
@@ -659,16 +660,17 @@ export default function DashboardOverview() {
               <p className="text-xs text-muted-foreground mt-0.5">Financial performance over time</p>
             </div>
             <div className="flex items-center gap-3">
-              <select 
-                className="text-[10px] font-bold uppercase tracking-wider bg-background border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary shadow-sm text-foreground"
-                value={trajectoryView}
-                onChange={(e) => setTrajectoryView(e.target.value as any)}
-              >
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="yearly">Yearly</option>
-              </select>
+              <Select value={trajectoryView} onValueChange={(v) => setTrajectoryView(v as any)}>
+                <SelectTrigger size="xs" className="w-auto min-w-[80px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="yearly">Yearly</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div className="h-[280px] w-full relative">

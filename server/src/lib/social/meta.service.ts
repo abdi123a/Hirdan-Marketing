@@ -400,17 +400,35 @@ async function waitForThreadsContainerReady(containerId: string, accessToken: st
 
 export async function getMetaInsights(accountId: string, token: string, platform: 'facebook' | 'instagram'): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number | null }> {
   if (platform === 'facebook') {
-    const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
-      params: { metric: 'page_media_view,page_post_engagements', period: 'day', access_token: token },
-    });
-    const reachVal = data.data.find((item: any) => item.name === 'page_media_view')?.values[0]?.value ?? 0;
+    // Reach and impressions are DIFFERENT metrics — reach = unique people
+    // (page_impressions_unique), impressions = total views (page_impressions).
+    // The old code fetched a single `page_media_view` and reported it as both,
+    // which made every Facebook card show reach == impressions.
+    let reachVal = 0;
+    let impressionsVal = 0;
+    try {
+      const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
+        params: { metric: 'page_impressions_unique,page_impressions', period: 'day', access_token: token },
+      });
+      reachVal = data.data.find((item: any) => item.name === 'page_impressions_unique')?.values?.[0]?.value ?? 0;
+      impressionsVal = data.data.find((item: any) => item.name === 'page_impressions')?.values?.[0]?.value ?? 0;
+    } catch (err) {
+      // Some metrics are deprecated on newer Graph versions; fall back to the
+      // views metric for reach so the card still shows a real number.
+      try {
+        const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
+          params: { metric: 'page_views_total', period: 'day', access_token: token },
+        });
+        reachVal = data.data.find((item: any) => item.name === 'page_views_total')?.values?.[0]?.value ?? 0;
+      } catch { /* leave zeros */ }
+    }
     const { data: pageData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
       params: { fields: 'fan_count,followers_count', access_token: token },
     });
     return {
       followers: pageData.followers_count || pageData.fan_count || 0,
       reach: reachVal,
-      impressions: reachVal,
+      impressions: impressionsVal || reachVal,
       profileVisits: null,
     };
   } else {

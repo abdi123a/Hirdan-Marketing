@@ -234,9 +234,45 @@ async function initTikTokPublish({
   });
 
   if (data?.error?.code && data.error.code !== 'ok') {
-    return { ok: false, errorCode: data.error.code, errorMessage: data.error.message };
+    return { ok: false, publishId: undefined, errorCode: data.error.code, errorMessage: data.error.message };
   }
   return { ok: true, publishId: data.data.publish_id };
+}
+
+/**
+ * TikTok "Draft" mode — uploads the video to the creator's TikTok inbox
+ * via /v2/post/publish/inbox/video/init/. The creator finishes editing
+ * (sounds, cover, effects) and posts from the TikTok app.
+ */
+async function initTikTokInbox({
+  accessToken,
+  mediaUrl,
+  caption,
+}: {
+  accessToken: string;
+  mediaUrl: string;
+  caption: string;
+}): Promise<{ ok: boolean; publishId?: string; errorCode?: string; errorMessage?: string }> {
+  const { data } = await axios.post(
+    'https://open.tiktokapis.com/v2/post/publish/inbox/video/init/',
+    {
+      source_info: {
+        source: 'PULL_FROM_URL',
+        video_url: mediaUrl,
+      },
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    },
+  );
+
+  if (data?.error?.code && data.error.code !== 'ok') {
+    return { ok: false, errorCode: data.error.code, errorMessage: data.error.message };
+  }
+  return { ok: true, publishId: data.data?.publish_id };
 }
 
 export async function publishToTikTok({
@@ -246,6 +282,7 @@ export async function publishToTikTok({
   mediaType = 'video',
   caption,
   privacyLevel = 'PUBLIC_TO_EVERYONE',
+  postMode = 'direct',
 }: {
   accessToken: string;
   videoUrl?: string;
@@ -253,6 +290,7 @@ export async function publishToTikTok({
   mediaType?: string;
   caption: string;
   privacyLevel?: string;
+  postMode?: 'direct' | 'draft';
 }): Promise<string> {
   const resolvedMediaUrls = mediaUrls && mediaUrls.length > 0
     ? mediaUrls
@@ -262,6 +300,22 @@ export async function publishToTikTok({
     throw new Error('TikTok requires at least one media URL to publish');
   }
 
+  // ── DRAFT mode: send to creator's inbox ──
+  if (postMode === 'draft' && mediaType === 'video') {
+    const inboxResult = await initTikTokInbox({
+      accessToken,
+      mediaUrl: resolvedMediaUrls[0],
+      caption,
+    });
+    if (!inboxResult.ok) {
+      const err: any = new Error(`TikTok inbox API error: ${inboxResult.errorMessage || 'Unknown'}`);
+      err.tiktokErrorCode = inboxResult.errorCode;
+      throw err;
+    }
+    return inboxResult.publishId as string;
+  }
+
+  // ── DIRECT mode: full publish flow ──
   // Step 1: query creator_info — required before every publish call, and the
   // only way to know what this account is actually allowed to do.
   const creatorInfo = await getTikTokCreatorInfo(accessToken);
@@ -271,14 +325,7 @@ export async function publishToTikTok({
   }
 
   // While the app hasn't passed TikTok's Content Posting API audit, force
-  // every publish to SELF_ONLY. TikTok's own docs and observed behavior show
-  // creator_info can still list PUBLIC_TO_EVERYONE (and other non-private
-  // levels) in privacy_level_options for unaudited apps, but the actual
-  // publish call then rejects them with
-  // "unaudited_client_can_only_post_to_private_accounts" — the
-  // privacy_level_options list is not a reliable signal of what unaudited
-  // apps can actually use. Set TIKTOK_APP_AUDITED=true once TikTok approves
-  // the app for public Direct Post to lift this restriction.
+  // every publish to SELF_ONLY.
   const appIsAudited = process.env.TIKTOK_APP_AUDITED === 'true';
   const requestedPrivacyLevel = appIsAudited ? privacyLevel : 'SELF_ONLY';
   const resolvedPrivacyLevel = resolvePrivacyLevel(requestedPrivacyLevel, creatorInfo.privacy_level_options);
@@ -293,9 +340,7 @@ export async function publishToTikTok({
     creatorInfo,
   });
 
-  // Safety net: even if we didn't already force SELF_ONLY (e.g. appIsAudited
-  // is true but this particular app/account still hasn't cleared audit),
-  // retry once with SELF_ONLY instead of failing outright.
+  // Safety net: retry once with SELF_ONLY if the first attempt fails for being unaudited.
   if (!result.ok && result.errorCode === 'unaudited_client_can_only_post_to_private_accounts' && resolvedPrivacyLevel !== 'SELF_ONLY') {
     console.error(
       `TikTok rejected privacy_level=${resolvedPrivacyLevel} as unaudited client, retrying with SELF_ONLY`

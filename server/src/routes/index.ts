@@ -78,10 +78,12 @@ router.use('/landing-page', landingPageRoutes);
 import socialOAuthRoutes from './social-oauth.routes.js';
 import socialPostsRoutes from './social-posts.routes.js';
 import socialAnalyticsRoutes from './social-analytics.routes.js';
+import socialImportRoutes from './social-import.routes.js';
 
 router.use('/social', socialOAuthRoutes);
 router.use('/social', socialPostsRoutes);
 router.use('/social', socialAnalyticsRoutes);
+router.use('/social', socialImportRoutes);
 
 export default router;
 

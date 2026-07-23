@@ -109,16 +109,19 @@ export async function publishPostToPlatform(post: SocialPost, account: SocialAcc
         mediaType,
       });
 
-    case 'tiktok':
+    case 'tiktok': {
       if (mediaUrls.length === 0) {
         throw new Error('TikTok requires at least one media URL to publish');
       }
+      const tiktokContent = (post.platformContent as any)?.tiktok || {};
       return await tiktok.publishToTikTok({
         accessToken,
         mediaUrls,
         mediaType,
         caption,
+        postMode: tiktokContent.postMode || 'direct',
       });
+    }
 
     case 'linkedin':
       // ✅ Pass mediaType to support video & multi-image

@@ -369,14 +369,30 @@ export async function syncAccount(accountId: string): Promise<void> {
     profileVisitsVal = null; // YouTube doesn't expose a real profile-visits metric
   }
 
-  // FIX: previously `reachIncrement / metrics.followers` would silently treat a
-  // null reach as 0 (JS coerces null -> 0 in arithmetic), showing a confident
-  // "0% engagement" for platforms where we genuinely don't know reach (LinkedIn,
-  // TikTok, X) instead of leaving engagement rate unset. Only compute it when
-  // we actually have a real reach number.
-  const engagementRate = (metrics.followers > 0 && reachIncrement !== null)
-    ? Math.min(999.99, (reachIncrement / metrics.followers) * 100)
-    : null;
+  // Engagement rate is NOT reach/followers. The real definition (engagement ÷
+  // reach) needs per-post engagement we don't have at account-daily sync time,
+  // so we no longer store a misleading number here — the analytics route computes
+  // the true rate from engagement ÷ reach (and imported rows carry their own).
+  const engagementRate = null;
+
+  // Don't let the daily live sync clobber a row that was populated from an
+  // imported export (TikTok Studio) — those rows are richer than the API. When
+  // the date already has imported data, only refresh the follower count.
+  const existing = await prisma.accountInsightDaily.findUnique({
+    where: { socialAccountId_date: { socialAccountId: account.id, date: today } },
+    select: { source: true },
+  });
+  const isImported = existing?.source === 'import';
+
+  const apiData = {
+    followers: metrics.followers,
+    reach: reachIncrement,
+    impressions: impressionsIncrement,
+    profileVisits: profileVisitsVal,
+    lifetimeViewsSnapshot,
+    engagementRate,
+    source: 'api',
+  };
 
   await prisma.accountInsightDaily.upsert({
     where: {
@@ -388,21 +404,9 @@ export async function syncAccount(accountId: string): Promise<void> {
     create: {
       socialAccountId: account.id,
       date: today,
-      followers: metrics.followers,
-      reach: reachIncrement,
-      impressions: impressionsIncrement,
-      profileVisits: profileVisitsVal,
-      lifetimeViewsSnapshot,
-      engagementRate,
+      ...apiData,
     },
-    update: {
-      followers: metrics.followers,
-      reach: reachIncrement,
-      impressions: impressionsIncrement,
-      profileVisits: profileVisitsVal,
-      lifetimeViewsSnapshot,
-      engagementRate,
-    },
+    update: isImported ? { followers: metrics.followers } : apiData,
   });
 
   // FIX (fake analytics history): this used to seed 30 days of history for ANY
