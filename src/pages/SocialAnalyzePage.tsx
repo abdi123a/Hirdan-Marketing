@@ -70,6 +70,7 @@ interface AccountRow {
   id: string; platform: string; displayName: string; platformUsername: string;
   avatarUrl: string | null; healthStatus: string; healthMessage: string | null; updatedAt: string;
   lastImportedAt?: string | null; source?: string;
+  metricStatus?: { reach: string; impressions: string; videoViews: string };
   latestMetrics: { followers: number | null; reach: number | null; impressions: number | null; profileVisits: number | null; videoViews: number | null; engagementRate: number | null; date: string } | null;
 }
 
@@ -89,6 +90,29 @@ const CONTENT_TYPE_ICONS: Record<string,any> = {
   image: Image, video: Video, reel: Film, short: Film, story: BookOpen,
   carousel: Layers, text: FileText,
 };
+
+// ── Engagement Trend: focus-metric area + composition (validated palette) ────
+// The 4 interaction types (composition strip). Colour follows the entity.
+type EngSeriesKey = "likes" | "comments" | "shares" | "saved";
+const ENG_SERIES: { key: EngSeriesKey; label: string; color: string }[] = [
+  { key: "likes",    label: "Likes",    color: "#ef4444" },
+  { key: "comments", label: "Comments", color: "#3b82f6" },
+  { key: "shares",   label: "Shares",   color: "#10b981" },
+  { key: "saved",    label: "Saves",    color: "#f59e0b" },
+];
+// The metric the headline area focuses on. `total` and `score` are DERIVED in
+// the dashboard from the API's raw counts (score = likes×1 + comments×2 +
+// shares×3 + saves×2). One metric shows at a time → always a single y-axis.
+type EngFocus = "total" | "likes" | "comments" | "shares" | "saved" | "score";
+const ENG_FOCUS: { key: EngFocus; label: string; color: string; derived?: boolean }[] = [
+  { key: "total",    label: "Total",          color: "#6366f1" },
+  { key: "likes",    label: "Likes",          color: "#ef4444" },
+  { key: "comments", label: "Comments",       color: "#3b82f6" },
+  { key: "shares",   label: "Shares",         color: "#10b981" },
+  { key: "saved",    label: "Saves",          color: "#f59e0b" },
+  { key: "score",    label: "Weighted Score", color: "#7c3aed", derived: true },
+];
+const ENG_VIEW_KEY = "social-eng-trend-v2";
 
 const TABS = [
   { id: "overview",    label: "Overview",     icon: LayoutGrid },
@@ -338,6 +362,15 @@ export default function SocialAnalyzePage() {
   const [postSearch, setPostSearch] = useState("");
   const [chartMetric, setChartMetric] = useState<"followers"|"reach"|"impressions"|"engagementRate">("followers");
 
+  // Engagement Trend focus (persisted, so the filter ALWAYS applies across sessions)
+  const [engFocus, setEngFocus] = useState<EngFocus>(() => {
+    try { return (JSON.parse(localStorage.getItem(ENG_VIEW_KEY) || "{}").focus as EngFocus) || "total"; } catch { return "total"; }
+  });
+  const [engShowAvg, setEngShowAvg] = useState<boolean>(() => {
+    try { return JSON.parse(localStorage.getItem(ENG_VIEW_KEY) || "{}").showAvg !== false; } catch { return true; }
+  });
+  useEffect(() => { try { localStorage.setItem(ENG_VIEW_KEY, JSON.stringify({ focus: engFocus, showAvg: engShowAvg })); } catch { /* ignore */ } }, [engFocus, engShowAvg]);
+
   const dateRangeText = useMemo(() => {
     if (dateMode === "custom" && customStartDate && customEndDate) {
       return `${customStartDate} to ${customEndDate}`;
@@ -464,6 +497,31 @@ export default function SocialAnalyzePage() {
   const chartData = analytics?.chartData || [];
   const pieData = (analytics?.platformBreakdown||[]).filter(p => p.followers > 0 || p.reach > 0)
     .map(p => ({ name: p.platform, value: p.followers || p.reach || 1 }));
+
+  // Engagement Trend data: raw API counts + DERIVED metrics (total, weighted
+  // score) + a 7-day moving average of whichever metric is in focus.
+  const engData = useMemo(() => {
+    const rows = (analytics?.engagementTrend || []).map((r: any) => {
+      const likes = r.likes||0, comments = r.comments||0, shares = r.shares||0, saved = r.saved||0;
+      const total = likes + comments + shares + saved;
+      const score = likes + comments * 2 + shares * 3 + saved * 2;
+      return { date: r.date, likes, comments, shares, saved, total, score } as Record<string, any>;
+    });
+    rows.forEach((r, i) => {
+      const win = rows.slice(Math.max(0, i - 6), i + 1);
+      r.avg = Math.round(win.reduce((s: number, x: any) => s + x[engFocus], 0) / (win.length || 1));
+    });
+    return rows;
+  }, [analytics, engFocus]);
+  const engStats = useMemo(() => {
+    const focusTotal = engData.reduce((s, r) => s + (r[engFocus] || 0), 0);
+    const peak = engData.reduce((m, r) => Math.max(m, r[engFocus] || 0), 0);
+    const avg = engData.length ? Math.round(focusTotal / engData.length) : 0;
+    const comp = ENG_SERIES.map(s => ({ ...s, value: engData.reduce((a, r) => a + (r[s.key] || 0), 0) }));
+    const compTotal = comp.reduce((a, c) => a + c.value, 0) || 1;
+    return { focusTotal, peak, avg, comp, compTotal };
+  }, [engData, engFocus]);
+  const engFocusMeta = ENG_FOCUS.find(f => f.key === engFocus) || ENG_FOCUS[0];
 
   // Helper: build KPI card props from the capability + kpi value blocks.
   const capKpi = (key: MetricKey, label: string, kpiData: NullableKPI | null | undefined, icon: any, color: string, opts?: { isRate?: boolean }) => {
@@ -869,31 +927,107 @@ export default function SocialAnalyzePage() {
                   ].map(c => <KPICard key={c.label} {...c} growth={undefined}/>)}
                 </div>
 
-                {/* Engagement trend */}
-                <Card className="rounded-2xl shadow-sm border border-border/80">
+                {/* Engagement trend — focus-metric area + composition */}
+                <Card className="rounded-2xl shadow-sm border border-border/80 overflow-hidden">
                   <CardHeader className="py-4 px-6 border-b border-border/40 bg-muted/5">
-                    <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Activity className="h-4 w-4 text-primary"/>Engagement Trend</CardTitle>
-                    <CardDescription className="text-xs">Daily engagement breakdown over {dateRangeText}</CardDescription>
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div>
+                        <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Activity className="h-4 w-4 text-primary"/>Engagement Trend</CardTitle>
+                        <CardDescription className="text-xs">How your audience interacts, day by day — pick any metric to focus</CardDescription>
+                      </div>
+                      <button onClick={() => setEngShowAvg(v => !v)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all flex items-center gap-1 ${engShowAvg?"bg-primary/10 text-primary border-primary/30":"bg-muted/30 text-muted-foreground border-border"}`}>
+                        <TrendingUp className="h-3 w-3"/> 7-day avg
+                      </button>
+                    </div>
+                    {/* Focus selector — the persistent filter; also selects the DERIVED metrics */}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                      {ENG_FOCUS.map(f => {
+                        const on = engFocus === f.key;
+                        return (
+                          <button key={f.key} onClick={() => setEngFocus(f.key)}
+                            style={on ? { background: `${f.color}1a`, color: f.color, borderColor: `${f.color}66` } : undefined}
+                            className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${on?"":"border-border/50 bg-background text-muted-foreground hover:text-foreground"}`}>
+                            <span className="w-2 h-2 rounded-full" style={{ background: f.color }}/>
+                            {f.label}
+                            {f.derived && <Sparkles className="h-2.5 w-2.5"/>}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </CardHeader>
                   <CardContent className="p-6">
-                    <div className="h-72 w-full">
-                      {analytics.engagementTrend.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <ComposedChart data={analytics.engagementTrend} margin={{top:5,right:5,left:-20,bottom:0}}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
-                            <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>v.slice(5)}/>
-                            <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
-                            <Tooltip content={<ChartTip/>}/>
-                            <Legend iconSize={8} wrapperStyle={{fontSize:11}}/>
-                            <Bar dataKey="likes" name="Likes" stackId="a" fill="#ef4444" radius={[0,0,0,0]}/>
-                            <Bar dataKey="comments" name="Comments" stackId="a" fill="#3b82f6" radius={[0,0,0,0]}/>
-                            <Bar dataKey="shares" name="Shares" stackId="a" fill="#10b981" radius={[0,0,0,0]}/>
-                            <Bar dataKey="saved" name="Saved" stackId="a" fill="#f59e0b" radius={[4,4,0,0]}/>
-                            <Line type="monotone" dataKey="total" name="Total" stroke="#6366f1" strokeWidth={2.5} dot={false}/>
-                          </ComposedChart>
-                        </ResponsiveContainer>
-                      ) : <NoData msg="No published posts yet — data will appear after publishing content"/>}
-                    </div>
+                    {engData.length === 0 ? (
+                      <div className="h-72"><NoData msg="No engagement recorded yet — publish content or import data to see the trend"/></div>
+                    ) : (
+                      <div className="space-y-5">
+                        {/* Headline stats for the focused metric */}
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1">{engFocusMeta.label} · Total {engFocusMeta.derived && <Sparkles className="h-2.5 w-2.5 text-violet-500"/>}</p>
+                            <p className="text-xl font-black leading-tight mt-0.5" style={{ color: engFocusMeta.color }}>{fmtN(engStats.focusTotal)}</p>
+                          </div>
+                          <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">Peak Day</p>
+                            <p className="text-xl font-black leading-tight mt-0.5">{fmtN(engStats.peak)}</p>
+                          </div>
+                          <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">Daily Average</p>
+                            <p className="text-xl font-black leading-tight mt-0.5">{fmtN(engStats.avg)}</p>
+                          </div>
+                        </div>
+
+                        {/* Focus-metric gradient area */}
+                        <div className="h-60 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={engData} margin={{top:8,right:8,left:-18,bottom:0}}>
+                              <defs>
+                                <linearGradient id="engFocusGrad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor={engFocusMeta.color} stopOpacity={0.32}/>
+                                  <stop offset="95%" stopColor={engFocusMeta.color} stopOpacity={0.02}/>
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
+                              <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>String(v).slice(5)} minTickGap={18}/>
+                              <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))} width={44}/>
+                              <Tooltip content={<ChartTip/>} cursor={{ stroke: engFocusMeta.color, strokeOpacity: 0.3, strokeWidth: 1.5 }}/>
+                              <Area type="monotone" dataKey={engFocus} name={engFocusMeta.label} stroke={engFocusMeta.color} strokeWidth={2.5} fill="url(#engFocusGrad)" dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff" }}/>
+                              {engShowAvg && <Line type="monotone" dataKey="avg" name="7-Day Avg" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 3" dot={false}/>}
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
+
+                        {/* Composition — where the interactions come from */}
+                        <div className="pt-1">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Composition</span>
+                            <span className="text-[10px] text-muted-foreground">{fmtN(engStats.compTotal)} total interactions</span>
+                          </div>
+                          <div className="flex h-2.5 rounded-full overflow-hidden bg-muted gap-[2px]">
+                            {engStats.comp.map(c => c.value > 0 && (
+                              <div key={c.key} style={{ width: `${(c.value / engStats.compTotal) * 100}%`, background: c.color }} title={`${c.label}: ${fmtN(c.value)}`}/>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3">
+                            {engStats.comp.map(c => (
+                              <button key={c.key} onClick={() => setEngFocus(c.key)} className="flex items-center gap-2 text-left rounded-lg hover:bg-muted/40 transition-colors p-1 -m-1">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c.color }}/>
+                                <div className="min-w-0">
+                                  <p className="text-[10px] text-muted-foreground leading-none">{c.label}</p>
+                                  <p className="text-xs font-bold leading-tight mt-0.5">{fmtN(c.value)} <span className="text-[10px] font-medium text-muted-foreground">{Math.round((c.value / engStats.compTotal) * 100)}%</span></p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {engFocusMeta.derived && (
+                          <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Info className="h-3 w-3"/> Weighted Score = likes×1 + comments×2 + shares×3 + saves×2 — a custom quality metric computed in-dashboard from your raw counts.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -1501,12 +1635,12 @@ export default function SocialAnalyzePage() {
                     const m = acc.latestMetrics;
                     const isHealthy = acc.healthStatus === "healthy";
                     const plat = acc.platform?.toLowerCase();
-                    const acctMetrics = [
-                      { label: plat === "youtube" ? "Subscribers" : "Followers", value: m?.followers },
-                      ...(m?.reach != null ? [{ label: "Reach", value: m.reach }] : []),
-                      ...(m?.impressions != null ? [{ label: "Impressions", value: m.impressions }] : []),
-                    ].filter(metric => metric.value != null);
-                    const gridCols = acctMetrics.length <= 2 ? "grid-cols-2" : "grid-cols-3";
+                    const slots = [
+                      { key: "followers", label: plat === "youtube" ? "Subscribers" : "Followers", value: m?.followers ?? null, status: "available" as string },
+                      { key: "reach", label: "Reach", value: m?.reach ?? null, status: acc.metricStatus?.reach || (m?.reach != null ? "available" : "unavailable") },
+                      { key: "impressions", label: "Impressions", value: m?.impressions ?? null, status: acc.metricStatus?.impressions || (m?.impressions != null ? "available" : "unavailable") },
+                    ];
+                    const slotNote = (status: string) => status === "locked" ? (plat === "instagram" ? "Needs Instagram insights permission" : "Needs an extra platform permission") : `Not provided by ${acc.platform}`;
                     return (
                       <Card key={acc.id} className="rounded-2xl shadow-sm border border-border/80 overflow-hidden">
                         <div className="flex items-center gap-3 p-5 border-b border-border/40">
@@ -1523,14 +1657,31 @@ export default function SocialAnalyzePage() {
                             {isHealthy?"Connected":"Issue"}
                           </span>
                         </div>
-                        <div className={`grid ${gridCols} gap-0 divide-x divide-y divide-border/40`}>
-                          {acctMetrics.map(metric => (
-                            <div key={metric.label} className="p-4 text-center">
-                              <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">{metric.label}</p>
-                              <p className="text-lg font-black text-foreground mt-1">{fmtN(metric.value)}</p>
-                            </div>
-                          ))}
+                        <div className="grid grid-cols-3 gap-0 divide-x divide-y divide-border/40">
+                          {slots.map(slot => {
+                            const shown = slot.status === "available" && slot.value != null;
+                            return (
+                              <div key={slot.key} className="p-4 text-center">
+                                <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">{slot.label}</p>
+                                {shown ? (
+                                  <p className="text-lg font-black text-foreground mt-1">{fmtN(slot.value)}</p>
+                                ) : (
+                                  <div className="mt-1 flex flex-col items-center" title={slotNote(slot.status)}>
+                                    <span className="text-lg font-black text-muted-foreground/30 leading-none inline-flex items-center gap-1">
+                                      {slot.status === "locked" && <Lock className="h-3 w-3"/>}—
+                                    </span>
+                                    <span className="text-[8px] text-muted-foreground/70 mt-1 leading-tight">{slot.status === "locked" ? "Enable to view" : "Not available"}</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
+                        {plat === "instagram" && acc.metricStatus?.reach === "locked" && (
+                          <div className="px-4 py-2 text-[10px] text-amber-700 bg-amber-50/60 border-t border-amber-100 flex items-center gap-1.5">
+                            <Lock className="h-3 w-3 shrink-0"/> Reach &amp; impressions need the Instagram insights permission — reconnect to enable.
+                          </div>
+                        )}
                         {m?.engagementRate != null && m.engagementRate > 0 && (
                           <div className="px-5 py-3 border-t border-border/40 bg-muted/5 flex items-center gap-3">
                             <span className="text-xs text-muted-foreground">Engagement Rate</span>

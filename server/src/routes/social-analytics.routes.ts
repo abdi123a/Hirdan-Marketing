@@ -107,6 +107,20 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     // Gate a value behind availability so unavailable metrics serialize as null.
     const gate = <T,>(key: MetricKey, value: T): T | null => (can(key) ? value : null);
 
+    // A metric only counts toward an aggregate for platforms that can genuinely
+    // report it (live now, or import with data present). Without this, seed/demo
+    // or unsupported-platform values (e.g. LinkedIn/YouTube reach, which those
+    // APIs don't provide) inflate the totals and make the report disagree with
+    // the truthful per-account cards.
+    const metricPlatformOk = (platform: string, key: MetricKey): boolean => {
+      const decl = METRIC_AVAILABILITY[platform]?.[key];
+      if (decl === 'live') return true;
+      if (decl === 'import') return importedPlatforms.has(platform);
+      return false;
+    };
+    const sumMetric = (rows: any[], field: string, key: MetricKey) =>
+      rows.reduce((s, r) => s + (metricPlatformOk((r.account?.platform || '').toLowerCase(), key) ? (Number(r[field]) || 0) : 0), 0);
+
     // ── Posts ──
     const postWhere: any = { clientId };
     if (contentTypeFilter && contentTypeFilter !== 'ALL') postWhere.mediaType = contentTypeFilter;
@@ -158,12 +172,12 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     // ── KPIs ──
     const currFollowers = accountsWithLatest.reduce((s, a) => s + (a.latestFollowers?.followers || 0), 0);
     const prevFollowers = accountsWithLatest.reduce((s, a) => s + (a.beforeFollowers?.followers || 0), 0);
-    const currReach = sum(currentMetrics, 'reach');
-    const prevReach = sum(prevMetrics, 'reach');
-    const currImpressions = sum(currentMetrics, 'impressions');
-    const prevImpressions = sum(prevMetrics, 'impressions');
-    const currVisits = sum(currentMetrics, 'profileVisits');
-    const prevVisits = sum(prevMetrics, 'profileVisits');
+    const currReach = sumMetric(currentMetrics, 'reach', 'reach');
+    const prevReach = sumMetric(prevMetrics, 'reach', 'reach');
+    const currImpressions = sumMetric(currentMetrics, 'impressions', 'impressions');
+    const prevImpressions = sumMetric(prevMetrics, 'impressions', 'impressions');
+    const currVisits = sumMetric(currentMetrics, 'profileVisits', 'profileVisits');
+    const prevVisits = sumMetric(prevMetrics, 'profileVisits', 'profileVisits');
 
     const recentInsights = recentPosts.flatMap(p => scopedInsights(p.insights, platformFilter));
     const prevInsights = prevPeriodPosts.flatMap(p => scopedInsights(p.insights, platformFilter));
@@ -415,15 +429,20 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
         isNew: !hasBase,
       };
     };
-    const currVideoViews = sum(currentMetrics, 'videoViews');
-    const prevVideoViews = sum(prevMetrics, 'videoViews');
+    const currVideoViews = sumMetric(currentMetrics, 'videoViews', 'videoViews');
+    const prevVideoViews = sumMetric(prevMetrics, 'videoViews', 'videoViews');
 
     // Per-account capability (what a single platform can report, not the union).
-    const acctCan = (platform: string, key: MetricKey): boolean => {
+    const acctCan = (platform: string, key: MetricKey): boolean => metricPlatformOk(platform, key);
+    // Status for a per-account metric slot: 'available' (show the value),
+    // 'locked' (obtainable with an extra permission — grey with a reason),
+    // or 'unavailable' (the platform's API can't provide it — grey with a reason).
+    const metricStatusOf = (platform: string, key: MetricKey): 'available' | 'locked' | 'unavailable' => {
       const decl = METRIC_AVAILABILITY[platform]?.[key];
-      if (decl === 'live') return true;
-      if (decl === 'import') return importedPlatforms.has(platform);
-      return false;
+      if (decl === 'live') return 'available';
+      if (decl === 'import') return importedPlatforms.has(platform) ? 'available' : 'unavailable';
+      if (decl === 'scope') return 'locked';
+      return 'unavailable';
     };
 
     // ── Response ──
@@ -469,6 +488,13 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
           id: a.id, platform: a.platform, displayName: a.displayName, platformUsername: a.platformUsername,
           avatarUrl: a.avatarUrl, healthStatus: a.healthStatus, healthMessage: a.healthMessage, updatedAt: a.updatedAt,
           lastImportedAt: a.lastImportedAt, source: a.lastImportedAt ? 'import' : 'api',
+          // Per-metric status so cards can grey out an absent metric WITH a reason
+          // instead of silently dropping it (looking broken/inconsistent).
+          metricStatus: {
+            reach: metricStatusOf(plat, 'reach'),
+            impressions: metricStatusOf(plat, 'impressions'),
+            videoViews: metricStatusOf(plat, 'videoViews'),
+          },
           latestMetrics: L ? {
             followers: a.latestFollowers?.followers ?? null,
             reach: acctCan(plat, 'reach') ? (L.reach ?? null) : null,
