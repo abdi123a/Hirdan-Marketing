@@ -178,11 +178,18 @@ const getStatusStyle = (status: string) => {
 
 function inferContentType(title: string, platforms: string[]): string {
   const t = title.toLowerCase();
-  if (/\\bvideo\\b|\\breel\\b|\\btiktok\\b|\\bshort\\b|\\bfilm\\b|\\bfilmed\\b|\\brecord/.test(t)) return "video";
-  if (/\\bstory\\b|\\bstories\\b/.test(t)) return "story";
-  if (/\\bphoto\\b|\\bpicture\\b|\\bimage\\b|\\bpic\\b|\\bshot\\b/.test(t)) return "photo";
+  if (/\bvideo\b|\breel\b|\btiktok\b|\bshort\b|\bfilm\b|\bfilmed\b|\brecord/.test(t)) return "video";
+  if (/\bstory\b|\bstories\b/.test(t)) return "story";
+  if (/\bphoto\b|\bpicture\b|\bimage\b|\bpic\b|\bshot\b/.test(t)) return "photo";
   if (platforms.some(p => p === "TIKTOK" || p === "YOUTUBE")) return "video";
   return "graphic";
+}
+
+function isTikTokDraft(dest: { platform?: string; platformPostId?: string | null; error?: string | null }, platformContent?: any): boolean {
+  if ((dest.platform || "").toLowerCase() !== "tiktok") return false;
+  if (dest.platformPostId?.includes("v_inbox_url")) return true;
+  if (platformContent?.tiktok?.postMode === "draft") return true;
+  return false;
 }
 
 function buildCalendarGrid(month: number, year: number) {
@@ -321,6 +328,7 @@ export default function SocialPublishPage() {
       accountName: string;
       status: string;
       error: string | null;
+      platformPostId?: string | null;
     }>;
   }>({
     postId: null,
@@ -852,7 +860,8 @@ export default function SocialPublishPage() {
                   platform: d.platform,
                   accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || 'Unknown Account',
                   status: d.status,
-                  error: d.lastError
+                  error: d.lastError,
+                  platformPostId: d.platformPostId
                 }))
               }));
             }
@@ -880,7 +889,8 @@ export default function SocialPublishPage() {
               platform: d.platform,
               accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || 'Unknown Account',
               status: d.status,
-              error: d.lastError
+              error: d.lastError,
+              platformPostId: d.platformPostId
             }))
           }));
 
@@ -893,7 +903,13 @@ export default function SocialPublishPage() {
               variant: "destructive" 
             });
           } else {
-            toast({ title: "Post Published", description: "Your post has been distributed to selected accounts" });
+            const hasTikTokDraft = finalPost.destinations?.some(d => isTikTokDraft(d, finalPost.platformContent));
+            toast({ 
+              title: hasTikTokDraft ? "Saved to TikTok Drafts" : "Post Published", 
+              description: hasTikTokDraft 
+                ? "Uploaded to your TikTok mobile inbox! Open the TikTok app on your phone to complete & post."
+                : "Your post has been distributed to selected accounts" 
+            });
             setTimeout(() => {
               setIsPublishProgressOpen(false);
             }, 3000);
@@ -2553,10 +2569,18 @@ export default function SocialPublishPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <span className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 border rounded-full ${d.status === "PUBLISHED" ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/40" :
-                          d.status === "FAILED" ? "bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900/40" :
-                            "bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-900/30 dark:text-slate-400 dark:border-slate-800"
-                        }`}>{d.status}</span>
+                      {isTikTokDraft(d, activePost.platformContent) ? (
+                        <div className="flex flex-col items-end">
+                          <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 border rounded-full bg-violet-50 text-violet-600 border-violet-200 dark:bg-violet-950/20 dark:text-violet-400 dark:border-violet-900/40">
+                            Draft in TikTok App
+                          </span>
+                        </div>
+                      ) : (
+                        <span className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 border rounded-full ${d.status === "PUBLISHED" ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/40" :
+                            d.status === "FAILED" ? "bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-950/20 dark:text-rose-400 dark:border-rose-900/40" :
+                              "bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-900/30 dark:text-slate-400 dark:border-slate-800"
+                          }`}>{d.status}</span>
+                      )}
                       {d.status === "FAILED" && (
                         <Button variant="ghost" size="icon" onClick={() => handleRetryPost(activePost.id)} className="h-6 w-6 rounded-md text-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-950/30" title="Retry">
                           <RefreshCw className="h-2.5 w-2.5" />
@@ -3476,10 +3500,17 @@ export default function SocialPublishPage() {
                       </Badge>
                     )}
                     {dest.status === 'PUBLISHED' && (
-                      <Badge variant="outline" className="text-[10px] font-bold py-0.5 px-2 bg-emerald-500/10 border-emerald-500/30 text-emerald-500 flex items-center gap-1">
-                        <Check className="h-2.5 w-2.5" />
-                        Success
-                      </Badge>
+                      isTikTokDraft(dest) ? (
+                        <Badge variant="outline" className="text-[10px] font-bold py-0.5 px-2 bg-violet-500/10 border-violet-500/30 text-violet-500 flex items-center gap-1">
+                          <FileText className="h-2.5 w-2.5" />
+                          Saved to Drafts
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] font-bold py-0.5 px-2 bg-emerald-500/10 border-emerald-500/30 text-emerald-500 flex items-center gap-1">
+                          <Check className="h-2.5 w-2.5" />
+                          Success
+                        </Badge>
+                      )
                     )}
                     {dest.status === 'FAILED' && (
                       <TooltipProvider>
@@ -3503,6 +3534,18 @@ export default function SocialPublishPage() {
               );
             })}
           </div>
+
+          {publishStatus.destinations.some(d => isTikTokDraft(d)) && (
+            <div className="p-3 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-300 text-xs flex items-start gap-2.5 mt-4">
+              <Sparkles className="h-4 w-4 shrink-0 text-violet-500 mt-0.5" />
+              <div>
+                <p className="font-bold text-xs">Saved as Draft in TikTok Mobile App</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Your video has been delivered to your TikTok Inbox. Open the <strong>TikTok app on your phone</strong> to edit (add sounds, cover, caption) and tap <strong>Post</strong> to publish.
+                </p>
+              </div>
+            </div>
+          )}
 
           <DialogFooter className="mt-6 pt-4 border-t border-border/40">
             {publishStatus.status !== 'publishing' ? (
