@@ -620,13 +620,18 @@ export default function SocialPublishPage() {
     setFacebookFirstComment("");
     setFacebookAiGenerated(false);
     setTiktokTitle("");
+    setTiktokAutomatic("automatic");
+    setTiktokPostMode("direct");
+    setTiktokType("video");
     setLinkedinFirstComment("");
-    setPinterestTitle("");
-    setPinterestLink("");
-    setYoutubeTitle("");
-    setYoutubePrivacy("public");
+    setLinkedinType("post");
+    setXType("post");
     setThreadsTopic("");
     setThreadsLocation("");
+    setThreadsType("post");
+    setPinterestTitle("");
+    setPinterestLink("");
+    setPinterestType("pin");
     setPostTags([]);
     setEditingPostId(null);
     setAlreadyPublishedAccountIds([]);
@@ -1004,9 +1009,15 @@ export default function SocialPublishPage() {
     if (pc.tiktok) {
       setTiktokTitle(pc.tiktok.title || "");
       setTiktokAutomatic(pc.tiktok.automatic || "automatic");
+      setTiktokPostMode(pc.tiktok.postMode || "direct");
+      setTiktokType(pc.tiktok.type || "video");
     }
     if (pc.linkedin) {
       setLinkedinFirstComment(pc.linkedin.firstComment || "");
+      setLinkedinType(pc.linkedin.type || "post");
+    }
+    if (pc.x) {
+      setXType(pc.x.type || "post");
     }
     if (pc.youtube) {
       setYoutubeTitle(pc.youtube.title || "");
@@ -1018,6 +1029,12 @@ export default function SocialPublishPage() {
     if (pc.threads) {
       setThreadsTopic(pc.threads.topic || "");
       setThreadsLocation(pc.threads.location || "");
+      setThreadsType(pc.threads.type || "post");
+    }
+    if (pc.pinterest) {
+      setPinterestTitle(pc.pinterest.title || "");
+      setPinterestLink(pc.pinterest.link || "");
+      setPinterestType(pc.pinterest.type || "pin");
     }
     if (pc.tags) {
       setPostTags(pc.tags || []);
