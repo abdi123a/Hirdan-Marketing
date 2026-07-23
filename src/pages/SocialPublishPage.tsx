@@ -3271,7 +3271,17 @@ export default function SocialPublishPage() {
                         accountName={previewAccount?.displayName || activePlatform}
                         platformUsername={previewAccount?.platformUsername}
                         avatarUrl={previewAccount?.avatarUrl}
-                        postType={activePlatform === "instagram" ? instagramType : activePlatform === "facebook" ? facebookType : activePlatform === "youtube" ? youtubeType : activePlatform === "tiktok" ? tiktokType : activePlatform === "linkedin" ? linkedinType : activePlatform === "x" ? xType : activePlatform === "threads" ? threadsType : activePlatform === "pinterest" ? pinterestType : "post"}
+                        postType={
+                          activePlatform === "instagram" ? instagramType
+                          : activePlatform === "facebook" ? facebookType
+                          : activePlatform === "youtube" ? youtubeType
+                          : activePlatform === "tiktok" ? tiktokType
+                          : activePlatform === "linkedin" ? linkedinType
+                          : activePlatform === "x" ? xType
+                          : activePlatform === "threads" ? threadsType
+                          : activePlatform === "pinterest" ? pinterestType
+                          : "post"
+                        }
                       />
                     );
                   })() : (
@@ -3599,7 +3609,7 @@ interface PreviewCardProps {
   accountName?: string;
   platformUsername?: string;
   avatarUrl?: string | null;
-  postType?: "post" | "reel" | "story" | "short" | "video";
+  postType?: string;
 }
 
 function PreviewCard({ platform, text, image, mediaType = "image", accountName, platformUsername, avatarUrl, postType = "post" }: PreviewCardProps) {
