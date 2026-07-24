@@ -86,6 +86,7 @@ export async function sendMailboxEmail(input: SendMailInput): Promise<SendMailRe
     finalHtml = await generateEmailHtml({
       title: subject,
       contentHtml: input.html,
+      isAutomated: false,
     });
   }
 

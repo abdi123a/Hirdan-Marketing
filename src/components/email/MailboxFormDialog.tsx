@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Loader2, Upload, Trash2, Info } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -9,6 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { useMailboxMutations } from '@/lib/email/hooks';
+import { emailApi } from '@/lib/email/api';
+import { getFullUrl } from '@/lib/api-client';
 import type { Mailbox } from '@/lib/email/types';
 
 interface Props {
@@ -33,6 +36,8 @@ export function MailboxFormDialog({ open, onClose, mailbox }: Props) {
   const editing = !!mailbox;
   const { create, update } = useMailboxMutations();
   const [form, setForm] = useState(EMPTY);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -55,6 +60,32 @@ export function MailboxFormDialog({ open, onClose, mailbox }: Props) {
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select a valid image file');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      const res = await emailApi.uploadAvatar(file);
+      if (res.avatarUrl) {
+        set('avatarUrl', res.avatarUrl);
+        toast.success('Avatar uploaded successfully');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to upload avatar image');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   const submit = async () => {
     const payload = {
@@ -130,9 +161,75 @@ export function MailboxFormDialog({ open, onClose, mailbox }: Props) {
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Avatar URL</Label>
-            <Input value={form.avatarUrl} onChange={(e) => set('avatarUrl', e.target.value)} placeholder="Optional image URL" />
+          <div className="space-y-2">
+            <Label>Avatar / Logo</Label>
+            <div className="flex items-center gap-3">
+              {form.avatarUrl ? (
+                <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-full border bg-muted">
+                  <img
+                    src={getFullUrl(form.avatarUrl)}
+                    alt="Avatar preview"
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+              ) : (
+                <div
+                  className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border bg-muted text-xs font-semibold text-muted-foreground"
+                  style={{ backgroundColor: form.color ? `${form.color}20` : undefined, color: form.color || undefined }}
+                >
+                  {form.displayName ? form.displayName.slice(0, 2).toUpperCase() : 'MB'}
+                </div>
+              )}
+
+              <div className="flex flex-1 flex-col gap-1.5">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleAvatarUpload}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={uploading || busy}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="gap-1.5 text-xs h-8"
+                  >
+                    {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                    Upload Image
+                  </Button>
+                  {form.avatarUrl && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => set('avatarUrl', '')}
+                      className="h-8 text-xs text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
+                    </Button>
+                  )}
+                </div>
+                <Input
+                  value={form.avatarUrl}
+                  onChange={(e) => set('avatarUrl', e.target.value)}
+                  placeholder="Or enter image URL (https://...)"
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+            <p className="flex items-start gap-1 text-[11px] text-muted-foreground mt-1">
+              <Info className="h-3.5 w-3.5 text-primary flex-shrink-0 mt-0.5" />
+              <span>
+                <strong>Gmail &amp; Outlook Inbox Avatars:</strong> Email clients (Gmail/Outlook) pull your profile photo from <a href="https://gravatar.com" target="_blank" rel="noreferrer" className="underline text-primary">Gravatar</a> (linked to your sender email) or Google Workspace / Office 365.
+              </span>
+            </p>
           </div>
 
           <div className="space-y-1.5">

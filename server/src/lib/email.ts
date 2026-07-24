@@ -95,6 +95,7 @@ interface EmailWrapperOptions {
     label: string;
     url: string;
   };
+  isAutomated?: boolean;
 }
 
 /**
@@ -104,6 +105,7 @@ interface EmailWrapperOptions {
 export async function generateEmailHtml(options: EmailWrapperOptions): Promise<string> {
   const settings = await prisma.agencySettings.findFirst();
 
+  const isAutomated = options.isAutomated !== false;
   const agencyName = settings?.agencyName || 'Hirdan Marketing';
   const primaryColor = settings?.primaryColor || '#504289';
   const logo = settings?.logo || null;
@@ -187,6 +189,25 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
     ? `<span style="display: none; max-height: 0px; overflow: hidden;">${options.preheader}</span>`
     : '';
 
+  const taglineHtml = `
+    <p class="footer-text" style="font-size: 12px; color: #cbd5e1; margin: 14px 0 18px 0; font-style: italic; font-weight: 500;">
+      Empowering your brand's future through strategic digital growth
+    </p>
+  `;
+
+  const portalLinksHtml = `
+    <div class="footer-links" style="margin-top: 18px; color: #ffffff;">
+      <a href="https://${website}" class="footer-link" target="_blank" style="color: #ffffff !important; background-color: rgba(255, 255, 255, 0.12); text-decoration: none; font-weight: 600; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Website <span style="font-size: 9px; font-weight: bold; margin-left: 2px;">↗</span></a>
+      <a href="https://app.${website}/client/login" class="footer-link" target="_blank" style="color: #f6b317 !important; background-color: rgba(246, 179, 23, 0.15); text-decoration: none; font-weight: 700; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Client Portal <span style="font-size: 9px; font-weight: bold; margin-left: 2px;">↗</span></a>
+    </div>
+  `;
+
+  const automatedNoticeHtml = `
+    <p class="footer-text" style="margin-top: 28px; font-size: 10.5px; color: #cbd5e1; opacity: 0.7; line-height: 1.5;">
+      This is an automated transactional message. Please do not reply directly to this email.
+    </p>
+  `;
+
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -234,24 +255,37 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
       text-decoration: underline !important;
     }
     @media only screen and (max-width: 600px) {
+      .wrapper {
+        padding: 0 !important;
+        width: 100% !important;
+      }
+      .container {
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: 0 !important;
+        border-left: none !important;
+        border-right: none !important;
+        box-shadow: none !important;
+        margin: 0 !important;
+      }
       .content {
-        padding: 24px !important;
+        padding: 24px 16px !important;
       }
       .header {
-        padding: 24px !important;
+        padding: 24px 16px !important;
       }
       .footer {
-        padding: 28px 20px 24px 20px !important;
-        border-radius: 20px !important;
-        margin: 16px 12px 12px 12px !important;
+        padding: 28px 16px 24px 16px !important;
+        border-radius: 16px !important;
+        margin: 16px 12px 20px 12px !important;
       }
     }
   </style>
 </head>
 <body style="background-color: #f6f9fc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; -webkit-font-smoothing: antialiased;">
   ${preheaderHtml}
-  <div class="wrapper" style="background-color: #f6f9fc; padding: 40px 20px;">
-    <div class="container" style="background-color: #ffffff; border-radius: 20px; border: 1px solid #e8ebf0; box-shadow: 0 8px 24px rgba(80, 66, 137, 0.06); max-width: 580px; margin: 0 auto; overflow: hidden;">
+  <div class="wrapper" style="background-color: #f6f9fc; padding: 30px 12px; width: 100%; box-sizing: border-box;">
+    <div class="container" style="background-color: #ffffff; border-radius: 20px; border: 1px solid #e8ebf0; box-shadow: 0 8px 24px rgba(80, 66, 137, 0.06); max-width: 600px; width: 100%; margin: 0 auto; overflow: hidden;">
       <!-- Top Branding Color Bar -->
       <table cellpadding="0" cellspacing="0" border="0" width="100%" style="width: 100%; height: 6px; border-collapse: separate; border-spacing: 0; overflow: hidden; border-radius: 20px 20px 0 0;">
         <tr>
@@ -269,32 +303,23 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
       </div>
       
       <!-- Premium Rounded Dark Footer -->
-      <div class="footer" style="background-color: ${primaryColor}; color: #ffffff; padding: 40px 40px 32px 40px; text-align: center; position: relative; border-radius: 20px; -webkit-border-radius: 20px; margin: 0 20px 20px 20px;">
+      <div class="footer" style="background-color: ${primaryColor}; color: #ffffff; padding: 36px 32px 28px 32px; text-align: center; position: relative; border-radius: 20px; -webkit-border-radius: 20px; margin: 0 20px 20px 20px;">
         <!-- Floating Gold Accent Divider -->
-        <table align="center" cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto 24px auto; width: 60px; height: 4px; border-collapse: collapse;">
+        <table align="center" cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto 20px auto; width: 60px; height: 4px; border-collapse: collapse;">
           <tr>
             <td bgcolor="#f6b317" style="background-color: #f6b317; height: 4px; border-radius: 4px; line-height: 1px; font-size: 1px;">&nbsp;</td>
           </tr>
         </table>
 
         ${socialHtml}
-        <div style="margin-bottom: 14px;">
+        <div style="margin-bottom: 12px;">
           ${footerLogoHtml}
         </div>
         ${addressHtml}
         ${contactHtml}
-        
-        <p class="footer-text" style="font-size: 12px; color: #cbd5e1; margin: 14px 0 18px 0; font-style: italic; font-weight: 500;">
-          Empowering your brand's future through strategic digital growth
-        </p>
-
-        <div class="footer-links" style="margin-top: 18px; color: #ffffff;">
-          <a href="https://${website}" class="footer-link" target="_blank" style="color: #ffffff !important; background-color: rgba(255, 255, 255, 0.12); text-decoration: none; font-weight: 600; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Website <span style="font-size: 9px; font-weight: bold; margin-left: 2px;">↗</span></a>
-          <a href="https://app.${website}/client/login" class="footer-link" target="_blank" style="color: #f6b317 !important; background-color: rgba(246, 179, 23, 0.15); text-decoration: none; font-weight: 700; padding: 6px 14px; border-radius: 20px; margin: 0 4px; font-size: 12px; display: inline-block;">Client Portal <span style="font-size: 9px; font-weight: bold; margin-left: 2px;">↗</span></a>
-        </div>
-        <p class="footer-text" style="margin-top: 28px; font-size: 10.5px; color: #cbd5e1; opacity: 0.7; line-height: 1.5;">
-          This is an automated transactional message. Please do not reply directly to this email.
-        </p>
+        ${isAutomated ? taglineHtml : ''}
+        ${isAutomated ? portalLinksHtml : ''}
+        ${isAutomated ? automatedNoticeHtml : ''}
       </div>
     </div>
   </div>

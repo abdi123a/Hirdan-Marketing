@@ -10,19 +10,60 @@ import {
   mailboxAccessLevel,
 } from '../lib/mail/access.js';
 
+import multer from 'multer';
+import path from 'path';
+import { PATHS } from '../lib/paths.js';
+
 const router = Router();
 router.use(authenticate, requireStaff);
+
+const avatarStorage = multer.diskStorage({
+  destination: (_req: any, _file: any, cb: any) => {
+    cb(null, PATHS.BRANDING);
+  },
+  filename: (_req: any, file: any, cb: any) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, 'mailbox-avatar-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const avatarUpload = multer({
+  storage: avatarStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (_req: any, file: any, cb: any) => {
+    const allowedExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (file.mimetype.startsWith('image/') && allowedExtensions.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images are allowed (.png, .jpg, .jpeg, .webp, .gif)'));
+    }
+  }
+});
 
 const mailboxSchema = z.object({
   email: z.string().email(),
   displayName: z.string().min(1),
-  avatarUrl: z.string().url().optional().nullable(),
+  avatarUrl: z.string().optional().nullable(),
   signature: z.string().optional().nullable(),
   department: z.string().optional().nullable(),
   replyTo: z.string().email().optional().nullable(),
   color: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
   isDefault: z.boolean().optional(),
+});
+
+// ─── POST /api/email/mailboxes/upload-avatar ─────────────────────
+router.post('/mailboxes/upload-avatar', avatarUpload.single('file'), (req: Request, res: Response, next) => {
+  try {
+    if (!req.file) {
+      throw AppError.badRequest('No image file provided');
+    }
+    const avatarUrl = `/api/files/branding/${req.file.filename}`;
+    res.json({ success: true, avatarUrl });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ─── GET /api/email/mailboxes ────────────────────────────────────

@@ -1,4 +1,4 @@
-import { apiFetch } from '@/lib/api-client';
+import { apiFetch, apiUpload } from '@/lib/api-client';
 import type {
   ConversationDetail,
   ConversationsResponse,
@@ -30,6 +30,12 @@ export const emailApi = {
 
   deleteMailbox: (id: string) =>
     apiFetch<{ success: boolean }>(`/email/mailboxes/${id}`, { method: 'DELETE' }),
+
+  uploadAvatar: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiUpload<{ success: boolean; avatarUrl: string }>('/email/mailboxes/upload-avatar', formData);
+  },
 
   // ─── Mailbox permissions (ADMIN) ───────────────────────────────
   listPermissions: (mailboxId: string) =>
