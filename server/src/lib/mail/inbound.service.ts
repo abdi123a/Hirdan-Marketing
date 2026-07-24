@@ -126,6 +126,7 @@ export async function processInboundEmail(input: any): Promise<boolean> {
   const receivedFor = parseAddresses(data?.received_for);
   const headers = data?.headers;
 
+  const receivedId: string | null = data?.email_id || data?.id || null;
   const messageId = firstMessageId(getHeader(headers, 'message-id') || data?.message_id);
   const inReplyTo = firstMessageId(getHeader(headers, 'in-reply-to') || data?.in_reply_to);
   const references = getHeader(headers, 'references') || data?.references || null;
@@ -141,10 +142,14 @@ export async function processInboundEmail(input: any): Promise<boolean> {
     : null;
   if (!mailbox) return false; // not for us (still recorded in WebhookLog)
 
-  // Idempotency: same inbound Message-ID already stored?
-  if (messageId) {
+  // Idempotency: same inbound message already stored? Match on the Resend
+  // received-email id (survives webhook replays) or the RFC Message-ID.
+  const dupOr: any[] = [];
+  if (receivedId) dupOr.push({ resendId: receivedId });
+  if (messageId) dupOr.push({ messageId });
+  if (dupOr.length) {
     const dup = await prisma.email.findFirst({
-      where: { messageId, direction: 'INBOUND' },
+      where: { direction: 'INBOUND', OR: dupOr },
       select: { id: true },
     });
     if (dup) return true;
@@ -223,6 +228,7 @@ export async function processInboundEmail(input: any): Promise<boolean> {
       html,
       text,
       snippet,
+      resendId: receivedId,
       messageId: messageId ?? null,
       inReplyTo: inReplyTo ?? null,
       references: references ?? null,
