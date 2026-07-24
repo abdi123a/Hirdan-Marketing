@@ -25,7 +25,7 @@ function ClientLoginForm() {
   if (isAuthenticated) {
     if (user?.role === 'client') {
       return <Navigate to="/client/portal" replace />;
-    } else if (user?.role === 'admin') {
+    } else if (['admin', 'manager', 'staff'].includes(user?.role || '')) {
       return <Navigate to="/dashboard" replace />;
     }
   }

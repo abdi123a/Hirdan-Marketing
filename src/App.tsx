@@ -200,11 +200,11 @@ function AppRoutes() {
         }
       />
 
-      {/* Admin dashboard (protected - admin role) */}
+      {/* Agency dashboard (protected - admin, manager, staff roles) */}
       <Route
         path="/dashboard"
         element={
-          <ProtectedRoute allowedRoles="admin">
+          <ProtectedRoute allowedRoles={["admin", "manager", "staff"]}>
             <DashboardLayout />
           </ProtectedRoute>
         }

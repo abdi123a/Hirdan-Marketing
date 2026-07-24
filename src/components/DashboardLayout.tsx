@@ -101,8 +101,8 @@ export default function DashboardLayout() {
                         <AvatarFallback className="bg-primary/10 text-primary text-sm font-display font-bold">{adminName}</AvatarFallback>
                       </Avatar>
                       <div className="hidden md:block text-left">
-                        <p className="text-sm font-semibold text-foreground leading-none">{user?.email || 'Admin'}</p>
-                        <p className="text-xs text-muted-foreground mt-1">Administrator</p>
+                        <p className="text-sm font-semibold text-foreground leading-none">{user?.name || user?.email || 'User'}</p>
+                        <p className="text-xs text-muted-foreground mt-1 capitalize">{user?.role || 'Administrator'}</p>
                       </div>
                     </button>
                   </DropdownMenuTrigger>

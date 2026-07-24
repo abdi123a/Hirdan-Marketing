@@ -1,152 +1,156 @@
-import { useState, useMemo } from 'react';
-import { MoreHorizontal } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-function parseEmailHtml(htmlString: string): { mainHtml: string; quotedHtml: string | null } {
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(htmlString, 'text/html');
-
-    // 1. Check for standard quote elements
-    const quoteSelector = 'blockquote, .gmail_quote, .gmail_extra, #divRplyFwdMsg, #appendonsend, .yahoo_quoted, [type="cite"]';
-    const quoteEl = doc.querySelector(quoteSelector);
-
-    if (quoteEl && quoteEl.parentNode) {
-      const quotedHtml = quoteEl.outerHTML;
-      quoteEl.remove();
-      const mainHtml = doc.body.innerHTML.trim();
-      if (mainHtml && mainHtml !== '<br>') {
-        return { mainHtml, quotedHtml };
-      }
-    }
-
-    // 2. Check for text dividers
-    const allElements = Array.from(doc.body.querySelectorAll('div, p, hr, table, span'));
-    for (const el of allElements) {
-      const text = (el.textContent || '').trim();
-      const isDivider =
-        text.includes('---------- Forwarded message ----------') ||
-        text.includes('-----Original Message-----') ||
-        /^(On\s+.+wrote:)$/im.test(text) ||
-        /^(From:\s+.+Sent:)/im.test(text);
-
-      if (isDivider) {
-        const siblings: Element[] = [];
-        let curr: Element | null = el;
-        while (curr) {
-          siblings.push(curr);
-          curr = curr.nextElementSibling;
-        }
-        const container = doc.createElement('div');
-        siblings.forEach((s) => container.appendChild(s));
-        const quotedHtml = container.innerHTML;
-        const mainHtml = doc.body.innerHTML.trim();
-        if (mainHtml && mainHtml !== '<br>') {
-          return { mainHtml, quotedHtml };
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Error parsing email HTML:', err);
-  }
-
-  return { mainHtml: htmlString, quotedHtml: null };
-}
-
-function parseEmailText(textString: string): { mainText: string; quotedText: string | null } {
-  const lines = textString.split('\n');
-  const quoteStartIdx = lines.findIndex((line) => {
-    const trimmed = line.trim();
-    return (
-      trimmed.startsWith('>') ||
-      trimmed.includes('---------- Forwarded message ----------') ||
-      trimmed.includes('-----Original Message-----') ||
-      /^(On\s+.+wrote:)$/i.test(trimmed)
-    );
-  });
-
-  if (quoteStartIdx > 0) {
-    const mainText = lines.slice(0, quoteStartIdx).join('\n').trim();
-    const quotedText = lines.slice(quoteStartIdx).join('\n').trim();
-    if (mainText) {
-      return { mainText, quotedText };
-    }
-  }
-
-  return { mainText: textString, quotedText: null };
-}
-
-interface ParsedEmail {
-  mainHtml: string;
-  mainText: string | null;
-  quotedHtml: string | null;
-  quotedText: string | null;
-}
+const HEIGHT_CAP = 680;
 
 interface Props {
   html?: string | null;
   text?: string | null;
 }
 
-export function EmailBody({ html, text }: Props) {
-  const [showQuoted, setShowQuoted] = useState(false);
+/**
+ * Inject a <base target="_blank"> and defensive responsive styles into the
+ * email's HTML so it renders isolated inside an iframe. Rendering in an iframe
+ * (rather than inline) means the email's own @media rules respond to the reader
+ * width, images/tables are capped to the frame, and its CSS can't leak into the
+ * app — fixing the "narrow column / infinitely tall / not responsive" problem.
+ */
+function buildSrcDoc(html: string): string {
+  const head =
+    `<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+    `<base target="_blank">` +
+    `<style>` +
+    `html,body{margin:0;padding:0;background:#ffffff;}` +
+    `body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1f2937;word-wrap:break-word;overflow-wrap:anywhere;-webkit-text-size-adjust:100%;}` +
+    `img{max-width:100%!important;height:auto;}` +
+    `table{max-width:100%;}` +
+    `a{color:#2563eb;}` +
+    `*{box-sizing:border-box;}` +
+    `</style>`;
 
-  const parsed: ParsedEmail = useMemo(() => {
-    if (html) {
-      const p = parseEmailHtml(html);
-      return { mainHtml: p.mainHtml, mainText: null, quotedHtml: p.quotedHtml, quotedText: null };
-    }
-    if (text) {
-      const p = parseEmailText(text);
-      return { mainHtml: '', mainText: p.mainText, quotedHtml: null, quotedText: p.quotedText };
-    }
-    return { mainHtml: '', mainText: '', quotedHtml: null, quotedText: null };
-  }, [html, text]);
+  if (/<\/head>/i.test(html)) {
+    return html.replace(/<\/head>/i, `${head}</head>`);
+  }
+  if (/<html[\s>]/i.test(html)) {
+    return html.replace(/<html([^>]*)>/i, `<html$1><head>${head}</head>`);
+  }
+  return `<!doctype html><html><head>${head}</head><body>${html}</body></html>`;
+}
 
-  const hasQuoted = Boolean(parsed.quotedHtml || parsed.quotedText);
+function EmailFrame({ html, onHeight }: { html: string; onHeight: (h: number) => void }) {
+  const ref = useRef<HTMLIFrameElement>(null);
+  const srcDoc = useMemo(() => buildSrcDoc(html), [html]);
+
+  useEffect(() => {
+    const iframe = ref.current;
+    if (!iframe) return;
+    let ro: ResizeObserver | null = null;
+
+    const measure = () => {
+      const doc = iframe.contentDocument;
+      if (!doc?.body) return;
+      const h = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight) + 4;
+      iframe.style.height = `${h}px`;
+      onHeight(h);
+    };
+
+    const onLoad = () => {
+      measure();
+      const doc = iframe.contentDocument;
+      // Re-measure once images finish loading (they change the height).
+      doc?.querySelectorAll('img').forEach((img) => {
+        const el = img as HTMLImageElement;
+        if (!el.complete) el.addEventListener('load', measure, { once: true });
+      });
+      setTimeout(measure, 250);
+      setTimeout(measure, 800);
+      // Re-measure only when the reader panel (iframe width) changes — guarding
+      // against a feedback loop from our own height updates.
+      if ('ResizeObserver' in window) {
+        let lastWidth = iframe.clientWidth;
+        ro = new ResizeObserver((entries) => {
+          const w = entries[0].contentRect.width;
+          if (Math.abs(w - lastWidth) < 1) return;
+          lastWidth = w;
+          measure();
+        });
+        ro.observe(iframe);
+      }
+    };
+
+    iframe.addEventListener('load', onLoad);
+    return () => {
+      iframe.removeEventListener('load', onLoad);
+      ro?.disconnect();
+    };
+  }, [srcDoc, onHeight]);
 
   return (
-    <div className="email-body-container w-full min-w-0 max-w-full space-y-2">
-      {html ? (
+    <iframe
+      ref={ref}
+      srcDoc={srcDoc}
+      title="Email content"
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      className="block w-full border-0 bg-white"
+      style={{ height: 200 }}
+    />
+  );
+}
+
+function ShowMoreButton({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="mt-2 inline-flex items-center gap-1 rounded-md border bg-muted/60 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
+      {expanded ? 'Show less' : 'Show full message'}
+    </button>
+  );
+}
+
+const Fade = () => (
+  <div
+    className="pointer-events-none absolute inset-x-0 bottom-0 h-16"
+    style={{ background: 'linear-gradient(to top, #ffffff, rgba(255,255,255,0))' }}
+  />
+);
+
+export function EmailBody({ html, text }: Props) {
+  const [height, setHeight] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+
+  if (html) {
+    const tall = height > HEIGHT_CAP + 60;
+    return (
+      <div className="w-full min-w-0">
         <div
-          className="email-html prose prose-sm w-full max-w-none overflow-x-auto break-words dark:prose-invert [&_*]:max-w-full [&_img]:h-auto [&_table]:max-w-full"
-          dangerouslySetInnerHTML={{ __html: parsed.mainHtml || html }}
-        />
-      ) : (
-        <pre className="w-full overflow-x-auto whitespace-pre-wrap break-words font-sans text-sm">{parsed.mainText || text}</pre>
-      )}
-
-      {hasQuoted && (
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowQuoted((v) => !v);
-            }}
-            className={cn(
-              'inline-flex items-center justify-center rounded-md border bg-muted/60 px-2 py-0.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none',
-              showQuoted && 'bg-accent text-foreground'
-            )}
-            title={showQuoted ? 'Hide trimmed content' : 'Show trimmed content'}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
-
-          {showQuoted && (
-            <div className="mt-2 rounded-lg border border-dashed bg-muted/20 p-3">
-              {parsed.quotedHtml ? (
-                <div
-                  className="email-html prose prose-sm max-w-none opacity-80 dark:prose-invert"
-                  dangerouslySetInnerHTML={{ __html: parsed.quotedHtml }}
-                />
-              ) : (
-                <pre className="whitespace-pre-wrap font-sans text-xs opacity-80">{parsed.quotedText}</pre>
-              )}
-            </div>
-          )}
+          className="relative w-full overflow-hidden rounded-md"
+          style={{ maxHeight: tall && !expanded ? HEIGHT_CAP : undefined }}
+        >
+          <EmailFrame html={html} onHeight={setHeight} />
+          {tall && !expanded && <Fade />}
         </div>
-      )}
+        {tall && <ShowMoreButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} />}
+      </div>
+    );
+  }
+
+  // Plain-text email
+  const longText = (text?.length ?? 0) > 1600;
+  return (
+    <div className="w-full min-w-0">
+      <div className="relative overflow-hidden" style={{ maxHeight: longText && !expanded ? HEIGHT_CAP : undefined }}>
+        <pre className="whitespace-pre-wrap break-words font-sans text-sm text-foreground/90">{text}</pre>
+        {longText && !expanded && (
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-16"
+            style={{ background: 'linear-gradient(to top, hsl(var(--card)), transparent)' }}
+          />
+        )}
+      </div>
+      {longText && <ShowMoreButton expanded={expanded} onToggle={() => setExpanded((v) => !v)} />}
     </div>
   );
 }

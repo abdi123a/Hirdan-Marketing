@@ -29,7 +29,7 @@ function AdminLoginForm() {
   // Redirection logic for authenticated users
   useEffect(() => {
     if (isAuthenticated && user) {
-      if (user.role === 'admin') {
+      if (['admin', 'manager', 'staff'].includes(user.role)) {
         navigate(from, { replace: true });
       } else if (user.role === 'client') {
         navigate('/client/portal', { replace: true });
