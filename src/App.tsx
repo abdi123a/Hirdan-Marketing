@@ -79,6 +79,7 @@ const LandingPageEditor = lazy(() => import("./pages/LandingPageEditor.tsx"));
 const PluginsPage = lazy(() => import("./pages/PluginsPage.tsx"));
 const EmailCenterPage = lazy(() => import("./pages/EmailCenterPage.tsx"));
 const EmailMailboxesPage = lazy(() => import("./pages/EmailMailboxesPage.tsx"));
+const EmailTemplatesPage = lazy(() => import("./pages/EmailTemplatesPage.tsx"));
 
 const queryClient = new QueryClient();
 
@@ -284,6 +285,7 @@ function AppRoutes() {
         <Route path="leads" element={<LeadsPage />} />
         <Route path="email" element={<EmailCenterPage />} />
         <Route path="email/mailboxes" element={<EmailMailboxesPage />} />
+        <Route path="email/templates" element={<EmailTemplatesPage />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

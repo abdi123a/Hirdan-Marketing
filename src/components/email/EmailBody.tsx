@@ -106,14 +106,14 @@ export function EmailBody({ html, text }: Props) {
   const hasQuoted = Boolean(parsed.quotedHtml || parsed.quotedText);
 
   return (
-    <div className="email-body-container space-y-2">
+    <div className="email-body-container space-y-2 overflow-x-auto max-w-full break-words">
       {html ? (
         <div
-          className="email-html prose prose-sm max-w-none dark:prose-invert"
+          className="email-html prose prose-sm max-w-none dark:prose-invert overflow-x-auto [&_table]:max-w-full [&_img]:max-w-full [&_img]:h-auto"
           dangerouslySetInnerHTML={{ __html: parsed.mainHtml || html }}
         />
       ) : (
-        <pre className="whitespace-pre-wrap font-sans text-sm">{parsed.mainText || text}</pre>
+        <pre className="whitespace-pre-wrap font-sans text-sm break-words overflow-x-auto">{parsed.mainText || text}</pre>
       )}
 
       {hasQuoted && (

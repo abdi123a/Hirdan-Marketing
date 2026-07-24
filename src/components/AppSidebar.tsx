@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import { useAuthStore } from "@/lib/auth-store";
 import { useAgencyStore } from "@/lib/store";
+import { useMailboxes } from "@/lib/email/hooks";
 import hirdanLogo from "@/assets/hirdan-logo.png";
 import {
   Sidebar,
@@ -53,6 +54,8 @@ export function AppSidebar() {
   const { user, logout } = useAuthStore();
   const { settings } = useAgencyStore();
   const navigate = useNavigate();
+  const { data: mailboxes = [] } = useMailboxes();
+  const totalUnreadMail = mailboxes.reduce((sum, m) => sum + (m.unreadCount ?? 0), 0);
 
   const handleLogout = () => {
     logout();
@@ -144,6 +147,8 @@ export function AppSidebar() {
                   }
                 }
 
+                const isEmailCenter = item.url === "/dashboard/email";
+
                 return (
                   <SidebarMenuItem key={item.title} className={collapsed ? "flex justify-center" : ""}>
                     <SidebarMenuButton asChild tooltip={item.title}>
@@ -152,7 +157,7 @@ export function AppSidebar() {
                         end={item.url === "/dashboard"}
                         className={
                           collapsed
-                            ? "flex items-center justify-center w-10 h-10 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
+                            ? "relative flex items-center justify-center w-10 h-10 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
                             : "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
                         }
                         activeClassName={
@@ -162,7 +167,19 @@ export function AppSidebar() {
                         }
                       >
                         <item.icon className="h-[18px] w-[18px] shrink-0" />
-                        {!collapsed && <span className="text-[13px]">{item.title}</span>}
+                        {!collapsed && <span className="text-[13px] flex-1">{item.title}</span>}
+                        {isEmailCenter && totalUnreadMail > 0 && (
+                          collapsed ? (
+                            <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
+                            </span>
+                          ) : (
+                            <span className="ml-auto shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-primary-foreground shadow-sm">
+                              {totalUnreadMail}
+                            </span>
+                          )
+                        )}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

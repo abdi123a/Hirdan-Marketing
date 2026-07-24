@@ -169,6 +169,14 @@ export async function sendMailboxEmail(input: SendMailInput): Promise<SendMailRe
   });
 
   // 5. Send through Resend
+  const serverUrl = process.env.SERVER_URL || process.env.API_URL || 'https://app.hirdanmarketing.com';
+  const pixelUrl = `${serverUrl.replace(/\/$/, '')}/api/email/track/open/${email.id}.png`;
+  const pixelTag = `<img src="${pixelUrl}" alt="" width="1" height="1" style="display:none;width:1px;height:1px;border:0;" />`;
+
+  const htmlWithPixel = finalHtml
+    ? (finalHtml.includes('</body>') ? finalHtml.replace('</body>', `${pixelTag}</body>`) : `${finalHtml}${pixelTag}`)
+    : pixelTag;
+
   const headers: Record<string, string> = { 'Message-ID': messageId, ...priorityHeaders(input.priority) };
   if (input.inReplyToMessageId) {
     headers['In-Reply-To'] = input.inReplyToMessageId;
@@ -188,7 +196,7 @@ export async function sendMailboxEmail(input: SendMailInput): Promise<SendMailRe
         ...(input.cc && input.cc.length ? { cc: input.cc } : {}),
         ...(input.bcc && input.bcc.length ? { bcc: input.bcc } : {}),
         subject,
-        html: finalHtml,
+        html: htmlWithPixel,
         text,
         ...(mailbox.replyTo ? { replyTo: mailbox.replyTo } : {}),
         headers,

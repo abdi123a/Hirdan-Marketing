@@ -225,3 +225,133 @@ export function useReply(conversationId: string) {
     onError: (err: Error) => toast.error(err.message || 'Failed to send reply'),
   });
 }
+
+// ─── Templates ───────────────────────────────────────────────────
+export function useTemplates(category?: string) {
+  return useQuery({
+    queryKey: ['email', 'templates', category ?? 'all'],
+    queryFn: () => emailApi.listTemplates(category).then((r) => r.templates),
+    staleTime: 60_000,
+  });
+}
+
+export function useTemplateMutations() {
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['email', 'templates'] });
+  const create = useMutation({
+    mutationFn: (data: Parameters<typeof emailApi.createTemplate>[0]) => emailApi.createTemplate(data),
+    onSuccess: () => { invalidate(); toast.success('Template saved'); },
+    onError: (e: Error) => toast.error(e.message || 'Failed to save template'),
+  });
+  const update = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Parameters<typeof emailApi.updateTemplate>[1] }) =>
+      emailApi.updateTemplate(id, data),
+    onSuccess: () => { invalidate(); toast.success('Template updated'); },
+    onError: (e: Error) => toast.error(e.message || 'Failed to update template'),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => emailApi.deleteTemplate(id),
+    onSuccess: () => { invalidate(); toast.success('Template deleted'); },
+    onError: (e: Error) => toast.error(e.message || 'Failed to delete template'),
+  });
+  return { create, update, remove };
+}
+
+// ─── Labels ──────────────────────────────────────────────────────
+export function useLabels() {
+  return useQuery({
+    queryKey: ['email', 'labels'],
+    queryFn: () => emailApi.listLabels().then((r) => r.labels),
+    staleTime: 60_000,
+  });
+}
+
+export function useLabelMutations() {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['email', 'labels'] });
+    qc.invalidateQueries({ queryKey: ['email', 'conversations'] });
+  };
+  const create = useMutation({
+    mutationFn: (data: { name: string; color: string }) => emailApi.createLabel(data),
+    onSuccess: () => { invalidate(); toast.success('Label created'); },
+    onError: (e: Error) => toast.error(e.message || 'Failed to create label'),
+  });
+  const update = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { name?: string; color?: string } }) =>
+      emailApi.updateLabel(id, data),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast.error(e.message || 'Failed to update label'),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => emailApi.deleteLabel(id),
+    onSuccess: () => { invalidate(); toast.success('Label deleted'); },
+    onError: (e: Error) => toast.error(e.message || 'Failed to delete label'),
+  });
+  return { create, update, remove };
+}
+
+export function useConversationLabels(conversationId: string) {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: emailKeys.conversation(conversationId) });
+    qc.invalidateQueries({ queryKey: ['email', 'conversations'] });
+    qc.invalidateQueries({ queryKey: ['email', 'labels'] });
+  };
+  const add = useMutation({
+    mutationFn: (labelId: string) => emailApi.addLabel(conversationId, labelId),
+    onSuccess: invalidate,
+  });
+  const remove = useMutation({
+    mutationFn: (labelId: string) => emailApi.removeLabel(conversationId, labelId),
+    onSuccess: invalidate,
+  });
+  return { add, remove };
+}
+
+// ─── Internal notes ──────────────────────────────────────────────
+export function useMentionableUsers(enabled: boolean) {
+  return useQuery({
+    queryKey: ['email', 'mentionable-users'],
+    queryFn: () => emailApi.listMentionable().then((r) => r.users),
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useNoteMutations(conversationId: string) {
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: emailKeys.conversation(conversationId) });
+  const add = useMutation({
+    mutationFn: ({ body, mentions }: { body: string; mentions: string[] }) =>
+      emailApi.addNote(conversationId, body, mentions),
+    onSuccess: () => { invalidate(); toast.success('Note added'); },
+    onError: (e: Error) => toast.error(e.message || 'Failed to add note'),
+  });
+  const remove = useMutation({
+    mutationFn: (noteId: string) => emailApi.deleteNote(conversationId, noteId),
+    onSuccess: invalidate,
+  });
+  return { add, remove };
+}
+
+// ─── Outbox / scheduled actions ──────────────────────────────────
+export function useOutboxActions() {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: emailKeys.scheduled });
+    qc.invalidateQueries({ queryKey: emailKeys.outbox });
+    qc.invalidateQueries({ queryKey: ['email', 'conversations'] });
+  };
+  const cancel = useMutation({
+    mutationFn: (emailId: string) => emailApi.cancelScheduled(emailId),
+    onSuccess: () => { invalidate(); toast.success('Scheduled send canceled'); },
+    onError: (e: Error) => toast.error(e.message || 'Failed to cancel'),
+  });
+  const retry = useMutation({
+    mutationFn: (emailId: string) => emailApi.retryFailed(emailId),
+    onSuccess: () => { invalidate(); toast.success('Message re-sent'); },
+    onError: (e: Error) => toast.error(e.message || 'Retry failed'),
+  });
+  return { cancel, retry };
+}

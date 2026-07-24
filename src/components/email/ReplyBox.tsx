@@ -2,8 +2,10 @@ import { useRef, useState } from 'react';
 import { Send, Paperclip, X, Loader2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import RichTextEditor from '@/components/RichTextEditor';
+import { TemplatePicker } from './TemplatePicker';
 import { useReply } from '@/lib/email/hooks';
 import { fileToAttachment, type PreparedAttachment } from '@/lib/email/attachments';
+import { applyTemplateVars } from '@/lib/email/templateVars';
 import { formatBytes } from '@/lib/email/format';
 
 interface Props {
@@ -75,6 +77,16 @@ export function ReplyBox({ conversationId, signature, onSent }: Props) {
         <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => fileRef.current?.click()} title="Attach">
           <Paperclip className="h-4 w-4" />
         </Button>
+        <TemplatePicker
+          compact
+          onSelect={(t) => {
+            if (editorRef.current) {
+              const existing = editorRef.current.innerHTML.trim();
+              const rendered = applyTemplateVars(t.body);
+              editorRef.current.innerHTML = existing && existing !== '<br>' ? `${existing}<br/>${rendered}` : rendered;
+            }
+          }}
+        />
       </div>
     </div>
   );

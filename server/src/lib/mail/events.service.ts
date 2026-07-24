@@ -91,6 +91,44 @@ export async function processEmailEvent(
   });
   if (!email) return false;
 
+  // Single-instance event types should not be duplicated
+  const singleInstanceTypes = new Set<EmailEventType>([
+    'QUEUED',
+    'SCHEDULED',
+    'SENT',
+    'DELIVERED',
+    'BOUNCED',
+    'COMPLAINED',
+    'FAILED',
+    'CANCELED',
+    'RECEIVED',
+    'REPLIED',
+  ]);
+
+  if (singleInstanceTypes.has(mapped.event)) {
+    const existing = await prisma.emailEvent.findFirst({
+      where: { emailId: email.id, type: mapped.event },
+    });
+    if (existing) {
+      // Event already recorded, advance status if needed
+      const advanced = nextStatus(email.status, mapped.status);
+      if (advanced !== email.status) {
+        await prisma.email.update({
+          where: { id: email.id },
+          data: { status: advanced, ...(resendId ? { resendId } : {}) },
+        });
+        publishMailEvent({
+          type: 'event-update',
+          mailboxId: email.mailboxId,
+          conversationId: email.conversationId,
+          emailId: email.id,
+          status: advanced,
+        });
+      }
+      return true;
+    }
+  }
+
   const link: string | null = data?.click?.link || data?.link || null;
 
   await prisma.emailEvent.create({

@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { apiFetch } from "@/lib/api-client";
 import { NotificationCenter } from "./NotificationCenter";
+import { useEmailStream } from "@/lib/email/useEmailStream";
 
 export default function DashboardLayout() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -33,6 +34,8 @@ export default function DashboardLayout() {
   const isLandingEditor =
     location.pathname === "/dashboard/settings" &&
     new URLSearchParams(location.search).get("tab") === "landing-page";
+
+  useEmailStream();
 
   useEffect(() => {
     fetchSettings();

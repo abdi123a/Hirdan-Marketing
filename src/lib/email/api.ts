@@ -1,13 +1,17 @@
 import { apiFetch, apiUpload } from '@/lib/api-client';
 import type {
   ConversationDetail,
+  ConversationNote,
   ConversationsResponse,
   DirectoryUser,
   Draft,
   EmailFolder,
+  EmailLabel,
   EmailMessage,
+  EmailTemplate,
   Mailbox,
   MailboxPermission,
+  SearchFilters,
   SendPayload,
   TrackingSummary,
 } from './types';
@@ -63,6 +67,7 @@ export const emailApi = {
     status?: string;
     limit?: number;
     offset?: number;
+    filters?: SearchFilters;
   }) => {
     const qs = new URLSearchParams();
     qs.set('folder', params.folder);
@@ -72,6 +77,14 @@ export const emailApi = {
     if (params.status) qs.set('status', params.status);
     if (params.limit != null) qs.set('limit', String(params.limit));
     if (params.offset != null) qs.set('offset', String(params.offset));
+    const f = params.filters;
+    if (f?.hasAttachment) qs.set('hasAttachment', 'true');
+    if (f?.unread) qs.set('unread', 'true');
+    if (f?.direction) qs.set('direction', f.direction);
+    if (f?.status) qs.set('status', f.status);
+    if (f?.labelId) qs.set('labelId', f.labelId);
+    if (f?.dateFrom) qs.set('dateFrom', f.dateFrom);
+    if (f?.dateTo) qs.set('dateTo', f.dateTo);
     return apiFetch<ConversationsResponse>(`/email/conversations?${qs.toString()}`);
   },
 
@@ -164,6 +177,54 @@ export const emailApi = {
     const qs = mailboxId ? `?mailboxId=${mailboxId}` : '';
     return apiFetch<TrackingSummary>(`/email/tracking/summary${qs}`);
   },
+
+  // ─── Templates ─────────────────────────────────────────────────
+  listTemplates: (category?: string) =>
+    apiFetch<{ templates: EmailTemplate[] }>(`/email/templates${category ? `?category=${category}` : ''}`),
+  createTemplate: (data: Partial<EmailTemplate>) =>
+    apiFetch<{ template: EmailTemplate }>('/email/templates', { method: 'POST', body: JSON.stringify(data) }),
+  updateTemplate: (id: string, data: Partial<EmailTemplate>) =>
+    apiFetch<{ template: EmailTemplate }>(`/email/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTemplate: (id: string) =>
+    apiFetch<{ success: boolean }>(`/email/templates/${id}`, { method: 'DELETE' }),
+
+  // ─── Labels ────────────────────────────────────────────────────
+  listLabels: () => apiFetch<{ labels: EmailLabel[] }>('/email/labels'),
+  createLabel: (data: { name: string; color: string }) =>
+    apiFetch<{ label: EmailLabel }>('/email/labels', { method: 'POST', body: JSON.stringify(data) }),
+  updateLabel: (id: string, data: { name?: string; color?: string }) =>
+    apiFetch<{ label: EmailLabel }>(`/email/labels/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteLabel: (id: string) =>
+    apiFetch<{ success: boolean }>(`/email/labels/${id}`, { method: 'DELETE' }),
+  addLabel: (conversationId: string, labelId: string) =>
+    apiFetch<{ success: boolean }>(`/email/conversations/${conversationId}/labels`, {
+      method: 'POST',
+      body: JSON.stringify({ labelId }),
+    }),
+  removeLabel: (conversationId: string, labelId: string) =>
+    apiFetch<{ success: boolean }>(`/email/conversations/${conversationId}/labels/${labelId}`, {
+      method: 'DELETE',
+    }),
+
+  // ─── Internal notes ────────────────────────────────────────────
+  listNotes: (conversationId: string) =>
+    apiFetch<{ notes: ConversationNote[] }>(`/email/conversations/${conversationId}/notes`),
+  addNote: (conversationId: string, body: string, mentions: string[]) =>
+    apiFetch<{ note: ConversationNote }>(`/email/conversations/${conversationId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify({ body, mentions }),
+    }),
+  deleteNote: (conversationId: string, noteId: string) =>
+    apiFetch<{ success: boolean }>(`/email/conversations/${conversationId}/notes/${noteId}`, {
+      method: 'DELETE',
+    }),
+  listMentionable: () => apiFetch<{ users: DirectoryUser[] }>('/email/mentionable-users'),
+
+  // ─── Outbox / scheduled ────────────────────────────────────────
+  cancelScheduled: (emailId: string) =>
+    apiFetch<{ email: EmailMessage }>(`/email/emails/${emailId}/cancel`, { method: 'POST' }),
+  retryFailed: (emailId: string) =>
+    apiFetch<{ email: EmailMessage }>(`/email/emails/${emailId}/retry`, { method: 'POST' }),
 
   // ─── SSE stream ticket ─────────────────────────────────────────
   streamTicket: () => apiFetch<{ ticket: string }>('/email/stream/ticket', { method: 'POST' }),

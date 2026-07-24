@@ -60,6 +60,16 @@ router.get('/conversations', async (req: Request, res: Response, next) => {
     const limit = Math.min(Number(req.query.limit) || 30, 100);
     const offset = Number(req.query.offset) || 0;
 
+    // Advanced filters (all optional)
+    const hasAttachment = req.query.hasAttachment === 'true';
+    const unreadOnly = req.query.unread === 'true';
+    const direction = req.query.direction as string | undefined; // INBOUND | OUTBOUND
+    const from = req.query.dateFrom ? new Date(req.query.dateFrom as string) : undefined;
+    const to = req.query.dateTo ? new Date(req.query.dateTo as string) : undefined;
+    const dateFilter: Prisma.DateTimeNullableFilter = {};
+    if (from && !isNaN(from.getTime())) dateFilter.gte = from;
+    if (to && !isNaN(to.getTime())) dateFilter.lte = to;
+
     let scope: Prisma.ConversationWhereInput;
     if (mailboxId) {
       await assertMailboxAccess(req.user!, mailboxId, 'READ');
@@ -73,6 +83,10 @@ router.get('/conversations', async (req: Request, res: Response, next) => {
       ...folderWhere(folder),
       ...(status ? { status: status as any } : {}),
       ...(labelId ? { labels: { some: { labelId } } } : {}),
+      ...(hasAttachment ? { hasAttachment: true } : {}),
+      ...(unreadOnly ? { unreadCount: { gt: 0 } } : {}),
+      ...(direction ? { emails: { some: { direction: direction as any } } } : {}),
+      ...(dateFilter.gte || dateFilter.lte ? { lastMessageAt: dateFilter } : {}),
       ...(q
         ? {
             OR: [
@@ -80,6 +94,8 @@ router.get('/conversations', async (req: Request, res: Response, next) => {
               { snippet: { contains: q } },
               { participants: { some: { email: { contains: q } } } },
               { participants: { some: { name: { contains: q } } } },
+              // Full-text over message bodies for global search.
+              { emails: { some: { OR: [{ subject: { contains: q } }, { text: { contains: q } }] } } },
             ],
           }
         : {}),

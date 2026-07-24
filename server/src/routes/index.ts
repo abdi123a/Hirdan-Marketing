@@ -91,12 +91,20 @@ import emailMessagesRoutes from './email-messages.routes.js';
 import emailConversationsRoutes from './email-conversations.routes.js';
 import emailStreamRoutes from './email-stream.routes.js';
 import emailTrackingRoutes from './email-tracking.routes.js';
+import emailTemplatesRoutes from './email-templates.routes.js';
+import emailLabelsRoutes from './email-labels.routes.js';
+import emailNotesRoutes from './email-notes.routes.js';
+import emailOutboxRoutes from './email-outbox.routes.js';
 
 router.use('/email', emailStreamRoutes);
 router.use('/email', emailMailboxesRoutes);
 router.use('/email', emailMessagesRoutes);
 router.use('/email', emailConversationsRoutes);
 router.use('/email', emailTrackingRoutes);
+router.use('/email', emailTemplatesRoutes);
+router.use('/email', emailLabelsRoutes);
+router.use('/email', emailNotesRoutes);
+router.use('/email', emailOutboxRoutes);
 
 export default router;
 

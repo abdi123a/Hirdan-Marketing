@@ -13,9 +13,11 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useConversation, useConversationActions } from '@/lib/email/hooks';
+import { useConversation, useConversationActions, useConversationLabels } from '@/lib/email/hooks';
 import { MessageItem } from './MessageItem';
 import { ReplyBox } from './ReplyBox';
+import { LabelPicker } from './LabelPicker';
+import { NotesPanel } from './NotesPanel';
 import type { ConversationStatus, EmailMessage } from '@/lib/email/types';
 
 const STATUS_LABELS: Record<ConversationStatus, string> = {
@@ -68,7 +70,7 @@ export function ConversationView({ conversationId, onBack, onForward }: Props) {
       {/* Header */}
       <div className="flex items-center gap-2 border-b bg-background px-4 py-2.5">
         {onBack && (
-          <Button variant="ghost" size="icon" className="h-8 w-8 lg:hidden" onClick={onBack}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={onBack} title="Back to conversation list">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         )}
@@ -94,6 +96,15 @@ export function ConversationView({ conversationId, onBack, onForward }: Props) {
                 </Link>
               </>
             )}
+            {conversation.labels.map((l) => (
+              <span
+                key={l.labelId}
+                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
+                style={{ backgroundColor: l.label.color + '22', color: l.label.color }}
+              >
+                {l.label.name}
+              </span>
+            ))}
           </div>
         </div>
 
@@ -118,6 +129,11 @@ export function ConversationView({ conversationId, onBack, onForward }: Props) {
         >
           <Star className={cn('h-4 w-4', conversation.isStarred && 'fill-amber-400 text-amber-400')} />
         </Button>
+
+        <LabelPicker
+          conversationId={conversation.id}
+          appliedLabelIds={conversation.labels.map((l) => l.labelId)}
+        />
 
         {lastEmail && onForward && (
           <Button variant="ghost" size="icon" className="h-8 w-8" title="Forward" onClick={() => onForward(lastEmail)}>
@@ -162,6 +178,8 @@ export function ConversationView({ conversationId, onBack, onForward }: Props) {
           {conversation.emails.map((email, i) => (
             <MessageItem key={email.id} email={email} defaultOpen={i === conversation.emails.length - 1} />
           ))}
+
+          <NotesPanel conversationId={conversation.id} notes={conversation.notes} />
 
           {!inTrash && (
             <ReplyBox

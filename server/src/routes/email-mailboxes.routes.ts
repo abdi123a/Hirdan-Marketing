@@ -59,7 +59,7 @@ router.post('/mailboxes/upload-avatar', avatarUpload.single('file'), (req: Reque
     if (!req.file) {
       throw AppError.badRequest('No image file provided');
     }
-    const avatarUrl = `/api/files/branding/${req.file.filename}`;
+    const avatarUrl = `/uploads/branding/${req.file.filename}`;
     res.json({ success: true, avatarUrl });
   } catch (err) {
     next(err);

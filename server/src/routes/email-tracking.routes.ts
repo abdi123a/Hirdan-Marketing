@@ -7,7 +7,88 @@ import { AppError } from '../lib/errors.js';
 import { requireStaff, assertMailboxAccess, accessibleMailboxIds } from '../lib/mail/access.js';
 import { attachmentAbsolutePath } from '../lib/mail/attachments.js';
 
+import { publishMailEvent } from '../lib/mail/sse.js';
+
 const router = Router();
+
+// 1x1 transparent GIF buffer
+const TRANSPARENT_GIF_BUFFER = Buffer.from(
+  'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+  'base64'
+);
+
+// ─── GET /api/email/track/open/:id.png — Unauthenticated Open Pixel ──
+router.get('/track/open/:id.png', async (req: Request, res: Response) => {
+  try {
+    const emailId = req.params.id as string;
+    if (emailId) {
+      const email = await prisma.email.findUnique({
+        where: { id: emailId },
+        select: { id: true, status: true, mailboxId: true, conversationId: true },
+      });
+
+      if (email) {
+        const existingOpen = await prisma.emailEvent.findFirst({
+          where: { emailId: email.id, type: 'OPENED' },
+        });
+
+        if (!existingOpen) {
+          await prisma.emailEvent.create({
+            data: {
+              emailId: email.id,
+              type: 'OPENED',
+              occurredAt: new Date(),
+            },
+          });
+
+          const statusRank: Record<EmailStatus, number> = {
+            DRAFT: 0,
+            QUEUED: 1,
+            SCHEDULED: 1,
+            SENT: 2,
+            DELIVERY_DELAYED: 2,
+            DELIVERED: 3,
+            OPENED: 4,
+            CLICKED: 5,
+            RECEIVED: 5,
+            BOUNCED: 100,
+            COMPLAINED: 100,
+            FAILED: 100,
+            CANCELED: 100,
+          };
+
+          const currentRank = statusRank[email.status] ?? 0;
+          const openRank = statusRank.OPENED;
+          const newStatus = openRank > currentRank ? 'OPENED' : email.status;
+
+          if (newStatus !== email.status) {
+            await prisma.email.update({
+              where: { id: email.id },
+              data: { status: newStatus },
+            });
+          }
+
+          publishMailEvent({
+            type: 'event-update',
+            mailboxId: email.mailboxId,
+            conversationId: email.conversationId,
+            emailId: email.id,
+            status: newStatus,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Tracking Pixel Error]', err);
+  } finally {
+    res.setHeader('Content-Type', 'image/gif');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.send(TRANSPARENT_GIF_BUFFER);
+  }
+});
+
 router.use(authenticate, requireStaff);
 
 // ─── GET /api/email/attachments/:id — authenticated download ─────

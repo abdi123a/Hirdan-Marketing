@@ -89,6 +89,32 @@ export interface EmailLabel {
   id: string;
   name: string;
   color: string;
+  count?: number;
+}
+
+export type TemplateCategory =
+  | 'SUPPORT' | 'SALES' | 'INVOICES' | 'MARKETING' | 'HR' | 'LEGAL' | 'SAVED_REPLY';
+
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  category: TemplateCategory;
+  subject: string;
+  body: string;
+  variables?: string[] | null;
+  mailboxId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SearchFilters {
+  hasAttachment?: boolean;
+  unread?: boolean;
+  direction?: 'INBOUND' | 'OUTBOUND';
+  status?: string;
+  labelId?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export interface ConversationLabelLink {

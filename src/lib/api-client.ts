@@ -4,25 +4,29 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 // Helper to ensure path concatenation is safe (no double slashes, ensures leading slash)
 export function getFullUrl(endpoint: string): string {
+  if (!endpoint) return '';
   // If the endpoint is already an absolute URL, return it
   if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) return endpoint;
+
+  // Normalize legacy branding URL paths to the /uploads/branding/ endpoint
+  let normalized = endpoint;
+  if (normalized.includes('/api/files/branding/')) {
+    normalized = normalized.replace('/api/files/branding/', '/uploads/branding/');
+  }
 
   const base = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE;
   
   // If it starts with /uploads, it's a root-relative path serving binary/static content
-  // We keep it as is unless we need to prepends the host (in development)
-  if (endpoint.startsWith('/uploads/')) {
-    // If base is an absolute URL (like http://localhost:3000/api), 
-    // we extract the host to correctly point to the backend's /uploads
+  if (normalized.startsWith('/uploads/')) {
     try {
       if (base.startsWith('http')) {
         const url = new URL(base);
-        return `${url.origin}${endpoint}`;
+        return `${url.origin}${normalized}`;
       }
     } catch (e) {
       // Fallback to relative
     }
-    return endpoint;
+    return normalized;
   }
   
   // Check if API_BASE ends with '/api' and endpoint starts with '/api' or 'api'

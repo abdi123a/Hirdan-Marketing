@@ -10,11 +10,13 @@ import {
 } from '@/components/ui/select';
 import RichTextEditor from '@/components/RichTextEditor';
 import { EmailChipsInput } from './EmailChipsInput';
+import { TemplatePicker } from './TemplatePicker';
 import { emailApi } from '@/lib/email/api';
 import { useSendEmail } from '@/lib/email/hooks';
 import { fileToAttachment, type PreparedAttachment } from '@/lib/email/attachments';
+import { applyTemplateVars } from '@/lib/email/templateVars';
 import { formatBytes } from '@/lib/email/format';
-import type { EmailPriority, Mailbox } from '@/lib/email/types';
+import type { EmailPriority, EmailTemplate, Mailbox } from '@/lib/email/types';
 
 export interface ComposeInitial {
   mailboxId?: string;
@@ -85,6 +87,15 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
     if (!files?.length) return;
     const prepared = await Promise.all([...files].map(fileToAttachment));
     setAttachments((prev) => [...prev, ...prepared]);
+  };
+
+  const insertTemplate = (t: EmailTemplate) => {
+    if (!subject.trim() && t.subject) setSubject(applyTemplateVars(t.subject));
+    const rendered = applyTemplateVars(t.body);
+    if (editorRef.current) {
+      const existing = editorRef.current.innerHTML.trim();
+      editorRef.current.innerHTML = existing && existing !== '<br>' ? `${existing}<br/>${rendered}` : rendered;
+    }
   };
 
   // ── Autosave draft every few seconds when there is content ─────
@@ -277,6 +288,7 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
           <Button variant="ghost" size="icon" className="h-8 w-8" title="Attach" onClick={() => fileRef.current?.click()}>
             <Paperclip className="h-4 w-4" />
           </Button>
+          <TemplatePicker compact onSelect={insertTemplate} />
           <Button
             variant="ghost" size="icon" className={cn('h-8 w-8', showSchedule && 'text-primary')}
             title="Schedule send" onClick={() => setShowSchedule((v) => !v)}

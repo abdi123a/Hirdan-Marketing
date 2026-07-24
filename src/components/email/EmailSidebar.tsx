@@ -1,11 +1,14 @@
+import { useState } from 'react';
 import {
   Inbox, Star, Send, FileText, Clock, ArrowUpFromLine,
-  ShieldAlert, Trash2, PenSquare, Mail, ChevronDown, Settings2,
+  ShieldAlert, Trash2, PenSquare, Mail, ChevronDown, Settings2, Tag, LayoutTemplate,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useLabels } from '@/lib/email/hooks';
+import { LabelManagerDialog } from './LabelManagerDialog';
 import type { EmailFolder, Mailbox } from '@/lib/email/types';
 
 const FOLDERS: { id: EmailFolder; label: string; icon: typeof Inbox }[] = [
@@ -26,10 +29,14 @@ interface Props {
   onMailbox: (id?: string) => void;
   mailboxes: Mailbox[];
   onCompose: () => void;
+  labelId?: string;
+  onLabel?: (id?: string) => void;
 }
 
-export function EmailSidebar({ folder, onFolder, mailboxId, onMailbox, mailboxes, onCompose }: Props) {
+export function EmailSidebar({ folder, onFolder, mailboxId, onMailbox, mailboxes, onCompose, labelId, onLabel }: Props) {
   const navigate = useNavigate();
+  const { data: labels = [] } = useLabels();
+  const [labelManagerOpen, setLabelManagerOpen] = useState(false);
   const totalUnread = mailboxes.reduce((sum, m) => sum + (m.unreadCount ?? 0), 0);
 
   return (
@@ -127,7 +134,58 @@ export function EmailSidebar({ folder, onFolder, mailboxId, onMailbox, mailboxes
             )}
           </div>
         </div>
+
+        {/* Labels */}
+        <div className="mt-2 border-t pt-2">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <ChevronDown className="h-3 w-3" />
+            Labels
+            <button
+              onClick={() => setLabelManagerOpen(true)}
+              className="ml-auto rounded p-1 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+              title="Manage labels"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="space-y-0.5">
+            {labels.map((l) => (
+              <button
+                key={l.id}
+                onClick={() => onLabel?.(labelId === l.id ? undefined : l.id)}
+                className={cn(
+                  'flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm transition-colors',
+                  labelId === l.id ? 'bg-accent font-medium' : 'text-foreground/70 hover:bg-accent'
+                )}
+              >
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: l.color }} />
+                <span className="flex-1 truncate text-left">{l.name}</span>
+                {typeof l.count === 'number' && l.count > 0 && (
+                  <span className="text-[11px] text-muted-foreground">{l.count}</span>
+                )}
+              </button>
+            ))}
+            {labels.length === 0 && (
+              <button onClick={() => setLabelManagerOpen(true)} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
+                <Tag className="h-3.5 w-3.5" /> Create a label
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Manage links */}
+        <div className="mt-2 border-t pt-2">
+          <button
+            onClick={() => navigate('/dashboard/email/templates')}
+            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-foreground/70 transition-colors hover:bg-accent"
+          >
+            <LayoutTemplate className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="flex-1 text-left">Templates</span>
+          </button>
+        </div>
       </ScrollArea>
+
+      <LabelManagerDialog open={labelManagerOpen} onClose={() => setLabelManagerOpen(false)} />
     </div>
   );
 }

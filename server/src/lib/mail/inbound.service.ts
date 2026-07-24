@@ -273,14 +273,39 @@ export async function processInboundEmail(input: any): Promise<boolean> {
   }
 
   // ── Mark replied-to outbound messages as REPLIED ─────────────
-  if (!isNew && refIds.length) {
-    const parents = await prisma.email.findMany({
-      where: { conversationId: conversation.id, direction: 'OUTBOUND', messageId: { in: refIds } },
-      select: { id: true },
-    });
-    for (const p of parents) {
-      await prisma.emailEvent.create({ data: { emailId: p.id, type: 'REPLIED', occurredAt: now } });
+  if (!isNew) {
+    let parents: Array<{ id: string; status: any }> = [];
+    if (refIds.length) {
+      parents = await prisma.email.findMany({
+        where: { conversationId: conversation.id, direction: 'OUTBOUND', messageId: { in: refIds } },
+        select: { id: true, status: true },
+      });
     }
+    if (!parents.length) {
+      // Fallback: all outbound emails in this conversation thread
+      parents = await prisma.email.findMany({
+        where: { conversationId: conversation.id, direction: 'OUTBOUND' },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, status: true },
+      });
+    }
+
+    for (const p of parents) {
+      const existingReply = await prisma.emailEvent.findFirst({
+        where: { emailId: p.id, type: 'REPLIED' },
+      });
+      if (!existingReply) {
+        await prisma.emailEvent.create({ data: { emailId: p.id, type: 'REPLIED', occurredAt: now } });
+        publishMailEvent({
+          type: 'event-update',
+          mailboxId: mailbox.id,
+          conversationId: conversation.id,
+          emailId: p.id,
+          status: p.status,
+        });
+      }
+    }
+
     // Ensure the sender is a known participant on the existing thread.
     await prisma.conversationParticipant.upsert({
       where: {
