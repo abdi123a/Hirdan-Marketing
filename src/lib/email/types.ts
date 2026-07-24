@@ -69,6 +69,22 @@ export interface Mailbox {
   accessLevel?: MailboxAccessLevel | null;
 }
 
+export interface DirectoryUser {
+  id: string;
+  name: string;
+  email: string;
+  role: 'ADMIN' | 'MANAGER' | 'STAFF' | 'CLIENT';
+}
+
+export interface MailboxPermission {
+  id: string;
+  mailboxId: string;
+  userId: string;
+  accessLevel: 'READ' | 'WRITE' | 'MANAGE';
+  createdAt: string;
+  user: DirectoryUser;
+}
+
 export interface EmailLabel {
   id: string;
   name: string;

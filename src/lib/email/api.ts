@@ -2,10 +2,12 @@ import { apiFetch } from '@/lib/api-client';
 import type {
   ConversationDetail,
   ConversationsResponse,
+  DirectoryUser,
   Draft,
   EmailFolder,
   EmailMessage,
   Mailbox,
+  MailboxPermission,
   SendPayload,
   TrackingSummary,
 } from './types';
@@ -25,6 +27,26 @@ export const emailApi = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+
+  deleteMailbox: (id: string) =>
+    apiFetch<{ success: boolean }>(`/email/mailboxes/${id}`, { method: 'DELETE' }),
+
+  // ─── Mailbox permissions (ADMIN) ───────────────────────────────
+  listPermissions: (mailboxId: string) =>
+    apiFetch<{ permissions: MailboxPermission[] }>(`/email/mailboxes/${mailboxId}/permissions`),
+
+  grantPermission: (mailboxId: string, userId: string, accessLevel: 'READ' | 'WRITE' | 'MANAGE') =>
+    apiFetch<{ permission: MailboxPermission }>(`/email/mailboxes/${mailboxId}/permissions`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, accessLevel }),
+    }),
+
+  revokePermission: (mailboxId: string, userId: string) =>
+    apiFetch<{ success: boolean }>(`/email/mailboxes/${mailboxId}/permissions/${userId}`, {
+      method: 'DELETE',
+    }),
+
+  listUsers: () => apiFetch<{ users: DirectoryUser[] }>('/users?take=100'),
 
   // ─── Conversations ─────────────────────────────────────────────
   listConversations: (params: {

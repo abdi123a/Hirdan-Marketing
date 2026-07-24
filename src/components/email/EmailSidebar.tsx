@@ -1,7 +1,8 @@
 import {
   Inbox, Star, Send, FileText, Clock, ArrowUpFromLine,
-  ShieldAlert, Trash2, PenSquare, Mail, ChevronDown,
+  ShieldAlert, Trash2, PenSquare, Mail, ChevronDown, Settings2,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -28,6 +29,7 @@ interface Props {
 }
 
 export function EmailSidebar({ folder, onFolder, mailboxId, onMailbox, mailboxes, onCompose }: Props) {
+  const navigate = useNavigate();
   const totalUnread = mailboxes.reduce((sum, m) => sum + (m.unreadCount ?? 0), 0);
 
   return (
@@ -71,6 +73,13 @@ export function EmailSidebar({ folder, onFolder, mailboxId, onMailbox, mailboxes
           <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             <ChevronDown className="h-3 w-3" />
             Mailboxes
+            <button
+              onClick={() => navigate('/dashboard/email/mailboxes')}
+              className="ml-auto rounded p-1 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+              title="Manage mailboxes"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+            </button>
           </div>
           <div className="space-y-0.5">
             <button

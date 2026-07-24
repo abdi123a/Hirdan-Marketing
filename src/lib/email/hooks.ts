@@ -22,6 +22,72 @@ export function useMailboxes() {
   });
 }
 
+export function useMailboxMutations() {
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: emailKeys.mailboxes });
+
+  const create = useMutation({
+    mutationFn: (data: Parameters<typeof emailApi.createMailbox>[0]) => emailApi.createMailbox(data),
+    onSuccess: () => { invalidate(); toast.success('Mailbox created'); },
+    onError: (e: Error) => toast.error(e.message || 'Failed to create mailbox'),
+  });
+
+  const update = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Parameters<typeof emailApi.updateMailbox>[1] }) =>
+      emailApi.updateMailbox(id, data),
+    onSuccess: () => { invalidate(); toast.success('Mailbox updated'); },
+    onError: (e: Error) => toast.error(e.message || 'Failed to update mailbox'),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => emailApi.deleteMailbox(id),
+    onSuccess: () => { invalidate(); toast.success('Mailbox deleted'); },
+    onError: (e: Error) => toast.error(e.message || 'Failed to delete mailbox'),
+  });
+
+  return { create, update, remove };
+}
+
+export function useDirectoryUsers(enabled: boolean) {
+  return useQuery({
+    queryKey: ['email', 'directory-users'],
+    queryFn: () => emailApi.listUsers().then((r) => r.users),
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function usePermissions(mailboxId: string | null) {
+  return useQuery({
+    queryKey: ['email', 'permissions', mailboxId],
+    queryFn: () => emailApi.listPermissions(mailboxId as string).then((r) => r.permissions),
+    enabled: !!mailboxId,
+  });
+}
+
+export function usePermissionMutations(mailboxId: string) {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['email', 'permissions', mailboxId] });
+    qc.invalidateQueries({ queryKey: emailKeys.mailboxes });
+  };
+
+  const grant = useMutation({
+    mutationFn: ({ userId, accessLevel }: { userId: string; accessLevel: 'READ' | 'WRITE' | 'MANAGE' }) =>
+      emailApi.grantPermission(mailboxId, userId, accessLevel),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast.error(e.message || 'Failed to grant access'),
+  });
+
+  const revoke = useMutation({
+    mutationFn: (userId: string) => emailApi.revokePermission(mailboxId, userId),
+    onSuccess: invalidate,
+    onError: (e: Error) => toast.error(e.message || 'Failed to revoke access'),
+  });
+
+  return { grant, revoke };
+}
+
 export function useConversations(params: {
   folder: EmailFolder;
   mailboxId?: string;
