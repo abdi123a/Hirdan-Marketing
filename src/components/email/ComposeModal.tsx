@@ -154,12 +154,14 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && saveDraftAndClose()}>
-      <DialogContent className="flex max-h-[88vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
-        <div className="flex items-center justify-between border-b px-4 py-2.5">
+      <DialogContent
+        className="flex max-h-[88vh] max-w-3xl flex-col gap-0 overflow-hidden p-0"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
+        <div className="flex items-center border-b px-4 py-2.5 pr-12">
           <h2 className="text-sm font-semibold">New message</h2>
-          <button onClick={saveDraftAndClose} className="text-muted-foreground hover:text-foreground">
-            <X className="h-4 w-4" />
-          </button>
         </div>
 
         <div

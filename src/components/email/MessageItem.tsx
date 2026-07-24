@@ -9,6 +9,7 @@ import { getFullUrl } from '@/lib/api-client';
 import { useAuthStore } from '@/lib/auth-store';
 import { StatusBadge } from './StatusBadge';
 import { TrackingTimeline } from './TrackingTimeline';
+import { EmailBody } from './EmailBody';
 import type { EmailMessage } from '@/lib/email/types';
 
 async function downloadAttachment(id: string, filename: string) {
@@ -79,15 +80,7 @@ export function MessageItem({ email, defaultOpen }: { email: EmailMessage; defau
       {open && (
         <div className="px-4 pb-4">
           {/* Body */}
-          {email.html ? (
-            <div
-              className="email-html prose prose-sm max-w-none dark:prose-invert"
-              // Inbound HTML is sanitized server-side; outbound is authored in-app.
-              dangerouslySetInnerHTML={{ __html: email.html }}
-            />
-          ) : (
-            <pre className="whitespace-pre-wrap font-sans text-sm">{email.text}</pre>
-          )}
+          <EmailBody html={email.html} text={email.text} />
 
           {/* Attachments */}
           {email.attachments && email.attachments.length > 0 && (
