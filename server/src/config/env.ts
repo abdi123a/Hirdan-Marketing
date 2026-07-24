@@ -47,6 +47,8 @@ const envSchema = z.object({
   SHORT_LINK_DOMAIN: z.string().optional(),
   // ─── Email (Resend) — optional; can be set via admin settings panel ───
   RESEND_API_KEY: z.string().optional(),
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
+  RESEND_INBOUND_DOMAIN: z.string().optional(),
   EMAIL_FROM: z.string().email().optional(),
   APP_URL: z.string().url().optional(),
 

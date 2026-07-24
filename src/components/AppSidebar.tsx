@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Users, Briefcase, UserCircle, LayoutGrid,
   Receipt, CreditCard, CalendarDays, Settings, LogOut, PanelLeftClose, PanelLeft,
   FileText, Package, Zap, Mail, Share2, Presentation, BarChart3, Wallet,
-  FolderHeart, UploadCloud, Puzzle, Sparkles
+  FolderHeart, UploadCloud, Puzzle, Sparkles, Inbox
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
@@ -30,6 +30,7 @@ const mainItems = [
   { title: "Clients", url: "/dashboard/clients", icon: Users },
   { title: "Projects", url: "/dashboard/projects", icon: Briefcase },
   { title: "Team", url: "/dashboard/team", icon: UserCircle },
+  { title: "Email Center", url: "/dashboard/email", icon: Inbox },
   { title: "HR Documents", url: "/dashboard/hr", icon: FolderHeart },
   { title: "Proforma", url: "/dashboard/proforma", icon: FileText },
   { title: "Invoices", url: "/dashboard/invoices", icon: Receipt },

@@ -77,6 +77,7 @@ const GenerateHrDocumentPage = lazy(() => import("@/pages/GenerateHrDocumentPage
 const FileTransfer = lazy(() => import("./pages/FileTransfer.tsx"));
 const LandingPageEditor = lazy(() => import("./pages/LandingPageEditor.tsx"));
 const PluginsPage = lazy(() => import("./pages/PluginsPage.tsx"));
+const EmailCenterPage = lazy(() => import("./pages/EmailCenterPage.tsx"));
 
 const queryClient = new QueryClient();
 
@@ -280,6 +281,7 @@ function AppRoutes() {
         <Route path="plugins" element={<Navigate to="/dashboard/settings?tab=plugins" replace />} />
         <Route path="transfers" element={<FileTransfer />} />
         <Route path="leads" element={<LeadsPage />} />
+        <Route path="email" element={<EmailCenterPage />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

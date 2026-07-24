@@ -85,5 +85,18 @@ router.use('/social', socialPostsRoutes);
 router.use('/social', socialAnalyticsRoutes);
 router.use('/social', socialImportRoutes);
 
+// ─── Email Center ──────────────────────────────────────────────
+import emailMailboxesRoutes from './email-mailboxes.routes.js';
+import emailMessagesRoutes from './email-messages.routes.js';
+import emailConversationsRoutes from './email-conversations.routes.js';
+import emailStreamRoutes from './email-stream.routes.js';
+import emailTrackingRoutes from './email-tracking.routes.js';
+
+router.use('/email', emailStreamRoutes);
+router.use('/email', emailMailboxesRoutes);
+router.use('/email', emailMessagesRoutes);
+router.use('/email', emailConversationsRoutes);
+router.use('/email', emailTrackingRoutes);
+
 export default router;
 

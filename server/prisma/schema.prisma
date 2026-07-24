@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -30,6 +29,13 @@ model User {
   hrDocumentApprovals   HrDocumentApproval[]   @relation("HrDocumentApprovals")
   sharedFiles           SharedFile[]           @relation("SharedFileUploadedBy")
   notifications         Notification[]
+
+  // Email Center
+  mailboxPermissions    MailboxPermission[] @relation("UserMailboxPermissions")
+  assignedConversations Conversation[]      @relation("UserAssignedConversations")
+  sentEmails            Email[]             @relation("UserSentEmails")
+  emailDrafts           Draft[]             @relation("UserEmailDrafts")
+  conversationNotes     ConversationNote[]  @relation("UserConversationNotes")
 
   @@map("users")
 }
@@ -83,6 +89,7 @@ model Client {
   socialAccounts       SocialAccount[]
   socialPosts          SocialPost[]
   socialCampaigns      SocialCampaign[]
+  emailConversations   Conversation[]
 
   portalAccess Json? @map("portal_access")
 
@@ -471,6 +478,8 @@ model AgencySettings {
   geminiApiKey                  String? @map("gemini_api_key")
   mainAiProvider                String  @default("openai") @map("main_ai_provider")
   resendApiKey                  String? @map("resend_api_key")
+  resendWebhookSecret           String? @map("resend_webhook_secret")
+  resendInboundDomain           String? @map("resend_inbound_domain")
   emailFrom                     String? @map("email_from")
   mailerName                    String? @map("mailer_name")
   smtpHost                      String? @map("smtp_host")
@@ -1358,32 +1367,32 @@ model SocialPostDestination {
 }
 
 model AccountInsightDaily {
-  id              String   @id @default(uuid())
-  socialAccountId String   @map("social_account_id")
-  date            DateTime @db.Date
-  followers       Int?
-  reach           Int?
-  impressions     Int?
-  profileVisits   Int?     @map("profile_visits")
+  id                    String   @id @default(uuid())
+  socialAccountId       String   @map("social_account_id")
+  date                  DateTime @db.Date
+  followers             Int?
+  reach                 Int?
+  impressions           Int?
+  profileVisits         Int?     @map("profile_visits")
   // FIX: YouTube's reach/impressions are computed as a daily delta off the
   // channel's cumulative lifetime view count. That "previous lifetime views"
   // number was previously stashed in profileVisits — a field that means an
   // actual profile-visit count for every other platform — so any generic
   // dashboard reading profileVisits showed nonsense for YouTube rows. It now
   // has its own column.
-  lifetimeViewsSnapshot Int? @map("lifetime_views_snapshot")
-  engagementRate  Decimal? @map("engagement_rate") @db.Decimal(5, 2)
+  lifetimeViewsSnapshot Int?     @map("lifetime_views_snapshot")
+  engagementRate        Decimal? @map("engagement_rate") @db.Decimal(5, 2)
 
   // Extra daily metrics populated by imported exports (e.g. TikTok Studio XLSX).
   // Nullable so live-API rows (which don't provide them) stay honestly empty.
-  videoViews       Int?    @map("video_views")
+  videoViews       Int?   @map("video_views")
   likes            Int?
   comments         Int?
   shares           Int?
-  newViewers       Int?    @map("new_viewers")
-  returningViewers Int?    @map("returning_viewers")
+  newViewers       Int?   @map("new_viewers")
+  returningViewers Int?   @map("returning_viewers")
   // Provenance: 'api' = fetched live from the platform, 'import' = uploaded export.
-  source           String  @default("api")
+  source           String @default("api")
 
   account SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
 
@@ -1490,4 +1499,356 @@ model SocialCampaign {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@map("social_campaigns")
+}
+
+// ─────────────────────────────────────────────────────────────
+//  EMAIL CENTER
+//  Resend is the transport layer only; this app is the mailbox.
+// ─────────────────────────────────────────────────────────────
+
+enum EmailDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum EmailStatus {
+  DRAFT
+  QUEUED
+  SCHEDULED
+  SENT
+  DELIVERED
+  DELIVERY_DELAYED
+  OPENED
+  CLICKED
+  BOUNCED
+  COMPLAINED
+  FAILED
+  CANCELED
+  RECEIVED
+}
+
+enum EmailEventType {
+  QUEUED
+  SCHEDULED
+  SENT
+  DELIVERED
+  DELIVERY_DELAYED
+  OPENED
+  CLICKED
+  BOUNCED
+  COMPLAINED
+  FAILED
+  CANCELED
+  RECEIVED
+  REPLIED
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  WAITING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum MailboxAccessLevel {
+  READ
+  WRITE
+  MANAGE
+}
+
+enum EmailPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+enum ParticipantRole {
+  FROM
+  TO
+  CC
+  BCC
+}
+
+enum TemplateCategory {
+  SUPPORT
+  SALES
+  INVOICES
+  MARKETING
+  HR
+  LEGAL
+  SAVED_REPLY
+}
+
+model Mailbox {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  displayName String   @map("display_name")
+  avatarUrl   String?  @map("avatar_url")
+  signature   String?  @db.Text
+  department  String?
+  replyTo     String?  @map("reply_to")
+  color       String?
+  isActive    Boolean  @default(true) @map("is_active")
+  isDefault   Boolean  @default(false) @map("is_default")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  permissions   MailboxPermission[]
+  conversations Conversation[]
+  emails        Email[]
+  templates     EmailTemplate[]
+
+  @@map("mailboxes")
+}
+
+model MailboxPermission {
+  id          String             @id @default(uuid())
+  mailboxId   String             @map("mailbox_id")
+  userId      String             @map("user_id")
+  accessLevel MailboxAccessLevel @default(WRITE) @map("access_level")
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  mailbox Mailbox @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  user    User    @relation("UserMailboxPermissions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([mailboxId, userId])
+  @@index([userId])
+  @@map("mailbox_permissions")
+}
+
+model Conversation {
+  id             String             @id @default(uuid())
+  mailboxId      String             @map("mailbox_id")
+  subject        String             @db.Text
+  clientId       String?            @map("client_id")
+  assigneeId     String?            @map("assignee_id")
+  status         ConversationStatus @default(OPEN)
+  threadKey      String?            @map("thread_key")
+  snippet        String?            @db.Text
+  messageCount   Int                @default(0) @map("message_count")
+  unreadCount    Int                @default(0) @map("unread_count")
+  hasAttachment  Boolean            @default(false) @map("has_attachment")
+  isStarred      Boolean            @default(false) @map("is_starred")
+  isImportant    Boolean            @default(false) @map("is_important")
+  isFlagged      Boolean            @default(false) @map("is_flagged")
+  isSpam         Boolean            @default(false) @map("is_spam")
+  isArchived     Boolean            @default(false) @map("is_archived")
+  lastMessageAt  DateTime?          @map("last_message_at")
+  lastInboundAt  DateTime?          @map("last_inbound_at")
+  lastOutboundAt DateTime?          @map("last_outbound_at")
+  deletedAt      DateTime?          @map("deleted_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  mailbox      Mailbox                   @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  client       Client?                   @relation(fields: [clientId], references: [id])
+  assignee     User?                     @relation("UserAssignedConversations", fields: [assigneeId], references: [id])
+  emails       Email[]
+  participants ConversationParticipant[]
+  notes        ConversationNote[]
+  labels       ConversationLabel[]
+
+  @@index([mailboxId])
+  @@index([clientId])
+  @@index([assigneeId])
+  @@index([threadKey])
+  @@index([lastMessageAt])
+  @@index([status])
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             String          @id @default(uuid())
+  conversationId String          @map("conversation_id")
+  email          String
+  name           String?
+  role           ParticipantRole @default(TO)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, email, role])
+  @@index([conversationId])
+  @@index([email])
+  @@map("conversation_participants")
+}
+
+model Email {
+  id             String         @id @default(uuid())
+  conversationId String         @map("conversation_id")
+  mailboxId      String         @map("mailbox_id")
+  direction      EmailDirection
+  status         EmailStatus    @default(QUEUED)
+  priority       EmailPriority  @default(NORMAL)
+
+  fromEmail String  @map("from_email")
+  fromName  String? @map("from_name")
+  toEmails  Json    @map("to_emails")
+  ccEmails  Json?   @map("cc_emails")
+  bccEmails Json?   @map("bcc_emails")
+
+  subject String  @db.Text
+  html    String? @db.LongText
+  text    String? @db.LongText
+  snippet String? @db.Text
+
+  resendId   String? @map("resend_id")
+  messageId  String? @map("message_id") @db.VarChar(512)
+  inReplyTo  String? @map("in_reply_to") @db.VarChar(512)
+  references String? @map("email_references") @db.Text
+  headers    Json?
+
+  sentById     String?   @map("sent_by_id")
+  scheduledAt  DateTime? @map("scheduled_at")
+  sentAt       DateTime? @map("sent_at")
+  isRead       Boolean   @default(false) @map("is_read")
+  errorMessage String?   @map("error_message") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  mailbox      Mailbox      @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+  sentBy       User?        @relation("UserSentEmails", fields: [sentById], references: [id])
+  events       EmailEvent[]
+  attachments  Attachment[]
+
+  @@index([conversationId])
+  @@index([mailboxId])
+  @@index([resendId])
+  @@index([messageId])
+  @@index([status])
+  @@index([direction])
+  @@map("emails")
+}
+
+model EmailEvent {
+  id         String         @id @default(uuid())
+  emailId    String         @map("email_id")
+  type       EmailEventType
+  payload    Json?
+  link       String?        @db.Text
+  occurredAt DateTime       @default(now()) @map("occurred_at")
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  email Email @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId])
+  @@index([type])
+  @@map("email_events")
+}
+
+model Attachment {
+  id         String   @id @default(uuid())
+  emailId    String?  @map("email_id")
+  draftId    String?  @map("draft_id")
+  filename   String
+  mimeType   String   @map("mime_type")
+  size       Int
+  storageKey String   @map("storage_key")
+  checksum   String?
+  isInline   Boolean  @default(false) @map("is_inline")
+  contentId  String?  @map("content_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  email Email? @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  draft Draft? @relation(fields: [draftId], references: [id], onDelete: Cascade)
+
+  @@index([emailId])
+  @@index([draftId])
+  @@map("email_attachments")
+}
+
+model EmailLabel {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  color     String   @default("#6366f1")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  conversations ConversationLabel[]
+
+  @@map("email_labels")
+}
+
+model ConversationLabel {
+  conversationId String @map("conversation_id")
+  labelId        String @map("label_id")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  label        EmailLabel   @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, labelId])
+  @@index([labelId])
+  @@map("conversation_labels")
+}
+
+model EmailTemplate {
+  id          String           @id @default(uuid())
+  name        String
+  category    TemplateCategory @default(SUPPORT)
+  subject     String           @db.Text
+  body        String           @db.LongText
+  variables   Json?
+  mailboxId   String?          @map("mailbox_id")
+  createdById String?          @map("created_by_id")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  mailbox Mailbox? @relation(fields: [mailboxId], references: [id], onDelete: SetNull)
+
+  @@index([category])
+  @@map("email_templates")
+}
+
+model Draft {
+  id             String        @id @default(uuid())
+  userId         String        @map("user_id")
+  mailboxId      String?       @map("mailbox_id")
+  conversationId String?       @map("conversation_id")
+  toEmails       Json?         @map("to_emails")
+  ccEmails       Json?         @map("cc_emails")
+  bccEmails      Json?         @map("bcc_emails")
+  subject        String?       @db.Text
+  html           String?       @db.LongText
+  priority       EmailPriority @default(NORMAL)
+  scheduledAt    DateTime?     @map("scheduled_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  user        User         @relation("UserEmailDrafts", fields: [userId], references: [id], onDelete: Cascade)
+  attachments Attachment[]
+
+  @@index([userId])
+  @@map("email_drafts")
+}
+
+model ConversationNote {
+  id             String   @id @default(uuid())
+  conversationId String   @map("conversation_id")
+  authorId       String   @map("author_id")
+  body           String   @db.Text
+  mentions       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User         @relation("UserConversationNotes", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("conversation_notes")
+}
+
+model WebhookLog {
+  id         String   @id @default(uuid())
+  source     String   @default("resend")
+  eventType  String   @map("event_type")
+  resendId   String?  @map("resend_id")
+  payload    Json
+  verified   Boolean  @default(false)
+  processed  Boolean  @default(false)
+  error      String?  @db.Text
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  @@index([eventType])
+  @@index([resendId])
+  @@map("email_webhook_logs")
 }

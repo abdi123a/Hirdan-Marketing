@@ -15,6 +15,7 @@ import rateLimit from 'express-rate-limit';
 
 import { PATHS } from './lib/paths.js';
 import fileRoutes from './routes/files.routes.js';
+import emailWebhookRoutes from './routes/email-webhooks.routes.js';
 import { startTransferCleanupJob } from './lib/transfer-cleanup.js';
 import { startSubscriptionBillingJob } from './lib/subscription-billing.js';
 import { startSocialScheduler } from './lib/social/social-scheduler.js';
@@ -30,6 +31,7 @@ function bootstrapStorage() {
     PATHS.EMPLOYEE_DOCS,
     PATHS.RECEIPTS,
     PATHS.TRANSFERS,
+    PATHS.EMAIL, // email center attachments
     path.join(PATHS.UPLOADS_ROOT, 'social'), // social uploads directory
   ];
 
@@ -117,6 +119,15 @@ app.use(cors({
   },
   credentials: true,
 }));
+
+// ─── Resend webhooks ──────────────────────────────────────────────
+// Registered BEFORE express.json so the raw request body is preserved for
+// Svix signature verification. Everything else uses the JSON parser below.
+app.use(
+  '/api/email/webhooks',
+  express.raw({ type: '*/*', limit: '30mb' }),
+  emailWebhookRoutes
+);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
