@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Inbox, Star, Send, FileText, Clock, ArrowUpFromLine,
-  ShieldAlert, Trash2, PenSquare, Mail, ChevronDown, Settings2, Tag, LayoutTemplate,
+  ShieldAlert, Trash2, PenSquare, Mail, ChevronDown, Settings2, Tag, LayoutTemplate, BarChart3,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -181,6 +181,13 @@ export function EmailSidebar({ folder, onFolder, mailboxId, onMailbox, mailboxes
           >
             <LayoutTemplate className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="flex-1 text-left">Templates</span>
+          </button>
+          <button
+            onClick={() => navigate('/dashboard/email/analytics')}
+            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-foreground/70 transition-colors hover:bg-accent"
+          >
+            <BarChart3 className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="flex-1 text-left">Analytics</span>
           </button>
         </div>
       </ScrollArea>

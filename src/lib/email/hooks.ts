@@ -335,6 +335,86 @@ export function useNoteMutations(conversationId: string) {
   return { add, remove };
 }
 
+// ─── Analytics ───────────────────────────────────────────────────
+export function useAnalyticsOverview(mailboxId?: string) {
+  return useQuery({
+    queryKey: ['email', 'analytics', 'overview', mailboxId ?? 'all'],
+    queryFn: () => emailApi.analyticsOverview(mailboxId),
+    staleTime: 30_000,
+  });
+}
+
+export function useAnalyticsVolume(days: number, mailboxId?: string) {
+  return useQuery({
+    queryKey: ['email', 'analytics', 'volume', days, mailboxId ?? 'all'],
+    queryFn: () => emailApi.analyticsVolume(days, mailboxId).then((r) => r.series),
+    staleTime: 30_000,
+  });
+}
+
+export function useAnalyticsByMailbox() {
+  return useQuery({
+    queryKey: ['email', 'analytics', 'by-mailbox'],
+    queryFn: () => emailApi.analyticsByMailbox().then((r) => r.mailboxes),
+    staleTime: 30_000,
+  });
+}
+
+export function useTopSenders(mailboxId?: string) {
+  return useQuery({
+    queryKey: ['email', 'analytics', 'top-senders', mailboxId ?? 'all'],
+    queryFn: () => emailApi.analyticsTopSenders(mailboxId).then((r) => r.senders),
+    staleTime: 30_000,
+  });
+}
+
+export function useAgents(mailboxId?: string) {
+  return useQuery({
+    queryKey: ['email', 'analytics', 'by-agent', mailboxId ?? 'all'],
+    queryFn: () => emailApi.analyticsByAgent(mailboxId).then((r) => r.agents),
+    staleTime: 30_000,
+  });
+}
+
+export function useDepartments() {
+  return useQuery({
+    queryKey: ['email', 'analytics', 'by-department'],
+    queryFn: () => emailApi.analyticsByDepartment().then((r) => r.departments),
+    staleTime: 30_000,
+  });
+}
+
+export function useActivity(mailboxId?: string) {
+  return useQuery({
+    queryKey: ['email', 'analytics', 'activity', mailboxId ?? 'all'],
+    queryFn: () => emailApi.analyticsActivity(mailboxId).then((r) => r.activity),
+    staleTime: 20_000,
+  });
+}
+
+// ─── Customer integration ────────────────────────────────────────
+export function useCustomer(conversationId: string | null) {
+  return useQuery({
+    queryKey: ['email', 'customer', conversationId],
+    queryFn: () => emailApi.getCustomer(conversationId as string),
+    enabled: !!conversationId,
+  });
+}
+
+export function useLinkClient(conversationId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (clientId: string | null) => emailApi.linkClient(conversationId, clientId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['email', 'customer', conversationId] });
+      qc.invalidateQueries({ queryKey: emailKeys.conversation(conversationId) });
+      qc.invalidateQueries({ queryKey: ['email', 'conversations'] });
+      toast.success('Customer link updated');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Failed to link customer'),
+  });
+}
+
 // ─── Outbox / scheduled actions ──────────────────────────────────
 export function useOutboxActions() {
   const qc = useQueryClient();

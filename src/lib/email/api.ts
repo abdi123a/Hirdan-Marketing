@@ -1,8 +1,16 @@
 import { apiFetch, apiUpload } from '@/lib/api-client';
 import type {
+  ActivityItem,
+  AgentStat,
+  AnalyticsOverview,
+  Attachment,
+  AttachmentVersion,
+  ClientLite,
   ConversationDetail,
   ConversationNote,
   ConversationsResponse,
+  CustomerContext,
+  DepartmentStat,
   DirectoryUser,
   Draft,
   EmailFolder,
@@ -11,9 +19,12 @@ import type {
   EmailTemplate,
   Mailbox,
   MailboxPermission,
+  MailboxStat,
   SearchFilters,
   SendPayload,
+  TopSender,
   TrackingSummary,
+  VolumePoint,
 } from './types';
 
 // ─── Mailboxes ───────────────────────────────────────────────────
@@ -225,6 +236,43 @@ export const emailApi = {
     apiFetch<{ email: EmailMessage }>(`/email/emails/${emailId}/cancel`, { method: 'POST' }),
   retryFailed: (emailId: string) =>
     apiFetch<{ email: EmailMessage }>(`/email/emails/${emailId}/retry`, { method: 'POST' }),
+
+  // ─── Analytics ─────────────────────────────────────────────────
+  analyticsOverview: (mailboxId?: string) =>
+    apiFetch<AnalyticsOverview>(`/email/analytics/overview${mailboxId ? `?mailboxId=${mailboxId}` : ''}`),
+  analyticsVolume: (days = 30, mailboxId?: string) => {
+    const qs = new URLSearchParams({ days: String(days) });
+    if (mailboxId) qs.set('mailboxId', mailboxId);
+    return apiFetch<{ series: VolumePoint[] }>(`/email/analytics/volume?${qs.toString()}`);
+  },
+  analyticsByMailbox: () => apiFetch<{ mailboxes: MailboxStat[] }>('/email/analytics/by-mailbox'),
+  analyticsTopSenders: (mailboxId?: string) =>
+    apiFetch<{ senders: TopSender[] }>(`/email/analytics/top-senders${mailboxId ? `?mailboxId=${mailboxId}` : ''}`),
+  analyticsByAgent: (mailboxId?: string) =>
+    apiFetch<{ agents: AgentStat[] }>(`/email/analytics/by-agent${mailboxId ? `?mailboxId=${mailboxId}` : ''}`),
+  analyticsByDepartment: () => apiFetch<{ departments: DepartmentStat[] }>('/email/analytics/by-department'),
+  analyticsActivity: (mailboxId?: string) =>
+    apiFetch<{ activity: ActivityItem[] }>(`/email/analytics/activity${mailboxId ? `?mailboxId=${mailboxId}` : ''}`),
+
+  // ─── Attachment versions ───────────────────────────────────────
+  attachmentVersions: (id: string) =>
+    apiFetch<{ versions: AttachmentVersion[] }>(`/email/attachments/${id}/versions`),
+  replaceAttachment: (id: string, data: { filename: string; content: string; contentType?: string }) =>
+    apiFetch<{ attachment: Attachment }>(`/email/attachments/${id}/replace`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // ─── Customer integration ──────────────────────────────────────
+  getCustomer: (conversationId: string) =>
+    apiFetch<{ customer: CustomerContext | null; suggested: boolean }>(`/email/conversations/${conversationId}/customer`),
+  linkClient: (conversationId: string, clientId: string | null) =>
+    apiFetch<{ success: boolean; clientId: string | null }>(`/email/conversations/${conversationId}/link-client`, {
+      method: 'POST',
+      body: JSON.stringify({ clientId }),
+    }),
+  searchClients: (q: string) =>
+    apiFetch<{ clients: ClientLite[] }>(`/email/clients/search?q=${encodeURIComponent(q)}`),
 
   // ─── SSE stream ticket ─────────────────────────────────────────
   streamTicket: () => apiFetch<{ ticket: string }>('/email/stream/ticket', { method: 'POST' }),

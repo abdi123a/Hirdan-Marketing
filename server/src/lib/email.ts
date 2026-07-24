@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import { prisma } from './prisma.js';
+import { logSystemEmail } from './mail/system-log.js';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -79,7 +80,19 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
       return { success: false, error: result.error.message };
     }
 
-    return { success: true, id: result.data?.id };
+    const sendId = result.data?.id ?? null;
+    // Mirror this automated/system email into the Email Center (non-fatal, async).
+    logSystemEmail({
+      fromEmail: emailFrom,
+      fromName: mailerName,
+      to: options.to,
+      cc: options.cc,
+      subject: options.subject,
+      html: finalHtml,
+      resendId: sendId,
+    }).catch(() => {});
+
+    return { success: true, id: sendId ?? undefined };
   } catch (err: any) {
     console.error('[email] Unexpected error sending email:', err);
     return { success: false, error: err?.message ?? 'Unknown error' };

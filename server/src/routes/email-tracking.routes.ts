@@ -5,7 +5,7 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 import { requireStaff, assertMailboxAccess, accessibleMailboxIds } from '../lib/mail/access.js';
-import { attachmentAbsolutePath } from '../lib/mail/attachments.js';
+import { ensureAttachmentFile, isInlinePreviewable } from '../lib/mail/attachment-resolver.js';
 
 import { publishMailEvent } from '../lib/mail/sse.js';
 
@@ -91,7 +91,9 @@ router.get('/track/open/:id.png', async (req: Request, res: Response) => {
 
 router.use(authenticate, requireStaff);
 
-// ─── GET /api/email/attachments/:id — authenticated download ─────
+// ─── GET /api/email/attachments/:id — authenticated download/preview ─
+// `?inline=1` serves images/PDFs inline for preview; inbound attachments are
+// fetched from Resend and cached on first access.
 router.get('/attachments/:id', async (req: Request, res: Response, next) => {
   try {
     const att = await prisma.attachment.findUnique({
@@ -101,11 +103,16 @@ router.get('/attachments/:id', async (req: Request, res: Response, next) => {
     if (!att || !att.email) throw AppError.notFound('Attachment not found');
     await assertMailboxAccess(req.user!, att.email.mailboxId, 'READ');
 
-    const abs = attachmentAbsolutePath(att.storageKey);
+    const abs = await ensureAttachmentFile(att);
     if (!fs.existsSync(abs)) throw AppError.notFound('File no longer available');
 
+    const inline = req.query.inline === '1' && isInlinePreviewable(att.mimeType || '');
     res.setHeader('Content-Type', att.mimeType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(att.filename)}"`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader(
+      'Content-Disposition',
+      `${inline ? 'inline' : 'attachment'}; filename="${encodeURIComponent(att.filename)}"`
+    );
     fs.createReadStream(abs).pipe(res);
   } catch (error) {
     next(error);

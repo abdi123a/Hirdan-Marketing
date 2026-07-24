@@ -2,6 +2,7 @@ import type { ParticipantRole } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { sanitizeEmailHtml } from './sanitize.js';
 import { storeAttachments, type IncomingAttachment } from './attachments.js';
+import { makeInboundKey } from './attachment-resolver.js';
 import { publishMailEvent } from './sse.js';
 import { getResendConfig } from './resend-client.js';
 import {
@@ -240,21 +241,22 @@ export async function processInboundEmail(input: any): Promise<boolean> {
   await prisma.emailEvent.create({ data: { emailId: email.id, type: 'RECEIVED', occurredAt: now } });
 
   // ── Attachments ──────────────────────────────────────────────
-  // Resend's Received Emails API returns attachment *metadata* only (no
-  // content — the raw MIME is behind a signed download URL). We flag the thread
-  // as having attachments so the UI shows the indicator; storing/serving inbound
-  // attachment files is a follow-up.
+  // Resend's Received Emails API returns attachment *metadata* only (the raw
+  // MIME sits behind a signed URL). Any that already carry content are written
+  // to disk; the rest are stored as sentinel rows and lazily fetched from Resend
+  // on first download (see attachment-resolver.ts).
   const rawAttachments = Array.isArray(data?.attachments) ? data.attachments : [];
-  let hasAttachment = rawAttachments.length > 0;
+  let hasAttachment = false;
   if (rawAttachments.length) {
-    const incoming: IncomingAttachment[] = rawAttachments
-      .filter((a: any) => a?.content)
-      .map((a: any) => ({
+    const withContent = rawAttachments.filter((a: any) => a?.content);
+    const metaOnly = rawAttachments.filter((a: any) => !a?.content && a?.id);
+
+    if (withContent.length) {
+      const incoming: IncomingAttachment[] = withContent.map((a: any) => ({
         filename: a.filename || a.name || 'attachment',
         content: a.content,
         contentType: a.content_type || a.contentType,
       }));
-    if (incoming.length) {
       const stored = storeAttachments(email.id, incoming);
       if (stored.length) {
         await prisma.attachment.createMany({
@@ -269,6 +271,20 @@ export async function processInboundEmail(input: any): Promise<boolean> {
         });
         hasAttachment = true;
       }
+    }
+
+    if (metaOnly.length && receivedId) {
+      await prisma.attachment.createMany({
+        data: metaOnly.map((a: any) => ({
+          emailId: email.id,
+          filename: a.filename || a.name || 'attachment',
+          mimeType: a.content_type || a.contentType || 'application/octet-stream',
+          size: a.size ?? 0,
+          storageKey: makeInboundKey(receivedId, a.id),
+          contentId: a.content_id ?? null,
+        })),
+      });
+      hasAttachment = true;
     }
   }
 

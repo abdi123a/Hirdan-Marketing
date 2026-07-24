@@ -147,7 +147,8 @@ router.get('/conversations/:id', async (req: Request, res: Response, next) => {
           orderBy: { createdAt: 'asc' },
           include: {
             events: { orderBy: { occurredAt: 'asc' } },
-            attachments: true,
+            attachments: { where: { supersededById: null }, orderBy: { createdAt: 'asc' } },
+            sentBy: { select: { id: true, name: true } },
           },
         },
       },

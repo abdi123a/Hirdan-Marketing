@@ -1,8 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Star, Archive, ShieldAlert, Trash2, ArrowLeft, Forward, MoreVertical,
-  ExternalLink, RotateCcw, Loader2, Mail,
+  ExternalLink, RotateCcw, Loader2, Mail, User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import { MessageItem } from './MessageItem';
 import { ReplyBox } from './ReplyBox';
 import { LabelPicker } from './LabelPicker';
 import { NotesPanel } from './NotesPanel';
+import { CustomerPanel } from './CustomerPanel';
 import type { ConversationStatus, EmailMessage } from '@/lib/email/types';
 
 const STATUS_LABELS: Record<ConversationStatus, string> = {
@@ -37,6 +38,7 @@ interface Props {
 export function ConversationView({ conversationId, onBack, onForward }: Props) {
   const { data: conversation, isLoading, refetch } = useConversation(conversationId);
   const { markRead, patch, action } = useConversationActions();
+  const [customerOpen, setCustomerOpen] = useState(false);
 
   // Auto mark-as-read when a thread with unread messages is opened.
   useEffect(() => {
@@ -135,6 +137,14 @@ export function ConversationView({ conversationId, onBack, onForward }: Props) {
           appliedLabelIds={conversation.labels.map((l) => l.labelId)}
         />
 
+        <Button
+          variant="ghost" size="icon" className="h-8 w-8"
+          title="Customer details"
+          onClick={() => setCustomerOpen(true)}
+        >
+          <User className="h-4 w-4" />
+        </Button>
+
         {lastEmail && onForward && (
           <Button variant="ghost" size="icon" className="h-8 w-8" title="Forward" onClick={() => onForward(lastEmail)}>
             <Forward className="h-4 w-4" />
@@ -190,6 +200,8 @@ export function ConversationView({ conversationId, onBack, onForward }: Props) {
           )}
         </div>
       </ScrollArea>
+
+      <CustomerPanel conversationId={conversation.id} open={customerOpen} onClose={() => setCustomerOpen(false)} />
     </div>
   );
 }

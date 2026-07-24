@@ -1739,20 +1739,27 @@ model EmailEvent {
 }
 
 model Attachment {
-  id         String   @id @default(uuid())
-  emailId    String?  @map("email_id")
-  draftId    String?  @map("draft_id")
-  filename   String
-  mimeType   String   @map("mime_type")
-  size       Int
-  storageKey String   @map("storage_key")
-  checksum   String?
-  isInline   Boolean  @default(false) @map("is_inline")
-  contentId  String?  @map("content_id")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id             String   @id @default(uuid())
+  emailId        String?  @map("email_id")
+  draftId        String?  @map("draft_id")
+  filename       String
+  mimeType       String   @map("mime_type")
+  size           Int
+  storageKey     String   @map("storage_key")
+  checksum       String?
+  isInline       Boolean  @default(false) @map("is_inline")
+  contentId      String?  @map("content_id")
+  version        Int      @default(1)
+  supersededById String?  @unique @map("superseded_by_id")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   email Email? @relation(fields: [emailId], references: [id], onDelete: Cascade)
   draft Draft? @relation(fields: [draftId], references: [id], onDelete: Cascade)
+
+  // Version chain: this row was replaced by `supersededBy`; `previousVersion`
+  // is the older row this one replaced.
+  supersededBy    Attachment? @relation("AttachmentVersions", fields: [supersededById], references: [id])
+  previousVersion Attachment? @relation("AttachmentVersions")
 
   @@index([emailId])
   @@index([draftId])

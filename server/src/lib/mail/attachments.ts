@@ -74,6 +74,16 @@ export function storeAttachments(emailId: string, items: IncomingAttachment[]): 
   return stored;
 }
 
+/**
+ * Virus-scan hook. Wire a real scanner (e.g. ClamAV / VirusTotal) here; return
+ * `false` to reject. Best-effort — currently a permissive stub so the pipeline
+ * has a single, obvious integration point.
+ */
+export async function scanAttachment(_buffer: Buffer, _filename: string): Promise<{ clean: boolean; reason?: string }> {
+  // TODO: integrate a real scanner. Kept permissive by default.
+  return { clean: true };
+}
+
 export function attachmentAbsolutePath(storageKey: string): string {
   // storageKey is relative to the uploads root; guard against traversal.
   const resolved = path.resolve(PATHS.UPLOADS_ROOT, storageKey);

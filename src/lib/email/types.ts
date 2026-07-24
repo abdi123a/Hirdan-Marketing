@@ -145,6 +145,7 @@ export interface Attachment {
   mimeType: string;
   size: number;
   storageKey: string;
+  version?: number;
 }
 
 export interface EmailMessage {
@@ -172,6 +173,7 @@ export interface EmailMessage {
   createdAt: string;
   events?: EmailEvent[];
   attachments?: Attachment[];
+  sentBy?: { id: string; name: string } | null;
   conversation?: { id: string; subject: string };
   mailbox?: Pick<Mailbox, 'id' | 'email' | 'displayName'>;
 }
@@ -265,6 +267,103 @@ export interface TrackingSummary {
     failureRate: number;
   };
   byStatus: Record<string, number>;
+}
+
+export interface AnalyticsOverview {
+  cards: {
+    inbox: number;
+    unread: number;
+    todayReceived: number;
+    todaySent: number;
+    replies: number;
+    openRate: number;
+    clickRate: number;
+    bounceRate: number;
+    deliveryRate: number;
+    avgResponseMinutes: number;
+  };
+  rates: Record<string, number>;
+}
+
+export interface VolumePoint {
+  date: string;
+  sent: number;
+  received: number;
+}
+
+export interface MailboxStat {
+  id: string;
+  displayName: string;
+  color: string | null;
+  department: string | null;
+  sent: number;
+  received: number;
+  unread: number;
+  openRate: number;
+  deliveryRate: number;
+}
+
+export interface TopSender {
+  email: string;
+  count: number;
+}
+
+export interface AgentStat {
+  userId: string | null;
+  name: string;
+  automated: boolean;
+  sent: number;
+  opened: number;
+  openRate: number;
+}
+
+export interface DepartmentStat {
+  department: string;
+  sent: number;
+  received: number;
+}
+
+export interface ActivityItem {
+  id: string;
+  conversationId: string;
+  subject: string;
+  to: string;
+  status: EmailStatus;
+  at: string;
+  mailbox: { displayName: string; color: string | null };
+  agent: string;
+  automated: boolean;
+}
+
+export interface AttachmentVersion {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  version: number;
+  isLatest: boolean;
+  createdAt: string;
+}
+
+export interface ClientLite {
+  id: string;
+  name: string;
+  company: string;
+  email: string | null;
+}
+
+export interface CustomerContext {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  company: string;
+  city: string | null;
+  country: string | null;
+  status: string;
+  _count: { invoices: number; proformas: number; projects: number; subscriptions: number; emailConversations: number };
+  invoices: { id: string; invoiceNumber: string; amount: number; status: string; date: string }[];
+  emailConversations: { id: string; subject: string; lastMessageAt: string | null; unreadCount: number }[];
 }
 
 export interface SendPayload {

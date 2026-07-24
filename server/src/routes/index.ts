@@ -95,6 +95,9 @@ import emailTemplatesRoutes from './email-templates.routes.js';
 import emailLabelsRoutes from './email-labels.routes.js';
 import emailNotesRoutes from './email-notes.routes.js';
 import emailOutboxRoutes from './email-outbox.routes.js';
+import emailAnalyticsRoutes from './email-analytics.routes.js';
+import emailCustomersRoutes from './email-customers.routes.js';
+import emailAttachmentsRoutes from './email-attachments.routes.js';
 
 router.use('/email', emailStreamRoutes);
 router.use('/email', emailMailboxesRoutes);
@@ -105,6 +108,9 @@ router.use('/email', emailTemplatesRoutes);
 router.use('/email', emailLabelsRoutes);
 router.use('/email', emailNotesRoutes);
 router.use('/email', emailOutboxRoutes);
+router.use('/email', emailAnalyticsRoutes);
+router.use('/email', emailCustomersRoutes);
+router.use('/email', emailAttachmentsRoutes);
 
 export default router;
 

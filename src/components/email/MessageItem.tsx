@@ -1,37 +1,19 @@
 import { useState } from 'react';
-import { ChevronDown, Paperclip, Activity, Download, AlertTriangle } from 'lucide-react';
+import { ChevronDown, Paperclip, Activity, AlertTriangle, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { initials, avatarColor, fullTime, listTime, displayName, formatBytes } from '@/lib/email/format';
-import { emailApi } from '@/lib/email/api';
-import { getFullUrl } from '@/lib/api-client';
-import { useAuthStore } from '@/lib/auth-store';
+import { initials, avatarColor, fullTime, listTime, displayName } from '@/lib/email/format';
 import { StatusBadge } from './StatusBadge';
 import { TrackingTimeline } from './TrackingTimeline';
 import { EmailBody } from './EmailBody';
-import type { EmailMessage } from '@/lib/email/types';
-
-async function downloadAttachment(id: string, filename: string) {
-  const token = useAuthStore.getState().token;
-  const res = await fetch(getFullUrl(`/email/attachments/${id}`), {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    credentials: 'include',
-  });
-  if (!res.ok) return;
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
+import { AttachmentPreviewModal } from './AttachmentPreviewModal';
+import { AttachmentChip } from './AttachmentChip';
+import type { Attachment, EmailMessage } from '@/lib/email/types';
 
 export function MessageItem({ email, defaultOpen }: { email: EmailMessage; defaultOpen: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
+  const [preview, setPreview] = useState<Attachment | null>(null);
   const outbound = email.direction === 'OUTBOUND';
   const fromLabel = displayName(email.fromName, email.fromEmail);
 
@@ -60,11 +42,19 @@ export function MessageItem({ email, defaultOpen }: { email: EmailMessage; defau
             </span>
           </div>
           {!open ? (
-            <p className="truncate text-xs text-muted-foreground">{email.snippet || ' '}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {outbound && (
+                <span className="mr-1 inline-flex items-center gap-0.5">
+                  {email.sentBy ? `${email.sentBy.name} ·` : (<><Bot className="inline h-3 w-3" /> Automated ·</>)}
+                </span>
+              )}
+              {email.snippet || ' '}
+            </p>
           ) : (
             <p className="text-xs text-muted-foreground">
               To: {(email.toEmails ?? []).join(', ')}
               {email.ccEmails?.length ? ` · Cc: ${email.ccEmails.join(', ')}` : ''}
+              {outbound && (email.sentBy ? ` · Sent by ${email.sentBy.name}` : ' · Sent automatically')}
             </p>
           )}
         </div>
@@ -86,18 +76,7 @@ export function MessageItem({ email, defaultOpen }: { email: EmailMessage; defau
           {email.attachments && email.attachments.length > 0 && (
             <div className="mt-4 flex flex-wrap gap-2 border-t pt-3">
               {email.attachments.map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => downloadAttachment(a.id, a.filename)}
-                  className="group flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-accent"
-                >
-                  <Paperclip className="h-4 w-4 text-muted-foreground" />
-                  <div className="min-w-0">
-                    <p className="max-w-[160px] truncate text-xs font-medium">{a.filename}</p>
-                    <p className="text-[10px] text-muted-foreground">{formatBytes(a.size)}</p>
-                  </div>
-                  <Download className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-                </button>
+                <AttachmentChip key={a.id} attachment={a} conversationId={email.conversationId} onPreview={setPreview} />
               ))}
             </div>
           )}
@@ -121,6 +100,8 @@ export function MessageItem({ email, defaultOpen }: { email: EmailMessage; defau
           )}
         </div>
       )}
+
+      <AttachmentPreviewModal attachment={preview} onClose={() => setPreview(null)} />
     </div>
   );
 }
