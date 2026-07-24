@@ -76,6 +76,13 @@ function parseEmailText(textString: string): { mainText: string; quotedText: str
   return { mainText: textString, quotedText: null };
 }
 
+interface ParsedEmail {
+  mainHtml: string;
+  mainText: string | null;
+  quotedHtml: string | null;
+  quotedText: string | null;
+}
+
 interface Props {
   html?: string | null;
   text?: string | null;
@@ -84,9 +91,10 @@ interface Props {
 export function EmailBody({ html, text }: Props) {
   const [showQuoted, setShowQuoted] = useState(false);
 
-  const parsed = useMemo(() => {
+  const parsed: ParsedEmail = useMemo(() => {
     if (html) {
-      return parseEmailHtml(html);
+      const p = parseEmailHtml(html);
+      return { mainHtml: p.mainHtml, mainText: null, quotedHtml: p.quotedHtml, quotedText: null };
     }
     if (text) {
       const p = parseEmailText(text);

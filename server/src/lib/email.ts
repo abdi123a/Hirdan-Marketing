@@ -52,6 +52,14 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
     return { success: false, error: 'EMAIL_FROM not configured' };
   }
 
+  let finalHtml = options.html;
+  if (!finalHtml.includes('<!DOCTYPE html>') && !finalHtml.includes('class="wrapper"')) {
+    finalHtml = await generateEmailHtml({
+      title: options.subject,
+      contentHtml: options.html,
+    });
+  }
+
   try {
     const resend = new Resend(apiKey);
     const fromAddress = mailerName ? `${mailerName} <${emailFrom}>` : emailFrom;
@@ -60,7 +68,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
       from: fromAddress,
       to: options.to,
       subject: options.subject,
-      html: options.html,
+      html: finalHtml,
       ...(options.cc ? { cc: options.cc } : {}),
       ...(options.replyTo ? { reply_to: options.replyTo } : {}),
       ...(options.attachments ? { attachments: options.attachments } : {}),

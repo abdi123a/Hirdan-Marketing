@@ -1,6 +1,7 @@
 import type { Conversation, Email, EmailPriority, ParticipantRole } from '@prisma/client';
 import { prisma } from '../prisma.js';
 import { getResendConfig, isResendConfigured } from './resend-client.js';
+import { generateEmailHtml } from '../email.js';
 import { buildMessageId, normalizeSubject, toSnippet, htmlToText } from './util.js';
 import { storeAttachments, type IncomingAttachment } from './attachments.js';
 import { publishMailEvent } from './sse.js';
@@ -80,6 +81,14 @@ export async function sendMailboxEmail(input: SendMailInput): Promise<SendMailRe
   const now = new Date();
   const isScheduled = !!input.scheduledAt && input.scheduledAt.getTime() > now.getTime() + 1000;
 
+  let finalHtml = input.html;
+  if (!finalHtml.includes('<!DOCTYPE html>') && !finalHtml.includes('class="wrapper"')) {
+    finalHtml = await generateEmailHtml({
+      title: subject,
+      contentHtml: input.html,
+    });
+  }
+
   // 1. Resolve or create the conversation
   let conversation = input.conversationId
     ? await prisma.conversation.findUnique({ where: { id: input.conversationId } })
@@ -120,7 +129,7 @@ export async function sendMailboxEmail(input: SendMailInput): Promise<SendMailRe
       ccEmails: input.cc && input.cc.length ? input.cc : undefined,
       bccEmails: input.bcc && input.bcc.length ? input.bcc : undefined,
       subject,
-      html: input.html,
+      html: finalHtml,
       text,
       snippet,
       sentById: input.user.userId,
@@ -178,7 +187,7 @@ export async function sendMailboxEmail(input: SendMailInput): Promise<SendMailRe
         ...(input.cc && input.cc.length ? { cc: input.cc } : {}),
         ...(input.bcc && input.bcc.length ? { bcc: input.bcc } : {}),
         subject,
-        html: input.html,
+        html: finalHtml,
         text,
         ...(mailbox.replyTo ? { replyTo: mailbox.replyTo } : {}),
         headers,
