@@ -1,4 +1,4 @@
-import { Star, Paperclip, Circle } from 'lucide-react';
+import { Star, Paperclip } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { initials, avatarColor, listTime, displayName } from '@/lib/email/format';
@@ -55,9 +55,21 @@ export function ConversationRow({ conversation: c, selected, checked, onSelect, 
             {displayName(party.name, party.email)}
           </span>
           {c.messageCount > 1 && (
-            <span className="text-xs text-muted-foreground">{c.messageCount}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{c.messageCount}</span>
           )}
-          <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{listTime(c.lastMessageAt)}</span>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleStar(); }}
+              className={cn(
+                'transition-opacity',
+                c.isStarred ? 'opacity-100' : 'opacity-0 focus:opacity-100 group-hover:opacity-100'
+              )}
+              title={c.isStarred ? 'Unstar' : 'Star'}
+            >
+              <Star className={cn('h-3.5 w-3.5', c.isStarred ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground hover:text-amber-400')} />
+            </button>
+            <span className="text-[11px] text-muted-foreground">{listTime(c.lastMessageAt)}</span>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -92,17 +104,6 @@ export function ConversationRow({ conversation: c, selected, checked, onSelect, 
           </div>
         )}
       </div>
-
-      <button
-        onClick={(e) => { e.stopPropagation(); onToggleStar(); }}
-        className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
-        title={c.isStarred ? 'Unstar' : 'Star'}
-      >
-        <Star className={cn('h-4 w-4', c.isStarred ? 'fill-amber-400 text-amber-400 opacity-100' : 'text-muted-foreground')} />
-      </button>
-      {c.isStarred && (
-        <Star className="absolute right-2 top-2 h-4 w-4 fill-amber-400 text-amber-400 group-hover:opacity-0" />
-      )}
     </div>
   );
 }

@@ -37,6 +37,8 @@ export function EmailSidebar({ folder, onFolder, mailboxId, onMailbox, mailboxes
   const navigate = useNavigate();
   const { data: labels = [] } = useLabels();
   const [labelManagerOpen, setLabelManagerOpen] = useState(false);
+  const [mailboxesOpen, setMailboxesOpen] = useState(true);
+  const [labelsOpen, setLabelsOpen] = useState(true);
   const totalUnread = mailboxes.reduce((sum, m) => sum + (m.unreadCount ?? 0), 0);
 
   return (
@@ -78,8 +80,13 @@ export function EmailSidebar({ folder, onFolder, mailboxId, onMailbox, mailboxes
 
         <div className="mt-2 border-t pt-2">
           <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <ChevronDown className="h-3 w-3" />
-            Mailboxes
+            <button
+              onClick={() => setMailboxesOpen((v) => !v)}
+              className="flex items-center gap-1.5 transition-colors hover:text-foreground"
+            >
+              <ChevronDown className={cn('h-3 w-3 transition-transform', !mailboxesOpen && '-rotate-90')} />
+              Mailboxes
+            </button>
             <button
               onClick={() => navigate('/dashboard/email/mailboxes')}
               className="ml-auto rounded p-1 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
@@ -88,6 +95,7 @@ export function EmailSidebar({ folder, onFolder, mailboxId, onMailbox, mailboxes
               <Settings2 className="h-3.5 w-3.5" />
             </button>
           </div>
+          {mailboxesOpen && (
           <div className="space-y-0.5">
             <button
               onClick={() => onMailbox(undefined)}
@@ -133,13 +141,19 @@ export function EmailSidebar({ folder, onFolder, mailboxId, onMailbox, mailboxes
               </p>
             )}
           </div>
+          )}
         </div>
 
         {/* Labels */}
         <div className="mt-2 border-t pt-2">
           <div className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <ChevronDown className="h-3 w-3" />
-            Labels
+            <button
+              onClick={() => setLabelsOpen((v) => !v)}
+              className="flex items-center gap-1.5 transition-colors hover:text-foreground"
+            >
+              <ChevronDown className={cn('h-3 w-3 transition-transform', !labelsOpen && '-rotate-90')} />
+              Labels
+            </button>
             <button
               onClick={() => setLabelManagerOpen(true)}
               className="ml-auto rounded p-1 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
@@ -148,6 +162,7 @@ export function EmailSidebar({ folder, onFolder, mailboxId, onMailbox, mailboxes
               <Settings2 className="h-3.5 w-3.5" />
             </button>
           </div>
+          {labelsOpen && (
           <div className="space-y-0.5">
             {labels.map((l) => (
               <button
@@ -171,6 +186,7 @@ export function EmailSidebar({ folder, onFolder, mailboxId, onMailbox, mailboxes
               </button>
             )}
           </div>
+          )}
         </div>
 
         {/* Manage links */}

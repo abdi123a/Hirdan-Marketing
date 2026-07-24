@@ -18,7 +18,7 @@ export function MessageItem({ email, defaultOpen }: { email: EmailMessage; defau
   const fromLabel = displayName(email.fromName, email.fromEmail);
 
   return (
-    <div className={cn('rounded-xl border bg-card', !open && 'hover:bg-accent/30')}>
+    <div className={cn('min-w-0 overflow-hidden rounded-xl border bg-card', !open && 'hover:bg-accent/30')}>
       {/* Header */}
       <button
         onClick={() => setOpen((v) => !v)}
@@ -68,7 +68,7 @@ export function MessageItem({ email, defaultOpen }: { email: EmailMessage; defau
       </button>
 
       {open && (
-        <div className="px-4 pb-4">
+        <div className="min-w-0 px-4 pb-4">
           {/* Body */}
           <EmailBody html={email.html} text={email.text} />
 
