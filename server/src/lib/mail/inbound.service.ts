@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import { sanitizeEmailHtml } from './sanitize.js';
 import { storeAttachments, type IncomingAttachment } from './attachments.js';
 import { publishMailEvent } from './sse.js';
+import { getResendConfig } from './resend-client.js';
 import {
   normalizeSubject,
   toSnippet,
@@ -66,6 +67,43 @@ function dedupeParticipants(
 const THREAD_WINDOW_MS = 60 * 24 * 3600 * 1000; // 60 days
 
 /**
+ * Fetch the full received email from Resend when the webhook only carried
+ * metadata. Returns the input untouched when there is no id to fetch or when a
+ * body/headers are already present (tests / full payloads).
+ */
+async function hydrateInbound(input: any): Promise<any> {
+  const id = input?.email_id || input?.id;
+  const alreadyFull = input?.html != null || input?.text != null || input?.headers != null;
+  if (!id || alreadyFull) return input;
+
+  try {
+    const { resend } = await getResendConfig();
+    const { data, error } = await resend.emails.receiving.get(id, { html_format: 'data_uri' });
+    if (error || !data) {
+      console.warn('[inbound] receiving.get returned no data for', id, error?.message ?? '');
+      return input;
+    }
+    return {
+      ...input,
+      from: data.from,
+      to: data.to,
+      cc: data.cc ?? input?.cc,
+      bcc: data.bcc ?? input?.bcc,
+      subject: data.subject ?? input?.subject,
+      html: data.html,
+      text: data.text,
+      headers: data.headers,
+      message_id: data.message_id,
+      received_for: data.received_for,
+      attachments: data.attachments ?? input?.attachments,
+    };
+  } catch (err) {
+    console.error('[inbound] failed to fetch received email', id, err);
+    return input;
+  }
+}
+
+/**
  * Process an inbound email (Resend `email.received`). Attaches the message to
  * the correct conversation using Message-ID / In-Reply-To / References, falling
  * back to subject + participant matching, and only creating a new thread when no
@@ -73,12 +111,19 @@ const THREAD_WINDOW_MS = 60 * 24 * 3600 * 1000; // 60 days
  *
  * Returns true when the message was accepted (addressed to a known mailbox).
  */
-export async function processInboundEmail(data: any): Promise<boolean> {
+export async function processInboundEmail(input: any): Promise<boolean> {
+  // Resend's `email.received` webhook carries metadata only (from/to/subject +
+  // attachment list). Fetch the full email (body, headers, message-id) via the
+  // Received Emails API before processing. If `input` already has a body/headers
+  // (e.g. tests, or a future full-payload webhook), it is used as-is.
+  const data = await hydrateInbound(input);
+
   const from = parseAddress(data?.from);
   if (!from) return false;
 
   const tos = parseAddresses(data?.to);
   const ccs = parseAddresses(data?.cc);
+  const receivedFor = parseAddresses(data?.received_for);
   const headers = data?.headers;
 
   const messageId = firstMessageId(getHeader(headers, 'message-id') || data?.message_id);
@@ -88,8 +133,9 @@ export async function processInboundEmail(data: any): Promise<boolean> {
   const html = sanitizeEmailHtml(data?.html || null);
   const text: string = data?.text || htmlToText(data?.html) || '';
 
-  // Which of our mailboxes was this addressed to?
-  const candidates = [...tos, ...ccs].map((a) => a.email);
+  // Which of our mailboxes was this addressed to? (to/cc, and Resend's
+  // received_for which reflects the actual delivered-to address.)
+  const candidates = [...tos, ...ccs, ...receivedFor].map((a) => a.email);
   const mailbox = candidates.length
     ? await prisma.mailbox.findFirst({ where: { email: { in: candidates } } })
     : null;
@@ -188,8 +234,12 @@ export async function processInboundEmail(data: any): Promise<boolean> {
   await prisma.emailEvent.create({ data: { emailId: email.id, type: 'RECEIVED', occurredAt: now } });
 
   // ── Attachments ──────────────────────────────────────────────
-  let hasAttachment = false;
+  // Resend's Received Emails API returns attachment *metadata* only (no
+  // content — the raw MIME is behind a signed download URL). We flag the thread
+  // as having attachments so the UI shows the indicator; storing/serving inbound
+  // attachment files is a follow-up.
   const rawAttachments = Array.isArray(data?.attachments) ? data.attachments : [];
+  let hasAttachment = rawAttachments.length > 0;
   if (rawAttachments.length) {
     const incoming: IncomingAttachment[] = rawAttachments
       .filter((a: any) => a?.content)
