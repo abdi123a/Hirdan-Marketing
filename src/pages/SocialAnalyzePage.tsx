@@ -483,6 +483,12 @@ export default function SocialAnalyzePage() {
     else { setAnalytics(null); setPosts([]); }
   }, [selectedClient, getAnalyticsQueryString]);
 
+  // The post list loads on its own, not only when "Sync Metrics" is pressed —
+  // paging, sorting and searching all run through here too.
+  useEffect(() => {
+    if (selectedClient) fetchPosts();
+  }, [selectedClient, postPage, postSort, postSearch, getAnalyticsQueryString]);
+
   const handleRefresh = async () => {
     if (!selectedClient || isRefreshing) return;
     setIsRefreshing(true);
@@ -1906,7 +1912,9 @@ export default function SocialAnalyzePage() {
                                 });
                                 const okFiles = data.summary?.files?.filter((f: any) => f.rows > 0).length || 0;
                                 toast({ title: "✅ Import Complete", description: `Imported ${okFiles} file(s) successfully.` });
-                                fetchAnalytics();
+                                // Refresh both halves: the imported videos land in
+                                // the post list, which the analytics call doesn't touch.
+                                await Promise.all([fetchAnalytics(), fetchPosts()]);
                               } catch (err: any) {
                                 toast({ title: "Import Failed", description: err.message || "Unknown error", variant: "destructive" });
                               }
