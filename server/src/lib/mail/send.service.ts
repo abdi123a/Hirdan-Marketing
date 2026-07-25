@@ -5,6 +5,7 @@ import { generateEmailHtml } from '../email.js';
 import { buildMessageId, normalizeSubject, toSnippet, htmlToText } from './util.js';
 import { storeAttachments, type IncomingAttachment } from './attachments.js';
 import { publishMailEvent } from './sse.js';
+import { AppError } from '../errors.js';
 import type { AuthUser } from './access.js';
 
 export interface SendMailInput {
@@ -71,8 +72,8 @@ function dedupeParticipants(list: ParticipantSeed[]): ParticipantSeed[] {
  */
 export async function sendMailboxEmail(input: SendMailInput): Promise<SendMailResult> {
   const mailbox = await prisma.mailbox.findUnique({ where: { id: input.mailboxId } });
-  if (!mailbox) throw new Error('Mailbox not found');
-  if (!mailbox.isActive) throw new Error('This mailbox is inactive');
+  if (!mailbox) throw AppError.notFound('Mailbox not found');
+  if (!mailbox.isActive) throw AppError.badRequest('This mailbox is inactive');
 
   const config = await getResendConfig();
   const subject = input.subject?.trim() || '(no subject)';

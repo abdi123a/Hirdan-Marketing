@@ -585,7 +585,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.31.10",
+  appVersion: "2.31.11",
   versionHistory: [
     {
       version: "2.23.0",
@@ -1077,12 +1077,20 @@ export const useAgencyStore = create<AgencyStore>()(
             // Sensitive fields that are ONLY returned in admin responses.
             // If we got a guest response, we keep whatever the store already has
             // for these fields — preventing accidental data loss on save.
+            //
+            // NOTE: this list must stay in sync with the guest projection in
+            // server/src/routes/settings.routes.ts. Any field withheld from the
+            // guest response MUST be listed here, otherwise the `...defaults`
+            // spread below silently resets it to an empty value — and a
+            // subsequent save would then write that empty value back to the DB.
             const sensitiveFields: (keyof AgencySettings)[] = [
               'openAiApiKey', 'claudeApiKey', 'geminiApiKey', 'mainAiProvider',
               'resendApiKey', 'emailFrom', 'mailerName',
               'smtpHost', 'smtpPort', 'smtpUsername', 'smtpEncryption', 'smtpDriver',
               'mailEnabled', 'googleDriveFolderId', 'googleDriveServiceAccountJson', 'googleDriveEnabled',
               'googleDriveClientId', 'googleDriveClientSecret', 'googleDriveRefreshToken',
+              // Withheld from guests because they enable document forgery / are internal.
+              'signature', 'stamp', 'adminEmail', 'hrFallbackApproverId',
             ];
 
             const merged: AgencySettings = {

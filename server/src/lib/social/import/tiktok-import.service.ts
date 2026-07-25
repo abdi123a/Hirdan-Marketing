@@ -14,7 +14,8 @@
 // videoId) — re-importing a fresh export just updates in place.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import * as XLSX from 'xlsx';
+import { Readable } from 'stream';
+import ExcelJS from 'exceljs';
 import { prisma } from '../../prisma.js';
 
 export type TikTokFileType =
@@ -113,14 +114,65 @@ interface ParsedSheet {
   rows: any[][];
 }
 
-export function parseWorkbook(buffer: Buffer): ParsedSheet {
-  const wb = XLSX.read(buffer, { type: 'buffer' });
-  const sheetName = wb.SheetNames[0];
-  const ws = wb.Sheets[sheetName];
-  const raw = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, raw: false, defval: null });
-  const header = (raw[0] || []).map((c: any) => String(c ?? '').trim());
-  const rows = raw.slice(1);
-  return { sheetName, header, rows };
+/**
+ * Flatten one ExcelJS cell to the plain string/null the row mappers expect.
+ *
+ * The previous `xlsx` reader was called with `raw: false`, so every cell arrived
+ * pre-stringified. ExcelJS instead returns typed values, including a few shapes
+ * that would stringify to "[object Object]" and silently break parsing:
+ *   - hyperlink cells  → { text, hyperlink }  (the "Video link" column)
+ *   - rich text        → { richText: [{ text }] }
+ *   - formula cells    → { formula, result }
+ *   - error cells      → { error: '#N/A' }
+ * Dates and numbers are passed through as-is; the downstream safeInt/safeFloat/
+ * parseMonthDay helpers already coerce via String().
+ */
+function cellValue(v: unknown): unknown {
+  if (v == null) return null;
+  if (v instanceof Date) return v;
+  if (typeof v === 'object') {
+    const o = v as Record<string, any>;
+    if (Array.isArray(o.richText)) return o.richText.map((t: any) => t?.text ?? '').join('');
+    if ('hyperlink' in o) return o.text ?? o.hyperlink ?? null;
+    if ('result' in o) return cellValue(o.result);
+    if ('error' in o) return null;
+    if ('text' in o) return o.text;
+  }
+  return v;
+}
+
+/** Read the first worksheet of an .xlsx or .csv export into header + rows. */
+export async function parseWorkbook(buffer: Buffer, filename = ''): Promise<ParsedSheet> {
+  // ExcelJS covers .xlsx and .csv but not the legacy binary .xls (BIFF) format.
+  // Fail with an actionable message rather than a parser stack trace — the caller
+  // turns this into a per-file warning so the rest of the upload still imports.
+  if (/\.xls$/i.test(filename)) {
+    throw new Error('Legacy .xls files are not supported — re-export from TikTok Studio as .xlsx or .csv');
+  }
+
+  const wb = new ExcelJS.Workbook();
+  if (/\.csv$/i.test(filename)) {
+    // `map: v => v` disables ExcelJS's value coercion so cells stay raw strings,
+    // matching the old reader. Without it "+12" becomes the number 12 and
+    // date-like columns get reinterpreted, which the row mappers don't expect.
+    await wb.csv.read(Readable.from(buffer), { map: (value: string) => value } as any);
+  } else {
+    await wb.xlsx.load(buffer as unknown as ArrayBuffer);
+  }
+
+  const ws = wb.worksheets[0];
+  if (!ws) throw new Error('File contains no worksheets');
+
+  // getSheetValues() is 1-indexed and leaves a hole at [0]; same for each row.
+  const sheetRows: unknown[][] = [];
+  ws.eachRow({ includeEmpty: true }, (row) => {
+    const values = row.values as unknown[];
+    sheetRows.push((Array.isArray(values) ? values.slice(1) : []).map(cellValue));
+  });
+
+  const header = (sheetRows[0] || []).map((c) => String(c ?? '').trim());
+  const rows = sheetRows.slice(1) as any[][];
+  return { sheetName: ws.name, header, rows };
 }
 
 function has(header: string[], ...cols: string[]): boolean {
@@ -198,7 +250,7 @@ export async function importTikTokStudioFiles(
   for (const file of files) {
     let sheet: ParsedSheet;
     try {
-      sheet = parseWorkbook(file.buffer);
+      sheet = await parseWorkbook(file.buffer, file.originalname);
     } catch (e: any) {
       fileResults.push({ filename: file.originalname, type: 'unknown', rows: 0, warning: `Could not read file: ${e.message}` });
       warnings.push(`${file.originalname}: could not read (${e.message})`);

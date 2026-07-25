@@ -425,9 +425,6 @@ export default function ProformaDetailsPage() {
             <Button
               variant="outline"
               onClick={() => {
-                // #region agent log
-                fetch('http://127.0.0.1:7891/ingest/c6d26856-ebcd-4639-9d6e-816efcb76a2c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1b217a'},body:JSON.stringify({sessionId:'1b217a',runId:'pre-fix',hypothesisId:'H8',location:'src/pages/ProformaDetailsPage.tsx:255',message:'Print proforma initiated',data:{proformaId:proforma.id,route:window.location.pathname},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
                 setTimeout(() => window.print(), 50);
               }}
               className="h-10 px-4 gap-2 rounded-xl"

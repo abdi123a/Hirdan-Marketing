@@ -1,6 +1,6 @@
 {
   "name": "hirdan-marketing-server",
-  "version": "2.31.10",
+  "version": "2.31.11",
   "private": true,
   "type": "module",
   "scripts": {
@@ -24,6 +24,7 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
+    "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "express-rate-limit": "^8.3.1",
     "helmet": "^8.1.0",
@@ -34,7 +35,6 @@
     "resend": "^6.17.2",
     "sanitize-html": "^2.17.6",
     "svix": "^1.99.1",
-    "xlsx": "^0.18.5",
     "zod": "^3.25.76"
   },
   "devDependencies": {

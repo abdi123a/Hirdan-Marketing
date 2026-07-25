@@ -10,8 +10,6 @@ export function errorHandler(
 ): void {
   // Default error values
   let statusCode = 500;
-  // Pass through the real error message so API/provider errors are visible
-  // to the client rather than being hidden behind a generic 500 message.
   let message = err.message || 'Internal server error';
   let isOperational = false;
 
@@ -26,11 +24,19 @@ export function errorHandler(
     console.error('💥 Unexpected error:', err);
   }
 
-  res.status(statusCode).json({
+  // SECURITY: only `AppError` messages are written deliberately for end users.
+  // Everything else is an unexpected throw whose message routinely names internal
+  // tables, columns, constraints or file paths (Prisma errors in particular), so
+  // outside development it is replaced with a generic string. The real error and
+  // stack are logged above and stay server-side.
+  const isDev = env.NODE_ENV === 'development';
+  const body: Record<string, unknown> = {
     error: true,
-    message,
-    ...(env.NODE_ENV === 'development' && {
-      stack: err.stack,
-    }),
-  });
+    message: isOperational || isDev ? message : 'Internal server error',
+  };
+  if (isDev) {
+    body.stack = err.stack;
+  }
+
+  res.status(statusCode).json(body);
 }

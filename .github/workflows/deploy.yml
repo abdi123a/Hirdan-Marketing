@@ -99,6 +99,12 @@ jobs:
           port: ${{ env.SSH_PORT }}
           timeout: 120s
           command_timeout: 10m
+          # Without this the remote script runs straight past a failed command and
+          # the job still reports success — which is how a failed `db push`
+          # (P2002 on post_insights_post_id_platform_key) previously went
+          # unnoticed while the API was restarted anyway. A failed migration must
+          # abort the deploy BEFORE pm2 restarts onto a schema that isn't ready.
+          script_stop: true
           script: |
             echo "🚀 Finalizing Server Setup..."
 
@@ -117,6 +123,15 @@ jobs:
             # Finish backend setup
             cd /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
 
+            # Fail fast: env.ts now REQUIRES TOKEN_ENCRYPTION_KEY (it decrypts the
+            # stored third-party credentials). Without it the API refuses to boot,
+            # so check here — before pm2 restart — rather than taking it down.
+            if ! grep -q '^TOKEN_ENCRYPTION_KEY=' .env; then
+              echo "❌ TOKEN_ENCRYPTION_KEY missing from server/.env — aborting before restart."
+              echo "   Generate one with: openssl rand -hex 32"
+              exit 1
+            fi
+
             echo "📦 Installing all Backend dependencies (incl. dev for Prisma CLI)..."
             npm install --legacy-peer-deps
 
@@ -126,8 +141,18 @@ jobs:
             echo "⚙️ Generating Database Client on server..."
             ./node_modules/.bin/prisma generate
 
-            echo "🗄️ Pushing database schema..."
-            ./node_modules/.bin/prisma db push --accept-data-loss
+            # `db push --accept-data-loss` was used here previously. It diffs the
+            # schema against the live database and silently drops any column or
+            # table that no longer matches — against real client, invoice and
+            # payroll data, with no migration history and no review step.
+            # `migrate deploy` only applies the reviewed SQL committed under
+            # prisma/migrations and refuses to run anything destructive that
+            # isn't written down.
+            echo "📐 Checking migration baseline..."
+            node scripts/baseline-migrations.cjs
+
+            echo "🗄️ Applying database migrations..."
+            ./node_modules/.bin/prisma migrate deploy
 
             echo "🧹 Pruning dev dependencies..."
             npm prune --production --legacy-peer-deps

@@ -42,15 +42,38 @@ ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 root@72.61.192.11 << 'EOF'
   ln -sfn /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/uploads \
     /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/public/uploads
   
+  set -e   # abort before restarting the API if any step below fails
+
   cd /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
-  npm install --production --legacy-peer-deps
-  
+
+  # Fail fast: env.ts now REQUIRES TOKEN_ENCRYPTION_KEY (it decrypts the stored
+  # third-party credentials). Without it the API would refuse to boot, so check
+  # here — before pm2 restart — rather than taking the service down.
+  if ! grep -q '^TOKEN_ENCRYPTION_KEY=' .env; then
+    echo "❌ TOKEN_ENCRYPTION_KEY missing from server/.env — aborting before restart."
+    echo "   Generate one with: openssl rand -hex 32"
+    exit 1
+  fi
+
+  # Full install (not --production): the Prisma CLI is a devDependency and
+  # prisma.config.ts imports from 'prisma/config', so migrations need it present.
+  # Dev dependencies are pruned again after the migration step.
+  npm install --legacy-peer-deps
+
   echo "🗄️ Running pre-migration database backup..."
   node scripts/backup.cjs
-  
-  npx prisma@6.9.0 generate
-  npx prisma@6.9.0 db push --accept-data-loss
-  
+
+  ./node_modules/.bin/prisma generate
+
+  # `db push --accept-data-loss` was used here previously; it silently drops any
+  # column/table that drifts from the schema, against live business data.
+  # `migrate deploy` applies only the reviewed SQL in prisma/migrations.
+  node scripts/baseline-migrations.cjs
+  ./node_modules/.bin/prisma migrate deploy
+
+  echo "🧹 Pruning dev dependencies..."
+  npm prune --production --legacy-peer-deps
+
   chown -R hirdanmarketing-api:hirdanmarketing-api /home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
   
   echo "🔄 Restarting Node.js service..."

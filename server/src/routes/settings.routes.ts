@@ -137,10 +137,20 @@ router.get('/', async (req: Request, res: Response, next) => {
       // Expose ONLY safe public fields for guest/client branding.
       // `_isAdminResponse` is intentionally omitted (undefined) so the
       // frontend knows NOT to overwrite sensitive fields from this response.
+      //
+      // SECURITY: this branch is reachable with no credentials at all. Never add
+      // a field here that isn't safe to publish on a billboard. Deliberately
+      // withheld — do not re-add:
+      //   recaptchaSecretKey  → lets anyone forge captcha verification
+      //   signature / stamp   → the images that sign invoices and HR letters;
+      //                         publishing them enables document forgery
+      //   adminEmail          → spam/phishing target, not needed by any public page
+      //   hrFallbackApproverId→ internal user id, leaks org structure
+      // The only unauthenticated pages (VerifyDocumentPage, ShareDownload) read
+      // just agencyName/logo/primaryColor.
       res.json({
         settings: {
           agencyName: settings.agencyName,
-          adminEmail: settings.adminEmail,
           phone: settings.phone,
           website: settings.website,
           address: settings.address,
@@ -150,12 +160,8 @@ router.get('/', async (req: Request, res: Response, next) => {
           whiteLogo: settings.whiteLogo,
           favicon: settings.favicon,
           primaryColor: settings.primaryColor,
-          signature: settings.signature,
-          stamp: settings.stamp,
-          hrFallbackApproverId: (settings as any).hrFallbackApproverId,
           enableRecaptcha: settings.enableRecaptcha,
           recaptchaSiteKey: settings.recaptchaSiteKey,
-          recaptchaSecretKey: settings.recaptchaSecretKey,
           googleAnalyticsEnabled: settings.googleAnalyticsEnabled,
           googleAnalyticsMeasurementId: settings.googleAnalyticsMeasurementId,
           developmentMode: settings.developmentMode,

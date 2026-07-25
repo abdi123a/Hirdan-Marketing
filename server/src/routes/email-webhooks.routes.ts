@@ -61,10 +61,27 @@ router.post('/resend', async (req: Request, res: Response) => {
       return res.status(401).json({ error: true, message: 'Invalid webhook signature' });
     }
   } else {
-    // No signing secret configured yet — accept but mark unverified.
-    // (Configure RESEND_WEBHOOK_SECRET / settings before going live.)
-    payload = safeParse(raw);
-    verified = false;
+    // SECURITY: fail closed. This endpoint is unauthenticated by necessity —
+    // without a signing secret there is nothing distinguishing Resend from an
+    // arbitrary caller, and processing the payload would let anyone inject
+    // inbound emails into the Email Center and forge delivery/open/click events.
+    // Configure RESEND_WEBHOOK_SECRET (or the Resend webhook secret in admin
+    // settings) to enable the endpoint.
+    await prisma.webhookLog.create({
+      data: {
+        source: 'resend',
+        eventType: safeParse(raw)?.type || 'unknown',
+        payload: safeParse(raw),
+        verified: false,
+        processed: false,
+        error: 'rejected: no webhook signing secret configured',
+      },
+    });
+    console.error(
+      '[email-webhooks] Rejected Resend webhook — no signing secret configured. ' +
+        'Set RESEND_WEBHOOK_SECRET or the Resend webhook secret in admin settings.'
+    );
+    return res.status(401).json({ error: true, message: 'Webhook signature verification is not configured' });
   }
 
   if (!payload || typeof payload !== 'object') {

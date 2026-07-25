@@ -32,4 +32,18 @@ export class AppError extends Error {
   static internal(message: string = 'Internal server error') {
     return new AppError(message, 500, false);
   }
+
+  /**
+   * A third-party API (AI provider, mail relay, social platform) failed in a way
+   * the operator needs to read verbatim — e.g. "OpenAI error: incorrect API key".
+   *
+   * Use this instead of a bare `Error` for upstream failures whose text should
+   * reach the UI. The global error handler only forwards messages from
+   * operational `AppError`s; anything else is replaced with a generic string to
+   * avoid leaking internal details. Never pass a raw driver/ORM error message
+   * through this — only text that is safe for a user to read.
+   */
+  static upstream(message: string) {
+    return new AppError(message, 502);
+  }
 }

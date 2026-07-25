@@ -5,6 +5,8 @@
  * No external agent runtimes, no shell access. Pure API calls.
  */
 
+import { AppError } from './errors.js';
+
 export type AiProvider = 'openai' | 'claude' | 'gemini';
 
 export interface AiMessage {
@@ -88,7 +90,7 @@ async function callOpenAI(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as Record<string, any>;
-    throw new Error(`OpenAI error: ${err?.error?.message || res.statusText}`);
+    throw AppError.upstream(`OpenAI error: ${err?.error?.message || res.statusText}`);
   }
 
   const data = await res.json() as Record<string, any>;
@@ -156,7 +158,7 @@ async function callClaude(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as Record<string, any>;
-    throw new Error(`Claude error: ${err?.error?.message || res.statusText}`);
+    throw AppError.upstream(`Claude error: ${err?.error?.message || res.statusText}`);
   }
 
   const data = await res.json() as Record<string, any>;
@@ -319,7 +321,7 @@ export async function callAI(
     case 'gemini':
       return callGemini(apiKey, messages, tools, model);
     default:
-      throw new Error(`Unknown AI provider: ${provider}`);
+      throw AppError.badRequest(`Unknown AI provider: ${provider}`);
   }
 }
 
@@ -345,7 +347,7 @@ export function resolveProviderKey(
       claude: 'Anthropic (Claude)',
       gemini: 'Google Gemini',
     };
-    throw new Error(
+    throw AppError.badRequest(
       `${label[provider]} API key is not configured. Go to Settings → AI Settings to add it.`,
     );
   }

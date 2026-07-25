@@ -93,9 +93,6 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
   const documentType = type === 'Invoice' ? 'invoice' : 'proforma';
 
   const [verificationToken, setVerificationToken] = useState<string>('');
-  const phoneRowRef = useRef<HTMLDivElement | null>(null);
-  const phoneIconRef = useRef<SVGSVGElement | null>(null);
-  const phoneTextRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
     const fetchToken = async () => {
@@ -108,27 +105,6 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
   const verificationUrl = verificationToken
     ? getShortVerificationUrl(verificationToken)
     : '';
-
-  useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7891/ingest/c6d26856-ebcd-4639-9d6e-816efcb76a2c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1b217a'},body:JSON.stringify({sessionId:'1b217a',runId:'pre-fix',hypothesisId:'H6',location:'src/components/PremiumInvoice.tsx:107',message:'PremiumInvoice rendered',data:{docType:type,hasPhone:!!settings.phone,hasEmail:!!settings.adminEmail,hasWebsite:!!settings.website,userAgent:typeof navigator!=='undefined'?navigator.userAgent:'unknown'},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  }, [type, settings.phone, settings.adminEmail, settings.website]);
-
-  useEffect(() => {
-    if (!settings.phone || !phoneRowRef.current || !phoneIconRef.current || !phoneTextRef.current) return;
-    const rowRect = phoneRowRef.current.getBoundingClientRect();
-    const iconRect = phoneIconRef.current.getBoundingClientRect();
-    const textRect = phoneTextRef.current.getBoundingClientRect();
-    const iconCenter = iconRect.top + iconRect.height / 2;
-    const textCenter = textRect.top + textRect.height / 2;
-    const textStyle = window.getComputedStyle(phoneTextRef.current);
-    const iconStyle = window.getComputedStyle(phoneIconRef.current);
-
-    // #region agent log
-    fetch('http://127.0.0.1:7891/ingest/c6d26856-ebcd-4639-9d6e-816efcb76a2c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1b217a'},body:JSON.stringify({sessionId:'1b217a',runId:'pre-fix',hypothesisId:'H1',location:'src/components/PremiumInvoice.tsx:110',message:'Footer phone row layout metrics',data:{docType:type,hasPhone:!!settings.phone,rowHeight:rowRect.height,iconHeight:iconRect.height,textHeight:textRect.height,iconCenterOffsetToTextCenter:Math.round((iconCenter-textCenter)*100)/100,rowAlignItems:window.getComputedStyle(phoneRowRef.current).alignItems,textLineHeight:textStyle.lineHeight,textFontSize:textStyle.fontSize,iconDisplay:iconStyle.display,iconVerticalAlign:iconStyle.verticalAlign},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  }, [settings.phone, type]);
 
   // Clean client approval/revision comments from notes for the official invoice document layout
   const cleanedNotes = data.notes
@@ -587,11 +563,11 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
 
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center', justifyContent: 'flex-end', opacity: 0.9 }}>
               {settings.phone && (
-                <div ref={phoneRowRef} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <svg ref={phoneIconRef} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
                   </svg>
-                  <span ref={phoneTextRef} style={{ fontSize: '11px', fontWeight: 600 }}>{settings.phone}</span>
+                  <span style={{ fontSize: '11px', fontWeight: 600 }}>{settings.phone}</span>
                 </div>
               )}
               {settings.adminEmail && (

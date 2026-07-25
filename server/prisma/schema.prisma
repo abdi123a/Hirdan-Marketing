@@ -466,19 +466,19 @@ model AgencySettings {
   stamp                         String? @map("stamp") @db.LongText
   enableRecaptcha               Boolean @default(false) @map("enable_recaptcha")
   recaptchaSiteKey              String? @map("recaptcha_site_key")
-  recaptchaSecretKey            String? @map("recaptcha_secret_key")
+  recaptchaSecretKey            String? @map("recaptcha_secret_key") @db.Text
   googleAnalyticsEnabled        Boolean @default(false) @map("google_analytics_enabled")
   googleAnalyticsMeasurementId  String? @map("google_analytics_measurement_id")
   developmentMode               Boolean @default(false) @map("development_mode")
   comingSoonMessage             String? @map("coming_soon_message") @db.LongText
   comingSoonCountdown           String? @map("coming_soon_countdown")
   comingSoonBullets             String? @map("coming_soon_bullets") @db.LongText
-  openAiApiKey                  String? @map("open_ai_api_key")
-  claudeApiKey                  String? @map("claude_api_key")
-  geminiApiKey                  String? @map("gemini_api_key")
+  openAiApiKey                  String? @map("open_ai_api_key") @db.Text
+  claudeApiKey                  String? @map("claude_api_key") @db.Text
+  geminiApiKey                  String? @map("gemini_api_key") @db.Text
   mainAiProvider                String  @default("openai") @map("main_ai_provider")
-  resendApiKey                  String? @map("resend_api_key")
-  resendWebhookSecret           String? @map("resend_webhook_secret")
+  resendApiKey                  String? @map("resend_api_key") @db.Text
+  resendWebhookSecret           String? @map("resend_webhook_secret") @db.Text
   resendInboundDomain           String? @map("resend_inbound_domain")
   emailFrom                     String? @map("email_from")
   mailerName                    String? @map("mailer_name")
@@ -496,7 +496,7 @@ model AgencySettings {
   googleDriveRefreshToken       String? @map("google_drive_refresh_token") @db.LongText
   googleDriveEnabled            Boolean @default(false) @map("google_drive_enabled")
   oneSignalAppId                String? @map("one_signal_app_id")
-  oneSignalApiKey               String? @map("one_signal_api_key")
+  oneSignalApiKey               String? @map("one_signal_api_key") @db.Text
   oneSignalEnabled              Boolean @default(false) @map("one_signal_enabled")
 
   metaEnabled      Boolean @default(false) @map("meta_enabled")

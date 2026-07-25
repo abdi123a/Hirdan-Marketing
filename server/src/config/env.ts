@@ -53,7 +53,13 @@ const envSchema = z.object({
   APP_URL: z.string().url().optional(),
 
   // ─── Social Media Security & Storage ───
-  TOKEN_ENCRYPTION_KEY: z.string().optional(),
+  // Required: this key encrypts social OAuth tokens *and* the third-party
+  // credentials stored in AgencySettings (see lib/settings-secrets.ts). Booting
+  // without it would mean silently falling back to plaintext secrets, so fail fast.
+  // Generate with: openssl rand -hex 32
+  TOKEN_ENCRYPTION_KEY: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64}$/, 'TOKEN_ENCRYPTION_KEY must be 64 hex characters (32 bytes) — generate with: openssl rand -hex 32'),
   OAUTH_STATE_SECRET: z.string().optional(),
   STORAGE_PROVIDER: z.string().default('local'),
   STORAGE_PUBLIC_URL: z.string().default('http://localhost:3001'),
