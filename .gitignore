@@ -36,3 +36,7 @@ uploads/
 backups/
 **/backups/
 
+# Claude local settings
+.claude/
+
+

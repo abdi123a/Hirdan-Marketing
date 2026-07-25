@@ -81,6 +81,7 @@ const EmailCenterPage = lazy(() => import("./pages/EmailCenterPage.tsx"));
 const EmailMailboxesPage = lazy(() => import("./pages/EmailMailboxesPage.tsx"));
 const EmailTemplatesPage = lazy(() => import("./pages/EmailTemplatesPage.tsx"));
 const EmailAnalyticsPage = lazy(() => import("./pages/EmailAnalyticsPage.tsx"));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage.tsx"));
 
 const queryClient = new QueryClient();
 
@@ -288,6 +289,7 @@ function AppRoutes() {
         <Route path="email/mailboxes" element={<EmailMailboxesPage />} />
         <Route path="email/templates" element={<EmailTemplatesPage />} />
         <Route path="email/analytics" element={<EmailAnalyticsPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

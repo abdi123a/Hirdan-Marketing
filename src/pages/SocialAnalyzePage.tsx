@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { capStatus, capAvailable, capOf, type Capabilities, type MetricKey, type EffectiveStatus } from "@/lib/platform-capabilities";
+import { PostDetailDialog, openExternal } from "@/components/social/PostDetailDialog";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip,
   CartesianGrid, BarChart, Bar, Legend, PieChart, Pie, Cell,
@@ -18,7 +19,7 @@ import {
   ArrowUp, ArrowDown, Minus, ChevronLeft, ChevronRight, Activity, Zap, Target, Upload, Lock, Info,
   Globe, Clock, CheckCircle2, XCircle, AlertCircle, FileText, Repeat2, LayoutGrid,
   Image, Video, Film, BookOpen, Layers, List, BarChart3, Cpu, Sparkles, Send,
-  MapPin, Hash, MousePointer, TrendingDown, SortDesc,
+  MapPin, Hash, MousePointer, TrendingDown, SortDesc, ExternalLink,
 } from "lucide-react";
 
 // ─────────────────────────── Types ───────────────────────────────────────────
@@ -61,7 +62,11 @@ interface FullAnalytics {
 
 interface TopPost {
   id: string; caption: string; mediaUrls: any; mediaType: string | null;
+  thumbnailUrl?: string | null; isVerified?: boolean; verificationSource?: string | null;
   publishedAt: string | null; destinations: any[]; imported?: boolean; link?: string | null;
+  // 'scheduled' = published from here, 'imported' = found only in an export,
+  // 'both' = we published it and the export confirmed its real numbers.
+  source?: "scheduled" | "imported" | "both";
   likes: number; comments: number; shares: number; saved: number;
   views: number; reach: number; impressions: number; engagement: number; engagementRate: number;
 }
@@ -105,12 +110,12 @@ const ENG_SERIES: { key: EngSeriesKey; label: string; color: string }[] = [
 // shares×3 + saves×2). One metric shows at a time → always a single y-axis.
 type EngFocus = "total" | "likes" | "comments" | "shares" | "saved" | "score";
 const ENG_FOCUS: { key: EngFocus; label: string; color: string; derived?: boolean }[] = [
-  { key: "total",    label: "Total",          color: "#6366f1" },
-  { key: "likes",    label: "Likes",          color: "#ef4444" },
-  { key: "comments", label: "Comments",       color: "#3b82f6" },
-  { key: "shares",   label: "Shares",         color: "#10b981" },
-  { key: "saved",    label: "Saves",          color: "#f59e0b" },
-  { key: "score",    label: "Weighted Score", color: "#7c3aed", derived: true },
+  { key: "total",    label: "Total (All Metrics)", color: "#6366f1" },
+  { key: "likes",    label: "Likes",              color: "#ef4444" },
+  { key: "comments", label: "Comments",           color: "#3b82f6" },
+  { key: "shares",   label: "Shares",             color: "#10b981" },
+  { key: "saved",    label: "Saves",              color: "#f59e0b" },
+  { key: "score",    label: "Weighted Score",     color: "#7c3aed", derived: true },
 ];
 const ENG_VIEW_KEY = "social-eng-trend-v2";
 
@@ -229,14 +234,31 @@ const KPICard = ({ label, value, growth, icon: Icon, color, isRate = false, suff
 // ─────────────────────────── Chart tooltip ───────────────────────────────────
 const ChartTip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
+  let formattedDate = label;
+  try {
+    const d = new Date(label);
+    if (!isNaN(d.getTime())) {
+      formattedDate = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    }
+  } catch {}
+
+  const totalSum = payload.reduce((acc: number, p: any) => acc + (Number(p.value) || 0), 0);
+
   return (
-    <div className="bg-card border border-border rounded-xl shadow-lg p-3 text-xs min-w-[120px]">
-      <p className="font-bold text-foreground mb-1.5">{label}</p>
+    <div className="bg-card/95 backdrop-blur border border-border/80 rounded-xl shadow-xl p-3 text-xs min-w-[160px] space-y-1.5">
+      <div className="flex items-center justify-between border-b border-border/40 pb-1.5 mb-1 gap-2">
+        <span className="font-bold text-foreground">{formattedDate}</span>
+        {payload.length > 1 && (
+          <span className="text-[11px] font-extrabold text-primary font-mono">{fmtN(totalSum)} total</span>
+        )}
+      </div>
       {payload.map((p: any) => (
-        <div key={p.dataKey} className="flex items-center gap-1.5 text-muted-foreground">
-          <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
-          <span className="capitalize">{p.name}:</span>
-          <span className="font-semibold text-foreground ml-auto pl-4">{fmtN(Number(p.value))}</span>
+        <div key={p.dataKey || p.name} className="flex items-center justify-between gap-3 text-muted-foreground">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ background: p.color || p.stroke }} />
+            <span className="font-medium text-foreground/90 capitalize truncate">{p.name}:</span>
+          </div>
+          <span className="font-bold text-foreground font-mono">{fmtN(Number(p.value))}</span>
         </div>
       ))}
     </div>
@@ -279,9 +301,9 @@ const getFirstMediaUrl = (mediaUrls: any): string | null => {
   return null;
 };
 
-const PostThumbnail = ({ mediaUrls, mediaType }: { mediaUrls: any; mediaType?: string | null }) => {
+const PostThumbnail = ({ mediaUrls, mediaType, thumbnailUrl }: { mediaUrls: any; mediaType?: string | null; thumbnailUrl?: string | null }) => {
   const [imgError, setImgError] = useState(false);
-  const rawUrl = getFirstMediaUrl(mediaUrls);
+  const rawUrl = thumbnailUrl || getFirstMediaUrl(mediaUrls);
 
   if (!rawUrl || imgError) {
     const isVid = mediaType === "video" || mediaType === "reel" || mediaType === "short";
@@ -294,13 +316,10 @@ const PostThumbnail = ({ mediaUrls, mediaType }: { mediaUrls: any; mediaType?: s
   }
 
   const resolved = getFullUrl(rawUrl);
-  const isVideoFile =
-    mediaType === "video" ||
-    mediaType === "reel" ||
-    mediaType === "short" ||
-    /\.(mp4|mov|webm|m4v|ogv|avi)(\?.*)?$/i.test(rawUrl);
+  const isDirectVideoFile = /\.(mp4|mov|webm|m4v|ogv|avi)(\?.*)?$/i.test(rawUrl);
+  const isVideoContent = mediaType === "video" || mediaType === "reel" || mediaType === "short" || isDirectVideoFile;
 
-  if (isVideoFile) {
+  if (isDirectVideoFile) {
     return (
       <div className="relative h-16 w-16 shrink-0 rounded-xl overflow-hidden border border-border/50 shadow-sm bg-black/90 flex items-center justify-center">
         <video
@@ -318,12 +337,19 @@ const PostThumbnail = ({ mediaUrls, mediaType }: { mediaUrls: any; mediaType?: s
   }
 
   return (
-    <img
-      src={resolved}
-      className="h-16 w-16 rounded-xl object-cover shrink-0 border border-border/50 shadow-sm"
-      alt=""
-      onError={() => setImgError(true)}
-    />
+    <div className="relative h-16 w-16 shrink-0 rounded-xl overflow-hidden border border-border/50 shadow-sm">
+      <img
+        src={resolved}
+        className="h-full w-full object-cover"
+        alt=""
+        onError={() => setImgError(true)}
+      />
+      {isVideoContent && (
+        <div className="absolute inset-0 bg-black/25 flex items-center justify-center pointer-events-none">
+          <Play className="h-3.5 w-3.5 text-white fill-white opacity-90 drop-shadow-sm" />
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -343,6 +369,9 @@ export default function SocialAnalyzePage() {
   const [postSort, setPostSort] = useState<"engagement"|"likes"|"views"|"newest"|"oldest">("engagement");
   const [postsLoading, setPostsLoading] = useState(false);
   const POST_LIMIT = 10;
+
+  // Post detail panel (metrics for one post + link out to the live post)
+  const [detailPostId, setDetailPostId] = useState<string | null>(null);
 
   // Global filters
   const [activeTab, setActiveTab] = useState("overview");
@@ -454,17 +483,13 @@ export default function SocialAnalyzePage() {
     else { setAnalytics(null); setPosts([]); }
   }, [selectedClient, getAnalyticsQueryString]);
 
-  useEffect(() => {
-    if (selectedClient) fetchPosts();
-  }, [selectedClient, postPage, postSort, postSearch, getAnalyticsQueryString]);
-
   const handleRefresh = async () => {
     if (!selectedClient || isRefreshing) return;
     setIsRefreshing(true);
     try {
       await apiFetch<any>(`/social/analytics/${selectedClient}/refresh`, { method: "POST" });
-      toast({ title: "✅ Metrics Synced", description: "Fresh data pulled from platform APIs." });
-      fetchAnalytics();
+      toast({ title: "✅ Metrics & Video Thumbnails Synced", description: "Fresh metrics, video thumbnails, and verifications pulled." });
+      await Promise.all([fetchAnalytics(), fetchPosts()]);
     } catch (err: any) {
       toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
     } finally { setIsRefreshing(false); }
@@ -933,21 +958,21 @@ export default function SocialAnalyzePage() {
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div>
                         <CardTitle className="text-sm font-bold flex items-center gap-1.5"><Activity className="h-4 w-4 text-primary"/>Engagement Trend</CardTitle>
-                        <CardDescription className="text-xs">How your audience interacts, day by day — pick any metric to focus</CardDescription>
+                        <CardDescription className="text-xs">How your audience interacts over time ({dateRangeText}) — choose a metric or view all together</CardDescription>
                       </div>
                       <button onClick={() => setEngShowAvg(v => !v)}
                         className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all flex items-center gap-1 ${engShowAvg?"bg-primary/10 text-primary border-primary/30":"bg-muted/30 text-muted-foreground border-border"}`}>
                         <TrendingUp className="h-3 w-3"/> 7-day avg
                       </button>
                     </div>
-                    {/* Focus selector — the persistent filter; also selects the DERIVED metrics */}
+                    {/* Focus selector — options for Total (All) or individual metrics */}
                     <div className="flex flex-wrap items-center gap-1.5 mt-3">
                       {ENG_FOCUS.map(f => {
                         const on = engFocus === f.key;
                         return (
                           <button key={f.key} onClick={() => setEngFocus(f.key)}
                             style={on ? { background: `${f.color}1a`, color: f.color, borderColor: `${f.color}66` } : undefined}
-                            className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${on?"":"border-border/50 bg-background text-muted-foreground hover:text-foreground"}`}>
+                            className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1 rounded-full border transition-all ${on?"shadow-sm font-bold":"border-border/50 bg-background text-muted-foreground hover:text-foreground hover:bg-muted/30"}`}>
                             <span className="w-2 h-2 rounded-full" style={{ background: f.color }}/>
                             {f.label}
                             {f.derived && <Sparkles className="h-2.5 w-2.5"/>}
@@ -958,7 +983,7 @@ export default function SocialAnalyzePage() {
                   </CardHeader>
                   <CardContent className="p-6">
                     {engData.length === 0 ? (
-                      <div className="h-72"><NoData msg="No engagement recorded yet — publish content or import data to see the trend"/></div>
+                      <div className="h-72"><NoData msg="No engagement recorded for the selected period — adjust dates or sync data"/></div>
                     ) : (
                       <div className="space-y-5">
                         {/* Headline stats for the focused metric */}
@@ -977,31 +1002,73 @@ export default function SocialAnalyzePage() {
                           </div>
                         </div>
 
-                        {/* Focus-metric gradient area */}
-                        <div className="h-60 w-full">
+                        {/* Interactive multi-metric / focus-metric chart */}
+                        <div className="h-64 w-full">
                           <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={engData} margin={{top:8,right:8,left:-18,bottom:0}}>
+                            <ComposedChart data={engData} margin={{top:12,right:12,left:-16,bottom:0}}>
                               <defs>
-                                <linearGradient id="engFocusGrad" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="5%" stopColor={engFocusMeta.color} stopOpacity={0.32}/>
-                                  <stop offset="95%" stopColor={engFocusMeta.color} stopOpacity={0.02}/>
+                                <linearGradient id="engGradTotal" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25}/>
+                                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0.01}/>
+                                </linearGradient>
+                                <linearGradient id="engGradLikes" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.25}/>
+                                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0.01}/>
+                                </linearGradient>
+                                <linearGradient id="engGradComments" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.25}/>
+                                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.01}/>
+                                </linearGradient>
+                                <linearGradient id="engGradShares" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
+                                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.01}/>
+                                </linearGradient>
+                                <linearGradient id="engGradSaved" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25}/>
+                                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.01}/>
+                                </linearGradient>
+                                <linearGradient id="engGradScore" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#7c3aed" stopOpacity={0.25}/>
+                                  <stop offset="95%" stopColor="#7c3aed" stopOpacity={0.01}/>
                                 </linearGradient>
                               </defs>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
-                              <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>String(v).slice(5)} minTickGap={18}/>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.06)"/>
+                              <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false}
+                                tickFormatter={v => {
+                                  try {
+                                    const d = new Date(v);
+                                    return isNaN(d.getTime()) ? String(v).slice(5) : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                                  } catch { return String(v); }
+                                }}
+                                minTickGap={24}
+                              />
                               <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))} width={44}/>
                               <Tooltip content={<ChartTip/>} cursor={{ stroke: engFocusMeta.color, strokeOpacity: 0.3, strokeWidth: 1.5 }}/>
-                              <Area type="monotone" dataKey={engFocus} name={engFocusMeta.label} stroke={engFocusMeta.color} strokeWidth={2.5} fill="url(#engFocusGrad)" dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff" }}/>
+
+                              {engFocus === "total" ? (
+                                <>
+                                  <Area type="monotone" dataKey="total" name="Total Interactions" stroke="#6366f1" strokeWidth={2.5} fill="url(#engGradTotal)" fillOpacity={0.15} activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff" }} />
+                                  <Line type="monotone" dataKey="likes" name="Likes" stroke="#ef4444" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                                  <Line type="monotone" dataKey="comments" name="Comments" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                                  <Line type="monotone" dataKey="shares" name="Shares" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                                  <Line type="monotone" dataKey="saved" name="Saves" stroke="#f59e0b" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                                </>
+                              ) : (
+                                <Area type="monotone" dataKey={engFocus} name={engFocusMeta.label} stroke={engFocusMeta.color} strokeWidth={2.5}
+                                  fill={`url(#engGrad${engFocus === "saved" ? "Saved" : engFocus.charAt(0).toUpperCase() + engFocus.slice(1)})`}
+                                  dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff" }}
+                                />
+                              )}
                               {engShowAvg && <Line type="monotone" dataKey="avg" name="7-Day Avg" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 3" dot={false}/>}
-                            </AreaChart>
+                            </ComposedChart>
                           </ResponsiveContainer>
                         </div>
 
                         {/* Composition — where the interactions come from */}
                         <div className="pt-1">
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Composition</span>
-                            <span className="text-[10px] text-muted-foreground">{fmtN(engStats.compTotal)} total interactions</span>
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Composition Breakdown</span>
+                            <span className="text-[10px] text-muted-foreground font-semibold">{fmtN(engStats.compTotal)} total interactions</span>
                           </div>
                           <div className="flex h-2.5 rounded-full overflow-hidden bg-muted gap-[2px]">
                             {engStats.comp.map(c => c.value > 0 && (
@@ -1010,11 +1077,11 @@ export default function SocialAnalyzePage() {
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3">
                             {engStats.comp.map(c => (
-                              <button key={c.key} onClick={() => setEngFocus(c.key)} className="flex items-center gap-2 text-left rounded-lg hover:bg-muted/40 transition-colors p-1 -m-1">
-                                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c.color }}/>
+                              <button key={c.key} onClick={() => setEngFocus(c.key)} className="flex items-center gap-2 text-left rounded-lg hover:bg-muted/40 transition-colors p-1.5 -m-1.5 border border-transparent hover:border-border/40">
+                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c.color }}/>
                                 <div className="min-w-0">
-                                  <p className="text-[10px] text-muted-foreground leading-none">{c.label}</p>
-                                  <p className="text-xs font-bold leading-tight mt-0.5">{fmtN(c.value)} <span className="text-[10px] font-medium text-muted-foreground">{Math.round((c.value / engStats.compTotal) * 100)}%</span></p>
+                                  <p className="text-[10px] text-muted-foreground leading-none font-medium">{c.label}</p>
+                                  <p className="text-xs font-bold leading-tight mt-0.5">{fmtN(c.value)} <span className="text-[10px] font-medium text-muted-foreground">({Math.round((c.value / engStats.compTotal) * 100)}%)</span></p>
                                 </div>
                               </button>
                             ))}
@@ -1023,7 +1090,7 @@ export default function SocialAnalyzePage() {
 
                         {engFocusMeta.derived && (
                           <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                            <Info className="h-3 w-3"/> Weighted Score = likes×1 + comments×2 + shares×3 + saves×2 — a custom quality metric computed in-dashboard from your raw counts.
+                            <Info className="h-3 w-3 text-primary"/> Weighted Score = likes×1 + comments×2 + shares×3 + saves×2 — a custom quality metric computed in-dashboard from your raw counts.
                           </p>
                         )}
                       </div>
@@ -1284,14 +1351,51 @@ export default function SocialAnalyzePage() {
                       <div className="py-12"><NoData msg="No posts found — try adjusting your filters"/></div>
                     ) : posts.map(post => {
                       return (
-                        <div key={post.id} className="p-4 hover:bg-muted/5 transition-all">
+                        // Click-anywhere is a convenience only — no focus ring on
+                        // the row itself (an inset ring on a wide row reads as
+                        // stray lines). The View button below is the real,
+                        // keyboard-reachable control.
+                        <div
+                          key={post.id}
+                          onClick={() => setDetailPostId(post.id)}
+                          className="p-4 hover:bg-muted/5 transition-all cursor-pointer"
+                        >
                           <div className="flex items-start gap-3">
-                            <PostThumbnail mediaUrls={post.mediaUrls} mediaType={post.mediaType} />
+                            <PostThumbnail mediaUrls={post.mediaUrls} mediaType={post.mediaType} thumbnailUrl={post.thumbnailUrl} />
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold line-clamp-2 leading-normal">{post.caption||"(no caption)"}</p>
+                              <div className="flex items-start gap-2">
+                                <p className="text-xs font-semibold line-clamp-2 leading-normal flex-1">{post.caption||"(no caption)"}</p>
+                                {/* Actions: open the live post directly, or inspect its metrics. */}
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {post.link && (
+                                    <button
+                                      onClick={e => { e.stopPropagation(); openExternal(post.link!); }}
+                                      title="Open the live post in a new tab"
+                                      aria-label="Open the live post in a new tab"
+                                      className="p-1.5 rounded-lg border border-border/70 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                                    >
+                                      <ExternalLink size={12}/>
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={e => { e.stopPropagation(); setDetailPostId(post.id); }}
+                                    className="px-2 py-1 rounded-lg border border-border/70 text-[10px] font-bold text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                                  >
+                                    View
+                                  </button>
+                                </div>
+                              </div>
                               <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                                 {(post.destinations||[]).map((d:any,i:number)=><span key={i}>{getPlatformIcon(d.platform,"h-3 w-3 object-contain")}</span>)}
                                 {post.mediaType && <span className="bg-muted border border-border/50 px-1.5 py-0.5 rounded text-[9px] font-bold capitalize">{post.mediaType}</span>}
+                                {post.isVerified && (
+                                  <span className="bg-emerald-500/10 border border-emerald-500/25 px-1.5 py-0.5 rounded text-[9px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1" title={`Verified video via ${post.verificationSource === 'api' ? 'TikTok API' : 'TikTok oEmbed'}`}>
+                                    <CheckCircle2 size={10} className="text-emerald-500" />
+                                    Verified
+                                  </span>
+                                )}
+                                {post.source === "both" && <span className="bg-violet-500/10 border border-violet-500/25 px-1.5 py-0.5 rounded text-[9px] font-bold text-violet-600" title="Published from here — metrics confirmed by your imported export">Verified by export</span>}
+                                {post.source === "imported" && <span className="bg-violet-500/10 border border-violet-500/25 px-1.5 py-0.5 rounded text-[9px] font-bold text-violet-600" title="Posted natively — found in your imported export">Imported</span>}
                                 <span className="text-[10px] text-muted-foreground">{post.publishedAt?new Date(post.publishedAt).toLocaleDateString():""}</span>
                               </div>
                               <div className="flex items-center gap-3 mt-2 flex-wrap">
@@ -1846,6 +1950,12 @@ export default function SocialAnalyzePage() {
           </div>
         </div>
       )}
+
+      <PostDetailDialog
+        postId={detailPostId}
+        open={detailPostId !== null}
+        onOpenChange={open => { if (!open) setDetailPostId(null); }}
+      />
     </div>
   );
 }

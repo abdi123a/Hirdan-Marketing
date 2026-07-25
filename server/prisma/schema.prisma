@@ -1479,6 +1479,10 @@ model ImportedPost {
   shares          Int?
   views           Int?
   source          String    @default("import")
+  thumbnailUrl    String?   @map("thumbnail_url") @db.Text
+  isVerified      Boolean   @default(false) @map("is_verified")
+  verifiedAt      DateTime? @map("verified_at")
+  verificationSource String? @map("verification_source")
   importedAt      DateTime  @default(now()) @map("imported_at")
 
   account SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)

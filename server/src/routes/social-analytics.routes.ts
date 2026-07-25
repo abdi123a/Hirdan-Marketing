@@ -3,6 +3,9 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { collectDailyInsights } from '../lib/social/social-scheduler.js';
 import { computeCapabilities, METRIC_AVAILABILITY, type MetricKey } from '../lib/social/metric-availability.js';
+import { unifyPosts, destinationLink, type AccountMeta } from '../lib/social/post-merge.js';
+import { derivePermalink, tiktokVideoIdOf } from '../lib/social/permalink.service.js';
+import { enrichTikTokVideosBatch } from '../lib/social/tiktok-enrich.service.js';
 
 const router = Router();
 
@@ -128,7 +131,14 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       where: postWhere,
       include: {
         insights: true,
-        destinations: { select: { platform: true, status: true, platformPostId: true } },
+        // platformPostUrl + socialAccountId let us build "View on platform"
+        // links and match TikTok posts to their imported export rows.
+        destinations: {
+          select: {
+            platform: true, status: true, platformPostId: true,
+            platformPostUrl: true, socialAccountId: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -168,6 +178,23 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       prisma.importedPost.findMany({ where: { socialAccountId: { in: accountIds } }, orderBy: { views: 'desc' } }),
     ]);
     const platformOf = new Map(accounts.map(a => [a.id, a.platform.toLowerCase()]));
+    // Account metadata needed to build public post URLs (handles, page ids).
+    const accountMeta = new Map<string, AccountMeta>(
+      accounts.map(a => [a.id, {
+        platform: a.platform.toLowerCase(),
+        platformUsername: a.platformUsername,
+        pageId: a.pageId,
+      }]),
+    );
+
+    // One row per real-world post: a TikTok video we published that also appears
+    // in an imported export is merged instead of listed (and counted) twice.
+    const { posts: unifiedPosts, mergedCount } = unifyPosts({
+      posts: recentPosts,
+      imported: importedVideos,
+      platformFilter,
+      accounts: accountMeta,
+    });
 
     // ── KPIs ──
     const currFollowers = accountsWithLatest.reduce((s, a) => s + (a.latestFollowers?.followers || 0), 0);
@@ -241,11 +268,22 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       })
       .sort((a: any, b: any) => a.date.localeCompare(b.date));
 
-    // ── Engagement trend ──
+    // ── Engagement trend (Full timeline over selected date range) ──
     const engMap: Record<string, any> = {};
-    for (const p of recentPosts) {
-      const ds = new Date(p.publishedAt!).toISOString().split('T')[0];
-      if (!engMap[ds]) engMap[ds] = { date: ds, likes: 0, comments: 0, shares: 0, saved: 0, views: 0, total: 0 };
+    const currDateTracker = new Date(since);
+    while (currDateTracker <= until) {
+      const ds = currDateTracker.toISOString().split('T')[0];
+      engMap[ds] = { date: ds, likes: 0, comments: 0, shares: 0, saved: 0, views: 0, total: 0, score: 0 };
+      currDateTracker.setUTCDate(currDateTracker.getUTCDate() + 1);
+    }
+
+    // 1. Accumulate per-post engagements for posts published on each date
+    for (const p of publishedPosts) {
+      if (!p.publishedAt) continue;
+      const pDate = new Date(p.publishedAt);
+      if (pDate < since || pDate > until) continue;
+      const ds = pDate.toISOString().split('T')[0];
+      if (!engMap[ds]) engMap[ds] = { date: ds, likes: 0, comments: 0, shares: 0, saved: 0, views: 0, total: 0, score: 0 };
       for (const ins of scopedInsights(p.insights, platformFilter)) {
         engMap[ds].likes += ins.likes || 0;
         engMap[ds].comments += ins.comments || 0;
@@ -253,32 +291,40 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
         engMap[ds].saved += ins.saved || 0;
         engMap[ds].views += ins.views || 0;
       }
+    }
+
+    // 2. Accumulate daily account metric engagements for platforms reporting daily totals
+    for (const m of currentMetrics as any[]) {
+      const ds = m.date.toISOString().split('T')[0];
+      if (!engMap[ds]) engMap[ds] = { date: ds, likes: 0, comments: 0, shares: 0, saved: 0, views: 0, total: 0, score: 0 };
+      if (metricPlatformOk((m.account?.platform || '').toLowerCase(), 'likes')) engMap[ds].likes += m.likes || 0;
+      if (metricPlatformOk((m.account?.platform || '').toLowerCase(), 'comments')) engMap[ds].comments += m.comments || 0;
+      if (metricPlatformOk((m.account?.platform || '').toLowerCase(), 'shares')) engMap[ds].shares += m.shares || 0;
+      if (metricPlatformOk((m.account?.platform || '').toLowerCase(), 'videoViews')) engMap[ds].views += m.videoViews || 0;
+    }
+
+    // 3. Compute derived totals and scores per day
+    for (const ds of Object.keys(engMap)) {
       const d = engMap[ds];
       d.total = d.likes + d.comments + d.shares + d.saved;
+      d.score = d.likes * 1 + d.comments * 2 + d.shares * 3 + d.saved * 2;
     }
+
     const engagementTrend = Object.values(engMap).sort((a: any, b: any) => a.date.localeCompare(b.date));
 
     // ── Content type performance ──
+    // Built from the unified list, so a published-and-then-imported video counts
+    // once — previously it was added by both loops, inflating the video bucket.
     const ctMap: Record<string, any> = {};
-    for (const p of recentPosts) {
+    for (const p of unifiedPosts) {
       const t = (p.mediaType || 'text').toLowerCase();
       if (!ctMap[t]) ctMap[t] = { type: t, count: 0, reach: 0, engagement: 0, views: 0, saved: 0, impressions: 0 };
       ctMap[t].count += 1;
-      for (const ins of scopedInsights(p.insights, platformFilter)) {
-        ctMap[t].reach += ins.reach || 0;
-        ctMap[t].engagement += (ins.likes || 0) + (ins.comments || 0) + (ins.shares || 0) + (ins.saved || 0);
-        ctMap[t].views += ins.views || 0;
-        ctMap[t].saved += ins.saved || 0;
-        ctMap[t].impressions += ins.impressions || 0;
-      }
-    }
-    // Fold imported TikTok videos into the "video" content-type bucket.
-    for (const v of importedVideos) {
-      const t = 'video';
-      if (!ctMap[t]) ctMap[t] = { type: t, count: 0, reach: 0, engagement: 0, views: 0, saved: 0, impressions: 0 };
-      ctMap[t].count += 1;
-      ctMap[t].engagement += (v.likes || 0) + (v.comments || 0) + (v.shares || 0);
-      ctMap[t].views += v.views || 0;
+      ctMap[t].reach += p.reach;
+      ctMap[t].engagement += p.engagement;
+      ctMap[t].views += p.views;
+      ctMap[t].saved += p.saved;
+      ctMap[t].impressions += p.impressions;
     }
     const contentTypePerformance = Object.values(ctMap).map((t: any) => ({
       type: t.type, count: t.count,
@@ -332,33 +378,8 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       }
     }
 
-    // ── Top posts (scheduled posts + imported native videos) ──
-    const scheduledTop = recentPosts.map(p => {
-      const ins = scopedInsights(p.insights, platformFilter);
-      const likes = sum(ins, 'likes'), comments = sum(ins, 'comments'), shares = sum(ins, 'shares'),
-        saved = sum(ins, 'saved'), views = sum(ins, 'views'), reach = sum(ins, 'reach'), impressions = sum(ins, 'impressions');
-      const engagement = likes + comments + shares + saved;
-      const er = reach > 0 ? parseFloat(((engagement / reach) * 100).toFixed(2)) : 0;
-      return {
-        id: p.id, caption: p.caption, mediaUrls: p.mediaUrls, mediaType: p.mediaType,
-        publishedAt: p.publishedAt, destinations: p.destinations, imported: false, link: null as string | null,
-        likes, comments, shares, saved, views, reach, impressions, engagement, engagementRate: er,
-      };
-    });
-    // Imported TikTok videos are already platform-scoped via accountIds.
-    const importedTop = importedVideos.map(v => {
-      const likes = v.likes || 0, comments = v.comments || 0, shares = v.shares || 0, views = v.views || 0;
-      const engagement = likes + comments + shares;
-      const plat = platformOf.get(v.socialAccountId) || 'tiktok';
-      return {
-        id: `imported:${v.id}`, caption: v.title || '', mediaUrls: null as any, mediaType: 'video',
-        publishedAt: v.postedAt, destinations: [{ platform: plat, status: 'PUBLISHED', platformPostId: v.externalId }],
-        imported: true, link: v.link,
-        likes, comments, shares, saved: 0, views, reach: 0, impressions: 0, engagement,
-        engagementRate: views > 0 ? parseFloat(((engagement / views) * 100).toFixed(2)) : 0,
-      };
-    });
-    const topPosts = [...scheduledTop, ...importedTop].sort((a, b) => b.engagement - a.engagement).slice(0, 50);
+    // ── Top posts (published + imported, already merged into one list) ──
+    const topPosts = [...unifiedPosts].sort((a, b) => b.engagement - a.engagement).slice(0, 50);
 
     // ── AI Insights ──
     const DAYS_NAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -448,7 +469,9 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     // ── Response ──
     res.json({
       capabilities: caps,
-      provenance: { imported: Array.from(importedPlatforms), lastImportedAt },
+      // mergedCount = posts we published that were also found in an imported
+      // export, and are therefore shown (and counted) once rather than twice.
+      provenance: { imported: Array.from(importedPlatforms), lastImportedAt, mergedCount },
       kpis: {
         followers: kpi('followers', currFollowers, prevFollowers),
         reach: kpi('reach', currReach, prevReach),
@@ -551,55 +574,52 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
       where,
       include: {
         insights: true,
-        destinations: { select: { platform: true } },
+        destinations: {
+          select: {
+            platform: true, status: true, platformPostId: true,
+            platformPostUrl: true, socialAccountId: true,
+          },
+        },
       },
       orderBy: { publishedAt: 'desc' },
       take: 500, // fetch all then sort
     });
 
     const platformFilter = (platform || 'ALL').toUpperCase();
-    const scheduledScores = posts
+    const inWindow = posts
       .filter(p => p.publishedAt && new Date(p.publishedAt) >= since && new Date(p.publishedAt) <= until)
-      .filter(p => matchesPlatform(p.destinations, platformFilter))
-      .map(p => {
-        const ins = scopedInsights(p.insights, platformFilter);
-        const likes = sum(ins, 'likes'), comments = sum(ins, 'comments'),
-          shares = sum(ins, 'shares'), saved = sum(ins, 'saved'),
-          views = sum(ins, 'views'), reach = sum(ins, 'reach'), impressions = sum(ins, 'impressions');
-        const engagement = likes + comments + shares + saved;
-        return { ...p, imported: false, link: null as string | null, engagement, likes, comments, shares, saved, views, reach, impressions, engagementRate: reach > 0 ? parseFloat(((engagement / reach) * 100).toFixed(2)) : 0 };
-      });
+      .filter(p => matchesPlatform(p.destinations, platformFilter));
 
     // Imported native videos (TikTok Studio). A curated top set — included
     // regardless of the day window, but honoring platform / content-type / search.
-    let importedScores: any[] = [];
-    if ((!contentType || contentType === 'ALL' || contentType === 'video')) {
-      const accts = await prisma.socialAccount.findMany({ where: { clientId, isActive: true }, select: { id: true, platform: true } });
-      const acctPlat = new Map(accts.map(a => [a.id, a.platform.toLowerCase()]));
+    const accts = await prisma.socialAccount.findMany({
+      where: { clientId, isActive: true },
+      select: { id: true, platform: true, platformUsername: true, pageId: true },
+    });
+    const accountMeta = new Map<string, AccountMeta>(
+      accts.map(a => [a.id, { platform: a.platform.toLowerCase(), platformUsername: a.platformUsername, pageId: a.pageId }]),
+    );
+
+    let importedRows: any[] = [];
+    if (!contentType || contentType === 'ALL' || contentType === 'video') {
       const eligibleIds = accts
         .filter(a => platformFilter === 'ALL' || a.platform.toUpperCase() === platformFilter)
         .map(a => a.id);
       if (eligibleIds.length) {
         const vids = await prisma.importedPost.findMany({ where: { socialAccountId: { in: eligibleIds } } });
-        importedScores = vids
-          .filter(v => !search || (v.title || '').toLowerCase().includes(search.toLowerCase()))
-          .map(v => {
-            const likes = v.likes || 0, comments = v.comments || 0, shares = v.shares || 0, views = v.views || 0;
-            const engagement = likes + comments + shares;
-            const plat = acctPlat.get(v.socialAccountId) || 'tiktok';
-            return {
-              id: `imported:${v.id}`, clientId, caption: v.title || '', mediaUrls: null, mediaType: 'video',
-              publishedAt: v.postedAt, status: 'PUBLISHED',
-              destinations: [{ platform: plat, status: 'PUBLISHED', platformPostId: v.externalId }],
-              imported: true, link: v.link,
-              engagement, likes, comments, shares, saved: 0, views, reach: 0, impressions: 0,
-              engagementRate: views > 0 ? parseFloat(((engagement / views) * 100).toFixed(2)) : 0,
-            };
-          });
+        importedRows = vids.filter(v => !search || (v.title || '').toLowerCase().includes(search.toLowerCase()));
       }
     }
 
-    const withScores: any[] = [...scheduledScores, ...importedScores];
+    // Merge the two sources so a video that was published through the system and
+    // then imported appears once, carrying both its identity and its real metrics.
+    const { posts: unified } = unifyPosts({
+      posts: inWindow,
+      imported: importedRows,
+      platformFilter,
+      accounts: accountMeta,
+    });
+    const withScores: any[] = unified.map(p => ({ ...p, clientId, status: 'PUBLISHED' }));
 
     if (sortBy === 'likes') withScores.sort((a, b) => b.likes - a.likes);
     else if (sortBy === 'views') withScores.sort((a, b) => b.views - a.views);
@@ -615,11 +635,161 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
   }
 });
 
-// ── 3. Force sync from platform APIs ─────────────────────────────────────
+// ── 3. One post's full detail (powers the post detail panel) ────────────────
+//
+// Accepts either a SocialPost id or the "imported:<id>" form the lists emit for
+// export-only content, and answers with a per-platform metric breakdown plus the
+// public link to open the real post.
+router.get('/analytics/post/:id', authenticate, async (req, res, next) => {
+  try {
+    const { id } = req.params as { id: string };
+
+    // ── Export-only content ──
+    if (id.startsWith('imported:')) {
+      const row = await prisma.importedPost.findUnique({
+        where: { id: id.slice('imported:'.length) },
+        include: { account: true },
+      });
+      if (!row) { res.status(404).json({ error: 'Post not found' }); return; }
+
+      const platform = row.account.platform.toLowerCase();
+      const likes = row.likes || 0, comments = row.comments || 0, shares = row.shares || 0, views = row.views || 0;
+      const engagement = likes + comments + shares;
+      const link = row.link
+        || derivePermalink(platform, row.externalId, { platformUsername: row.account.platformUsername });
+
+      res.json({
+        id,
+        caption: row.title || '',
+        mediaUrls: null,
+        mediaType: 'video',
+        publishedAt: row.postedAt,
+        source: 'imported',
+        link,
+        totals: {
+          likes, comments, shares, saved: 0, views, reach: 0, impressions: 0,
+          engagement,
+          engagementRate: views > 0 ? parseFloat(((engagement / views) * 100).toFixed(2)) : 0,
+        },
+        breakdown: [{
+          platform,
+          accountName: row.account.displayName,
+          accountHandle: row.account.platformUsername,
+          status: 'PUBLISHED',
+          link,
+          source: 'import',
+          updatedAt: row.importedAt,
+          metrics: { likes, comments, shares, saved: null, views, reach: null, impressions: null },
+        }],
+        provenance: { source: 'import', lastImportedAt: row.account.lastImportedAt },
+      });
+      return;
+    }
+
+    // ── Content we published (possibly enriched by an import) ──
+    const post = await prisma.socialPost.findUnique({
+      where: { id },
+      include: {
+        insights: true,
+        destinations: { include: { socialAccount: true } },
+      },
+    });
+    if (!post) { res.status(404).json({ error: 'Post not found' }); return; }
+
+    const accountMeta = new Map<string, AccountMeta>(
+      post.destinations.map(d => [d.socialAccountId, {
+        platform: d.socialAccount.platform.toLowerCase(),
+        platformUsername: d.socialAccount.platformUsername,
+        pageId: d.socialAccount.pageId,
+      }]),
+    );
+
+    // Pull in any export rows for this post's TikTok destinations.
+    const accountIds = post.destinations.map(d => d.socialAccountId);
+    const importedRows = accountIds.length
+      ? await prisma.importedPost.findMany({ where: { socialAccountId: { in: accountIds } } })
+      : [];
+
+    const { posts: [unifiedPost] } = unifyPosts({
+      posts: [post],
+      imported: importedRows,
+      platformFilter: 'ALL',
+      accounts: accountMeta,
+    });
+
+    // Per-destination breakdown: export numbers where they exist for that
+    // platform, live insight numbers otherwise.
+    const importedByExternalId = new Map(importedRows.map(r => [String(r.externalId), r]));
+    const breakdown = post.destinations.map(d => {
+      const platform = d.platform.toLowerCase();
+      const videoId = tiktokVideoIdOf(d);
+      const imp = videoId ? importedByExternalId.get(videoId) : undefined;
+      const ins = post.insights.find(i => (i.platform || '').toUpperCase() === d.platform.toUpperCase());
+
+      return {
+        platform,
+        accountName: d.socialAccount.displayName,
+        accountHandle: d.socialAccount.platformUsername,
+        status: d.status,
+        link: destinationLink(d, accountMeta),
+        source: imp ? 'import' : 'api',
+        updatedAt: imp ? imp.importedAt : (ins?.fetchedAt ?? d.publishedAt),
+        error: d.lastError,
+        metrics: imp
+          ? { likes: imp.likes, comments: imp.comments, shares: imp.shares, saved: null, views: imp.views, reach: null, impressions: null }
+          : {
+              likes: ins?.likes ?? null, comments: ins?.comments ?? null, shares: ins?.shares ?? null,
+              saved: ins?.saved ?? null, views: ins?.views ?? null, reach: ins?.reach ?? null,
+              impressions: ins?.impressions ?? null,
+            },
+      };
+    });
+
+    res.json({
+      id: post.id,
+      caption: post.caption,
+      mediaUrls: post.mediaUrls,
+      mediaType: post.mediaType,
+      publishedAt: post.publishedAt,
+      scheduledFor: post.scheduledFor,
+      status: post.status,
+      source: unifiedPost?.source ?? 'scheduled',
+      link: unifiedPost?.link ?? null,
+      totals: {
+        likes: unifiedPost?.likes ?? 0, comments: unifiedPost?.comments ?? 0,
+        shares: unifiedPost?.shares ?? 0, saved: unifiedPost?.saved ?? 0,
+        views: unifiedPost?.views ?? 0, reach: unifiedPost?.reach ?? 0,
+        impressions: unifiedPost?.impressions ?? 0,
+        engagement: unifiedPost?.engagement ?? 0,
+        engagementRate: unifiedPost?.engagementRate ?? 0,
+      },
+      breakdown,
+      provenance: { source: unifiedPost?.source ?? 'scheduled' },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── 4. Force sync from platform APIs ─────────────────────────────────────
 router.post('/analytics/:clientId/refresh', authenticate, async (req, res, next) => {
   try {
+    const { clientId } = req.params as { clientId: string };
     await collectDailyInsights();
-    res.json({ success: true, message: 'Analytics successfully refreshed' });
+
+    // Enrich thumbnails & verify TikTok imported posts for this client
+    const tiktokAccounts = await prisma.socialAccount.findMany({
+      where: { clientId, platform: 'tiktok' },
+      select: { id: true },
+    });
+
+    for (const acc of tiktokAccounts) {
+      await enrichTikTokVideosBatch(acc.id).catch((err) => {
+        console.warn(`TikTok video enrichment error for account ${acc.id}:`, err);
+      });
+    }
+
+    res.json({ success: true, message: 'Analytics and video thumbnails successfully refreshed' });
   } catch (err) {
     next(err);
   }

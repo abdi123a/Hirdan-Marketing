@@ -474,6 +474,35 @@ export async function getMetaInsights(accountId: string, token: string, platform
   }
 }
 
+/**
+ * Canonical public URL of a published Meta item.
+ *
+ * Facebook exposes `permalink_url`; Instagram and Threads expose `permalink`.
+ * Instagram's public URL uses an opaque shortcode that can't be derived from the
+ * media id, so this call is the only way to get a link the user can open.
+ * Returns null (never throws) when the field is unavailable — a missing link
+ * must not break publishing or analytics.
+ */
+export async function getMetaPermalink(
+  platformPostId: string,
+  token: string,
+  platform: 'facebook' | 'instagram' | 'threads'
+): Promise<string | null> {
+  const field = platform === 'facebook' ? 'permalink_url' : 'permalink';
+  // Threads lives on its own host, not the Facebook graph.
+  const base = platform === 'threads' ? 'https://graph.threads.net/v1.0' : GRAPH_URL;
+  try {
+    const { data } = await axios.get(`${base}/${platformPostId}`, {
+      params: { fields: field, access_token: token },
+    });
+    const url = data?.[field];
+    return typeof url === 'string' && url.startsWith('http') ? url : null;
+  } catch (err: any) {
+    console.warn(`[Meta] Could not fetch ${field} for ${platformPostId}:`, err.message);
+    return null;
+  }
+}
+
 export async function getMetaPostInsights(
   platformPostId: string,
   token: string,

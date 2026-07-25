@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import { publishPostToPlatform, refreshAccountToken, fetchPlatformInsights } from './platform-router.service.js';
 import { isRateLimitError } from './meta.service.js';
 import { decryptToken } from './token-crypto.service.js';
+import { captureDestinationPermalink, resolvePendingPermalinks } from './permalink.service.js';
 
 export async function processDuePosts(): Promise<void> {
   try {
@@ -70,6 +71,11 @@ export async function processDuePosts(): Promise<void> {
             lastError: null,
           },
         });
+
+        // Capture the public URL so the dashboard can link straight to the live
+        // post. Best-effort and non-fatal: platforms that need processing time
+        // (TikTok) get picked up later by resolvePendingPermalinks().
+        await captureDestinationPermalink(dest.id, dest.socialAccount, platformPostId);
       } catch (err: any) {
         const errorMsg = err.response?.data?.error?.message || err.message || 'Unknown error';
         console.error(`Error publishing post destination ${dest.id}:`, errorMsg);
@@ -606,6 +612,13 @@ export function startSocialScheduler(): void {
   // 3. Collect daily insights every day at 2 AM
   cron.schedule('0 2 * * *', () => {
     collectDailyInsights().catch(err => console.error('social scheduler collectDailyInsights error:', err));
+  });
+
+  // 4. Fill in missing public post URLs every 15 minutes. Mainly TikTok: at
+  //    publish time we only have a publish_id and the video is still processing,
+  //    so the real video link only becomes available a few minutes later.
+  cron.schedule('*/15 * * * *', () => {
+    resolvePendingPermalinks().catch(err => console.error('social scheduler resolvePendingPermalinks error:', err));
   });
 
   console.log('✔ Social media scheduler jobs successfully initialized');

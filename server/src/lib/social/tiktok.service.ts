@@ -366,6 +366,55 @@ export async function publishToTikTok({
   return result.publishId as string;
 }
 
+/**
+ * Poll the status of a publish job to recover the real, public video id.
+ *
+ * publishToTikTok() can only return a `publish_id` — TikTok's Content Posting
+ * API is asynchronous, and the video id that appears in the public URL only
+ * exists once processing finishes. Until then status is PROCESSING_* and there
+ * is no id to hand out; the caller is expected to retry later.
+ *
+ * NOTE: `publicaly_available_post_id` is spelled that way in TikTok's own API —
+ * it is their typo, not ours. We read the corrected spelling too in case they
+ * ever fix it.
+ */
+export async function fetchTikTokPublishStatus(
+  accessToken: string,
+  publishId: string,
+): Promise<{ status: string; videoId: string | null } | null> {
+  try {
+    const { data } = await axios.post(
+      'https://open.tiktokapis.com/v2/post/publish/status/fetch/',
+      { publish_id: publishId },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (data?.error?.code && data.error.code !== 'ok') {
+      console.warn(`[TikTok] publish status error for ${publishId}: ${data.error.message}`);
+      return null;
+    }
+
+    const payload = data?.data || {};
+    const ids: unknown =
+      payload.publicaly_available_post_id ?? payload.publicly_available_post_id;
+    const first = Array.isArray(ids) ? ids[0] : ids;
+    const videoId = first != null ? String(first) : null;
+
+    return {
+      status: String(payload.status || 'UNKNOWN'),
+      videoId: videoId && /^\d+$/.test(videoId) ? videoId : null,
+    };
+  } catch (err: any) {
+    console.warn(`[TikTok] Could not fetch publish status for ${publishId}:`, err.message);
+    return null;
+  }
+}
+
 export async function getTikTokInsights(accessToken: string): Promise<{ followers: number; reach: number | null; impressions: number | null; profileVisits: number | null }> {
   // FIX (made-up analytics): previously reach/impressions were derived as
   // followers*2 / followers*3 (or likes*1.5) — invented numbers, not real reach

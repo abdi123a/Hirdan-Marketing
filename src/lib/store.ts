@@ -40,6 +40,7 @@ export interface Project {
   id: string;
   name: string;
   client: string;
+  clientId?: string;
   description?: string;
   status: 'In Progress' | 'Completed' | 'On Hold' | 'Archived';
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
@@ -585,7 +586,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.31.11",
+  appVersion: "2.31.12",
   versionHistory: [
     {
       version: "2.23.0",
@@ -781,6 +782,7 @@ export const useAgencyStore = create<AgencyStore>()(
             id: p.id,
             name: p.name,
             client: p.client?.company || p.client?.name || 'Unknown',
+            clientId: p.clientId || p.client?.id,
             description: p.description,
             status: p.status.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ') as any,
             priority: p.priority.charAt(0).toUpperCase() + p.priority.slice(1).toLowerCase() as any,

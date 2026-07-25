@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { publishPostToPlatform } from '../lib/social/platform-router.service.js';
+import { captureDestinationPermalink } from '../lib/social/permalink.service.js';
 import { uploadSocialMediaFile } from '../lib/social/storage.service.js';
 import { callAI, resolveProviderKey } from '../lib/ai-provider.js';
 import multer from 'multer';
@@ -325,6 +326,10 @@ router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
             lastError: null,
           },
         });
+
+        // Store the live post URL for the "View on platform" action. Non-fatal;
+        // TikTok resolves later via resolvePendingPermalinks() once processed.
+        await captureDestinationPermalink(dest.id as string, dest.socialAccount, platformPostId);
       } catch (err: any) {
         hasErrors = true;
         const msg = err.response?.data?.error?.message || err.message || 'Publishing failed';
@@ -418,6 +423,10 @@ router.post('/posts/:id/retry', authenticate, async (req, res, next) => {
             lastError: null,
           },
         });
+
+        // Store the live post URL for the "View on platform" action. Non-fatal;
+        // TikTok resolves later via resolvePendingPermalinks() once processed.
+        await captureDestinationPermalink(dest.id as string, dest.socialAccount, platformPostId);
       } catch (err: any) {
         hasErrors = true;
         const msg = err.response?.data?.error?.message || err.message || 'Retry failed';

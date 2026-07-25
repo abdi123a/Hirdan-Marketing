@@ -4,6 +4,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuthStore, type ClientUser } from '@/lib/auth-store';
 import { useAgencyStore } from '@/lib/store';
 import { NotificationCenter } from '@/components/NotificationCenter';
+import NotificationsPage from './NotificationsPage';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -128,7 +129,7 @@ export default function ClientPortalPage() {
     documents: true
   };
 
-  const allowedSections = ['overview', ...Object.entries(portalAccess).filter(([_, v]) => v !== false).map(([k]) => k), 'account'];
+  const allowedSections = ['overview', ...Object.entries(portalAccess).filter(([_, v]) => v !== false).map(([k]) => k), 'account', 'notifications'];
 
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'overview';
@@ -2341,6 +2342,17 @@ export default function ClientPortalPage() {
                     )}
                   </div>
                 </motion.div>
+            )}
+
+            {/* Notifications Tab */}
+            {activeTab === 'notifications' && (
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <NotificationsPage />
+              </motion.div>
             )}
           </div>
         </main>

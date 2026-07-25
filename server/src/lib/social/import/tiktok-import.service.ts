@@ -14,9 +14,12 @@
 // videoId) — re-importing a fresh export just updates in place.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { createHash } from 'crypto';
 import { Readable } from 'stream';
 import ExcelJS from 'exceljs';
 import { prisma } from '../../prisma.js';
+import { enrichTikTokVideosBatch } from '../tiktok-enrich.service.js';
+import { videoIdFromLink } from '../permalink.service.js';
 
 export type TikTokFileType =
   | 'followerHistory'
@@ -74,12 +77,9 @@ export function parseMonthDay(input: unknown, ref: Date): Date | null {
   return cand;
 }
 
-/** TikTok video id from a video link. */
-export function videoIdFromLink(link: unknown): string | null {
-  if (!link) return null;
-  const m = String(link).match(/\/video\/(\d+)/);
-  return m ? m[1] : null;
-}
+// Canonical implementation lives with the other permalink helpers; re-exported
+// here so this module's existing importers keep working.
+export { videoIdFromLink };
 
 /** TikTok ids embed their creation time in the top 32 bits (Unix seconds). */
 export function videoIdToDate(id: string): Date | null {
@@ -88,6 +88,21 @@ export function videoIdToDate(id: string): Date | null {
     if (secs > 1_000_000_000 && secs < 4_000_000_000) return new Date(secs * 1000);
   } catch { /* not a bigint */ }
   return null;
+}
+
+/**
+ * A stable key for a content row whose link carries no TikTok id.
+ *
+ * Identifying a video is a nice-to-have; importing it is not. A row we cannot
+ * parse an id out of must still land in the database and still show up in the
+ * dashboard, so it gets a synthetic key instead of being dropped. The key is
+ * derived from the row's own content so re-importing the same export updates the
+ * row rather than duplicating it, and it is deliberately non-numeric so
+ * derivePermalink() can never mistake it for a real video id and invent a URL.
+ */
+function fallbackExternalId(link: string | null, title: string | null, rowIndex: number): string {
+  const basis = (link || title || `row-${rowIndex}`).trim().toLowerCase();
+  return `unlinked-${createHash('sha1').update(basis).digest('hex').slice(0, 16)}`;
 }
 
 function safeInt(v: unknown): number | null {
@@ -133,7 +148,14 @@ function cellValue(v: unknown): unknown {
   if (typeof v === 'object') {
     const o = v as Record<string, any>;
     if (Array.isArray(o.richText)) return o.richText.map((t: any) => t?.text ?? '').join('');
-    if ('hyperlink' in o) return o.text ?? o.hyperlink ?? null;
+    if ('hyperlink' in o) {
+      // Prefer whichever side actually carries a URL. TikTok Studio sometimes puts
+      // a truncated display label in `text`, and taking it blindly loses the video
+      // id that the whole content import keys on.
+      const text = typeof o.text === 'string' ? o.text.trim() : '';
+      if (/^https?:\/\//i.test(text)) return text;
+      return o.hyperlink ?? (text || null);
+    }
     if ('result' in o) return cellValue(o.result);
     if ('error' in o) return null;
     if ('text' in o) return o.text;
@@ -240,6 +262,9 @@ export async function importTikTokStudioFiles(
     externalId: string; title: string | null; link: string | null; postedAt: Date | null;
     likes: number | null; comments: number | null; shares: number | null; views: number | null;
   }[] = [];
+  // Rows imported under a synthetic key because their link carried no video id.
+  // Reported as a warning, never as a failure — they are in the dashboard either way.
+  let unlinkedVideos = 0;
 
   const upsertDaily = (d: Date, patch: Partial<DailyAcc>) => {
     const k = dateKey(d);
@@ -336,15 +361,23 @@ export async function importTikTokStudioFiles(
           break;
 
         case 'content':
-          for (const r of sheet.rows) {
+          for (let idx = 0; idx < sheet.rows.length; idx++) {
+            const r = sheet.rows[idx];
             // columns: Time, Video title, Video link, Post time, likes, comments, shares, views
             const link = r[2] ? String(r[2]).trim() : null;
-            const externalId = videoIdFromLink(link);
-            if (!externalId) continue;
+            const title = r[1] ? String(r[1]).trim() : null;
+            // Genuinely blank padding rows are the only ones worth skipping.
+            if (r.every(c => c == null || String(c).trim() === '')) continue;
+            // An unparseable link is NOT a reason to drop the video. The id is only
+            // an upsert key and a merge hint, both of which have workable
+            // fallbacks, so the row imports either way.
+            const videoId = videoIdFromLink(link);
+            if (!videoId) unlinkedVideos++;
+            const externalId = videoId || fallbackExternalId(link, title, idx);
             const postedAt = videoIdToDate(externalId) || parseMonthDay(r[3], now);
             videos.push({
               externalId,
-              title: r[1] ? String(r[1]).trim() : null,
+              title,
               link,
               postedAt,
               likes: safeInt(r[4]),
@@ -427,20 +460,36 @@ export async function importTikTokStudioFiles(
   }
 
   // Videos: upsert per external id.
-  for (const v of videos) {
-    await prisma.importedPost.upsert({
-      where: { socialAccountId_externalId: { socialAccountId: accountId, externalId: v.externalId } },
-      create: {
-        socialAccountId: accountId, platform: 'tiktok', externalId: v.externalId,
-        title: v.title, link: v.link, postedAt: v.postedAt,
-        likes: v.likes, comments: v.comments, shares: v.shares, views: v.views,
-        source: 'import', importedAt: now,
-      },
-      update: {
-        title: v.title, link: v.link, postedAt: v.postedAt,
-        likes: v.likes, comments: v.comments, shares: v.shares, views: v.views,
-        importedAt: now,
-      },
+  if (videos.length > 0) {
+    for (const v of videos) {
+      await prisma.importedPost.upsert({
+        where: { socialAccountId_externalId: { socialAccountId: accountId, externalId: v.externalId } },
+        create: {
+          socialAccountId: accountId, platform: 'tiktok', externalId: v.externalId,
+          title: v.title, link: v.link, postedAt: v.postedAt,
+          likes: v.likes, comments: v.comments, shares: v.shares, views: v.views,
+          source: 'import', importedAt: now,
+        },
+        update: {
+          title: v.title, link: v.link, postedAt: v.postedAt,
+          likes: v.likes, comments: v.comments, shares: v.shares, views: v.views,
+          importedAt: now,
+        },
+      });
+    }
+
+    if (unlinkedVideos > 0) {
+      warnings.push(
+        `${unlinkedVideos} video row(s) had no recognizable TikTok link — imported and visible, ` +
+        `but they cannot be auto-verified or auto-thumbnailed.`,
+      );
+    }
+
+    // Thumbnails and verification are enrichment, not a gate: the rows above are
+    // already committed, and this runs detached so a slow or failing TikTok API
+    // can neither delay nor fail the import.
+    enrichTikTokVideosBatch(accountId).catch((err) => {
+      console.error(`Background TikTok video enrichment error for account ${accountId}:`, err);
     });
   }
 

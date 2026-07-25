@@ -3,6 +3,7 @@ import multer from 'multer';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { importTikTokStudioFiles } from '../lib/social/import/tiktok-import.service.js';
+import { enrichTikTokVideosBatch } from '../lib/social/tiktok-enrich.service.js';
 
 const router = Router();
 
@@ -57,6 +58,46 @@ router.post('/import/tiktok/:accountId', authenticate, upload.array('files', 12)
   }
 });
 
+// ── Re-enrich & Verify Past Imported Videos for All Accounts ────────────────
+router.post('/import/tiktok/enrich-all', authenticate, async (_req, res, next) => {
+  try {
+    const tiktokAccounts = await prisma.socialAccount.findMany({
+      where: { platform: 'tiktok' },
+      select: { id: true },
+    });
+
+    let totalEnriched = 0;
+    let totalVerified = 0;
+
+    for (const acc of tiktokAccounts) {
+      const res = await enrichTikTokVideosBatch(acc.id, undefined, { force: true });
+      totalEnriched += res.enrichedCount;
+      totalVerified += res.verifiedCount;
+    }
+
+    res.json({ success: true, totalEnriched, totalVerified, accountsCount: tiktokAccounts.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Re-enrich & Verify Past Imported Videos for an Account ───────────────────
+router.post('/import/tiktok/:accountId/enrich', authenticate, async (req, res, next) => {
+  try {
+    const { accountId } = req.params as { accountId: string };
+    const account = await prisma.socialAccount.findUnique({ where: { id: accountId } });
+    if (!account) {
+      res.status(404).json({ error: 'Account not found' });
+      return;
+    }
+
+    const result = await enrichTikTokVideosBatch(accountId, undefined, { force: true });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── Current import status for an account (powers the provenance chip) ────────
 router.get('/import/:accountId/status', authenticate, async (req, res, next) => {
   try {
@@ -70,18 +111,19 @@ router.get('/import/:accountId/status', authenticate, async (req, res, next) => 
       return;
     }
 
-    const [daily, demographics, activity, videos] = await Promise.all([
+    const [daily, demographics, activity, videos, unverifiedVideos] = await Promise.all([
       prisma.accountInsightDaily.count({ where: { socialAccountId: accountId, source: 'import' } }),
       prisma.accountDemographic.count({ where: { socialAccountId: accountId } }),
       prisma.accountActivity.count({ where: { socialAccountId: accountId } }),
       prisma.importedPost.count({ where: { socialAccountId: accountId } }),
+      prisma.importedPost.count({ where: { socialAccountId: accountId, isVerified: false } }),
     ]);
 
     res.json({
       accountId,
       platform: account.platform,
       lastImportedAt: account.lastImportedAt,
-      counts: { daily, demographics, activity, videos },
+      counts: { daily, demographics, activity, videos, unverifiedVideos },
       hasData: daily + demographics + activity + videos > 0,
     });
   } catch (err) {
