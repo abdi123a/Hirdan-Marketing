@@ -415,10 +415,13 @@ export default function SocialAccountsPage() {
       )}
 
       {/* ── Main Layout ── */}
-      <div className="grid lg:grid-cols-12 gap-7 items-start">
+      {/* `min-w-0` on the columns: grid items default to `min-width: auto`, so
+          without it the widest child (the filter strip) pushed both columns past
+          the viewport and the page overflowed sideways on a phone. */}
+      <div className="grid min-w-0 lg:grid-cols-12 gap-7 items-start">
 
         {/* ── LEFT: API Integrations Panel ── */}
-        <div className="lg:col-span-4 xl:col-span-3 space-y-5 lg:sticky lg:top-6">
+        <div className="min-w-0 lg:col-span-4 xl:col-span-3 space-y-5 lg:sticky lg:top-6">
           <Card className="rounded-2xl border border-border/80 shadow-sm overflow-hidden">
             <CardHeader className="bg-muted/5 border-b border-border/40 py-4 px-5">
               <CardTitle className="text-sm font-black flex items-center gap-2">
@@ -481,7 +484,7 @@ export default function SocialAccountsPage() {
         </div>
 
         {/* ── RIGHT: Brand Workspaces ── */}
-        <div className="lg:col-span-8 xl:col-span-9 space-y-5">
+        <div className="min-w-0 lg:col-span-8 xl:col-span-9 space-y-5">
 
           {/* Search + Filter + Sort */}
           <div className="flex flex-col sm:flex-row gap-3">
@@ -564,7 +567,7 @@ export default function SocialAccountsPage() {
                     "border-border/80"
                   }`}>
                     {/* Workspace header */}
-                    <div className={`px-6 py-4 border-b border-border/40 ${
+                    <div className={`px-4 py-4 border-b border-border/40 sm:px-6 ${
                       ws.healthStatus === "critical" ? "bg-red-50/40" :
                       ws.healthStatus === "warning" ? "bg-amber-50/30" :
                       "bg-muted/5"
@@ -577,7 +580,9 @@ export default function SocialAccountsPage() {
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="font-black text-base text-foreground truncate">{ws.clientCompany}</h3>
+                              {/* Full width on phones so the badge wraps below
+                                  rather than squeezing the name to "Tok…". */}
+                              <h3 className="w-full truncate font-black text-base text-foreground sm:w-auto">{ws.clientCompany}</h3>
                               <HealthBadge status={ws.healthStatus} />
                             </div>
                             <p className="text-xs text-muted-foreground mt-0.5">{ws.clientName} · {ws.accountCount} account{ws.accountCount !== 1 ? "s" : ""}</p>

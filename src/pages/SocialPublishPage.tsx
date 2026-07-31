@@ -2762,7 +2762,7 @@ export default function SocialPublishPage() {
           {/* Composer Header */}
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/50 px-4 py-3 pr-12 sm:px-6 sm:py-4">
             <div className="flex min-w-0 items-center gap-2 sm:gap-4">
-              <h2 className="text-base font-bold text-foreground">{editingPostId ? "Edit Post" : "Create Post"}</h2>
+              <h2 className="whitespace-nowrap text-base font-bold text-foreground">{editingPostId ? "Edit Post" : "Create Post"}</h2>
               {selectedPlatforms.length > 0 && (
                 <div className="hidden sm:flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
                   <span>{selectedPlatforms.length} platform{selectedPlatforms.length !== 1 ? "s" : ""}</span>
