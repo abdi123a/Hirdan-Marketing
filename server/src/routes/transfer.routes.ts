@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
-import multer from "multer";
+import multer, { MulterError } from "multer";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
@@ -128,11 +128,19 @@ const BLOCKED_EXTENSIONS = new Set([
   ".svg",  // SVG can embed arbitrary JS
 ]);
 
+/**
+ * Keep these in step with `client_max_body_size` on the nginx `/api/` proxy
+ * locations. nginx rejects an oversized body itself, before Express ever sees
+ * it, so a cap raised here alone changes nothing in production.
+ */
+const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB per individual file
+const MAX_FILES = 300;                        // max files per upload
+
 const upload = multer({
   storage,
   limits: {
-    fileSize: 2 * 1024 * 1024 * 1024, // 2 GB cap per individual file
-    files: 300,                         // max 300 files per upload
+    fileSize: MAX_FILE_SIZE,
+    files: MAX_FILES,
   },
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
@@ -142,6 +150,35 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+/**
+ * Runs the multer middleware, translating its rejections into `AppError`s.
+ *
+ * Multer reports failures either as a `MulterError` (size and count limits) or
+ * as the plain `Error` our `fileFilter` raises. Neither is operational, so the
+ * global error handler replaces the message with a bare 500 "Internal server
+ * error" — the uploader is never told whether the file was too large, too many,
+ * or a blocked type. Each case below is already safe to show a user.
+ */
+function uploadFiles(req: Request, res: Response, next: NextFunction): void {
+  upload.array("file", MAX_FILES)(req, res, (err: unknown) => {
+    if (!err) return next();
+
+    if (err instanceof MulterError) {
+      switch (err.code) {
+        case "LIMIT_FILE_SIZE":
+          return next(new AppError(`Each file must be ${formatBytes(MAX_FILE_SIZE)} or smaller.`, 413));
+        case "LIMIT_FILE_COUNT":
+        case "LIMIT_UNEXPECTED_FILE":
+          return next(AppError.badRequest(`You can upload at most ${MAX_FILES} files at once.`));
+        default:
+          return next(AppError.badRequest(`Upload rejected: ${err.message}`));
+      }
+    }
+
+    return next(AppError.badRequest(err instanceof Error ? err.message : "Upload rejected."));
+  });
+}
 
 /** Zip an array of files into a single archive, resolves with the final byte count. */
 function zipFiles(files: Express.Multer.File[], zipPath: string): Promise<number> {
@@ -203,7 +240,7 @@ router.post(
   authenticate,
   requireRole("ADMIN", "MANAGER", "STAFF"),
   uploadLimiter,
-  upload.array("file", 300),
+  uploadFiles,
   async (req: Request, res: Response, next: NextFunction): Promise<any> => {
     const uploadedFiles = (req.files as Express.Multer.File[]) ?? [];
     try {
