@@ -64,10 +64,18 @@ export default function DashboardLayout() {
 
   return (
     <SidebarProvider open={!isLandingEditor}>
-      <div className="min-h-screen flex w-full bg-background font-sans">
+      {/*
+        The shell owns the viewport height and `main` is the only scroll
+        container. Previously the whole document scrolled, and because
+        html/body/#root all set `overflow-x: hidden` — which makes them scroll
+        containers — the header's `position: sticky` resolved against a box that
+        never scrolled, so it just slid away on mobile. `h-dvh` keeps this
+        correct while a phone's URL bar shows and hides.
+      */}
+      <div className="h-dvh flex w-full overflow-hidden bg-background font-sans">
         {!isLandingEditor && <AppSidebar />}
-        <div className="flex-1 flex flex-col min-w-0">
-          {!isLandingEditor && <header className="shrink-0 sticky top-0 z-10 border-b border-border bg-card/80 backdrop-blur-md">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          {!isLandingEditor && <header className="shrink-0 z-30 border-b border-border bg-card/80 backdrop-blur-md">
             <div className="h-14 md:h-16 flex items-center justify-between gap-2 px-4 md:px-6">
               <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
                 {/* Mobile Sidebar Toggle & Logo */}
@@ -136,7 +144,7 @@ export default function DashboardLayout() {
               />
             </form>
           </header>}
-          <main className={isLandingEditor ? "flex-1 overflow-auto min-w-0" : "flex-1 overflow-auto p-4 md:p-6 lg:p-8 min-w-0"}>
+          <main className={isLandingEditor ? "flex-1 overflow-y-auto overflow-x-hidden min-w-0 min-h-0" : "flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 lg:p-8 min-w-0 min-h-0"}>
             <Suspense fallback={<SuspenseFallback />}>
               <Outlet />
             </Suspense>

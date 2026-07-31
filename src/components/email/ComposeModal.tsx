@@ -166,7 +166,9 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
   return (
     <Dialog open={open} onOpenChange={(v) => !v && saveDraftAndClose()}>
       <DialogContent
-        className="flex max-h-[88vh] max-w-3xl flex-col gap-0 overflow-hidden p-0"
+        /* Full-screen on phones — a compose window squeezed into a centred card
+           leaves almost no room for the body once the toolbars are stacked. */
+        className="flex h-[100dvh] max-h-[100dvh] w-full max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:h-auto sm:max-h-[88vh] sm:w-[calc(100%-2rem)] sm:max-w-3xl sm:rounded-lg"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
@@ -206,7 +208,7 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
           <div className="flex items-center gap-2 border-b px-4 py-1.5">
             <span className="w-12 text-xs text-muted-foreground">To</span>
             <div className="flex-1"><EmailChipsInput value={to} onChange={setTo} placeholder="Recipients" className="border-0 px-0" /></div>
-            <div className="flex gap-2 text-xs text-muted-foreground">
+            <div className="flex shrink-0 gap-2 text-xs text-muted-foreground">
               {!showCc && <button onClick={() => setShowCc(true)} className="hover:text-foreground">Cc</button>}
               {!showBcc && <button onClick={() => setShowBcc(true)} className="hover:text-foreground">Bcc</button>}
             </div>
@@ -259,14 +261,14 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
 
           {/* Schedule row */}
           {showSchedule && (
-            <div className="flex items-center gap-2 border-t px-4 py-2 text-sm">
-              <Clock className="h-4 w-4 text-muted-foreground" />
+            <div className="flex flex-wrap items-center gap-2 border-t px-4 py-2 text-sm">
+              <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">Send at</span>
               <Input
                 type="datetime-local"
                 value={scheduledAt}
                 onChange={(e) => setScheduledAt(e.target.value)}
-                className="h-8 w-auto text-xs"
+                className="h-8 w-auto min-w-0 flex-1 text-xs sm:flex-none"
               />
               {scheduledAt && (
                 <button onClick={() => { setScheduledAt(''); setShowSchedule(false); }} className="text-xs text-muted-foreground hover:text-foreground">
@@ -277,8 +279,8 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center gap-2 border-t px-4 py-2.5">
+        {/* Footer — wraps on narrow screens instead of pushing controls off-screen */}
+        <div className="flex flex-wrap items-center gap-2 border-t px-4 py-2.5">
           <Button onClick={handleSend} disabled={send.isPending} className="gap-1.5">
             {send.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             {scheduledAt ? 'Schedule' : 'Send'}
@@ -296,8 +298,8 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
             <Clock className="h-4 w-4" />
           </Button>
 
-          <div className="ml-1 flex items-center gap-1">
-            <Flag className={cn('h-4 w-4', priority === 'HIGH' ? 'text-red-500' : priority === 'LOW' ? 'text-muted-foreground' : 'text-muted-foreground')} />
+          <div className="flex items-center gap-1 sm:ml-1">
+            <Flag className={cn('h-4 w-4 shrink-0', priority === 'HIGH' ? 'text-red-500' : 'text-muted-foreground')} />
             <Select value={priority} onValueChange={(v) => setPriority(v as EmailPriority)}>
               <SelectTrigger className="h-8 w-[110px] text-xs">
                 <SelectValue />
@@ -312,7 +314,10 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
 
           <div className="ml-auto flex items-center gap-1">
             <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={saveDraftAndClose}>
-              <Save className="h-4 w-4" /> Save draft
+              <Save className="h-4 w-4" />
+              {/* The icon alone carries this once space is tight */}
+              <span className="hidden sm:inline">Save draft</span>
+              <span className="sr-only sm:hidden">Save draft</span>
             </Button>
           </div>
         </div>

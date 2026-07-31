@@ -37,6 +37,7 @@ const mainItems = [
   { title: "Invoices", url: "/dashboard/invoices", icon: Receipt },
   { title: "Subscriptions", url: "/dashboard/subscriptions", icon: CreditCard },
   { title: "Social Media", url: "/dashboard/social-media", icon: Share2 },
+  { title: "Strategy Decks", url: "/dashboard/social-media/presentation", icon: Presentation },
   { title: "File Transfer", url: "/dashboard/transfers", icon: UploadCloud },
   { title: "Monthly Reports", url: "/dashboard/reports/monthly", icon: Presentation },
   { title: "Financial Reports", url: "/dashboard/reports/financial", icon: BarChart3 },

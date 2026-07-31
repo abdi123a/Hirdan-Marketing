@@ -347,23 +347,26 @@ export default function SocialAccountsPage() {
   const metaEnabled = platformStatus.facebook?.enabled || platformStatus.instagram?.enabled;
 
   return (
-    <div className="p-6 space-y-7 max-w-screen-2xl">
+    <div className="p-4 sm:p-6 space-y-6 sm:space-y-7 max-w-screen-2xl">
 
       {/* ── Page Header ── */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border/40 pb-5">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-foreground">Social Account Management</h1>
+          <h1 className="text-xl sm:text-2xl font-black tracking-tight text-foreground">Social Account Management</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Manage brand workspaces, platform integrations, and connected accounts.</p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* Wraps instead of pushing the primary action off-screen on a phone. */}
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
           <Button variant="outline" size="sm" onClick={fetchData} className="rounded-xl gap-2 border-border">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
           <Button variant="outline" onClick={() => openImport()} className="rounded-xl gap-2 px-4 font-bold border-violet-200 text-violet-700 hover:bg-violet-50">
             <Upload className="h-4 w-4" /> Import Data
           </Button>
-          <Button onClick={() => { setWizardStep(1); setWizardClientId(""); setWizardPlatform(""); setWizardOpen(true); }} className="rounded-xl gap-2 px-5 shadow-md font-bold">
-            <Plus className="h-4 w-4" /> Connect Social Account
+          <Button onClick={() => { setWizardStep(1); setWizardClientId(""); setWizardPlatform(""); setWizardOpen(true); }} className="w-full rounded-xl gap-2 px-5 shadow-md font-bold sm:w-auto">
+            <Plus className="h-4 w-4" />
+            <span className="sm:hidden">Connect Account</span>
+            <span className="hidden sm:inline">Connect Social Account</span>
           </Button>
         </div>
       </div>
@@ -491,9 +494,11 @@ export default function SocialAccountsPage() {
                 className="pl-9 rounded-xl h-10 border-border"
               />
             </div>
-            <div className="flex items-center gap-2">
+            {/* The four tabs plus the sort select overflow 375px, so the strip
+                scrolls on its own and the select drops below when needed. */}
+            <div className="flex min-w-0 items-center gap-2">
               {/* Filter tabs */}
-              <div className="flex bg-muted/50 rounded-xl border border-border/50 p-0.5 gap-0.5">
+              <div className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto rounded-xl border border-border/50 bg-muted/50 p-0.5 sm:flex-none">
                 {[
                   { key: "all", label: "All" },
                   { key: "connected", label: "Healthy" },
@@ -503,7 +508,7 @@ export default function SocialAccountsPage() {
                   <button
                     key={tab.key}
                     onClick={() => setFilterTab(tab.key as any)}
-                    className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${filterTab === tab.key ? "bg-background shadow-sm text-foreground border border-border/50" : "text-muted-foreground hover:text-foreground"}`}
+                    className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${filterTab === tab.key ? "bg-background shadow-sm text-foreground border border-border/50" : "text-muted-foreground hover:text-foreground"}`}
                   >
                     {tab.label}
                   </button>
@@ -601,7 +606,7 @@ export default function SocialAccountsPage() {
                       </div>
 
                       {/* Platform icons + stats */}
-                      <div className="mt-4 flex items-center justify-between gap-4">
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                         {/* Connected platform icons */}
                         <div className="flex items-center gap-2 flex-wrap">
                           {ws.connectedPlatforms.map(plat => (
@@ -849,7 +854,7 @@ export default function SocialAccountsPage() {
             </div>
           </DialogHeader>
 
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             {/* Step 1: Select Client */}
             {wizardStep === 1 && (
               <div className="space-y-4">
@@ -956,7 +961,7 @@ export default function SocialAccountsPage() {
             <p className="text-xs text-muted-foreground mt-1">Upload an official analytics export (TikTok Studio) to enrich an account with reach, demographics, and per-video metrics the API can't provide.</p>
           </DialogHeader>
 
-          <div className="p-6 space-y-5">
+          <div className="space-y-5 p-4 sm:p-6">
             {importResult ? (
               /* ── Success summary ── */
               <div className="space-y-4">
@@ -973,7 +978,7 @@ export default function SocialAccountsPage() {
                     </div>
                   ))}
                 </div>
-                <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                   {[["Days", importResult.dailyDates], ["Demo", importResult.demographics], ["Activity", importResult.activityCells], ["Videos", importResult.videos]].map(([l, v]: any) => (
                     <div key={l} className="rounded-lg bg-muted/40 border border-border/50 p-2"><p className="text-lg font-black">{v ?? 0}</p><p className="text-[9px] uppercase font-bold text-muted-foreground">{l}</p></div>
                   ))}

@@ -2757,11 +2757,11 @@ export default function SocialPublishPage() {
 
       {/* ── REDESIGNED COMPOSER DIALOG ── */}
       <Dialog open={isComposerOpen} onOpenChange={handleOpenChange}>
-        <DialogContent className={`rounded-2xl overflow-hidden p-0 max-h-[92vh] flex flex-col bg-background border border-border transition-all duration-200 ${isFullscreen ? "max-w-[98vw] h-[95vh]" : "max-w-5xl md:max-w-6xl w-full"}`}>
+        <DialogContent className={`flex h-[100dvh] max-h-[100dvh] w-full max-w-none flex-col overflow-hidden rounded-none border-border bg-background p-0 transition-all duration-200 sm:h-auto sm:max-h-[92vh] sm:rounded-2xl sm:border ${isFullscreen ? "sm:h-[95vh] sm:max-w-[98vw]" : "sm:w-[calc(100%-2rem)] sm:max-w-5xl md:max-w-6xl"}`}>
 
           {/* Composer Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-border/50 shrink-0">
-            <div className="flex items-center gap-4">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/50 px-4 py-3 pr-12 sm:px-6 sm:py-4">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-4">
               <h2 className="text-base font-bold text-foreground">{editingPostId ? "Edit Post" : "Create Post"}</h2>
               {selectedPlatforms.length > 0 && (
                 <div className="hidden sm:flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
@@ -2814,12 +2814,14 @@ export default function SocialPublishPage() {
             </div>
           </div>
 
-          {/* Composer Body */}
-          <div className="flex flex-1 min-h-0 overflow-hidden">
+          {/* Composer Body — stacks on phones, splits side-by-side from lg up.
+              Side-by-side below that left the editor with ~15px beside the
+              fixed 360px preview column. */}
+          <div className="flex flex-1 min-h-0 flex-col overflow-hidden lg:flex-row">
 
             {/* LEFT: Editor (scrollable) */}
-            <div className="flex-1 overflow-y-auto">
-              <div className="px-6 py-5 space-y-5">
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="space-y-5 px-4 py-4 sm:px-6 sm:py-5">
 
                 {/* Client + Campaign */}
                 <div className="grid grid-cols-2 gap-4">
@@ -3259,7 +3261,7 @@ export default function SocialPublishPage() {
 
             {/* RIGHT: Live Preview (fixed, non-scrolling relative to dialog) */}
             {showPreview && (
-              <div className="w-[360px] shrink-0 border-l border-border/40 bg-muted/20 flex flex-col overflow-hidden">
+              <div className="flex w-full shrink-0 flex-col overflow-hidden border-t border-border/40 bg-muted/20 lg:w-[360px] lg:border-l lg:border-t-0">
                 {/* Preview platform tabs */}
                 {selectedPlatforms.length > 0 && (
                   <div className="flex gap-1 p-3 border-b border-border/30 bg-background/50 overflow-x-auto flex-nowrap shrink-0">
@@ -3320,8 +3322,8 @@ export default function SocialPublishPage() {
           </div>
 
           {/* Composer Sticky Footer */}
-          <div className="flex items-center justify-between px-6 py-4 border-t border-border/40 shrink-0 bg-background">
-            <div className="flex items-center gap-3">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/40 bg-background px-4 py-3 sm:px-6 sm:py-4">
+            <div className="flex flex-1 flex-wrap items-center gap-2 sm:gap-3">
               <Select value={publishNow ? "now" : "schedule"} onValueChange={v => setPublishNow(v === "now")} disabled={isSubmitting}>
                 <SelectTrigger size="sm" className="w-auto min-w-[130px]">
                   <SelectValue />

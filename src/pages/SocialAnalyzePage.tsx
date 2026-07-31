@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import {
   Users, Eye, TrendingUp, UserPlus, RefreshCw, BarChart2, Heart, MessageSquare,
+  ChevronDown,
   Share2, Search, Calendar, Filter, Download, Bookmark, Play, ThumbsUp, ThumbsDown,
   ArrowUp, ArrowDown, Minus, ChevronLeft, ChevronRight, Activity, Zap, Target, Upload, Lock, Info,
   Globe, Clock, CheckCircle2, XCircle, AlertCircle, FileText, Repeat2, LayoutGrid,
@@ -270,16 +271,19 @@ const CompareRow = ({ label, curr, prev }: { label: string; curr: number; prev: 
   const diff = curr - prev;
   const g = prev > 0 ? (diff / prev) * 100 : 0;
   return (
-    <div className="flex items-center justify-between py-3 border-b border-border/40 last:border-0 gap-4">
-      <span className="text-sm font-medium text-muted-foreground w-28 shrink-0">{label}</span>
-      <div className="flex items-center gap-3 flex-1">
-        <span className="text-xs text-muted-foreground tabular-nums w-20 text-right">{fmtN(prev)}</span>
-        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+    // The fixed label + two 80px numbers + bar + delta needed ~390px, so on a
+    // phone the delta badge fell off the edge. The label takes its own line
+    // below sm and the number columns narrow.
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-3 border-b border-border/40 last:border-0 sm:flex-nowrap sm:gap-4">
+      <span className="w-full text-sm font-medium text-muted-foreground sm:w-28 sm:shrink-0">{label}</span>
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+        <span className="w-14 shrink-0 text-right text-xs text-muted-foreground tabular-nums sm:w-20">{fmtN(prev)}</span>
+        <div className="h-1.5 min-w-[20px] flex-1 overflow-hidden rounded-full bg-muted">
           <div className="h-full bg-primary/30 rounded-full" style={{ width: `${prev > 0 ? Math.min((curr / Math.max(curr, prev)) * 100, 100) : 0}%` }} />
         </div>
-        <span className="text-sm font-bold text-foreground tabular-nums w-20">{fmtN(curr)}</span>
+        <span className="w-14 shrink-0 text-sm font-bold text-foreground tabular-nums sm:w-20">{fmtN(curr)}</span>
       </div>
-      <Delta value={parseFloat(g.toFixed(1))} />
+      <span className="shrink-0"><Delta value={parseFloat(g.toFixed(1))} /></span>
     </div>
   );
 };
@@ -386,6 +390,9 @@ export default function SocialAnalyzePage() {
     () => new Date().toISOString().split("T")[0]
   );
   const [isCustomDateOpen, setIsCustomDateOpen] = useState<boolean>(false);
+  // Phones only: the date/platform/type filters collapse behind a toggle so the
+  // page doesn't open with ~700px of controls before a single number.
+  const [showMobileFilters, setShowMobileFilters] = useState<boolean>(false);
   const [platformFilter, setPlatformFilter] = useState("ALL");
   const [contentTypeFilter, setContentTypeFilter] = useState("ALL");
   const [postSearch, setPostSearch] = useState("");
@@ -587,22 +594,33 @@ export default function SocialAnalyzePage() {
     return { grid, maxVal, topSlots, hasData: flat.length > 0, source: actHeatmap.length > 0 ? 'import' as const : 'posts' as const };
   }, [analytics]);
 
+  // Shown on the collapsed mobile Filters button so a narrowed view is never a
+  // silent one.
+  const activeFilterCount =
+    (dateMode === "custom" || dateRange !== 30 ? 1 : 0) +
+    (platformFilter !== "ALL" ? 1 : 0) +
+    (contentTypeFilter !== "ALL" ? 1 : 0);
+
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen space-y-0">
-      {/* ── Top bar ── */}
-      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur border-b border-border/50 px-6 py-4">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+    <div className="space-y-0">
+      {/*
+        Pinned only from lg up. On a phone this bar stacks to roughly 440px, so
+        pinning it left barely a third of the screen for the actual analytics —
+        it scrolls away with the content instead.
+      */}
+      <div className="lg:sticky lg:top-0 z-20 bg-background/95 backdrop-blur border-b border-border/50 px-4 py-3 sm:px-6 sm:py-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 lg:gap-4">
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-foreground">Analytics Dashboard</h1>
-            <p className="text-xs text-muted-foreground">Social media performance across all connected platforms</p>
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">Analytics Dashboard</h1>
+            <p className="hidden sm:block text-xs text-muted-foreground">Social media performance across all connected platforms</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto">
             <Select value={selectedClient || "none"} onValueChange={val => {
               setSelectedClient(val === "none" ? "" : val);
               setPostPage(1);
             }}>
-              <SelectTrigger className="border border-border bg-background rounded-xl px-3 py-2 h-9 text-sm font-semibold shadow-sm w-48 focus:ring-2 focus:ring-primary/20">
+              <SelectTrigger className="border border-border bg-background rounded-xl px-3 py-2 h-9 text-sm font-semibold shadow-sm w-full sm:w-48 focus:ring-2 focus:ring-primary/20">
                 <SelectValue placeholder="Select Client" />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
@@ -618,11 +636,31 @@ export default function SocialAnalyzePage() {
               <>
                 <Button variant="outline" disabled={isRefreshing||isLoading} onClick={handleRefresh} className="rounded-xl h-9 px-3 gap-1.5 text-sm">
                   <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing?"animate-spin":""}`} />
-                  Sync Metrics
+                  <span className="hidden sm:inline">Sync Metrics</span>
+                  <span className="sm:hidden">Sync</span>
                 </Button>
                 <Button variant="outline" onClick={exportCSV} className="rounded-xl h-9 px-3 gap-1.5 text-sm">
-                  <Download className="h-3.5 w-3.5" /> Export CSV
+                  <Download className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Export CSV</span>
+                  <span className="sm:hidden">CSV</span>
                 </Button>
+                {!isLoading && analytics && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowMobileFilters(v => !v)}
+                    aria-expanded={showMobileFilters}
+                    className="rounded-xl h-9 px-3 gap-1.5 text-sm lg:hidden"
+                  >
+                    <Filter className="h-3.5 w-3.5" />
+                    Filters
+                    {activeFilterCount > 0 && (
+                      <span className="ml-0.5 rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground tabular-nums">
+                        {activeFilterCount}
+                      </span>
+                    )}
+                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showMobileFilters ? "rotate-180" : ""}`} />
+                  </Button>
+                )}
               </>
             )}
           </div>
@@ -630,7 +668,7 @@ export default function SocialAnalyzePage() {
 
         {/* Global Filters */}
         {selectedClient && !isLoading && analytics && (
-          <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-border/40">
+          <div className={`${showMobileFilters ? "flex" : "hidden"} lg:flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-border/40`}>
             {/* Date range */}
             <div className="flex items-center gap-1.5">
               <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
@@ -793,15 +831,23 @@ export default function SocialAnalyzePage() {
           <p className="text-sm text-muted-foreground mt-1 max-w-xs">Connect social media accounts for this client, then click Sync Metrics.</p>
         </Card></div>
       ) : (
-        <div className="flex h-full">
-          {/* ── Sidebar Tabs ── */}
-          <nav className="w-44 shrink-0 border-r border-border/50 bg-muted/10 flex flex-col gap-0.5 py-4 px-2 sticky top-[145px] h-[calc(100vh-145px)] overflow-y-auto">
+        <div className="flex flex-col lg:flex-row">
+          {/*
+            Tabs are a horizontal scroller on phones and a vertical rail from lg
+            up. As a fixed w-44 rail it left roughly 150px of usable width on a
+            375px screen, which clipped every KPI number.
+          */}
+          <nav
+            aria-label="Analytics sections"
+            className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/50 bg-muted/10 px-2 py-2 [-ms-overflow-style:none] [scrollbar-width:none] lg:sticky lg:top-0 lg:w-44 lg:flex-col lg:gap-0.5 lg:self-start lg:overflow-x-visible lg:overflow-y-auto lg:border-b-0 lg:border-r lg:px-2 lg:py-4 lg:max-h-[calc(100dvh-4rem)] [&::-webkit-scrollbar]:hidden"
+          >
             {TABS.map(t => {
               const Icon = t.icon;
               const label = t.id === "followers" && platformFilter === "YOUTUBE" ? "Subscribers" : t.label;
               return (
                 <button key={t.id} onClick={() => setActiveTab(t.id)}
-                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${activeTab===t.id?"bg-primary text-primary-foreground shadow-sm":"text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}>
+                  aria-current={activeTab === t.id ? "page" : undefined}
+                  className={`flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-xs font-semibold transition-all lg:w-full lg:gap-2.5 lg:py-2.5 lg:text-left ${activeTab===t.id?"bg-primary text-primary-foreground shadow-sm":"text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}>
                   <Icon className="h-3.5 w-3.5 shrink-0"/>
                   {label}
                 </button>
@@ -810,7 +856,7 @@ export default function SocialAnalyzePage() {
           </nav>
 
           {/* ── Content Area ── */}
-          <div className="flex-1 overflow-x-hidden p-6 space-y-6 min-w-0">
+          <div className="flex-1 overflow-x-hidden p-4 space-y-6 min-w-0 sm:p-6">
 
             {/* ══════════════ OVERVIEW ══════════════ */}
             {activeTab === "overview" && (
