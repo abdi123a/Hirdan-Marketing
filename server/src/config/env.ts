@@ -71,6 +71,9 @@ const envSchema = z.object({
   META_REDIRECT_URI_FACEBOOK: z.string().optional(),
   META_REDIRECT_URI_INSTAGRAM: z.string().optional(),
   META_REDIRECT_URI_THREADS: z.string().optional(),
+  /** Facebook Login for Business configuration IDs (App Dashboard → Configurations). */
+  META_CONFIG_ID_FACEBOOK: z.string().optional(),
+  META_CONFIG_ID_INSTAGRAM: z.string().optional(),
 
   // TikTok
   TIKTOK_CLIENT_KEY: z.string().optional(),

@@ -81,12 +81,15 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
 
   let redirectUri = '';
   let scopes: string[] = [];
+  // Facebook Login for Business configs (from Meta App Dashboard → Configurations).
+  // When set, OAuth must use config_id — raw scopes that aren't on the config
+  // cause "Invalid Scopes" (e.g. pages_read_user_content).
+  let configId = '';
 
   if (platform === 'facebook') {
     redirectUri = process.env.META_REDIRECT_URI_FACEBOOK || '';
-    // Must match permissions enabled on the Meta "Facebook Login for Business"
-    // configuration. pages_read_user_content is NOT offered in that picker and
-    // causes "Invalid Scopes" — page content/insights use pages_read_engagement.
+    configId = process.env.META_CONFIG_ID_FACEBOOK || '';
+    // Fallback scopes — must match the "Facebook Page" Login-for-Business config.
     scopes = [
       'pages_show_list',
       'pages_read_engagement',
@@ -97,12 +100,11 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
     ];
   } else if (platform === 'instagram') {
     redirectUri = process.env.META_REDIRECT_URI_INSTAGRAM || '';
-    // Same Login-for-Business constraint: only request scopes that exist on the
-    // configuration. IG publish + insights need the instagram_* permissions below.
+    configId = process.env.META_CONFIG_ID_INSTAGRAM || '';
+    // Fallback scopes — must match the "Instagram Account" Login-for-Business config.
     scopes = [
       'pages_show_list',
       'pages_read_engagement',
-      'pages_manage_metadata',
       'instagram_basic',
       'instagram_content_publish',
       'instagram_manage_insights',
@@ -115,7 +117,20 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
   }
 
   const state = createOAuthState(platform, clientId, groupId);
-  const params = new URLSearchParams({ client_id: appId, redirect_uri: redirectUri, state, scope: scopes.join(','), response_type: 'code' });
+  const params = new URLSearchParams({
+    client_id: appId,
+    redirect_uri: redirectUri,
+    state,
+    response_type: 'code',
+  });
+
+  if (platform !== 'threads' && configId) {
+    // Login for Business: config_id replaces scope (permissions come from the config).
+    params.set('config_id', configId);
+    params.set('override_default_response_type', 'true');
+  } else {
+    params.set('scope', scopes.join(','));
+  }
 
   if (platform === 'threads') {
     return `https://www.threads.net/oauth/authorize?${params.toString()}`;
