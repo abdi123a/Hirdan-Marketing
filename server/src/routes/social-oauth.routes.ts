@@ -305,7 +305,7 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
  * "all three clients became one CRM account" failure. Look up the real owner
  * first so we can skip instead of duplicating.
  */
-async function findPageOwner(platform: string, clientId: string, page: any) {
+async function findPageOwner(platform: string, clientId: string | null, page: any) {
   const ownerMatches: any[] = [];
   if (platform === 'facebook' && page.pageId) {
     ownerMatches.push({ platformUserId: page.pageId }, { pageId: page.pageId });
@@ -315,9 +315,17 @@ async function findPageOwner(platform: string, clientId: string, page: any) {
   if (!ownerMatches.length) return null;
 
   return prisma.socialAccount.findFirst({
-    where: { platform, clientId: { not: clientId }, OR: ownerMatches },
+    // clientId === null asks "who owns this Page anywhere?" — used by the picker
+    // to pin a Page to its existing client. Passing a clientId asks "does someone
+    // OTHER than this client own it?" — the guard that blocks cross-client saves.
+    where: {
+      platform,
+      ...(clientId ? { clientId: { not: clientId } } : {}),
+      OR: ownerMatches,
+    },
     select: {
       id: true,
+      clientId: true,
       displayName: true,
       client: { select: { name: true, company: true } },
     },
@@ -566,11 +574,14 @@ router.get('/oauth/pending/:sessionId', authenticate, async (req, res) => {
     return;
   }
 
+  // Ownership across ALL clients, so the picker can pin a Page to the client that
+  // already holds it rather than just greying it out.
   const ownership = await Promise.all(
     session.pages.map(async (p) => {
-      const owner = await findPageOwner(session.platform, session.clientId, p);
+      const owner = await findPageOwner(session.platform, null, p);
       return owner
         ? {
+            clientId: owner.clientId,
             clientName: owner.client?.company || owner.client?.name || 'another client',
             accountName: owner.displayName,
           }
@@ -586,8 +597,12 @@ router.get('/oauth/pending/:sessionId', authenticate, async (req, res) => {
     avatarUrl: session.platform === 'facebook' ? (p.pageAvatarUrl || null) : (p.igAvatarUrl || p.pageAvatarUrl || null),
     followers: session.platform === 'facebook' ? (p.pageFollowers || 0) : (p.igFollowers ?? p.pageFollowers ?? 0),
     platform: session.platform,
-    ownedByOtherClient: ownership[i]
-      ? { clientName: ownership[i]!.clientName, accountName: ownership[i]!.accountName }
+    ownedBy: ownership[i]
+      ? {
+          clientId: ownership[i]!.clientId,
+          clientName: ownership[i]!.clientName,
+          accountName: ownership[i]!.accountName,
+        }
       : null,
   }));
 
@@ -602,10 +617,18 @@ router.get('/oauth/pending/:sessionId', authenticate, async (req, res) => {
 // ─── 4. Confirm account picker selection ─────────────────────────────────────
 router.post('/oauth/select-account', authenticate, async (req, res, next) => {
   try {
-    const { sessionId, selectedIds } = req.body as { sessionId: string; selectedIds: string[] };
+    // `assignments` routes each Page to its own client, so one Facebook grant can
+    // populate several clients in a single pass — the whole point of opting in to
+    // all Pages. `selectedIds` is the older shape and still works: every selected
+    // Page goes to the client the connect flow started from.
+    const { sessionId, selectedIds, assignments } = req.body as {
+      sessionId: string;
+      selectedIds?: string[];
+      assignments?: Array<{ id: string; clientId: string }>;
+    };
 
-    if (!sessionId || !selectedIds?.length) {
-      res.status(400).json({ error: 'Missing sessionId or selectedIds' });
+    if (!sessionId || (!selectedIds?.length && !assignments?.length)) {
+      res.status(400).json({ error: 'Missing sessionId or account selection' });
       return;
     }
 
@@ -615,12 +638,31 @@ router.post('/oauth/select-account', authenticate, async (req, res, next) => {
       return;
     }
 
-    const { platform, clientId, groupId } = session;
+    const { platform, groupId } = session;
 
-    // Filter to user-selected pages only
+    const targetClientByPage = new Map<string, string>();
+    if (assignments?.length) {
+      for (const a of assignments) {
+        if (a?.id && a?.clientId) targetClientByPage.set(a.id, a.clientId);
+      }
+    } else {
+      for (const id of selectedIds!) targetClientByPage.set(id, session.clientId);
+    }
+
+    // Reject unknown clients up front rather than failing mid-loop on a FK error.
+    const targetClientIds = [...new Set(targetClientByPage.values())];
+    const knownClients = await prisma.client.findMany({
+      where: { id: { in: targetClientIds } },
+      select: { id: true },
+    });
+    if (knownClients.length !== targetClientIds.length) {
+      res.status(400).json({ error: 'One or more selected clients no longer exist.' });
+      return;
+    }
+
     const toSave = session.pages.filter((p: any) => {
       const id = platform === 'facebook' ? p.pageId : (p.igAccountId || p.pageId);
-      return selectedIds.includes(id);
+      return targetClientByPage.has(id);
     });
 
     let savedCount = 0;
@@ -628,16 +670,19 @@ router.post('/oauth/select-account', authenticate, async (req, res, next) => {
     const skippedOwned: string[] = [];
 
     for (const page of toSave) {
-      const owner = await findPageOwner(platform, clientId, page);
+      const pageKey = platform === 'facebook' ? page.pageId : (page.igAccountId || page.pageId);
+      const targetClientId = targetClientByPage.get(pageKey)!;
+      const label = platform === 'instagram'
+        ? (page.igUsername || page.pageName)
+        : page.pageName;
+
+      const owner = await findPageOwner(platform, targetClientId, page);
       if (owner) {
         const ownerName = owner.client?.company || owner.client?.name || 'another client';
-        const label = platform === 'instagram'
-          ? (page.igUsername || page.pageName)
-          : page.pageName;
         skippedOwned.push(`${label} (owned by ${ownerName})`);
         continue;
       }
-      const saved = await saveMetaAccount(platform, clientId, groupId, page, session.userAccessToken);
+      const saved = await saveMetaAccount(platform, targetClientId, groupId, page, session.userAccessToken);
       if (saved?.id) savedIds.push(saved.id);
       savedCount++;
     }
@@ -646,7 +691,7 @@ router.post('/oauth/select-account', authenticate, async (req, res, next) => {
       res.status(409).json({
         error:
           `Selected account(s) already belong to another client: ${skippedOwned.join(', ')}. ` +
-          `Reconnect under that client, or pick this client’s own Page.`,
+          `Assign each Page to the client that owns it.`,
       });
       return;
     }

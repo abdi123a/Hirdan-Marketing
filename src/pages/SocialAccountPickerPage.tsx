@@ -16,8 +16,17 @@ interface PickerAccount {
   avatarUrl: string | null;
   followers: number;
   platform: string;
-  ownedByOtherClient?: { clientName: string; accountName: string } | null;
+  /** Set when this Page is already attached to a client — it stays pinned there. */
+  ownedBy?: { clientId: string; clientName: string; accountName: string } | null;
 }
+
+interface PickerClient {
+  id: string;
+  name: string;
+  company: string | null;
+}
+
+const clientLabel = (c: PickerClient) => c.company || c.name;
 
 const getPlatformIcon = (platform: string, cls = "h-5 w-5 rounded-sm object-contain") => {
   const map: Record<string, string> = {
@@ -50,16 +59,17 @@ export default function SocialAccountPickerPage() {
   const platform = params.get("platform") || "";
 
   const [accounts, setAccounts] = useState<PickerAccount[]>([]);
+  const [clients, setClients] = useState<PickerClient[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** pageId → clientId. One Facebook grant can populate several clients at once. */
+  const [assignedClient, setAssignedClient] = useState<Record<string, string>>({});
+  const [defaultClientId, setDefaultClientId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [expiresIn, setExpiresIn] = useState(600);
 
-  const selectableAccounts = useMemo(
-    () => accounts.filter((a) => !a.ownedByOtherClient),
-    [accounts],
-  );
+  const selectableAccounts = accounts;
 
   useEffect(() => {
     if (!sessionId) { setError("Invalid session — no session ID found."); setIsLoading(false); return; }
@@ -75,11 +85,27 @@ export default function SocialAccountPickerPage() {
   const fetchAccounts = async () => {
     setIsLoading(true);
     try {
-      const res = await apiFetch<{ accounts: PickerAccount[]; expiresIn: number; platform: string }>(
-        `/social/oauth/pending/${sessionId}`
-      );
-      setAccounts(res.accounts || []);
+      const [res, clientRes] = await Promise.all([
+        apiFetch<{ accounts: PickerAccount[]; expiresIn: number; platform: string; clientId: string }>(
+          `/social/oauth/pending/${sessionId}`
+        ),
+        apiFetch<{ clients: PickerClient[] }>("/clients"),
+      ]);
+      const list = res.accounts || [];
+      setAccounts(list);
+      setClients(clientRes.clients || []);
+      setDefaultClientId(res.clientId || "");
       setExpiresIn(res.expiresIn || 600);
+
+      // A Page already attached to a client stays with that client; everything
+      // else defaults to the client this connect flow started from.
+      setAssignedClient(
+        Object.fromEntries(
+          list.map((a) => [a.id, a.ownedBy?.clientId || res.clientId || ""]),
+        ),
+      );
+      // Pre-tick the starting client's own Page so the common case is one click.
+      setSelected(new Set(list.filter((a) => a.ownedBy?.clientId === res.clientId).map((a) => a.id)));
     } catch (err: any) {
       setError(err.message || "Session expired or not found. Please reconnect.");
     } finally {
@@ -87,8 +113,7 @@ export default function SocialAccountPickerPage() {
     }
   };
 
-  const toggleSelect = (id: string, locked?: boolean) => {
-    if (locked) return;
+  const toggleSelect = (id: string) => {
     setSelected(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -102,11 +127,30 @@ export default function SocialAccountPickerPage() {
     else setSelected(new Set(selectableAccounts.map(a => a.id)));
   };
 
+  const setClientFor = (pageId: string, clientId: string) => {
+    setAssignedClient((prev) => ({ ...prev, [pageId]: clientId }));
+    setSelected((prev) => new Set(prev).add(pageId));
+  };
+
   const handleConnect = async () => {
     if (!selected.size) {
       toast({ title: "No accounts selected", description: "Please select at least one account to connect.", variant: "destructive" });
       return;
     }
+    const assignments = Array.from(selected).map((id) => ({
+      id,
+      clientId: assignedClient[id] || defaultClientId,
+    }));
+    const missing = assignments.filter((a) => !a.clientId);
+    if (missing.length) {
+      toast({
+        title: "Pick a client",
+        description: "Every selected account needs a client assigned.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
       const res = await apiFetch<{
@@ -117,9 +161,14 @@ export default function SocialAccountPickerPage() {
         skippedOwned?: string[];
       }>(`/social/oauth/select-account`, {
         method: "POST",
-        body: JSON.stringify({ sessionId, selectedIds: Array.from(selected) }),
+        body: JSON.stringify({ sessionId, assignments }),
       });
-      const parts: string[] = [`Linked to this client.`];
+      const distinctClients = new Set(assignments.map((a) => a.clientId)).size;
+      const parts: string[] = [
+        distinctClients > 1
+          ? `Assigned across ${distinctClients} clients.`
+          : `Linked to this client.`,
+      ];
       if (res.siblingsRefreshed) {
         parts.push(`Also refreshed ${res.siblingsRefreshed} other client account${res.siblingsRefreshed !== 1 ? "s" : ""}.`);
       }
@@ -181,7 +230,7 @@ export default function SocialAccountPickerPage() {
                   Choose {platformLabel} Account{accounts.length !== 1 ? "s" : ""}
                 </h1>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  {accounts.length} account{accounts.length !== 1 ? "s" : ""} found — pick only this client’s Page
+                  {accounts.length} account{accounts.length !== 1 ? "s" : ""} found — tick each one and assign its client
                   {lockedCount > 0 ? ` · ${lockedCount} already owned by other clients` : ""}
                 </p>
               </div>
@@ -219,13 +268,13 @@ export default function SocialAccountPickerPage() {
               <>
                 {(platform === "facebook" || platform === "instagram") && (
                   <div className="mx-6 mt-4 rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-950">
-                    <p className="font-semibold">In our app: pick only this client</p>
+                    <p className="font-semibold">Assign each account to its client</p>
                     <p className="mt-1 text-amber-900/80 text-xs leading-relaxed">
-                      Next time, on each Facebook screen — Pages, Businesses <em>and</em> Instagram accounts —
-                      choose <strong>“Opt in to all current and future…”</strong> (the top radio button).
-                      Selecting “current … only” with one item checked makes Meta revoke every other client.
-                      Separating clients is this app&apos;s job, not the Facebook dialog&apos;s — so select
-                      only this client&apos;s account below.
+                      One Facebook login can fill in <strong>every</strong> client at once — tick each
+                      account and choose who it belongs to. Separating clients is this app&apos;s job,
+                      not the Facebook dialog&apos;s. In Facebook always pick{" "}
+                      <strong>“Opt in to all current and future…”</strong> (the top radio button) on all
+                      three screens; “current … only” makes Meta revoke every client you left unchecked.
                     </p>
                   </div>
                 )}
@@ -242,7 +291,7 @@ export default function SocialAccountPickerPage() {
                       className="rounded accent-primary h-4 w-4"
                     />
                     <label htmlFor="select-all" className="text-xs font-bold text-muted-foreground cursor-pointer">
-                      Select available ({selectableAccounts.length})
+                      Select all ({selectableAccounts.length})
                     </label>
                   </div>
                   <span className="text-xs text-muted-foreground">
@@ -253,23 +302,20 @@ export default function SocialAccountPickerPage() {
                 {/* Account list */}
                 <div className="divide-y divide-border/40">
                   {accounts.map((acc) => {
-                    const locked = Boolean(acc.ownedByOtherClient);
+                    const pinned = acc.ownedBy || null;
                     const isSelected = selected.has(acc.id);
                     return (
                       <div
                         key={acc.id}
-                        onClick={() => toggleSelect(acc.id, locked)}
-                        className={`flex items-center gap-4 p-5 transition-all ${
-                          locked
-                            ? "opacity-60 cursor-not-allowed bg-muted/10"
-                            : `cursor-pointer hover:bg-muted/5 ${isSelected ? "bg-primary/3 border-l-2 border-l-primary" : ""}`
+                        onClick={() => toggleSelect(acc.id)}
+                        className={`flex items-center gap-4 p-5 transition-all cursor-pointer hover:bg-muted/5 ${
+                          isSelected ? "bg-primary/3 border-l-2 border-l-primary" : ""
                         }`}
                       >
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          disabled={locked}
-                          onChange={() => toggleSelect(acc.id, locked)}
+                          onChange={() => toggleSelect(acc.id)}
                           className="rounded accent-primary h-4 w-4 shrink-0"
                           onClick={e => e.stopPropagation()}
                         />
@@ -305,20 +351,47 @@ export default function SocialAccountPickerPage() {
                               <Shield className="h-2.5 w-2.5" />
                               {acc.platform}
                             </span>
-                            {locked && acc.ownedByOtherClient && (
+                            {pinned && (
                               <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">
                                 <Lock className="h-2.5 w-2.5" />
-                                Connected to {acc.ownedByOtherClient.clientName}
+                                Already {pinned.clientName}
                               </span>
                             )}
                           </div>
                         </div>
 
-                        {locked ? (
-                          <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
-                        ) : isSelected ? (
+                        {/* Client assignment — a Page already attached stays with its
+                            client, so that row shows the owner instead of a picker. */}
+                        <div className="shrink-0 w-48" onClick={(e) => e.stopPropagation()}>
+                          {pinned ? (
+                            <div className="text-xs font-semibold text-muted-foreground text-right pr-1">
+                              {pinned.clientName}
+                              <span className="block text-[10px] font-normal opacity-70">
+                                reconnect only
+                              </span>
+                            </div>
+                          ) : (
+                            <select
+                              value={assignedClient[acc.id] || ""}
+                              onChange={(e) => setClientFor(acc.id, e.target.value)}
+                              className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
+                              aria-label={`Client for ${acc.name}`}
+                            >
+                              <option value="">Choose client…</option>
+                              {clients.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {clientLabel(c)}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+
+                        {isSelected ? (
                           <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
-                        ) : null}
+                        ) : (
+                          <span className="h-5 w-5 shrink-0" />
+                        )}
                       </div>
                     );
                   })}
