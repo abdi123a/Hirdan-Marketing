@@ -221,9 +221,11 @@ export default function SocialAccountPickerPage() {
                   <div className="mx-6 mt-4 rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-950">
                     <p className="font-semibold">In our app: pick only this client</p>
                     <p className="mt-1 text-amber-900/80 text-xs leading-relaxed">
-                      In <strong>Facebook’s</strong> permission screen you must keep <strong>all</strong> client
-                      Pages checked (Tokka, Papparoti, Te&apos;Amo) — or Meta revokes the unchecked ones.
-                      Then select only this client’s account below.
+                      Next time, on each Facebook screen — Pages, Businesses <em>and</em> Instagram accounts —
+                      choose <strong>“Opt in to all current and future…”</strong> (the top radio button).
+                      Selecting “current … only” with one item checked makes Meta revoke every other client.
+                      Separating clients is this app&apos;s job, not the Facebook dialog&apos;s — so select
+                      only this client&apos;s account below.
                     </p>
                   </div>
                 )}

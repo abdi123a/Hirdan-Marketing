@@ -956,8 +956,10 @@ export default function SocialAccountsPage() {
                   <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-100">
                     <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                     <p className="text-xs text-amber-800 leading-relaxed">
-                      In Facebook, keep <strong>all client Pages</strong> checked. Unchecking a Page makes Meta
-                      revoke that client. In our app, still connect only <strong>this</strong> client’s account.
+                      On every Facebook screen — Pages, Businesses <em>and</em> Instagram accounts — choose{" "}
+                      <strong>“Opt in to all current and future…”</strong>, the top radio button. Picking
+                      “current … only” with one item checked makes Meta revoke every other client.
+                      You still connect only <strong>this</strong> client’s account in our app.
                     </p>
                   </div>
                 )}

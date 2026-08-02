@@ -1388,8 +1388,10 @@ function ClientSocialProfilesTab({ clientId }: { clientId: string }) {
             <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-100 text-xs text-amber-800 leading-relaxed">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
               <span>
-                In Facebook keep <strong>all client Pages</strong> checked (Meta revokes unchecked ones).
-                In our app, pick only <strong>this</strong> client’s account.
+                On every Facebook screen — Pages, Businesses <em>and</em> Instagram accounts — choose{" "}
+                <strong>“Opt in to all current and future…”</strong>, the top radio button. “Current … only”
+                with one item checked makes Meta revoke every other client. In our app, pick only{" "}
+                <strong>this</strong> client’s account.
               </span>
             </div>
           )}

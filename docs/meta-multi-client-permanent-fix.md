@@ -24,17 +24,35 @@ token first and only re-mints after an auth error. The tokens were already dead.
 
 ---
 
-## 1. Immediate recovery (do this now)
+## 1. The actual fix — one radio button
+
+The Facebook dialog asks three times ("Choose the **Pages**…", "Choose the
+**Businesses**…", "Choose the **Instagram accounts**…"), and each screen offers:
+
+- ⭕ **Opt in to all current and future X** ← **always choose this**
+- 🔘 Opt in to current X only ← the destructive default
+
+Selecting *current … only* with a single client checked is what revokes every
+other client. It was set on all three screens, which is the entire bug.
+
+### Do this now
 
 1. Open **Connect** for any one client.
-2. In **Facebook's** permission screen, keep **all** client Pages checked —
-   Tokka, Papparoti, Te'Amo — or choose *all current and future Pages*.
-3. In the app's picker, select **only that client's** Page/IG account.
-4. Done. The shipped reconcile pass re-mints tokens for every client whose Page
-   was in that grant, in one shot. You do not need to repeat per client.
+2. On **all three** Facebook screens choose **"Opt in to all current and future…"**.
+3. In our picker, select **only that client's** Page/IG account.
+4. Done — the reconcile pass re-mints every client's tokens from that one grant.
+   You do not repeat this per client.
 
-If a client still shows **Issue** afterwards, its Page was not in the grant —
-repeat with that Page checked.
+Choosing *all current and future* also means Pages you take on later are already
+covered by the grant, so onboarding a new client never disturbs existing ones.
+
+> **Note on scope.** "All current and future Pages" grants the app access to every
+> Page on the account, including any personal or unrelated Pages. That is inherent
+> to how Meta scopes this grant. The app only ever stores and syncs Pages you
+> explicitly attach to a client — see `findPageOwner` and the picker.
+
+If a client still shows **Issue** afterwards, its Page was not in that grant —
+reconnect once more with the top option selected.
 
 ---
 
@@ -53,7 +71,13 @@ migration below matters.
 
 ---
 
-## 3. Permanent fix — System User access tokens
+## 3. Optional hardening — System User access tokens
+
+> **Read §1 first.** Selecting *"all current and future"* removes the failure mode
+> on its own, and is what the agency should do today. Everything below is
+> defence-in-depth, not a prerequisite. Pursue it when you want grants that
+> survive a mis-click, or when a client asks for access that does not depend on
+> one person's personal Facebook login. Do **not** treat it as blocking.
 
 ### Why it works
 
