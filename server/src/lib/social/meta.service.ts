@@ -84,12 +84,12 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
 
   if (platform === 'facebook') {
     redirectUri = process.env.META_REDIRECT_URI_FACEBOOK || '';
-    // pages_read_user_content is required to read page posts/insights without
-    // "must be granted before impersonating a user's page" errors on sync.
+    // Must match permissions enabled on the Meta "Facebook Login for Business"
+    // configuration. pages_read_user_content is NOT offered in that picker and
+    // causes "Invalid Scopes" — page content/insights use pages_read_engagement.
     scopes = [
       'pages_show_list',
       'pages_read_engagement',
-      'pages_read_user_content',
       'pages_manage_posts',
       'pages_manage_metadata',
       'read_insights',
@@ -97,13 +97,11 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
     ];
   } else if (platform === 'instagram') {
     redirectUri = process.env.META_REDIRECT_URI_INSTAGRAM || '';
-    // instagram_manage_insights is required for IG account + media insights
-    // (reach, views, saved, shares, etc.). pages_read_* needed to impersonate
-    // the linked Page when reading IG insights via the page token.
+    // Same Login-for-Business constraint: only request scopes that exist on the
+    // configuration. IG publish + insights need the instagram_* permissions below.
     scopes = [
       'pages_show_list',
       'pages_read_engagement',
-      'pages_read_user_content',
       'pages_manage_metadata',
       'instagram_basic',
       'instagram_content_publish',
