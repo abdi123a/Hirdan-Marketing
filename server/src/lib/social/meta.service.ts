@@ -357,7 +357,12 @@ async function publishVideoToMetaResumable({
     params: finishParams,
   });
 
-  return publishRes.data.video_id || publishRes.data.post_id || publishRes.data.id || video_id;
+  // Prefer the upload-session video_id. `post_id` here is the Page *story* id
+  // without its "{pageId}_" prefix, and a bare story id resolves to a deprecated
+  // "singular statuses" object that supports neither /insights nor
+  // /video_insights — which is why reels published this way reported 0 views.
+  // The video id is the object that actually carries the metrics.
+  return video_id || publishRes.data.video_id || publishRes.data.post_id || publishRes.data.id;
 }
 
 export async function publishToFacebookPage({
@@ -828,9 +833,27 @@ export async function getMetaPostInsights(
     // healing rows written before that was fixed at publish time.
     let insightsId = platformPostId;
 
-    // Reels / videos often store a bare video_id (not pageId_postId). Page-post
-    // `/insights` fails on those; `/video_insights` is the right edge. Try both.
-    // `likes` was deprecated — use reactions.summary.
+    // Video objects expose likes/comments/views WITHOUT pages_read_user_content,
+    // which the Page-post shape requires. Reels and videos are most of what gets
+    // published, so try this shape first — verified against the live Page, it is
+    // the only one that returns numbers under the current permission set.
+    try {
+      const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}`, {
+        params: {
+          fields: 'likes.summary(true),comments.summary(true),views,permalink_url',
+          access_token: token,
+        },
+      });
+      anyCallSucceeded = true;
+      likes = data.likes?.summary?.total_count ?? 0;
+      comments = data.comments?.summary?.total_count ?? 0;
+      if (typeof data.views === 'number' && data.views > 0) views = data.views;
+    } catch (err: any) {
+      failures.push(`video fields: ${metaGraphErrorText(err)}`);
+    }
+
+    // Page-post shape: adds reactions/shares and page_story_id. Requires
+    // pages_read_user_content, so treat it as best-effort enrichment.
     try {
       const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}`, {
         params: {
@@ -839,13 +862,12 @@ export async function getMetaPostInsights(
         },
       });
       anyCallSucceeded = true;
-      likes = data.reactions?.summary?.total_count ?? data.likes?.summary?.total_count ?? 0;
-      comments = data.comments?.summary?.total_count ?? 0;
+      likes = Math.max(likes, data.reactions?.summary?.total_count ?? data.likes?.summary?.total_count ?? 0);
+      comments = Math.max(comments, data.comments?.summary?.total_count ?? 0);
       shares = data.shares?.count ?? 0;
       if (data.page_story_id) insightsId = data.page_story_id;
     } catch (err: any) {
-      failures.push(`fields: ${err.message}`);
-      console.warn(`[Meta] Could not fetch basic Facebook post fields for ${platformPostId}:`, err.message);
+      failures.push(`post fields: ${metaGraphErrorText(err)}`);
     }
 
     // Page-post insights (works for feed posts with pageId_postId)
@@ -871,10 +893,17 @@ export async function getMetaPostInsights(
 
     // Video / Reel insights (works for bare video_id from reels upload).
     // Request metrics in small batches — one invalid metric rejects the whole call.
-    if (views === 0 && impressions === 0 && reach === 0) {
+    // Run whenever ANY of the three is still missing — the video-fields call
+    // above often supplies `views` while leaving impressions/reach empty, and
+    // the old `&&` guard skipped this block entirely in exactly that case.
+    if (views === 0 || impressions === 0 || reach === 0) {
+      // Order matters: blue_reels_play_count is the metric that still returns
+      // data on current Graph versions. The total_video_* set answers 200 with
+      // an EMPTY payload for reels, so it can never populate anything — it is
+      // kept last only for older non-reel video posts.
       const videoMetricBatches = [
-        ['total_video_views', 'total_video_views_unique', 'total_video_impressions'],
         ['blue_reels_play_count'],
+        ['total_video_views', 'total_video_views_unique', 'total_video_impressions'],
         ['post_video_likes_by_reaction_type'],
       ];
       for (const batch of videoMetricBatches) {

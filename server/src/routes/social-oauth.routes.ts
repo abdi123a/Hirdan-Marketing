@@ -526,6 +526,8 @@ async function saveMetaAccount(
         accessTokenEnc: encryptToken(page.pageAccessToken),
         ...(refreshTokenEnc ? { refreshTokenEnc } : {}),
         tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+        // Reconnecting revives an account that was soft-disconnected.
+        isActive: true,
         healthStatus: 'healthy',
         healthMessage: null,
       },
@@ -549,6 +551,8 @@ async function saveMetaAccount(
         accessTokenEnc: encryptToken(page.pageAccessToken),
         ...(refreshTokenEnc ? { refreshTokenEnc } : {}),
         tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+        // Reconnecting revives an account that was soft-disconnected.
+        isActive: true,
         healthStatus: 'healthy',
         healthMessage: null,
       },
@@ -995,10 +999,46 @@ router.put('/accounts/:id', authenticate, async (req, res, next) => {
 });
 
 // ─── 11. Delete/disconnect account ──────────────────────────────────────────
+/**
+ * Disconnect is a SOFT delete.
+ *
+ * SocialPostDestination, AccountInsightDaily, ImportedPost, AccountDemographic
+ * and AccountActivity all cascade from SocialAccount. A hard delete therefore
+ * wipes the client's entire publishing and analytics history — and reconnecting
+ * does not bring it back, because the destination rows that tie posts to the
+ * account are gone. That is how published posts ended up with orphaned insight
+ * rows and an empty "By platform" list.
+ *
+ * Deactivating instead keeps the history and stops all sync/publish activity,
+ * since every scheduler query filters on isActive. Pass ?purge=true to really
+ * delete, for the rare case of removing a wrongly-created account.
+ */
 router.delete('/accounts/:id', authenticate, async (req, res, next) => {
   try {
-    await prisma.socialAccount.delete({ where: { id: req.params.id as string } });
-    res.json({ success: true, message: 'Account successfully disconnected' });
+    const id = req.params.id as string;
+    const purge = String(req.query.purge || '') === 'true';
+
+    if (purge) {
+      await prisma.socialAccount.delete({ where: { id } });
+      res.json({ success: true, purged: true, message: 'Account and all its history permanently deleted' });
+      return;
+    }
+
+    const account = await prisma.socialAccount.update({
+      where: { id },
+      data: {
+        isActive: false,
+        healthStatus: 'disconnected',
+        healthMessage: 'Disconnected from this workspace. Post history and analytics are preserved — reconnect to resume syncing.',
+      },
+      select: { displayName: true },
+    });
+
+    res.json({
+      success: true,
+      purged: false,
+      message: `${account.displayName} disconnected. Its post history and analytics are preserved.`,
+    });
   } catch (err) { next(err); }
 });
 
