@@ -27,7 +27,10 @@ export function getTikTokAuthorizationUrl(clientId: string, groupId: string): st
     client_key: clientKey,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'user.info.basic,user.info.stats,video.publish,video.upload',
+    // video.list is required to read per-video metrics. Without it TikTok
+    // answers video/list with scope_not_authorized, which is why every TikTok
+    // PostInsight row is zero — the app can publish but never read anything back.
+    scope: 'user.info.basic,user.info.stats,video.publish,video.upload,video.list',
     state,
   });
 

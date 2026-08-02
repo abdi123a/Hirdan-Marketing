@@ -12,9 +12,9 @@
  *   node scripts/diagnose-post-insights.mjs            # 5 most recent published posts
  *   node scripts/diagnose-post-insights.mjs <postId>   # one specific post
  */
-import './dist/config/env.js';
-import { prisma } from './dist/lib/prisma.js';
-import { decryptToken } from './dist/lib/social/token-crypto.service.js';
+import '../dist/config/env.js';
+import { prisma } from '../dist/lib/prisma.js';
+import { decryptToken } from '../dist/lib/social/token-crypto.service.js';
 
 const GRAPH = `https://graph.facebook.com/${process.env.META_GRAPH_VERSION || 'v20.0'}`;
 const postIdArg = process.argv[2];
