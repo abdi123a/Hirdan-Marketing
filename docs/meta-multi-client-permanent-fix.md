@@ -103,21 +103,24 @@ the failure mode entirely rather than mitigating it.
 
 ### Code changes required
 
-The existing OAuth code path largely survives, because the authorization-code
-exchange is unchanged. Verify these three points against Graph API Explorer using
-a system user token **before** cutting over:
+**None expected — this is a dashboard-only change.** The one real incompatibility
+was fixed in `09138e4`: system user tokens are already long-lived and cannot be
+passed through `fb_exchange_token`, which would have thrown at
+`getMetaLongLivedToken`. It now falls back to using the token as-is, but only
+after `/debug_token` confirms the token really is long-lived — so a transient
+exchange failure can't quietly store a 1-hour token behind a 60-day expiry.
+`refreshAccountToken` goes through the same helper, so it inherits the fix.
 
-- **Asset listing.** `getPagesWithInstagram` calls `/me/accounts`. Confirm this
-  returns the assigned Pages for a system user token; if it does not in your setup,
-  switch it to `/{business-id}/owned_pages` and map the same fields.
-- **Token lifetime.** FLB system user tokens are long-lived (typically 60 days).
-  A **never-expiring** token can instead be generated directly in Business settings
-  for the system user. Keep `refreshExpiringTokens` either way — it is harmless and
-  covers the 60-day case.
-- **`refreshAccountToken`** (`platform-router.service.ts`) exchanges the stored
-  token via `getMetaLongLivedToken`. Confirm that call is valid for the token type
-  you end up storing; if you move to a never-expiring system user token, short-circuit
-  the Meta branch to reuse the stored token as-is.
+One thing left to confirm once the config exists — it needs a real system user
+token, so it can't be checked in advance:
+
+- **Asset listing.** `getPagesWithInstagram` calls `/me/accounts`. In Graph API
+  Explorer, call `/me/accounts` with the system user token and check it returns
+  the assigned Pages. If your setup returns nothing, tell me and I'll switch it
+  to `/{business-id}/owned_pages` — same fields, ~10 lines.
+
+`refreshExpiringTokens` should stay either way: FLB system user tokens are
+typically 60-day, and a never-expiring token simply never trips the threshold.
 
 ### Cutover
 
