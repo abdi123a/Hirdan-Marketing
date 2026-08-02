@@ -121,11 +121,20 @@ export default function SocialAccountPickerPage() {
       });
       const parts: string[] = [`Linked to this client.`];
       if (res.siblingsRefreshed) {
-        parts.push(`Also refreshed ${res.siblingsRefreshed} other client account${res.siblingsRefreshed !== 1 ? "s" : ""} that were in this Facebook login.`);
+        parts.push(`Also refreshed ${res.siblingsRefreshed} other client account${res.siblingsRefreshed !== 1 ? "s" : ""}.`);
+      }
+      if (res.siblingsDropped?.length) {
+        parts.push(
+          `Meta revoked ${res.siblingsDropped.length} other account(s) because their Page was unchecked in Facebook — reconnect them with ALL Pages checked.`,
+        );
+      }
+      if (res.skippedOwned?.length) {
+        parts.push(`Skipped ${res.skippedOwned.join(", ")} — each Page stays with the client that owns it.`);
       }
       toast({
         title: `✅ ${res.savedCount} Account${res.savedCount !== 1 ? "s" : ""} Connected!`,
         description: parts.join(" "),
+        variant: res.siblingsDropped?.length ? "destructive" : "default",
       });
       navigate("/dashboard/social-media/accounts?connected=true");
     } catch (err: any) {
@@ -209,11 +218,12 @@ export default function SocialAccountPickerPage() {
             ) : (
               <>
                 {(platform === "facebook" || platform === "instagram") && (
-                  <div className="mx-6 mt-4 rounded-xl border border-border/60 bg-muted/20 px-4 py-3 text-sm">
-                    <p className="font-semibold text-foreground">Select only this client’s account</p>
-                    <p className="mt-1 text-muted-foreground text-xs leading-relaxed">
-                      Other clients’ Pages stay locked below and keep their own tokens — you do not need to
-                      connect everyone at once. Pick the Page that belongs to this client.
+                  <div className="mx-6 mt-4 rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-950">
+                    <p className="font-semibold">In our app: pick only this client</p>
+                    <p className="mt-1 text-amber-900/80 text-xs leading-relaxed">
+                      In <strong>Facebook’s</strong> permission screen you must keep <strong>all</strong> client
+                      Pages checked (Tokka, Papparoti, Te&apos;Amo) — or Meta revokes the unchecked ones.
+                      Then select only this client’s account below.
                     </p>
                   </div>
                 )}

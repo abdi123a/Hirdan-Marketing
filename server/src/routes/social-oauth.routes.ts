@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { verifyOAuthState, createOAuthState } from '../lib/social/oauth-state.service.js';
-import { encryptToken } from '../lib/social/token-crypto.service.js';
+import { encryptToken, decryptToken } from '../lib/social/token-crypto.service.js';
 import * as meta from '../lib/social/meta.service.js';
 import * as tiktok from '../lib/social/tiktok.service.js';
 import * as linkedin from '../lib/social/linkedin.service.js';
@@ -190,10 +190,15 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
           );
         }
         const saved = await saveMetaAccount(platform, clientId, groupId, page, longLivedToken);
-        // Refresh siblings only when their Page happened to be in this grant;
-        // otherwise leave their stored tokens untouched.
-        await reconcileSiblingMetaAccounts(longLivedToken, pages, saved?.id);
-        res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?connected=true`);
+        const reconcile = await reconcileSiblingMetaAccounts(longLivedToken, pages, saved?.id);
+        const dropHint = reconcile.dropped.length
+          ? `&warning=${encodeURIComponent(
+              `Meta’s Facebook grant now only includes the Page(s) you checked. ` +
+                `${reconcile.dropped.length} other account(s) lost access (${reconcile.dropped.map((d) => d.accountName).join(', ')}). ` +
+                `Reconnect those clients and keep ALL client Pages checked in Facebook.`,
+            )}`
+          : '';
+        res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?connected=true${dropHint}`);
         return;
       }
 
@@ -321,25 +326,21 @@ async function findPageOwner(platform: string, clientId: string, page: any) {
 
 type SiblingReconcileResult = {
   refreshed: number;
-  /** Always empty — we preserve siblings that are missing from this grant. */
+  /** Siblings Meta revoked because they were missing from this Facebook grant. */
   dropped: Array<{ accountName: string; clientName: string; platform: string }>;
 };
 
 /**
- * Preserve-other-clients model (Claude's approach):
+ * Multi-client Meta reconcile:
  *
- * Connecting Papparoti must NOT require selecting Tokka/Te'Amo in Facebook, and
- * must NOT overwrite or expire those clients' stored Page tokens.
+ * - Pages IN this grant → refresh their page tokens (including other clients).
+ * - Pages NOT in this grant → do NOT overwrite their stored tokens with this
+ *   login's user token. Probe the stored page token; if Meta already revoked
+ *   it (Login-for-Business "current Pages only" replaces the whole grant),
+ *   mark the account expired with a clear recovery message.
  *
- * - If a sibling Page IS in this grant → refresh its page token (bonus).
- * - If a sibling Page is NOT in this grant → leave its row completely alone.
- *   We never copy this login's user token onto another client, and we never
- *   mark them expired just because they weren't selected this time.
- *
- * Meta can still revoke deselected Pages on their side when Login-for-Business
- * is set to "current Pages only". That is a Meta config issue — fix it in the
- * App Dashboard with "all current and future Pages", not by forcing the user
- * to multi-select every client on each connect.
+ * Our app still connects one CRM client at a time. Meta, however, keeps one
+ * Page grant per Facebook user+app — unchecking Pages in Facebook revokes them.
  */
 async function reconcileSiblingMetaAccounts(
   userAccessToken: string,
@@ -353,8 +354,6 @@ async function reconcileSiblingMetaAccounts(
   const result: SiblingReconcileResult = { refreshed: 0, dropped: [] };
 
   const usable = pages.filter((p) => p.pageAccessToken);
-  if (!usable.length) return result;
-
   const byPageId = new Map(usable.map((p) => [p.pageId, p]));
   const byIgId = new Map(
     usable.filter((p) => p.igAccountId).map((p) => [p.igAccountId as string, p]),
@@ -372,15 +371,24 @@ async function reconcileSiblingMetaAccounts(
     },
     select: {
       id: true,
+      clientId: true,
       platform: true,
       pageId: true,
       platformUserId: true,
       igAccountId: true,
+      displayName: true,
+      healthStatus: true,
+      accessTokenEnc: true,
+      client: { select: { name: true, company: true } },
     },
   });
 
   const refreshTokenEnc = encryptToken(userAccessToken);
   const tokenExpiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+  const grantedNames = usable
+    .map((p) => p.pageId)
+    .filter(Boolean)
+    .slice(0, 6);
 
   for (const acc of siblings) {
     const page =
@@ -389,30 +397,83 @@ async function reconcileSiblingMetaAccounts(
         : byIgId.get(acc.igAccountId || acc.platformUserId) ||
           byPageId.get(acc.pageId || '');
 
-    // Not in this grant → preserve existing tokens. Do not touch the row.
-    if (!page?.pageAccessToken) continue;
+    if (page?.pageAccessToken) {
+      await prisma.socialAccount.update({
+        where: { id: acc.id },
+        data: {
+          accessTokenEnc: encryptToken(page.pageAccessToken),
+          refreshTokenEnc,
+          tokenExpiresAt,
+          healthStatus: 'healthy',
+          healthMessage: null,
+        },
+      });
+      result.refreshed++;
+      try {
+        const { syncAccount } = await import('../lib/social/social-scheduler.js');
+        await syncAccount(acc.id);
+      } catch (err) {
+        console.warn(`[OAuth] Sibling sync failed for ${acc.id}:`, err);
+      }
+      continue;
+    }
 
+    // Missing from this Facebook grant. Meta often revokes those Page tokens
+    // immediately — probe and surface that instead of waiting for Sync.
+    const probeId = acc.pageId || acc.platformUserId;
+    if (!probeId) continue;
+    let stillValid = true;
+    try {
+      stillValid = await meta.isPageTokenStillValid(probeId, decryptToken(acc.accessTokenEnc));
+    } catch {
+      continue;
+    }
+    if (stillValid) continue;
+
+    const clientName = acc.client?.company || acc.client?.name || 'another client';
+    const message =
+      `Meta revoked access after a Facebook login that only included other Pages` +
+      (grantedNames.length ? ` (granted page ids: ${grantedNames.join(', ')})` : '') +
+      `. Reconnect ${acc.platform} for ${clientName}, and in Facebook’s dialog keep EVERY client Page checked ` +
+      `(Tokka, Papparoti, Te'Amo) — or set the Login for Business config to “all current and future Pages”. ` +
+      `In our app, still select only this client’s account.`;
+
+    const wasAlreadyExpired = acc.healthStatus === 'expired';
     await prisma.socialAccount.update({
       where: { id: acc.id },
-      data: {
-        accessTokenEnc: encryptToken(page.pageAccessToken),
-        refreshTokenEnc,
-        tokenExpiresAt,
-        healthStatus: 'healthy',
-        healthMessage: null,
-      },
+      data: { healthStatus: 'expired', healthMessage: message },
     });
-    result.refreshed++;
-    try {
-      const { syncAccount } = await import('../lib/social/social-scheduler.js');
-      await syncAccount(acc.id);
-    } catch (err) {
-      console.warn(`[OAuth] Sibling sync failed for ${acc.id}:`, err);
+    result.dropped.push({
+      accountName: acc.displayName,
+      clientName,
+      platform: acc.platform,
+    });
+    if (!wasAlreadyExpired) {
+      try {
+        await prisma.notification.create({
+          data: {
+            title: 'Social Account Disconnected',
+            message: `${acc.displayName} (${acc.platform}) lost Meta access. ${message}`,
+            type: 'SOCIAL_ACCOUNT_EXPIRED',
+            category: 'WARNING',
+            entityType: 'CLIENT',
+            entityId: acc.clientId,
+          },
+        });
+      } catch (err) {
+        console.warn(`[OAuth] Could not create drop notification for ${acc.id}:`, err);
+      }
     }
   }
 
   if (result.refreshed > 0) {
     console.log(`[OAuth] Refreshed ${result.refreshed} sibling Meta account(s) from shared Facebook login`);
+  }
+  if (result.dropped.length > 0) {
+    console.warn(
+      `[OAuth] ${result.dropped.length} Meta account(s) revoked by narrowed Facebook grant: ` +
+        result.dropped.map((d) => `${d.accountName} (${d.clientName})`).join(', '),
+    );
   }
   return result;
 }

@@ -1385,11 +1385,11 @@ function ClientSocialProfilesTab({ clientId }: { clientId: string }) {
             </div>
           )}
           {(selectedPlatform === "facebook" || selectedPlatform === "instagram") && (
-            <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/40 border border-border/60 text-xs text-muted-foreground leading-relaxed">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-100 text-xs text-amber-800 leading-relaxed">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
               <span>
-                Connect only this client’s Page/Instagram. Other clients keep their existing connections —
-                you do not need to select everyone at once.
+                In Facebook keep <strong>all client Pages</strong> checked (Meta revokes unchecked ones).
+                In our app, pick only <strong>this</strong> client’s account.
               </span>
             </div>
           )}

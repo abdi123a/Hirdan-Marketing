@@ -953,11 +953,11 @@ export default function SocialAccountsPage() {
                   </div>
                 )}
                 {(wizardPlatform === "facebook" || wizardPlatform === "instagram") && (
-                  <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/40 border border-border/60">
-                    <AlertTriangle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      Connect <strong>only this client</strong>. Other clients keep their own Facebook/Instagram
-                      tokens — you do not need to select every Page in one go.
+                  <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-100">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      In Facebook, keep <strong>all client Pages</strong> checked. Unchecking a Page makes Meta
+                      revoke that client. In our app, still connect only <strong>this</strong> client’s account.
                     </p>
                   </div>
                 )}
