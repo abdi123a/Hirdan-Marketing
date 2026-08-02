@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useAgencyStore } from "@/lib/store";
 import { useAuthStore } from "@/lib/auth-store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -16,9 +16,8 @@ import {
   Briefcase, Receipt, FileText, Settings, User, 
   TrendingUp, CreditCard, Calendar, CheckCircle2, Clock,
   Plus, Layers, Eye, EyeOff, KeyRound, Copy, RefreshCw,
-  Instagram, Facebook, Linkedin, Youtube, Twitter,
   Trash2, Pencil, Upload, Download, ExternalLink, Share2,
-  Loader2, Zap, Send, Image, Sparkles, ChevronDown, ChevronRight, Video, MoreVertical, AlertCircle, Home
+  Loader2, Zap, ChevronDown, ChevronRight, Video, MoreVertical, AlertCircle, Home
 } from "lucide-react";
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -39,9 +38,12 @@ interface ClientMeeting {
   notes?: string | null;
 }
 
+const CLIENT_DETAIL_TABS = ["overview", "projects", "billing", "subscriptions", "social", "planner", "documents", "meetings"] as const;
+
 export default function ClientDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { clients, projects, invoices, proformas, subscriptions, fetchAllData } = useAgencyStore();
   const { toast } = useToast();
   const [selectedPreviewDoc, setSelectedPreviewDoc] = useState<{ title: string, fileUrl: string, type?: string } | null>(null);
@@ -52,6 +54,9 @@ export default function ClientDetailsPage() {
   const [meetingForm, setMeetingForm] = useState({ title: '', date: '', time: '', location: '', notes: '' });
   const [isSavingMeeting, setIsSavingMeeting] = useState(false);
   const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
+
+  const tabParam = searchParams.get("tab") || "overview";
+  const activeTab = (CLIENT_DETAIL_TABS as readonly string[]).includes(tabParam) ? tabParam : "overview";
 
   useEffect(() => {
     if (clients.length === 0) {
@@ -204,7 +209,16 @@ export default function ClientDetailsPage() {
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          <Tabs defaultValue="overview" className="w-full">
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) => {
+              const next = new URLSearchParams(searchParams);
+              if (v === "overview") next.delete("tab");
+              else next.set("tab", v);
+              setSearchParams(next, { replace: true });
+            }}
+            className="w-full"
+          >
             <TabsList className="bg-muted/30 p-1 border border-border/40 rounded-xl flex-wrap">
               <TabsTrigger value="overview" className="rounded-lg text-xs font-semibold tracking-tight">Overview</TabsTrigger>
               <TabsTrigger value="projects" className="rounded-lg text-xs font-semibold tracking-tight">Projects ({clientProjects.length})</TabsTrigger>
@@ -1076,123 +1090,244 @@ function ClientPortalAccessCard({ client }: { client: any }) {
   );
 }
 
-// ─── Platform config ──────────────────────────────────────────────
+// ─── Social accounts (same platforms as Social Accounts / OAuth) ──
 
-const PLATFORM_CONFIG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
-  INSTAGRAM: { icon: Instagram, color: "text-pink-500", bg: "bg-gradient-to-br from-purple-500/10 to-pink-500/10", label: "Instagram" },
-  FACEBOOK: { icon: Facebook, color: "text-blue-600", bg: "bg-blue-500/10", label: "Facebook" },
-  LINKEDIN: { icon: Linkedin, color: "text-blue-700", bg: "bg-blue-700/10", label: "LinkedIn" },
-  YOUTUBE: { icon: Youtube, color: "text-red-600", bg: "bg-red-500/10", label: "YouTube" },
-  X: { icon: Twitter, color: "text-foreground", bg: "bg-foreground/5", label: "X (Twitter)" },
-  TIKTOK: { icon: Zap, color: "text-cyan-500", bg: "bg-cyan-500/10", label: "TikTok" },
-  SNAPCHAT: { icon: Send, color: "text-yellow-500", bg: "bg-yellow-500/10", label: "Snapchat" },
-  PINTEREST: { icon: Image, color: "text-red-500", bg: "bg-red-500/10", label: "Pinterest" },
-  OTHER: { icon: Sparkles, color: "text-muted-foreground", bg: "bg-muted/50", label: "Other" },
+const CLIENT_SOCIAL_PLATFORMS = [
+  { id: "facebook",  label: "Facebook" },
+  { id: "instagram", label: "Instagram" },
+  { id: "linkedin",  label: "LinkedIn" },
+  { id: "youtube",   label: "YouTube" },
+  { id: "tiktok",    label: "TikTok" },
+  { id: "x",         label: "X / Twitter" },
+  { id: "threads",   label: "Threads" },
+  { id: "pinterest", label: "Pinterest" },
+] as const;
+
+const clientSocialIcon = (platform: string) => {
+  const map: Record<string, string> = {
+    facebook: "/social-icons/Facebook.png",
+    instagram: "/social-icons/instagram.png",
+    threads: "/social-icons/Threads.png",
+    tiktok: "/social-icons/tiktok.png",
+    linkedin: "/social-icons/linkedin.png",
+    youtube: "/social-icons/youtube.png",
+    x: "/social-icons/twitter.png",
+    twitter: "/social-icons/twitter.png",
+    pinterest: "/social-icons/pinterest.png",
+  };
+  return map[platform?.toLowerCase()] || null;
 };
 
-const ALL_PLATFORMS = ["INSTAGRAM", "FACEBOOK", "TIKTOK", "LINKEDIN", "X", "SNAPCHAT", "YOUTUBE", "PINTEREST", "OTHER"];
+interface ClientSocialAccount {
+  id: string;
+  platform: string;
+  platformUsername: string;
+  displayName: string;
+  avatarUrl: string | null;
+  healthStatus: string;
+  healthMessage: string | null;
+  isActive: boolean;
+  tokenExpiresAt: string | null;
+}
 
 // ─── Social Profiles Tab ──────────────────────────────────────────
 
 function ClientSocialProfilesTab({ clientId }: { clientId: string }) {
   const { toast } = useToast();
-  const [profiles, setProfiles] = useState<any[]>([]);
+  const navigate = useNavigate();
+  const [accounts, setAccounts] = useState<ClientSocialAccount[]>([]);
+  const [platformStatus, setPlatformStatus] = useState<Record<string, { configured: boolean; enabled: boolean }>>({});
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ platform: "", handle: "", profileUrl: "", notes: "" });
-  const [saving, setSaving] = useState(false);
+  const [selectedPlatform, setSelectedPlatform] = useState("");
+  const [connecting, setConnecting] = useState(false);
 
-  const fetchProfiles = async () => {
+  const fetchAccounts = useCallback(async () => {
     try {
-      const res = await apiFetch<{ profiles: any[] }>(`/clients/${clientId}/social-profiles`);
-      setProfiles(res.profiles);
-    } catch { /* ignore */ }
-    setLoading(false);
-  };
-
-  useEffect(() => { fetchProfiles(); }, [clientId]);
-
-  const handleAdd = async () => {
-    try {
-      setSaving(true);
-      await apiFetch(`/clients/${clientId}/social-profiles`, {
-        method: "POST",
-        body: JSON.stringify(form),
-      });
-      setShowAdd(false);
-      setForm({ platform: "", handle: "", profileUrl: "", notes: "" });
-      await fetchProfiles();
-      toast({ title: "Profile added", description: `${PLATFORM_CONFIG[form.platform]?.label || form.platform} profile connected.` });
+      const [accs, status] = await Promise.all([
+        apiFetch<ClientSocialAccount[]>(`/social/accounts/by-client/${clientId}`),
+        apiFetch<Record<string, { configured: boolean; enabled: boolean }>>("/social/platform-status"),
+      ]);
+      setAccounts(Array.isArray(accs) ? accs : []);
+      setPlatformStatus(status || {});
     } catch (err: any) {
-      toast({ title: "Error", description: err.message || "Failed to add profile", variant: "destructive" });
+      toast({ title: "Error", description: err.message || "Failed to load social accounts", variant: "destructive" });
     } finally {
-      setSaving(false);
+      setLoading(false);
+    }
+  }, [clientId, toast]);
+
+  useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+
+  const connectedPlatformIds = useMemo(
+    () => new Set(accounts.map(a => a.platform.toLowerCase())),
+    [accounts],
+  );
+
+  const handleConnect = async (platform?: string) => {
+    const plat = platform || selectedPlatform;
+    if (!plat) return;
+    try {
+      setConnecting(true);
+      // After OAuth, Social Accounts page redirects back here when this is set.
+      try {
+        sessionStorage.setItem("oauth_return", `/dashboard/clients/view/${clientId}?tab=social`);
+      } catch { /* ignore */ }
+      const res = await apiFetch<{ url: string }>(
+        `/social/oauth/connect?platform=${plat}&clientId=${clientId}&groupId=${clientId}`
+      );
+      if (res.url) window.location.href = res.url;
+      else throw new Error("No OAuth URL returned");
+    } catch (err: any) {
+      toast({ title: "Connection failed", description: err.message || "Could not start OAuth", variant: "destructive" });
+      setConnecting(false);
     }
   };
 
-  const handleDelete = async (profileId: string) => {
+  const handleDisconnect = async (accountId: string, name: string) => {
+    if (!confirm(`Disconnect ${name}? This will stop scheduled posts to this account.`)) return;
     try {
-      await apiFetch(`/clients/${clientId}/social-profiles/${profileId}`, { method: "DELETE" });
-      await fetchProfiles();
-      toast({ title: "Removed", description: "Social profile disconnected." });
-    } catch {
-      toast({ title: "Error", description: "Failed to remove profile", variant: "destructive" });
+      await apiFetch(`/social/accounts/${accountId}`, { method: "DELETE" });
+      await fetchAccounts();
+      toast({ title: "Disconnected", description: `${name} has been removed.` });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to disconnect", variant: "destructive" });
     }
   };
 
   if (loading) return <AccountsSkeleton />;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h3 className="text-lg font-display font-bold">Connected Platforms</h3>
-          <p className="text-xs text-muted-foreground font-medium">Manage this client's social media accounts</p>
+          <p className="text-xs text-muted-foreground font-medium">
+            Same OAuth accounts used for publishing and analytics
+          </p>
         </div>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-bold" onClick={() => setShowAdd(true)}>
-          <Plus className="h-3.5 w-3.5" /> Connect Platform
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 text-xs font-bold"
+            onClick={() => navigate("/dashboard/social-media/accounts")}
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> Manage All
+          </Button>
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-bold" onClick={() => { setSelectedPlatform(""); setShowAdd(true); }}>
+            <Plus className="h-3.5 w-3.5" /> Connect Platform
+          </Button>
+        </div>
       </div>
 
-      {profiles.length === 0 ? (
+      {/* Platform availability grid — mirrors Social Accounts */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {CLIENT_SOCIAL_PLATFORMS.map(p => {
+          const status = platformStatus[p.id] || { enabled: false, configured: false };
+          const isConnected = connectedPlatformIds.has(p.id);
+          const icon = clientSocialIcon(p.id);
+          return (
+            <button
+              key={p.id}
+              type="button"
+              disabled={!status.enabled || connecting}
+              onClick={() => {
+                if (!status.enabled) return;
+                if (isConnected) return;
+                handleConnect(p.id);
+              }}
+              className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all ${
+                !status.enabled
+                  ? "opacity-40 cursor-not-allowed border-border/30 bg-muted/20"
+                  : isConnected
+                  ? "border-emerald-200 bg-emerald-50/40"
+                  : "border-border/60 bg-background hover:border-primary/40 hover:bg-primary/3"
+              }`}
+              title={!status.enabled ? "Enable this platform in Settings → Plugins" : isConnected ? "Already connected" : `Connect ${p.label}`}
+            >
+              <div className="h-8 w-8 rounded-lg border border-border/40 bg-background flex items-center justify-center overflow-hidden shrink-0">
+                {icon ? <img src={icon} alt="" className="h-5 w-5 object-contain" /> : <Share2 className="h-4 w-4 text-muted-foreground" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold truncate">{p.label}</p>
+                {!status.enabled ? (
+                  <p className="text-[10px] text-muted-foreground">Not enabled</p>
+                ) : isConnected ? (
+                  <p className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> Connected
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-primary font-semibold">+ Connect</p>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {accounts.length === 0 ? (
         <Card className="border-border/50 border-dashed">
           <CardContent className="py-12 text-center">
             <Share2 className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-            <p className="text-sm font-medium text-muted-foreground">No social profiles connected yet</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">Connect platforms to track this client's social media presence</p>
+            <p className="text-sm font-medium text-muted-foreground">No social accounts connected yet</p>
+            <p className="text-xs text-muted-foreground/60 mt-1 max-w-sm mx-auto">
+              Connect an enabled platform above. These are the same accounts used in Social Media → Accounts, Publish, and Analytics.
+            </p>
           </CardContent>
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {profiles.map(profile => {
-            const config = PLATFORM_CONFIG[profile.platform] || PLATFORM_CONFIG.OTHER;
-            const Icon = config.icon;
+          {accounts.map(acc => {
+            const plat = acc.platform.toLowerCase();
+            const label = CLIENT_SOCIAL_PLATFORMS.find(p => p.id === plat)?.label || acc.platform;
+            const icon = clientSocialIcon(plat);
+            const healthy = acc.healthStatus === "healthy";
             return (
-              <Card key={profile.id} className="border-border/50 hover:border-primary/20 transition-all group">
+              <Card key={acc.id} className="border-border/50 hover:border-primary/20 transition-all group">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
-                    <div className={`w-10 h-10 rounded-xl ${config.bg} flex items-center justify-center shrink-0`}>
-                      {profile.platform === "PINTEREST" ? (
-                        <img src="/social-icons/pinterest.png" className="h-5 w-5 object-contain" alt="Pinterest" />
-                      ) : (
-                        <Icon className={`h-5 w-5 ${config.color}`} />
-                      )}
+                    <div className="relative shrink-0">
+                      <div className="h-10 w-10 rounded-full border border-border/60 overflow-hidden bg-muted/20">
+                        {acc.avatarUrl ? (
+                          <img src={acc.avatarUrl} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-sm font-bold text-primary bg-primary/10">
+                            {(acc.displayName || "?").charAt(0)}
+                          </div>
+                        )}
+                      </div>
+                      <div className="absolute -bottom-0.5 -right-0.5 h-5 w-5 rounded-full bg-background border border-border flex items-center justify-center overflow-hidden">
+                        {icon ? <img src={icon} alt="" className="h-3.5 w-3.5 object-contain" /> : <Share2 className="h-3 w-3" />}
+                      </div>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold">{config.label}</p>
-                      {profile.handle && <p className="text-xs text-muted-foreground font-medium">@{profile.handle}</p>}
-                      {profile.profileUrl && (
-                        <a href={profile.profileUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary font-bold hover:underline flex items-center gap-1 mt-1">
-                          <ExternalLink className="h-3 w-3" /> Profile Link
-                        </a>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-bold truncate">{acc.displayName || label}</p>
+                        {healthy ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                        ) : (
+                          <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground font-medium">{label}</p>
+                      {acc.platformUsername && (
+                        <p className="text-[11px] text-muted-foreground font-mono mt-0.5">@{acc.platformUsername}</p>
                       )}
-                      {profile.notes && <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{profile.notes}</p>}
+                      {!healthy && acc.healthMessage && (
+                        <p className="text-[10px] text-amber-700 mt-1.5 line-clamp-2">{acc.healthMessage}</p>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Badge className={profile.isActive ? "bg-emerald-500/10 text-emerald-600 border-0 text-[9px]" : "bg-red-500/10 text-red-500 border-0 text-[9px]"}>
-                        {profile.isActive ? "Active" : "Inactive"}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Badge className={healthy ? "bg-emerald-500/10 text-emerald-600 border-0 text-[9px]" : "bg-amber-500/10 text-amber-700 border-0 text-[9px]"}>
+                        {healthy ? "Connected" : acc.healthStatus || "Warning"}
                       </Badge>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-500/10" onClick={() => handleDelete(profile.id)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleDisconnect(acc.id, acc.displayName || label)}
+                      >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -1204,43 +1339,61 @@ function ClientSocialProfilesTab({ clientId }: { clientId: string }) {
         </div>
       )}
 
-      {/* Add Profile Dialog */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="sm:max-w-[420px]">
+      <Dialog open={showAdd} onOpenChange={open => { setShowAdd(open); if (!open) setSelectedPlatform(""); }}>
+        <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle className="font-display">Connect Social Platform</DialogTitle>
-            <DialogDescription className="text-xs">Add a social media account for this client</DialogDescription>
+            <DialogDescription className="text-xs">
+              Choose an enabled platform — same list as Social Media → Accounts
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label className="text-xs font-bold">Platform</Label>
-              <Select value={form.platform} onValueChange={v => setForm(prev => ({ ...prev, platform: v }))}>
-                <SelectTrigger className="mt-1.5"><SelectValue placeholder="Select platform..." /></SelectTrigger>
-                <SelectContent>
-                  {ALL_PLATFORMS.filter(p => !profiles.some(ep => ep.platform === p)).map(p => (
-                    <SelectItem key={p} value={p}>{PLATFORM_CONFIG[p]?.label || p}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs font-bold">Handle / Username</Label>
-              <Input placeholder="@username" value={form.handle} onChange={e => setForm(prev => ({ ...prev, handle: e.target.value }))} className="mt-1.5" />
-            </div>
-            <div>
-              <Label className="text-xs font-bold">Profile URL</Label>
-              <Input placeholder="https://..." value={form.profileUrl} onChange={e => setForm(prev => ({ ...prev, profileUrl: e.target.value }))} className="mt-1.5" />
-            </div>
-            <div>
-              <Label className="text-xs font-bold">Notes</Label>
-              <Textarea placeholder="Optional notes..." value={form.notes} onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))} className="mt-1.5" rows={2} />
-            </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 py-2">
+            {CLIENT_SOCIAL_PLATFORMS.map(p => {
+              const status = platformStatus[p.id] || { enabled: false };
+              const icon = clientSocialIcon(p.id);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  disabled={!status.enabled}
+                  onClick={() => setSelectedPlatform(p.id)}
+                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
+                    !status.enabled
+                      ? "opacity-40 cursor-not-allowed border-border/30 bg-muted/20"
+                      : selectedPlatform === p.id
+                      ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                      : "border-border/60 hover:border-primary/40"
+                  }`}
+                >
+                  <div className="h-9 w-9 rounded-lg border border-border/40 bg-background flex items-center justify-center overflow-hidden">
+                    {icon ? <img src={icon} alt="" className="h-5 w-5 object-contain" /> : <Share2 className="h-4 w-4" />}
+                  </div>
+                  <span className="text-[11px] font-bold text-center leading-tight">{p.label}</span>
+                  {status.enabled ? (
+                    <span className="text-[9px] font-black text-emerald-600">Available</span>
+                  ) : (
+                    <span className="text-[9px] font-black text-muted-foreground">Not set</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
+          {CLIENT_SOCIAL_PLATFORMS.every(p => !(platformStatus[p.id]?.enabled)) && (
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-100 text-xs text-amber-700">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              No platforms are enabled. Enable them in Settings → Plugins first.
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-            <Button variant="hero" onClick={handleAdd} disabled={saving || !form.platform} className="gap-2">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              {saving ? "Connecting..." : "Connect"}
+            <Button
+              variant="hero"
+              onClick={() => handleConnect()}
+              disabled={connecting || !selectedPlatform}
+              className="gap-2"
+            >
+              {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+              {connecting ? "Redirecting..." : "Authenticate"}
             </Button>
           </DialogFooter>
         </DialogContent>

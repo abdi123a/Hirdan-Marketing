@@ -561,7 +561,28 @@ export async function collectDailyInsights(clientId?: string): Promise<void> {
             if (platform === 'facebook' || platform === 'instagram') {
               const { getMetaPostInsights } = await import('./meta.service.js');
               metrics = await getMetaPostInsights(dest.platformPostId, token, platform as any);
+            } else if (platform === 'youtube') {
+              const { getYouTubePostInsights } = await import('./youtube.service.js');
+              metrics = await getYouTubePostInsights(dest.platformPostId, token);
+            } else {
+              // No live post-insight path for this platform yet — skip upsert so
+              // we don't clobber existing rows with fabricated zeros.
+              continue;
             }
+          } else {
+            continue;
+          }
+
+          // If a live fetch returned a total blank slate, keep any previously
+          // stored numbers rather than overwriting with zeros from a failed call.
+          const hasSignal =
+            metrics.likes > 0 || metrics.comments > 0 || metrics.shares > 0 ||
+            metrics.saved > 0 || metrics.views > 0 || metrics.reach > 0 || metrics.impressions > 0;
+          if (!isMock && !hasSignal) {
+            const existing = await prisma.postInsight.findUnique({
+              where: { postId_platform: { postId: post.id, platform: dest.platform } },
+            });
+            if (existing) continue;
           }
 
           await prisma.postInsight.upsert({

@@ -101,3 +101,31 @@ export async function getYouTubeInsights(accessToken: string): Promise<{ followe
     throw err;
   }
 }
+
+/** Per-video public statistics (views / likes / comments). */
+export async function getYouTubePostInsights(
+  videoId: string,
+  accessToken: string,
+): Promise<{ impressions: number; reach: number; likes: number; comments: number; shares: number; saved: number; views: number }> {
+  const { data } = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+    params: { part: 'statistics', id: videoId },
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const stats = data?.items?.[0]?.statistics;
+  if (!stats) {
+    throw new Error(`YouTube video ${videoId} not found or statistics unavailable`);
+  }
+  const views = parseInt(stats.viewCount, 10) || 0;
+  const likes = parseInt(stats.likeCount, 10) || 0;
+  const comments = parseInt(stats.commentCount, 10) || 0;
+  return {
+    views,
+    likes,
+    comments,
+    shares: 0,
+    saved: 0,
+    // YouTube doesn't expose reach separately — views is the closest public figure.
+    reach: views,
+    impressions: views,
+  };
+}

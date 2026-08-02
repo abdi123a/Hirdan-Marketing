@@ -171,11 +171,19 @@ export default function SocialAccountsPage() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // Show toast for OAuth callbacks
+  // Show toast for OAuth callbacks — and return to client profile Social tab when that flow started there.
   useEffect(() => {
     const connected = searchParams.get("connected");
     const error = searchParams.get("error");
-    if (connected === "true") toast({ title: "✅ Account Connected!", description: "Your social account has been successfully linked." });
+    let returnTo: string | null = null;
+    try { returnTo = sessionStorage.getItem("oauth_return"); sessionStorage.removeItem("oauth_return"); } catch { /* ignore */ }
+    if (connected === "true") {
+      toast({ title: "✅ Account Connected!", description: "Your social account has been successfully linked." });
+      if (returnTo && returnTo.startsWith("/dashboard/")) {
+        navigate(returnTo);
+        return;
+      }
+    }
     if (error) toast({ title: "OAuth Failed", description: decodeURIComponent(error), variant: "destructive" });
   }, []);
 

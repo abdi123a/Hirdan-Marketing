@@ -541,6 +541,21 @@ export async function getMetaPermalink(
   }
 }
 
+function metaInsightNumber(item: any): number {
+  if (!item) return 0;
+  if (item.total_value?.value != null) return Number(item.total_value.value) || 0;
+  const values = item.values;
+  if (Array.isArray(values) && values.length > 0) {
+    const last = values[values.length - 1]?.value;
+    // Some reaction metrics return a map { like: n, love: n, ... }
+    if (last && typeof last === 'object') {
+      return Object.values(last).reduce((s: number, v) => s + (Number(v) || 0), 0);
+    }
+    return Number(last) || 0;
+  }
+  return 0;
+}
+
 export async function getMetaPostInsights(
   platformPostId: string,
   token: string,
@@ -555,36 +570,70 @@ export async function getMetaPostInsights(
   let views = 0;
 
   if (platform === 'facebook') {
-    // 1. Fetch basic post fields for Facebook Page Post (likes, comments, shares)
+    // Reels / videos often store a bare video_id (not pageId_postId). Page-post
+    // `/insights` fails on those; `/video_insights` is the right edge. Try both.
+    // `likes` was deprecated — use reactions.summary.
     try {
       const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}`, {
         params: {
-          fields: 'likes.summary(true),comments.summary(true),shares',
+          fields: 'reactions.summary(true),comments.summary(true),shares',
           access_token: token,
         },
       });
-      likes = data.likes?.summary?.total_count ?? 0;
+      likes = data.reactions?.summary?.total_count ?? data.likes?.summary?.total_count ?? 0;
       comments = data.comments?.summary?.total_count ?? 0;
       shares = data.shares?.count ?? 0;
     } catch (err: any) {
       console.warn(`[Meta] Could not fetch basic Facebook post fields for ${platformPostId}:`, err.message);
     }
 
-    // 2. Fetch Facebook post insights (impressions & reach)
+    // Page-post insights (works for feed posts with pageId_postId)
     try {
       const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/insights`, {
         params: {
-          metric: 'post_impressions,post_impressions_unique',
+          metric: 'post_impressions,post_impressions_unique,post_video_views,post_reactions_by_type_total',
           access_token: token,
         },
       });
       for (const item of data.data || []) {
-        const val = item.values?.[0]?.value ?? 0;
-        if (item.name === 'post_impressions') impressions = Number(val) || 0;
-        if (item.name === 'post_impressions_unique') reach = Number(val) || 0;
+        const val = metaInsightNumber(item);
+        if (item.name === 'post_impressions') impressions = val;
+        if (item.name === 'post_impressions_unique') reach = val;
+        if (item.name === 'post_video_views' && val > 0) views = val;
+        if (item.name === 'post_reactions_by_type_total' && val > 0) likes = val;
       }
     } catch (err: any) {
-      console.warn(`[Meta] Could not fetch Facebook post insights for ${platformPostId}:`, err.message);
+      console.warn(`[Meta] Facebook post /insights failed for ${platformPostId}:`, err.message);
+    }
+
+    // Video / Reel insights (works for bare video_id from reels upload).
+    // Request metrics in small batches — one invalid metric rejects the whole call.
+    if (views === 0 && impressions === 0 && reach === 0) {
+      const videoMetricBatches = [
+        ['total_video_views', 'total_video_views_unique', 'total_video_impressions'],
+        ['blue_reels_play_count'],
+        ['post_video_likes_by_reaction_type'],
+      ];
+      for (const batch of videoMetricBatches) {
+        try {
+          const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/video_insights`, {
+            params: { metric: batch.join(','), access_token: token },
+          });
+          for (const item of data.data || []) {
+            const val = metaInsightNumber(item);
+            if ((item.name === 'total_video_views' || item.name === 'blue_reels_play_count') && val > 0) {
+              views = Math.max(views, val);
+            }
+            if (item.name === 'total_video_impressions' && val > 0) impressions = val;
+            if (item.name === 'total_video_views_unique' && val > 0) reach = val;
+            if (item.name === 'post_video_likes_by_reaction_type' && val > 0) likes = Math.max(likes, val);
+          }
+        } catch (err: any) {
+          console.warn(`[Meta] Facebook /video_insights (${batch.join(',')}) failed for ${platformPostId}:`, err.message);
+        }
+      }
+      if (impressions === 0 && views > 0) impressions = views;
+      if (reach === 0 && views > 0) reach = views;
     }
   } else {
     // 1. Fetch basic Instagram media fields (like_count, comments_count)
