@@ -143,6 +143,25 @@ This is how a client grants Hirdan access **without giving up ownership**. It is
 the correct substitute for claiming, and it is what makes the system-user path
 viable for an agency.
 
+### First: "I have access to their portfolio" is ambiguous
+
+Two different things wear that description, and only one fixes the bug:
+
+| What you have | Token path | Bug fixed? |
+| --- | --- | --- |
+| **You** are a user in the client's portfolio, Page assigned to you | your personal Facebook user → one replaceable grant | ❌ no change |
+| **Hirdan's portfolio** is a partner on the client's assets | system user in your portfolio → per-asset, additive | ✅ yes |
+
+**How to check:** open the client's Business settings → **Users → Partners**. If
+Hirdan Marketing is listed there as a partner, you have the second. If you only
+appear under **Users → People**, you have the first.
+
+**If you are an Admin in the client's portfolio you can do the upgrade yourself** —
+no client involvement. In *their* Business settings → **Partners → Add → Give a
+partner access to your assets** → paste Hirdan's Business portfolio ID → share the
+Page and Instagram account. If you are only an *Employee* there, ask the client to
+either promote you to Admin or run the steps below.
+
 ### What you send the client (once per client)
 
 Give them your **Business portfolio ID** (Business settings → Business info) and
