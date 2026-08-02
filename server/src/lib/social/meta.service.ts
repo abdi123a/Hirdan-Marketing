@@ -35,7 +35,11 @@ async function uploadFacebookPhotoBinary(
   if (caption && published) form.append('caption', caption);
 
   const { data } = await axios.post(`${GRAPH_URL}/${pageId}/photos`, form);
-  return data.id;
+  // /photos returns BOTH `id` (the photo object) and `post_id` (the Page post,
+  // "{pageId}_{postId}"). Only the Page post supports /insights, so store that
+  // for published photos. Unpublished children are carousel media_fbids and
+  // must stay as the photo id.
+  return published ? (data.post_id || data.id) : data.id;
 }
 
 async function uploadFacebookVideoBinary(
@@ -452,7 +456,8 @@ export async function publishToFacebookPage({
       const { data } = await axios.post(`${GRAPH_URL}/${pageId}/photos`, null, {
         params: { url, caption, access_token: pageAccessToken },
       });
-      return data.id;
+      // Prefer the Page-post id — the photo id has no /insights edge.
+      return data.post_id || data.id;
     }
     return await uploadFacebookPhotoBinary(pageId, pageAccessToken, url, caption, true);
   }
@@ -782,6 +787,21 @@ function metaInsightNumber(item: any): number {
   return 0;
 }
 
+/**
+ * Graph errors carry the useful detail in `response.data.error`; `err.message`
+ * alone is just "Request failed with status code 400", which is what made these
+ * failures impossible to diagnose from the logs.
+ */
+function metaGraphErrorText(err: any): string {
+  const e = err?.response?.data?.error;
+  if (!e) return err?.message || String(err);
+  const parts = [e.message];
+  if (e.code != null) parts.push(`code=${e.code}`);
+  if (e.error_subcode != null) parts.push(`subcode=${e.error_subcode}`);
+  if (e.type) parts.push(e.type);
+  return parts.filter(Boolean).join(' ');
+}
+
 export async function getMetaPostInsights(
   platformPostId: string,
   token: string,
@@ -795,32 +815,48 @@ export async function getMetaPostInsights(
   let reach = 0;
   let views = 0;
 
+  // Every Graph call below is individually tolerated, but if NONE of them
+  // succeed we must not report all-zero metrics as though they were real —
+  // the UI badges that "Live API" and it is indistinguishable from a post that
+  // genuinely got no engagement. Track success and throw instead.
+  let anyCallSucceeded = false;
+  const failures: string[] = [];
+
   if (platform === 'facebook') {
+    // Posts published as photos were historically stored as the PHOTO id, which
+    // has no /insights edge. `page_story_id` maps a photo back to its Page post,
+    // healing rows written before that was fixed at publish time.
+    let insightsId = platformPostId;
+
     // Reels / videos often store a bare video_id (not pageId_postId). Page-post
     // `/insights` fails on those; `/video_insights` is the right edge. Try both.
     // `likes` was deprecated — use reactions.summary.
     try {
       const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}`, {
         params: {
-          fields: 'reactions.summary(true),comments.summary(true),shares',
+          fields: 'reactions.summary(true),comments.summary(true),shares,page_story_id',
           access_token: token,
         },
       });
+      anyCallSucceeded = true;
       likes = data.reactions?.summary?.total_count ?? data.likes?.summary?.total_count ?? 0;
       comments = data.comments?.summary?.total_count ?? 0;
       shares = data.shares?.count ?? 0;
+      if (data.page_story_id) insightsId = data.page_story_id;
     } catch (err: any) {
+      failures.push(`fields: ${err.message}`);
       console.warn(`[Meta] Could not fetch basic Facebook post fields for ${platformPostId}:`, err.message);
     }
 
     // Page-post insights (works for feed posts with pageId_postId)
     try {
-      const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/insights`, {
+      const { data } = await axios.get(`${GRAPH_URL}/${insightsId}/insights`, {
         params: {
           metric: 'post_impressions,post_impressions_unique,post_video_views,post_reactions_by_type_total',
           access_token: token,
         },
       });
+      anyCallSucceeded = true;
       for (const item of data.data || []) {
         const val = metaInsightNumber(item);
         if (item.name === 'post_impressions') impressions = val;
@@ -829,7 +865,8 @@ export async function getMetaPostInsights(
         if (item.name === 'post_reactions_by_type_total' && val > 0) likes = val;
       }
     } catch (err: any) {
-      console.warn(`[Meta] Facebook post /insights failed for ${platformPostId}:`, err.message);
+      failures.push(`insights: ${metaGraphErrorText(err)}`);
+      console.warn(`[Meta] Facebook post /insights failed for ${insightsId}:`, metaGraphErrorText(err));
     }
 
     // Video / Reel insights (works for bare video_id from reels upload).
@@ -845,6 +882,7 @@ export async function getMetaPostInsights(
           const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/video_insights`, {
             params: { metric: batch.join(','), access_token: token },
           });
+          anyCallSucceeded = true;
           for (const item of data.data || []) {
             const val = metaInsightNumber(item);
             if ((item.name === 'total_video_views' || item.name === 'blue_reels_play_count') && val > 0) {
@@ -855,7 +893,11 @@ export async function getMetaPostInsights(
             if (item.name === 'post_video_likes_by_reaction_type' && val > 0) likes = Math.max(likes, val);
           }
         } catch (err: any) {
-          console.warn(`[Meta] Facebook /video_insights (${batch.join(',')}) failed for ${platformPostId}:`, err.message);
+          failures.push(`video_insights[${batch.join(',')}]: ${metaGraphErrorText(err)}`);
+          console.warn(
+            `[Meta] Facebook /video_insights (${batch.join(',')}) failed for ${platformPostId}:`,
+            metaGraphErrorText(err),
+          );
         }
       }
       if (impressions === 0 && views > 0) impressions = views;
@@ -870,10 +912,12 @@ export async function getMetaPostInsights(
           access_token: token,
         },
       });
+      anyCallSucceeded = true;
       likes = data.like_count ?? 0;
       comments = data.comments_count ?? 0;
     } catch (err: any) {
-      console.warn(`[Meta] Could not fetch basic Instagram media fields for ${platformPostId}:`, err.message);
+      failures.push(`fields: ${metaGraphErrorText(err)}`);
+      console.warn(`[Meta] Could not fetch basic Instagram media fields for ${platformPostId}:`, metaGraphErrorText(err));
     }
 
     // 2. Fetch Instagram media insights.
@@ -891,6 +935,7 @@ export async function getMetaPostInsights(
           access_token: token,
         },
       });
+      anyCallSucceeded = true;
       for (const item of data.data || []) {
         const val = readInsight(item);
         if (item.name === 'reach') reach = val;
@@ -910,6 +955,7 @@ export async function getMetaPostInsights(
             access_token: token,
           },
         });
+        anyCallSucceeded = true;
         for (const item of data.data || []) {
           const val = readInsight(item);
           if (item.name === 'reach') reach = val;
@@ -917,9 +963,22 @@ export async function getMetaPostInsights(
           if (item.name === 'shares') shares = val;
         }
       } catch (fallbackErr: any) {
-        console.warn(`[Meta] Could not fetch Instagram post insights for ${platformPostId}:`, fallbackErr.message || err.message);
+        failures.push(`insights: ${metaGraphErrorText(fallbackErr)}`);
+        console.warn(
+          `[Meta] Could not fetch Instagram post insights for ${platformPostId}:`,
+          metaGraphErrorText(fallbackErr) || metaGraphErrorText(err),
+        );
       }
     }
+  }
+
+  // Not one Graph call worked. Returning zeros here would be stored and rendered
+  // as a real "Live API" result, indistinguishable from a post that genuinely got
+  // no engagement. Fail loudly so the caller skips the write.
+  if (!anyCallSucceeded) {
+    throw new Error(
+      `No Meta insight endpoint responded for ${platform} post ${platformPostId} — ${failures.join(' | ')}`,
+    );
   }
 
   return { impressions, reach, likes, comments, shares, saved, views };
