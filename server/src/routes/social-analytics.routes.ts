@@ -80,9 +80,10 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     }
 
     // ── Daily metrics ──
+    // Include an upper bound so custom end dates don't pull days after `until`.
     const [rawCurrentMetrics, rawPrevMetrics] = await Promise.all([
       prisma.accountInsightDaily.findMany({
-        where: { socialAccountId: { in: accountIds }, date: { gte: since } },
+        where: { socialAccountId: { in: accountIds }, date: { gte: since, lte: until } },
         include: { account: { select: { platform: true, displayName: true } } },
         orderBy: { date: 'asc' },
       }),
@@ -775,7 +776,9 @@ router.get('/analytics/post/:id', authenticate, async (req, res, next) => {
 router.post('/analytics/:clientId/refresh', authenticate, async (req, res, next) => {
   try {
     const { clientId } = req.params as { clientId: string };
-    await collectDailyInsights();
+    // Scope sync to this client — previously refreshed every account in the DB,
+    // which was slow and made client-specific failures hard to see.
+    await collectDailyInsights(clientId);
 
     // Enrich thumbnails & verify TikTok imported posts for this client
     const tiktokAccounts = await prisma.socialAccount.findMany({

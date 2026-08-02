@@ -265,7 +265,11 @@ export async function fetchPlatformInsights(account: SocialAccount): Promise<{ f
       return await x.getXInsights(accessToken);
     case 'pinterest':
       return await pinterest.getPinterestInsights(accessToken);
+    case 'threads': {
+      const profile = await meta.getThreadsProfile(accessToken);
+      return { followers: profile.followers, reach: null, impressions: null, profileVisits: null };
+    }
     default:
-      return { followers: 0, reach: 0, impressions: 0, profileVisits: 0 };
+      return { followers: 0, reach: null, impressions: null, profileVisits: null };
   }
 }

@@ -53,7 +53,9 @@ export function getLinkedInAuthorizationUrl(clientIdStr: string, groupId: string
     client_id: clientId,
     redirect_uri: redirectUri,
     state,
-    scope: 'w_member_social,r_liteprofile',
+    // r_1st_connections_size is required for connection-count analytics
+    // (personal profiles don't expose "followers" via CompanyFollowedByMember).
+    scope: 'w_member_social,r_liteprofile,r_1st_connections_size',
   });
 
   return `https://www.linkedin.com/oauth/v2/authorization?${params.toString()}`;
@@ -165,22 +167,63 @@ export async function getLinkedInInsights(accessToken: string): Promise<{ follow
     const profileResponse = await axios.get('https://api.linkedin.com/v2/me', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    const personUrn = `urn:li:person:${profileResponse.data.id}`;
+    const personId = profileResponse.data?.id;
+    if (!personId) {
+      throw new Error('LinkedIn profile id missing from /v2/me response');
+    }
+    const personUrn = `urn:li:person:${personId}`;
+    const headers = { Authorization: `Bearer ${accessToken}` };
 
-    let followers = 0;
-    let followersAvailable = true;
+    // Personal LinkedIn accounts expose 1st-degree *connections*, not company
+    // followers. The old call used edgeType=CompanyFollowedByMember on a person
+    // URN, which always failed and silently stored followers: 0.
+    //
+    // Preferred: Connections Size API → { firstDegreeSize }
+    // Fallback:  networkSizes?edgeType=FirstDegreeConnection
+    let connections = 0;
+    let lastError: any = null;
+
     try {
-      const networkResponse = await axios.get(`https://api.linkedin.com/v2/networkSizes/${personUrn}`, {
-        params: { edgeType: 'CompanyFollowedByMember' },
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      followers = networkResponse.data?.firstDegreeConnectionSize || 0;
-    } catch {
-      followersAvailable = false;
+      const { data } = await axios.get(
+        `https://api.linkedin.com/v2/connections/${encodeURIComponent(personUrn)}`,
+        { headers },
+      );
+      connections = Number(data?.firstDegreeSize) || 0;
+    } catch (err: any) {
+      lastError = err;
+      try {
+        const { data } = await axios.get(
+          `https://api.linkedin.com/v2/networkSizes/${encodeURIComponent(personUrn)}`,
+          { params: { edgeType: 'FirstDegreeConnection' }, headers },
+        );
+        connections =
+          Number(data?.firstDegreeSize) ||
+          Number(data?.firstDegreeConnectionSize) ||
+          0;
+        lastError = null;
+      } catch (fallbackErr: any) {
+        lastError = fallbackErr;
+      }
+    }
+
+    if (lastError) {
+      const status = lastError?.response?.status;
+      const msg = lastError?.response?.data?.message || lastError?.message || 'Unknown error';
+      // Missing r_1st_connections_size (or partner approval) — surface so Sync
+      // Metrics marks the account unhealthy instead of writing a fake 0.
+      if (status === 401 || status === 403 || status === 404) {
+        throw new Error(
+          `LinkedIn connection count unavailable — reconnect LinkedIn with ` +
+          `r_1st_connections_size (and confirm the scope is approved for this app). (${msg})`
+        );
+      }
+      throw lastError;
     }
 
     return {
-      followers: followersAvailable ? followers : 0,
+      // Stored under the shared "followers" KPI: for member profiles this is
+      // 1st-degree connection count (LinkedIn's public member metric).
+      followers: connections,
       reach: null,
       impressions: null,
       profileVisits: null,

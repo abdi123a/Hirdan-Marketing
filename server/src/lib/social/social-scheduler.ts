@@ -495,10 +495,14 @@ export async function syncAccount(accountId: string): Promise<void> {
   }
 }
 
-export async function collectDailyInsights(): Promise<void> {
+export async function collectDailyInsights(clientId?: string): Promise<void> {
   try {
     const accounts = await prisma.socialAccount.findMany({
-      where: { isActive: true, healthStatus: { not: 'expired' } },
+      where: {
+        isActive: true,
+        healthStatus: { not: 'expired' },
+        ...(clientId ? { clientId } : {}),
+      },
     });
 
     for (const account of accounts) {
@@ -516,6 +520,7 @@ export async function collectDailyInsights(): Promise<void> {
         publishedAt: {
           gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
         },
+        ...(clientId ? { clientId } : {}),
       },
       include: {
         destinations: {

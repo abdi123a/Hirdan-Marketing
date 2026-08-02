@@ -1833,9 +1833,9 @@ export default function SocialAnalyzePage() {
                             );
                           })}
                         </div>
-                        {plat === "instagram" && acc.metricStatus?.reach === "locked" && (
+                        {plat === "instagram" && (acc.metricStatus?.reach === "locked" || (acc.healthStatus === "warning" && (acc.healthMessage || "").toLowerCase().includes("insights"))) && (
                           <div className="px-4 py-2 text-[10px] text-amber-700 bg-amber-50/60 border-t border-amber-100 flex items-center gap-1.5">
-                            <Lock className="h-3 w-3 shrink-0"/> Reach &amp; impressions need the Instagram insights permission — reconnect to enable.
+                            <Lock className="h-3 w-3 shrink-0"/> Reach &amp; impressions need the Instagram insights permission — reconnect Instagram, then Sync Metrics.
                           </div>
                         )}
                         {m?.engagementRate != null && m.engagementRate > 0 && (

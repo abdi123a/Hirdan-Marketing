@@ -33,10 +33,13 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
     scopes = ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'pages_manage_metadata', 'read_insights', 'business_management'];
   } else if (platform === 'instagram') {
     redirectUri = process.env.META_REDIRECT_URI_INSTAGRAM || '';
-    scopes = ['pages_show_list', 'pages_read_engagement', 'instagram_basic', 'instagram_content_publish', 'read_insights', 'business_management'];
+    // instagram_manage_insights is required for IG account + media insights
+    // (reach, views, saved, shares, etc.). It was accidentally dropped in a
+    // later refactor, which made Sync Metrics return followers-only for IG.
+    scopes = ['pages_show_list', 'pages_read_engagement', 'instagram_basic', 'instagram_content_publish', 'instagram_manage_insights', 'read_insights', 'business_management'];
   } else if (platform === 'threads') {
     redirectUri = process.env.META_REDIRECT_URI_THREADS || '';
-    scopes = ['threads_basic', 'threads_content_publish'];
+    scopes = ['threads_basic', 'threads_content_publish', 'threads_manage_insights'];
   }
 
   const state = createOAuthState(platform, clientId, groupId);
@@ -406,12 +409,20 @@ export async function getMetaInsights(accountId: string, token: string, platform
     // which made every Facebook card show reach == impressions.
     let reachVal = 0;
     let impressionsVal = 0;
+    const fbInsightValue = (item: any): number => {
+      if (!item) return 0;
+      const values = item.values;
+      if (Array.isArray(values) && values.length > 0) {
+        return Number(values[values.length - 1]?.value) || 0;
+      }
+      return Number(item.total_value?.value) || 0;
+    };
     try {
       const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
         params: { metric: 'page_impressions_unique,page_impressions', period: 'day', access_token: token },
       });
-      reachVal = data.data.find((item: any) => item.name === 'page_impressions_unique')?.values?.[0]?.value ?? 0;
-      impressionsVal = data.data.find((item: any) => item.name === 'page_impressions')?.values?.[0]?.value ?? 0;
+      reachVal = fbInsightValue(data.data?.find((item: any) => item.name === 'page_impressions_unique'));
+      impressionsVal = fbInsightValue(data.data?.find((item: any) => item.name === 'page_impressions'));
     } catch (err) {
       // Some metrics are deprecated on newer Graph versions; fall back to the
       // views metric for reach so the card still shows a real number.
@@ -419,7 +430,7 @@ export async function getMetaInsights(accountId: string, token: string, platform
         const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
           params: { metric: 'page_views_total', period: 'day', access_token: token },
         });
-        reachVal = data.data.find((item: any) => item.name === 'page_views_total')?.values?.[0]?.value ?? 0;
+        reachVal = fbInsightValue(data.data?.find((item: any) => item.name === 'page_views_total'));
       } catch { /* leave zeros */ }
     }
     const { data: pageData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
@@ -434,37 +445,64 @@ export async function getMetaInsights(accountId: string, token: string, platform
   } else {
     let reachVal = 0;
     let impressionsVal = 0;
+    let insightsPermissionError: string | null = null;
 
-    // 1. Try to fetch reach and impressions using the standard legacy query
+    // Meta returns either `values[n].value` (time series) or `total_value.value`
+    // (when metric_type=total_value). Prefer the last time-series point (most
+    // recent complete day) and never throw on a missing values array.
+    const insightValue = (item: any): number => {
+      if (!item) return 0;
+      if (item.total_value?.value != null) return Number(item.total_value.value) || 0;
+      const values = item.values;
+      if (Array.isArray(values) && values.length > 0) {
+        return Number(values[values.length - 1]?.value) || 0;
+      }
+      return 0;
+    };
+
+    const isPermissionErr = (err: any) => {
+      const code = err?.response?.data?.error?.code;
+      const msg = (err?.response?.data?.error?.message || err?.message || '').toLowerCase();
+      return code === 10 || code === 200 || msg.includes('permission') || msg.includes('(#10)') || msg.includes('manage_insights');
+    };
+
+    // 1. Reach (still supported as period=day). Impressions was deprecated on
+    // IG in Graph v22+ — don't request it in the same call or the whole query fails.
     try {
       const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
-        params: { metric: 'reach,impressions', period: 'day', access_token: token },
+        params: { metric: 'reach', period: 'day', access_token: token },
       });
-      reachVal = data.data.find((item: any) => item.name === 'reach')?.values[0]?.value ?? 0;
-      impressionsVal = data.data.find((item: any) => item.name === 'impressions')?.values[0]?.value ?? 0;
-    } catch (e) {
-      // If legacy query fails (due to impressions deprecation in v22+), fetch reach separately
-      try {
-        const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
-          params: { metric: 'reach', period: 'day', access_token: token },
-        });
-        reachVal = data.data.find((item: any) => item.name === 'reach')?.values[0]?.value ?? 0;
-      } catch (err) {
-        console.error('Error fetching Instagram reach:', err);
+      reachVal = insightValue(data.data?.find((item: any) => item.name === 'reach'));
+    } catch (err: any) {
+      console.error('Error fetching Instagram reach:', err?.message || err);
+      if (isPermissionErr(err)) {
+        insightsPermissionError = err?.response?.data?.error?.message || err.message;
       }
     }
 
-    // 2. Fetch views using metric_type=total_value
+    // 2. Views replace deprecated impressions (metric_type=total_value).
     try {
       const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
         params: { metric: 'views', period: 'day', metric_type: 'total_value', access_token: token },
       });
-      const viewsVal = data.data.find((item: any) => item.name === 'views')?.values[0]?.value ?? 0;
+      const viewsVal = insightValue(data.data?.find((item: any) => item.name === 'views'));
       if (viewsVal > 0) {
         impressionsVal = viewsVal;
       }
-    } catch (err) {
-      console.error('Error fetching Instagram views:', err);
+    } catch (err: any) {
+      console.error('Error fetching Instagram views:', err?.message || err);
+      if (!insightsPermissionError && isPermissionErr(err)) {
+        insightsPermissionError = err?.response?.data?.error?.message || err.message;
+      }
+    }
+
+    // Missing instagram_manage_insights used to fail silently (followers synced,
+    // reach/views stayed 0, UI looked "broken"). Surface it so Sync Metrics
+    // marks the account unhealthy and the user can reconnect.
+    if (insightsPermissionError) {
+      throw new Error(
+        `Instagram insights permission missing — reconnect the account with insights enabled. (${insightsPermissionError})`
+      );
     }
 
     const { data: igData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
@@ -563,23 +601,49 @@ export async function getMetaPostInsights(
       console.warn(`[Meta] Could not fetch basic Instagram media fields for ${platformPostId}:`, err.message);
     }
 
-    // 2. Fetch Instagram media insights (impressions, reach, saved, shares)
+    // 2. Fetch Instagram media insights.
+    // `impressions` is deprecated for IG media — request modern metrics and map
+    // views/plays into the impressions/views fields the analytics UI expects.
+    const readInsight = (item: any): number => {
+      if (!item) return 0;
+      if (item.total_value?.value != null) return Number(item.total_value.value) || 0;
+      return Number(item.values?.[0]?.value) || 0;
+    };
     try {
       const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/insights`, {
         params: {
-          metric: 'impressions,reach,saved,shares',
+          metric: 'reach,saved,shares,views',
           access_token: token,
         },
       });
       for (const item of data.data || []) {
-        const val = item.values?.[0]?.value ?? 0;
-        if (item.name === 'impressions') impressions = Number(val) || 0;
-        if (item.name === 'reach') reach = Number(val) || 0;
-        if (item.name === 'saved') saved = Number(val) || 0;
-        if (item.name === 'shares') shares = Number(val) || 0;
+        const val = readInsight(item);
+        if (item.name === 'reach') reach = val;
+        if (item.name === 'saved') saved = val;
+        if (item.name === 'shares') shares = val;
+        if (item.name === 'views' || item.name === 'plays') {
+          views = val;
+          impressions = val;
+        }
       }
     } catch (err: any) {
-      console.warn(`[Meta] Could not fetch Instagram post insights for ${platformPostId}:`, err.message);
+      // Older media may still accept the legacy set — try once more.
+      try {
+        const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/insights`, {
+          params: {
+            metric: 'reach,saved,shares',
+            access_token: token,
+          },
+        });
+        for (const item of data.data || []) {
+          const val = readInsight(item);
+          if (item.name === 'reach') reach = val;
+          if (item.name === 'saved') saved = val;
+          if (item.name === 'shares') shares = val;
+        }
+      } catch (fallbackErr: any) {
+        console.warn(`[Meta] Could not fetch Instagram post insights for ${platformPostId}:`, fallbackErr.message || err.message);
+      }
     }
   }
 

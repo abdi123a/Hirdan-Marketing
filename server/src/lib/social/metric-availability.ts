@@ -87,22 +87,24 @@ export const METRIC_AVAILABILITY: Record<string, PlatformMatrix> = {
     story: 'none',
   },
   instagram: {
+    // Live once the account is connected with instagram_manage_insights
+    // (requested in Meta OAuth). Demographics still need advanced access.
     followers: 'live',
-    reach: 'scope',
-    impressions: 'scope',
+    reach: 'live',
+    impressions: 'live',
     profileVisits: 'scope',
-    engagementRate: 'scope',
-    videoViews: 'scope',
+    engagementRate: 'live',
+    videoViews: 'live',
     likes: 'live',
     comments: 'live',
-    shares: 'scope',
-    saved: 'scope',
-    views: 'scope',
+    shares: 'live',
+    saved: 'live',
+    views: 'live',
     demoGender: 'scope',
     demoCountry: 'scope',
     demoAge: 'scope',
     activity: 'live',
-    story: 'scope',
+    story: 'live',
   },
   tiktok: {
     // Public API gives followers only; everything else comes from the
