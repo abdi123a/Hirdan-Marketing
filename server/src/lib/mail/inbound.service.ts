@@ -137,10 +137,17 @@ export async function processInboundEmail(input: any): Promise<boolean> {
 
   // Which of our mailboxes was this addressed to? (to/cc, and Resend's
   // received_for which reflects the actual delivered-to address.)
-  const candidates = [...tos, ...ccs, ...receivedFor].map((a) => a.email);
-  const mailbox = candidates.length
+  // Candidates are already lowercased by parseAddress*; mailboxes are also
+  // stored lowercase — keep a case-insensitive fallback for older rows.
+  const candidates = [...tos, ...ccs, ...receivedFor].map((a) => a.email.toLowerCase());
+  let mailbox = candidates.length
     ? await prisma.mailbox.findFirst({ where: { email: { in: candidates } } })
     : null;
+  if (!mailbox && candidates.length) {
+    const all = await prisma.mailbox.findMany({ select: { id: true, email: true } });
+    const hit = all.find((m) => candidates.includes(m.email.toLowerCase()));
+    if (hit) mailbox = await prisma.mailbox.findUnique({ where: { id: hit.id } });
+  }
   if (!mailbox) return false; // not for us (still recorded in WebhookLog)
 
   // Idempotency: same inbound message already stored? Match on the Resend

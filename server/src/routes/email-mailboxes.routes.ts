@@ -126,6 +126,9 @@ router.get(
 router.post('/mailboxes', requireAdmin, async (req: Request, res: Response, next) => {
   try {
     const data = mailboxSchema.parse(req.body);
+    // Normalize to lowercase so inbound webhook matching is reliable.
+    data.email = data.email.toLowerCase();
+    if (data.replyTo) data.replyTo = data.replyTo.toLowerCase();
 
     if (data.isDefault) {
       await prisma.mailbox.updateMany({ data: { isDefault: false } });
@@ -153,6 +156,8 @@ router.put(
     try {
       const data = mailboxSchema.partial().parse(req.body);
       const id = req.params.mailboxId as string;
+      if (data.email) data.email = data.email.toLowerCase();
+      if (data.replyTo) data.replyTo = data.replyTo.toLowerCase();
 
       if (data.isDefault) {
         await prisma.mailbox.updateMany({ data: { isDefault: false } });

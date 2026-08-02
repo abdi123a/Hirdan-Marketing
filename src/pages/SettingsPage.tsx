@@ -71,6 +71,9 @@ import {
   Cloud,
   CloudOff,
   PlusCircle,
+  CheckCircle2,
+  Copy,
+  Inbox,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyStore, AgencySettings, PaymentMethod, SocialLink, VersionEntry } from "@/lib/store";
@@ -229,6 +232,7 @@ export default function SettingsPage() {
 
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   const [showSmtpPassword, setShowSmtpPassword] = useState(false);
+  const [showWebhookSecret, setShowWebhookSecret] = useState(false);
   const [showOpenAiKey, setShowOpenAiKey] = useState(false);
   const [showClaudeKey, setShowClaudeKey] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
@@ -236,6 +240,32 @@ export default function SettingsPage() {
   const [emailStatus, setEmailStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [showTestEmailDialog, setShowTestEmailDialog] = useState(false);
   const [testEmailTarget, setTestEmailTarget] = useState('');
+  const [webhookUrlCopied, setWebhookUrlCopied] = useState(false);
+  const [emailHealth, setEmailHealth] = useState<{
+    canSend: boolean;
+    canReceive: boolean;
+    webhookUrl: string;
+    hasWebhookSecret: boolean;
+  } | null>(null);
+
+  const fetchEmailHealth = async () => {
+    try {
+      const res = await apiFetch<{
+        canSend: boolean;
+        canReceive: boolean;
+        webhookUrl: string;
+        hasWebhookSecret: boolean;
+      }>('/settings/email');
+      setEmailHealth({
+        canSend: !!res.canSend,
+        canReceive: !!res.canReceive,
+        webhookUrl: res.webhookUrl,
+        hasWebhookSecret: !!res.hasWebhookSecret,
+      });
+    } catch {
+      // Non-admin or offline — checklist falls back to form fields.
+    }
+  };
 
   const [backups, setBackups] = useState<{ filename: string; size: number; createdAt: string }[]>([]);
   const [loadingBackups, setLoadingBackups] = useState(false);
@@ -511,6 +541,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     fetchSettingsAccounts();
+    fetchEmailHealth();
   }, []);
 
   useEffect(() => {
@@ -2067,11 +2098,76 @@ export default function SettingsPage() {
             </DialogContent>
           </Dialog>
 
+          {/* Readiness checklist */}
+          {(() => {
+            const canSend =
+              emailHealth?.canSend ??
+              !!(formData.resendApiKey?.startsWith('re_') && formData.emailFrom?.includes('@'));
+            const canReceive =
+              emailHealth?.canReceive ?? !!(formData.resendWebhookSecret?.startsWith('whsec_'));
+            const inboundDomain =
+              formData.resendInboundDomain ||
+              (formData.emailFrom?.includes('@') ? formData.emailFrom.split('@')[1] : '');
+            const webhookUrl =
+              emailHealth?.webhookUrl ||
+              'https://api.yourdomain.com/api/email/webhooks/resend';
+            return (
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className={`p-4 rounded-2xl border ${canSend ? 'border-green-500/30 bg-green-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    {canSend ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertCircle className="h-4 w-4 text-amber-600" />}
+                    <p className="text-sm font-semibold">Sending</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {canSend
+                      ? 'API key + From address look set. Use Test to confirm delivery.'
+                      : 'Needs a Resend API key (re_…) and a verified From address.'}
+                  </p>
+                </div>
+                <div className={`p-4 rounded-2xl border ${canReceive ? 'border-green-500/30 bg-green-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    {canReceive ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertCircle className="h-4 w-4 text-amber-600" />}
+                    <p className="text-sm font-semibold">Receiving (Email Center)</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {canReceive
+                      ? `Webhook secret set. Point Resend at your webhook URL${inboundDomain ? ` and enable inbound for ${inboundDomain}` : ''}.`
+                      : 'Needs the Resend webhook signing secret (whsec_…). Without it, inbound mail is rejected.'}
+                  </p>
+                </div>
+                <div className="md:col-span-2 p-4 rounded-2xl border border-border bg-muted/30 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-muted-foreground mb-1">Resend webhook endpoint</p>
+                    <code className="text-xs font-mono break-all text-foreground">{webhookUrl}</code>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 shrink-0"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(webhookUrl);
+                        setWebhookUrlCopied(true);
+                        setTimeout(() => setWebhookUrlCopied(false), 2000);
+                      } catch {
+                        toast({ title: 'Copy failed', description: 'Copy the URL manually.', variant: 'destructive' });
+                      }
+                    }}
+                  >
+                    {webhookUrlCopied ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {webhookUrlCopied ? 'Copied' : 'Copy URL'}
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Test + status bar */}
           <div className="flex items-center justify-between gap-4 p-4 rounded-2xl border border-border bg-muted/30">
             <button
               id="test-email-btn"
-              disabled={isTestingEmail || !formData.mailEnabled}
+              disabled={isTestingEmail || !formData.resendApiKey?.startsWith('re_') || !formData.emailFrom}
               onClick={() => {
                 setTestEmailTarget(formData.adminEmail || '');
                 setEmailStatus('idle');
@@ -2094,17 +2190,18 @@ export default function SettingsPage() {
           {/* Config card */}
           <Card className="shadow-card border-border overflow-hidden">
             <CardHeader className="bg-muted/30 border-b pb-5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div>
                   <CardTitle className="font-display text-xl flex items-center gap-2">
                     <Server className="h-5 w-5 text-blue-500" />
-                    Mail Configuration
+                    Resend Configuration
                   </CardTitle>
-                  <CardDescription className="mt-1">SMTP settings for sending transactional emails via Resend.</CardDescription>
+                  <CardDescription className="mt-1">
+                    API credentials for sending and the webhook secret required for Email Center inbox.
+                  </CardDescription>
                 </div>
-                {/* Status toggle */}
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-semibold text-muted-foreground">Mail Configuration Status</span>
+                  <span className="text-sm font-semibold text-muted-foreground">Mail enabled</span>
                   <div className="flex items-center gap-2">
                     <Switch
                       id="mailEnabled"
@@ -2125,14 +2222,13 @@ export default function SettingsPage() {
             <CardContent className="p-8">
               <div className="grid md:grid-cols-2 gap-x-10 gap-y-7">
 
-                {/* Mailer Name */}
                 <div className="space-y-2">
                   <Label htmlFor="mailerName" className="text-sm font-semibold text-foreground/80">
                     Mailer Name
                   </Label>
                   <Input
                     id="mailerName"
-                    value={formData.mailerName}
+                    value={formData.mailerName || ''}
                     onChange={handleInputChange}
                     placeholder="e.g. Hirdan Marketing"
                     className="h-11 focus-visible:ring-blue-500"
@@ -2140,61 +2236,14 @@ export default function SettingsPage() {
                   <p className="text-[11px] text-muted-foreground">Shown as the sender name in email clients.</p>
                 </div>
 
-                {/* Host */}
-                <div className="space-y-2">
-                  <Label htmlFor="smtpHost" className="text-sm font-semibold text-foreground/80">
-                    Host
-                  </Label>
-                  <Input
-                    id="smtpHost"
-                    value={formData.smtpHost}
-                    onChange={handleInputChange}
-                    placeholder="smtp.resend.com"
-                    className="h-11 focus-visible:ring-blue-500"
-                  />
-                </div>
-
-
-
-                {/* Port */}
-                <div className="space-y-2">
-                  <Label htmlFor="smtpPort" className="text-sm font-semibold text-foreground/80">
-                    Port
-                  </Label>
-                  <Input
-                    id="smtpPort"
-                    type="number"
-                    value={formData.smtpPort}
-                    onChange={handleInputChange}
-                    placeholder="587"
-                    className="h-11 focus-visible:ring-blue-500"
-                  />
-                </div>
-
-                {/* Username */}
-                <div className="space-y-2">
-                  <Label htmlFor="smtpUsername" className="text-sm font-semibold text-foreground/80">
-                    Username
-                  </Label>
-                  <Input
-                    id="smtpUsername"
-                    value={formData.smtpUsername}
-                    onChange={handleInputChange}
-                    placeholder="resend"
-                    className="h-11 focus-visible:ring-blue-500"
-                  />
-                  <p className="text-[11px] text-muted-foreground">For Resend SMTP, username is always <code className="font-mono bg-muted px-1 rounded">resend</code>.</p>
-                </div>
-
-                {/* Email Id */}
                 <div className="space-y-2">
                   <Label htmlFor="emailFrom" className="text-sm font-semibold text-foreground/80">
-                    Email Id <span className="text-[10px] text-muted-foreground font-normal">(From address)</span>
+                    From address
                   </Label>
                   <Input
                     id="emailFrom"
                     type="email"
-                    value={formData.emailFrom}
+                    value={formData.emailFrom || ''}
                     onChange={handleInputChange}
                     placeholder="noreply@yourdomain.com"
                     className="h-11 focus-visible:ring-blue-500"
@@ -2202,33 +2251,19 @@ export default function SettingsPage() {
                   <p className="text-[11px] text-muted-foreground">Must use a verified domain in your Resend account.</p>
                 </div>
 
-                {/* Encryption */}
-                <div className="space-y-2">
-                  <Label htmlFor="smtpEncryption" className="text-sm font-semibold text-foreground/80">
-                    Encryption
-                  </Label>
-                  <Input
-                    id="smtpEncryption"
-                    value={formData.smtpEncryption}
-                    onChange={handleInputChange}
-                    placeholder="tls"
-                    className="h-11 focus-visible:ring-blue-500"
-                  />
-                </div>
-
-                {/* Password / API Key */}
                 <div className="space-y-2">
                   <Label htmlFor="resendApiKey" className="text-sm font-semibold text-foreground/80">
-                    Password <span className="text-[10px] text-muted-foreground font-normal">(Resend API Key)</span>
+                    Resend API Key
                   </Label>
                   <div className="relative">
                     <Input
                       id="resendApiKey"
                       type={showSmtpPassword ? 'text' : 'password'}
-                      value={formData.resendApiKey}
+                      value={formData.resendApiKey || ''}
                       onChange={handleInputChange}
                       placeholder="re_xxxxxxxxxxxxxxxxxxxx"
                       className="h-11 pr-10 focus-visible:ring-blue-500 font-mono"
+                      autoComplete="off"
                     />
                     <button
                       type="button"
@@ -2240,25 +2275,72 @@ export default function SettingsPage() {
                     </button>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    Your Resend API key — stored securely and never exposed to clients.{' '}
+                    Required for sending.{' '}
                     <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Get a key ↗</a>
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="resendInboundDomain" className="text-sm font-semibold text-foreground/80">
+                    Inbound domain
+                  </Label>
+                  <Input
+                    id="resendInboundDomain"
+                    value={formData.resendInboundDomain || ''}
+                    onChange={handleInputChange}
+                    placeholder="hirdanmarketing.com"
+                    className="h-11 focus-visible:ring-blue-500 font-mono"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Domain used for Message-IDs and Resend inbound. Defaults to the From address domain.
+                  </p>
+                </div>
+
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="resendWebhookSecret" className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
+                    <Inbox className="h-3.5 w-3.5 text-blue-500" />
+                    Webhook signing secret
+                    <span className="text-[10px] font-normal text-amber-600">(required to receive mail)</span>
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="resendWebhookSecret"
+                      type={showWebhookSecret ? 'text' : 'password'}
+                      value={formData.resendWebhookSecret || ''}
+                      onChange={handleInputChange}
+                      placeholder="whsec_xxxxxxxxxxxxxxxxxxxx"
+                      className="h-11 pr-10 focus-visible:ring-blue-500 font-mono"
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowWebhookSecret(p => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showWebhookSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    From Resend → Webhooks → your endpoint → Signing secret. Must start with{' '}
+                    <code className="font-mono bg-muted px-1 rounded">whsec_</code>.{' '}
+                    <a href="https://resend.com/webhooks" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Open Resend webhooks ↗</a>
                   </p>
                 </div>
 
               </div>
 
-              {/* Resend SMTP quick-ref */}
               <div className="mt-8 p-4 rounded-2xl bg-blue-500/5 border border-blue-500/20 flex gap-3">
                 <div className="mt-0.5 shrink-0 w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
                   <Mail className="h-4 w-4 text-blue-500" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">Resend SMTP quick reference</p>
-                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                    Host: <code className="font-mono bg-muted px-1 rounded">smtp.resend.com</code> · Port: <code className="font-mono bg-muted px-1 rounded">587</code> · 
-                    Username: <code className="font-mono bg-muted px-1 rounded">resend</code> · Encryption: <code className="font-mono bg-muted px-1 rounded">tls</code> · 
-                    Password: your API key starting with <code className="font-mono bg-muted px-1 rounded">re_</code>
-                  </p>
+                  <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">Email Center receive checklist</p>
+                  <ol className="text-xs text-muted-foreground mt-1.5 leading-relaxed list-decimal pl-4 space-y-1">
+                    <li>Save API key, From address, and webhook signing secret here.</li>
+                    <li>In Resend, create a webhook for <code className="font-mono bg-muted px-1 rounded">email.received</code> (and delivery events) pointing at the URL above.</li>
+                    <li>Enable Resend inbound for your domain; mailbox addresses in Email Center must match receiving addresses.</li>
+                  </ol>
                 </div>
               </div>
 
@@ -2270,13 +2352,10 @@ export default function SettingsPage() {
                   onClick={() => setFormData(p => ({
                     ...p,
                     mailerName: '',
-                    smtpHost: 'smtp.resend.com',
-                    smtpPort: 587,
-                    smtpUsername: 'resend',
-                    smtpEncryption: 'tls',
-                    smtpDriver: 'smtp',
                     emailFrom: '',
                     resendApiKey: '',
+                    resendWebhookSecret: '',
+                    resendInboundDomain: '',
                     mailEnabled: false,
                   }))}
                 >
@@ -2288,32 +2367,50 @@ export default function SettingsPage() {
                   onClick={async () => {
                     setIsSaving(true);
                     try {
+                      const hasApiKey = formData.resendApiKey?.startsWith('re_');
+                      const hasWebhook = formData.resendWebhookSecret?.startsWith('whsec_');
+                      const shouldEnable = formData.mailEnabled || (hasApiKey && !!formData.emailFrom);
+
                       const mailConfigPayload = {
                         mailerName: formData.mailerName || '',
-                        smtpHost: formData.smtpHost || '',
-                        smtpPort: formData.smtpPort ? Number(formData.smtpPort) : null,
-                        smtpUsername: formData.smtpUsername || '',
-                        smtpEncryption: formData.smtpEncryption || '',
                         resendApiKey: formData.resendApiKey || '',
+                        resendWebhookSecret: formData.resendWebhookSecret || '',
+                        resendInboundDomain: formData.resendInboundDomain || '',
                         emailFrom: formData.emailFrom || '',
-                        mailEnabled: formData.mailEnabled,
+                        mailEnabled: shouldEnable,
                       };
 
-                      // Save only mail-related fields via the standard settings endpoint.
                       await updateSettings(mailConfigPayload);
 
-                      // If a valid Resend API key is provided, also sync it into process.env
-                      // via the dedicated email endpoint so it takes effect immediately.
-                      if (formData.resendApiKey?.startsWith('re_')) {
+                      // Sync into process.env immediately via the dedicated email endpoint.
+                      if (hasApiKey || hasWebhook || formData.emailFrom) {
                         await apiFetch('/settings/email', {
                           method: 'POST',
                           body: JSON.stringify({
-                            resendApiKey: formData.resendApiKey,
-                            emailFrom: formData.emailFrom || undefined,
+                            ...(hasApiKey ? { resendApiKey: formData.resendApiKey } : {}),
+                            ...(formData.emailFrom ? { emailFrom: formData.emailFrom } : {}),
+                            ...(formData.mailerName ? { mailerName: formData.mailerName } : {}),
+                            ...(hasWebhook ? { resendWebhookSecret: formData.resendWebhookSecret } : {}),
+                            ...(formData.resendInboundDomain
+                              ? { resendInboundDomain: formData.resendInboundDomain }
+                              : {}),
+                            mailEnabled: shouldEnable,
                           }),
                         });
                       }
-                      toast({ title: 'Mail config saved', description: 'Your email settings have been updated.' });
+
+                      if (shouldEnable && !formData.mailEnabled) {
+                        setFormData(p => ({ ...p, mailEnabled: true }));
+                      }
+
+                      await fetchEmailHealth();
+
+                      toast({
+                        title: 'Mail config saved',
+                        description: hasWebhook
+                          ? 'Send + receive credentials updated. Inbound webhooks can now be verified.'
+                          : 'Send credentials updated. Add a webhook secret to receive mail in Email Center.',
+                      });
                     } catch (err: any) {
                       toast({
                         title: 'Save failed',

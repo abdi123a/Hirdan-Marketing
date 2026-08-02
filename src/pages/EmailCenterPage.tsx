@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Mail, Menu, PenSquare } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { AlertCircle, Mail, Menu, PenSquare } from 'lucide-react';
 import {
   ResizablePanelGroup, ResizablePanel, ResizableHandle,
 } from '@/components/ui/resizable';
@@ -14,6 +15,7 @@ import { ComposeModal, type ComposeInitial } from '@/components/email/ComposeMod
 import { useMailboxes } from '@/lib/email/hooks';
 import { useEmailStream } from '@/lib/email/useEmailStream';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { apiFetch } from '@/lib/api-client';
 import type { Draft, EmailFolder, EmailMessage } from '@/lib/email/types';
 
 function forwardHtml(email: EmailMessage): string {
@@ -45,10 +47,41 @@ export default function EmailCenterPage() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeInitial, setComposeInitial] = useState<ComposeInitial | undefined>();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [mailConfigIssue, setMailConfigIssue] = useState<string | null>(null);
 
   const isMobile = useIsMobile();
   const { data: mailboxes = [] } = useMailboxes();
   useEmailStream();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch<{ canSend?: boolean; canReceive?: boolean }>('/settings/email');
+        if (cancelled) return;
+        if (!res.canSend && !res.canReceive) {
+          setMailConfigIssue(
+            'Email is not configured — sending and receiving are both blocked until Resend credentials are saved.'
+          );
+        } else if (!res.canReceive) {
+          setMailConfigIssue(
+            'Inbound email is blocked — add the Resend webhook signing secret in Settings → Email so Email Center can receive mail.'
+          );
+        } else if (!res.canSend) {
+          setMailConfigIssue(
+            'Outbound email is not configured — add a Resend API key and From address in Settings → Email.'
+          );
+        } else {
+          setMailConfigIssue(null);
+        }
+      } catch {
+        // Non-admin users may not access /settings/email; ignore.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const openCompose = (initial?: ComposeInitial) => {
     setComposeInitial(initial);
@@ -74,7 +107,22 @@ export default function EmailCenterPage() {
   };
 
   return (
-    <div className="h-[calc(100dvh-7.5rem)] md:h-[calc(100dvh-8rem)] min-h-[500px]">
+    <div className="flex h-[calc(100dvh-7.5rem)] md:h-[calc(100dvh-8rem)] min-h-[500px] flex-col gap-3">
+      {mailConfigIssue && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm shrink-0">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="min-w-0 flex-1">
+            <p className="text-foreground/90">{mailConfigIssue}</p>
+            <Link
+              to="/dashboard/settings?tab=email"
+              className="mt-1 inline-block text-xs font-semibold text-blue-600 hover:underline"
+            >
+              Open Email Settings →
+            </Link>
+          </div>
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
       {isMobile ? (
         <div className="flex h-full flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
           {/* Mobile Header */}
@@ -192,6 +240,7 @@ export default function EmailCenterPage() {
           </ResizablePanel>
         </ResizablePanelGroup>
       )}
+      </div>
 
       <ComposeModal
         open={composeOpen}

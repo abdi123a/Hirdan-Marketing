@@ -36,7 +36,7 @@ export interface SendEmailResult {
  */
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
   const settings = await prisma.agencySettings.findFirst({
-    select: { resendApiKey: true, emailFrom: true, mailerName: true }
+    select: { resendApiKey: true, emailFrom: true, mailerName: true },
   });
 
   const apiKey = settings?.resendApiKey || process.env.RESEND_API_KEY;
@@ -71,7 +71,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
       subject: options.subject,
       html: finalHtml,
       ...(options.cc ? { cc: options.cc } : {}),
-      ...(options.replyTo ? { reply_to: options.replyTo } : {}),
+      ...(options.replyTo ? { replyTo: options.replyTo } : {}),
       ...(options.attachments ? { attachments: options.attachments } : {}),
     });
 
@@ -342,10 +342,18 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
 }
 
 /**
- * Returns true if the Resend integration is fully configured.
+ * Returns true if the Resend integration looks configured in process.env.
+ * Prefer getResendConfig() / DB reads at call sites when possible — this is a
+ * sync helper used by boot-time and status checks after syncEmailEnvFromDb.
  */
 export function isEmailConfigured(): boolean {
-  return !!(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+  const key = process.env.RESEND_API_KEY || '';
+  return !!(
+    key &&
+    key.startsWith('re_') &&
+    !key.includes('placeholder') &&
+    process.env.EMAIL_FROM
+  );
 }
 
 /**

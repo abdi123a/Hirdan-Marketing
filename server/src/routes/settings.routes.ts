@@ -214,6 +214,8 @@ const settingsDtoSchema = z.object({
   mainAiProvider: z.enum(['openai', 'claude', 'gemini']).optional(),
   // Allow empty string (stored as null) — actual re_ check is done in /settings/email
   resendApiKey: z.preprocess((val) => val === '' ? null : val, z.string().optional().nullable()),
+  resendWebhookSecret: z.preprocess((val) => val === '' ? null : val, z.string().optional().nullable()),
+  resendInboundDomain: z.preprocess((val) => val === '' ? null : val, z.string().optional().nullable()),
   // Coerce empty string → null, validate email format only when non-null
   emailFrom: z.preprocess(
     (val) => (val === '' || val === undefined) ? null : val,
@@ -292,7 +294,8 @@ router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }
     // Sending `undefined` tells Prisma to skip updating the column.
     const sensitiveKeys = [
       'openAiApiKey', 'claudeApiKey', 'geminiApiKey',
-      'resendApiKey', 'emailFrom', 'mailerName',
+      'resendApiKey', 'resendWebhookSecret', 'resendInboundDomain',
+      'emailFrom', 'mailerName',
       'smtpHost', 'smtpPort', 'smtpUsername', 'smtpEncryption', 'smtpDriver',
       'googleDriveFolderId', 'googleDriveServiceAccountJson',
       'googleDriveClientId', 'googleDriveClientSecret', 'googleDriveRefreshToken',
@@ -345,7 +348,7 @@ router.post('/upload', authenticate, requireAdmin, upload.single('file'), enforc
 });
 
 // ─── GET /api/settings/email ─────────────────────────────────────
-// Returns masked key status. Never exposes the full key.
+// Returns masked key status + receive/send readiness. Never exposes secrets.
 
 router.get('/email', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
   try {
@@ -353,12 +356,37 @@ router.get('/email', authenticate, requireAdmin, async (req: Request, res: Respo
 
     // Prefer DB value, fall back to env var
     const rawKey = settings?.resendApiKey ?? process.env.RESEND_API_KEY ?? null;
+    const webhookSecret =
+      settings?.resendWebhookSecret ?? process.env.RESEND_WEBHOOK_SECRET ?? null;
     const emailFrom = settings?.emailFrom ?? process.env.EMAIL_FROM ?? null;
+    const inboundDomain =
+      settings?.resendInboundDomain ??
+      process.env.RESEND_INBOUND_DOMAIN ??
+      (emailFrom && emailFrom.includes('@') ? emailFrom.split('@')[1] : null);
+    const apiBase =
+      process.env.SERVER_URL ||
+      process.env.API_URL ||
+      process.env.APP_URL ||
+      `${req.protocol}://${req.get('host')}`;
+
+    const canSend = !!(
+      rawKey &&
+      rawKey.startsWith('re_') &&
+      !rawKey.includes('placeholder') &&
+      emailFrom
+    );
+    const canReceive = !!(webhookSecret && webhookSecret.startsWith('whsec_'));
 
     res.json({
-      configured: !!rawKey,
+      configured: canSend,
+      canSend,
+      canReceive,
+      mailEnabled: settings?.mailEnabled ?? false,
       maskedKey: maskApiKey(rawKey),
+      hasWebhookSecret: !!webhookSecret,
       emailFrom,
+      inboundDomain,
+      webhookUrl: `${apiBase.replace(/\/$/, '')}/api/email/webhooks/resend`,
     });
   } catch (error) {
     next(error);
@@ -366,17 +394,38 @@ router.get('/email', authenticate, requireAdmin, async (req: Request, res: Respo
 });
 
 // ─── POST /api/settings/email ────────────────────────────────────
-// Save Resend API key + sender address. Writes to DB and syncs process.env
+// Save Resend credentials. Writes to DB and syncs process.env
 // so the change takes effect immediately without a restart.
 
 const emailSettingsSchema = z.object({
-  resendApiKey: z.string().min(1).startsWith('re_', 'API key must start with re_'),
-  emailFrom: z.preprocess((val) => val === '' ? undefined : val, z.string().email('Must be a valid email address').optional()),
+  resendApiKey: z
+    .preprocess((val) => (val === '' ? undefined : val), z.string().startsWith('re_', 'API key must start with re_').optional()),
+  emailFrom: z.preprocess(
+    (val) => (val === '' ? undefined : val),
+    z.string().email('Must be a valid email address').optional()
+  ),
+  mailerName: z.preprocess((val) => (val === '' ? undefined : val), z.string().optional()),
+  resendWebhookSecret: z.preprocess(
+    (val) => (val === '' ? undefined : val),
+    z.string().startsWith('whsec_', 'Webhook secret must start with whsec_').optional()
+  ),
+  resendInboundDomain: z.preprocess(
+    (val) => (val === '' ? undefined : val),
+    z.string().min(3).optional()
+  ),
+  mailEnabled: z.boolean().optional(),
 });
 
 router.post('/email', authenticate, requireAdmin, validate({ body: emailSettingsSchema }), async (req: Request, res: Response, next) => {
   try {
-    const { resendApiKey, emailFrom } = req.body;
+    const {
+      resendApiKey,
+      emailFrom,
+      mailerName,
+      resendWebhookSecret,
+      resendInboundDomain,
+      mailEnabled,
+    } = req.body;
 
     // Persist to DB
     let existing = await prisma.agencySettings.findFirst();
@@ -389,20 +438,36 @@ router.post('/email', authenticate, requireAdmin, validate({ body: emailSettings
     await prisma.agencySettings.update({
       where: { id: existing.id },
       data: {
-        resendApiKey,
+        ...(resendApiKey !== undefined ? { resendApiKey } : {}),
         ...(emailFrom !== undefined ? { emailFrom } : {}),
+        ...(mailerName !== undefined ? { mailerName } : {}),
+        ...(resendWebhookSecret !== undefined ? { resendWebhookSecret } : {}),
+        ...(resendInboundDomain !== undefined ? { resendInboundDomain } : {}),
+        ...(mailEnabled !== undefined ? { mailEnabled } : {}),
       },
     });
 
     // Sync into process.env so the running process picks them up immediately
-    process.env.RESEND_API_KEY = resendApiKey;
+    if (resendApiKey) process.env.RESEND_API_KEY = resendApiKey;
     if (emailFrom) process.env.EMAIL_FROM = emailFrom;
+    if (mailerName) process.env.MAILER_NAME = mailerName;
+    if (resendWebhookSecret) process.env.RESEND_WEBHOOK_SECRET = resendWebhookSecret;
+    if (resendInboundDomain) process.env.RESEND_INBOUND_DOMAIN = resendInboundDomain;
 
-    const updatedKey = process.env.RESEND_API_KEY;
+    const updated = await prisma.agencySettings.findFirst();
+    const rawKey = updated?.resendApiKey ?? process.env.RESEND_API_KEY ?? null;
+    const webhookSecret =
+      updated?.resendWebhookSecret ?? process.env.RESEND_WEBHOOK_SECRET ?? null;
+
     res.json({
       success: true,
-      maskedKey: maskApiKey(updatedKey),
-      emailFrom: process.env.EMAIL_FROM ?? null,
+      maskedKey: maskApiKey(rawKey),
+      hasWebhookSecret: !!webhookSecret,
+      emailFrom: updated?.emailFrom ?? process.env.EMAIL_FROM ?? null,
+      inboundDomain: updated?.resendInboundDomain ?? process.env.RESEND_INBOUND_DOMAIN ?? null,
+      mailEnabled: updated?.mailEnabled ?? false,
+      canSend: !!(rawKey && updated?.emailFrom),
+      canReceive: !!(webhookSecret && webhookSecret.startsWith('whsec_')),
     });
   } catch (error) {
     next(error);
@@ -416,16 +481,25 @@ router.post('/email/test', authenticate, requireAdmin, async (req: Request, res:
   try {
     const settings = await prisma.agencySettings.findFirst();
 
-    // Apply DB key to process.env if not already there
+    // Apply DB credentials to process.env if not already there
     if (settings?.resendApiKey && !process.env.RESEND_API_KEY) {
       process.env.RESEND_API_KEY = settings.resendApiKey;
     }
     if (settings?.emailFrom && !process.env.EMAIL_FROM) {
       process.env.EMAIL_FROM = settings.emailFrom;
     }
+    if (settings?.mailerName && !process.env.MAILER_NAME) {
+      process.env.MAILER_NAME = settings.mailerName;
+    }
+    if (settings?.resendWebhookSecret && !process.env.RESEND_WEBHOOK_SECRET) {
+      process.env.RESEND_WEBHOOK_SECRET = settings.resendWebhookSecret;
+    }
 
-    if (!process.env.RESEND_API_KEY) {
+    if (!process.env.RESEND_API_KEY && !settings?.resendApiKey) {
       throw AppError.badRequest('Resend API key is not configured. Save it in Email Settings first.');
+    }
+    if (!settings?.emailFrom && !process.env.EMAIL_FROM) {
+      throw AppError.badRequest('Sender address (Email From) is not configured. Save it in Email Settings first.');
     }
 
     // Accept custom recipient from body, fallback to settings adminEmail or request user's email

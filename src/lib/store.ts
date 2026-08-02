@@ -388,6 +388,8 @@ export interface AgencySettings {
   geminiApiKey: string;
   mainAiProvider: 'openai' | 'claude' | 'gemini';
   resendApiKey: string;
+  resendWebhookSecret: string;
+  resendInboundDomain: string;
   emailFrom: string;
   mailerName: string;
   smtpHost: string;
@@ -569,6 +571,8 @@ const createDefaultSettings = (): AgencySettings => ({
   geminiApiKey: "",
   mainAiProvider: "openai" as const,
   resendApiKey: "",
+  resendWebhookSecret: "",
+  resendInboundDomain: "",
   emailFrom: "",
   mailerName: "",
   smtpHost: "smtp.resend.com",
@@ -586,7 +590,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.31.18",
+  appVersion: "2.31.19",
   versionHistory: [
     {
       version: "2.23.0",
@@ -1087,7 +1091,8 @@ export const useAgencyStore = create<AgencyStore>()(
             // subsequent save would then write that empty value back to the DB.
             const sensitiveFields: (keyof AgencySettings)[] = [
               'openAiApiKey', 'claudeApiKey', 'geminiApiKey', 'mainAiProvider',
-              'resendApiKey', 'emailFrom', 'mailerName',
+              'resendApiKey', 'resendWebhookSecret', 'resendInboundDomain',
+              'emailFrom', 'mailerName',
               'smtpHost', 'smtpPort', 'smtpUsername', 'smtpEncryption', 'smtpDriver',
               'mailEnabled', 'googleDriveFolderId', 'googleDriveServiceAccountJson', 'googleDriveEnabled',
               'googleDriveClientId', 'googleDriveClientSecret', 'googleDriveRefreshToken',
