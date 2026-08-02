@@ -1,8 +1,62 @@
 import axios from 'axios';
 import { createOAuthState } from './oauth-state.service.js';
+import { getMediaBuffer } from './storage.service.js';
 
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v20.0';
 const GRAPH_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
+
+/** Meta fetches media URLs from their servers — localhost / private hosts fail. */
+export function isPubliclyReachableMediaUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host.endsWith('.local')) {
+      return false;
+    }
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+async function uploadFacebookPhotoBinary(
+  pageId: string,
+  pageAccessToken: string,
+  mediaUrl: string,
+  caption?: string,
+  published = true,
+): Promise<string> {
+  const buffer = await getMediaBuffer(mediaUrl);
+  const form = new FormData();
+  const filename = mediaUrl.split('/').pop()?.split('?')[0] || 'photo.jpg';
+  form.append('source', new Blob([new Uint8Array(buffer)]), filename);
+  form.append('access_token', pageAccessToken);
+  form.append('published', published ? 'true' : 'false');
+  if (caption && published) form.append('caption', caption);
+
+  const { data } = await axios.post(`${GRAPH_URL}/${pageId}/photos`, form);
+  return data.id;
+}
+
+async function uploadFacebookVideoBinary(
+  pageId: string,
+  pageAccessToken: string,
+  mediaUrl: string,
+  caption?: string,
+): Promise<string> {
+  const buffer = await getMediaBuffer(mediaUrl);
+  const form = new FormData();
+  const filename = mediaUrl.split('/').pop()?.split('?')[0] || 'video.mp4';
+  form.append('source', new Blob([new Uint8Array(buffer)]), filename);
+  form.append('access_token', pageAccessToken);
+  if (caption) form.append('description', caption);
+
+  const { data } = await axios.post(`${GRAPH_URL}/${pageId}/videos`, form, {
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+  });
+  return data.id || data.video_id;
+}
 
 export const RATE_LIMIT_CODES = [4, 17, 32, 613];
 const TIKTOK_RATE_LIMIT_CODES = ['rate_limit_exceeded', 'spam_risk_too_many_posts', 'spam_risk_user_banned_from_posting'];
@@ -30,13 +84,33 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
 
   if (platform === 'facebook') {
     redirectUri = process.env.META_REDIRECT_URI_FACEBOOK || '';
-    scopes = ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'pages_manage_metadata', 'read_insights', 'business_management'];
+    // pages_read_user_content is required to read page posts/insights without
+    // "must be granted before impersonating a user's page" errors on sync.
+    scopes = [
+      'pages_show_list',
+      'pages_read_engagement',
+      'pages_read_user_content',
+      'pages_manage_posts',
+      'pages_manage_metadata',
+      'read_insights',
+      'business_management',
+    ];
   } else if (platform === 'instagram') {
     redirectUri = process.env.META_REDIRECT_URI_INSTAGRAM || '';
     // instagram_manage_insights is required for IG account + media insights
-    // (reach, views, saved, shares, etc.). It was accidentally dropped in a
-    // later refactor, which made Sync Metrics return followers-only for IG.
-    scopes = ['pages_show_list', 'pages_read_engagement', 'instagram_basic', 'instagram_content_publish', 'instagram_manage_insights', 'read_insights', 'business_management'];
+    // (reach, views, saved, shares, etc.). pages_read_* needed to impersonate
+    // the linked Page when reading IG insights via the page token.
+    scopes = [
+      'pages_show_list',
+      'pages_read_engagement',
+      'pages_read_user_content',
+      'pages_manage_metadata',
+      'instagram_basic',
+      'instagram_content_publish',
+      'instagram_manage_insights',
+      'read_insights',
+      'business_management',
+    ];
   } else if (platform === 'threads') {
     redirectUri = process.env.META_REDIRECT_URI_THREADS || '';
     scopes = ['threads_basic', 'threads_content_publish', 'threads_manage_insights'];
@@ -153,9 +227,8 @@ async function publishVideoToMetaResumable({
     throw new Error(`Failed to initialize Facebook video upload session for ${endpointType}`);
   }
 
-  // Step 2: Download the video file from the CDN URL
-  const videoRes = await axios.get(url, { responseType: 'arraybuffer' });
-  const videoBuffer = Buffer.from(videoRes.data);
+  // Step 2: Load the video (supports local STORAGE_PUBLIC_URL via getMediaBuffer)
+  const videoBuffer = await getMediaBuffer(url);
 
   // Step 3: Upload the binary data to the upload URL
   await axios.post(upload_url, videoBuffer, {
@@ -242,10 +315,16 @@ export async function publishToFacebookPage({
   if (mediaUrls && mediaUrls.length > 1 && mediaType !== 'video') {
     const mediaFbids = [];
     for (const imgUrl of mediaUrls) {
-      const { data } = await axios.post(`${GRAPH_URL}/${pageId}/photos`, null, {
-        params: { url: imgUrl, published: false, access_token: pageAccessToken },
-      });
-      mediaFbids.push({ media_fbid: data.id });
+      let photoId: string;
+      if (isPubliclyReachableMediaUrl(imgUrl)) {
+        const { data } = await axios.post(`${GRAPH_URL}/${pageId}/photos`, null, {
+          params: { url: imgUrl, published: false, access_token: pageAccessToken },
+        });
+        photoId = data.id;
+      } else {
+        photoId = await uploadFacebookPhotoBinary(pageId, pageAccessToken, imgUrl, undefined, false);
+      }
+      mediaFbids.push({ media_fbid: photoId });
     }
     const { data } = await axios.post(`${GRAPH_URL}/${pageId}/feed`, null, {
       params: {
@@ -259,22 +338,28 @@ export async function publishToFacebookPage({
 
   // --- SINGLE VIDEO ---
   if (mediaType === 'video' && url) {
-    const videoParams: Record<string, any> = { file_url: url, access_token: pageAccessToken };
-    if (caption) {
-      videoParams.description = caption;
+    if (isPubliclyReachableMediaUrl(url)) {
+      const videoParams: Record<string, any> = { file_url: url, access_token: pageAccessToken };
+      if (caption) {
+        videoParams.description = caption;
+      }
+      const { data } = await axios.post(`${GRAPH_URL}/${pageId}/videos`, null, {
+        params: videoParams,
+      });
+      return data.id || data.video_id;
     }
-    const { data } = await axios.post(`${GRAPH_URL}/${pageId}/videos`, null, {
-      params: videoParams,
-    });
-    return data.id || data.video_id;
+    return await uploadFacebookVideoBinary(pageId, pageAccessToken, url, caption);
   }
 
   // --- SINGLE IMAGE ---
   if (url) {
-    const { data } = await axios.post(`${GRAPH_URL}/${pageId}/photos`, null, {
-      params: { url, caption, access_token: pageAccessToken },
-    });
-    return data.id;
+    if (isPubliclyReachableMediaUrl(url)) {
+      const { data } = await axios.post(`${GRAPH_URL}/${pageId}/photos`, null, {
+        params: { url, caption, access_token: pageAccessToken },
+      });
+      return data.id;
+    }
+    return await uploadFacebookPhotoBinary(pageId, pageAccessToken, url, caption, true);
   }
 
   // --- PLAIN TEXT ---
@@ -302,26 +387,38 @@ export async function publishToInstagram({
   const url = mediaUrls && mediaUrls.length > 0 ? mediaUrls[0] : '';
   const containerParams: Record<string, any> = { caption, access_token: pageAccessToken };
 
+  const assertPublicMedia = (mediaUrl: string, label: string) => {
+    if (!mediaUrl) throw new Error(`${label} requires a media URL`);
+    if (!isPubliclyReachableMediaUrl(mediaUrl)) {
+      throw new Error(
+        `Instagram cannot fetch media from a private/local URL (${mediaUrl}). Set STORAGE_PUBLIC_URL to a publicly reachable HTTPS URL (e.g. S3/CDN).`,
+      );
+    }
+  };
+
   if (postType === 'reel') {
-    if (!url) throw new Error('Instagram Reel requires a video URL');
+    assertPublicMedia(url, 'Instagram Reel');
     containerParams.media_type = 'REELS';
     containerParams.video_url = url;
     containerParams.share_to_feed = true;
   } else if (postType === 'story') {
-    if (!url) throw new Error('Instagram Story requires a media URL');
+    assertPublicMedia(url, 'Instagram Story');
     containerParams.media_type = 'STORIES';
     if (mediaType === 'video') containerParams.video_url = url;
     else containerParams.image_url = url;
   } else if (mediaType === 'reel') {
+    assertPublicMedia(url, 'Instagram Reel');
     containerParams.media_type = 'REELS';
     containerParams.video_url = url;
     containerParams.share_to_feed = true;
   } else if (mediaType === 'video') {
+    assertPublicMedia(url, 'Instagram video');
     containerParams.media_type = 'VIDEO';
     containerParams.video_url = url;
   } else if (mediaUrls && mediaUrls.length > 1) {
     const childrenIds: string[] = [];
     for (const itemUrl of mediaUrls) {
+      assertPublicMedia(itemUrl, 'Instagram carousel');
       const childContainer = await axios.post(`${GRAPH_URL}/${igAccountId}/media`, null, {
         params: { is_carousel_item: true, image_url: itemUrl, access_token: pageAccessToken },
       });
@@ -330,6 +427,7 @@ export async function publishToInstagram({
     containerParams.media_type = 'CAROUSEL';
     containerParams.children = childrenIds.join(',');
   } else {
+    assertPublicMedia(url, 'Instagram post');
     containerParams.image_url = url;
   }
 

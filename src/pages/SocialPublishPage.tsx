@@ -170,6 +170,8 @@ const getStatusStyle = (status: string) => {
       return { text: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-950/20", border: "border-amber-200 dark:border-amber-900/50", dot: "bg-amber-500" };
     case "PUBLISHED":
       return { text: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-950/20", border: "border-emerald-200 dark:border-emerald-900/50", dot: "bg-emerald-500" };
+    case "PARTIAL":
+      return { text: "text-amber-700 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-950/20", border: "border-amber-200 dark:border-amber-900/50", dot: "bg-amber-500" };
     case "FAILED":
       return { text: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-950/20", border: "border-rose-200 dark:border-rose-900/50", dot: "bg-rose-500" };
     default:
@@ -188,9 +190,15 @@ function inferContentType(title: string, platforms: string[]): string {
 
 function isTikTokDraft(dest: { platform?: string; platformPostId?: string | null; error?: string | null }, platformContent?: any): boolean {
   if ((dest.platform || "").toLowerCase() !== "tiktok") return false;
-  if (dest.platformPostId?.includes("v_inbox_url")) return true;
+  if (dest.platformPostId?.includes("v_inbox_url") || dest.platformPostId?.includes("v_inbox_")) return true;
+  if (/^v_(pub|inbox)_/i.test(dest.platformPostId || "")) return true;
   if (platformContent?.tiktok?.postMode === "draft") return true;
   return false;
+}
+
+function formatPostStatus(status: string): string {
+  if (status === "PARTIAL") return "PARTIAL SUCCESS";
+  return status.replace(/_/g, " ");
 }
 
 function buildCalendarGrid(month: number, year: number) {
@@ -798,6 +806,20 @@ export default function SocialPublishPage() {
 
       if (publishNow && !asDraft) {
         let createdPostId = editingPostId;
+
+        // Already-published destinations must not be re-sent. Backend also skips
+        // them, but we only target unpublished accounts from the client.
+        const publishTargetAccountIds = composerAccounts.filter(
+          (id) => !alreadyPublishedAccountIds.includes(id),
+        );
+
+        if (editingPostId && publishTargetAccountIds.length === 0) {
+          toast({
+            title: "Nothing to publish",
+            description: "All selected accounts were already published. Use Retry only for failed platforms, or pick additional accounts.",
+          });
+          return;
+        }
         
         if (editingPostId) {
           await apiFetch<any>(`/social/posts/${editingPostId}`, {
@@ -816,6 +838,9 @@ export default function SocialPublishPage() {
           throw new Error("Could not determine post ID");
         }
 
+        const progressAccountIds =
+          publishTargetAccountIds.length > 0 ? publishTargetAccountIds : composerAccounts;
+
         // Close composer, reset form, and reload background list immediately
         setIsComposerOpen(false);
         resetComposer();
@@ -826,10 +851,10 @@ export default function SocialPublishPage() {
         setPublishStatus({
           postId: createdPostId,
           status: 'publishing',
-          totalDestinations: composerAccounts.length,
+          totalDestinations: progressAccountIds.length,
           completedDestinations: 0,
           failedDestinations: 0,
-          destinations: composerAccounts.map(accId => {
+          destinations: progressAccountIds.map(accId => {
             const acc = accounts.find(a => a.id === accId);
             return {
               id: accId,
@@ -846,9 +871,13 @@ export default function SocialPublishPage() {
           try {
             const updatedPost = await apiFetch<SocialPost>(`/social/posts/${createdPostId}`);
             if (updatedPost && updatedPost.destinations) {
-              const total = updatedPost.destinations.length;
-              const completed = updatedPost.destinations.filter(d => d.status === 'PUBLISHED').length;
-              const failed = updatedPost.destinations.filter(d => d.status === 'FAILED').length;
+              const relevant = updatedPost.destinations.filter(
+                (d) => progressAccountIds.includes(d.socialAccountId) || d.status === 'PUBLISHING' || d.status === 'FAILED',
+              );
+              const tracked = relevant.length > 0 ? relevant : updatedPost.destinations;
+              const total = tracked.length;
+              const completed = tracked.filter(d => d.status === 'PUBLISHED').length;
+              const failed = tracked.filter(d => d.status === 'FAILED').length;
               
               setPublishStatus(prev => ({
                 ...prev,
@@ -856,7 +885,7 @@ export default function SocialPublishPage() {
                 totalDestinations: total,
                 completedDestinations: completed,
                 failedDestinations: failed,
-                destinations: updatedPost.destinations.map(d => ({
+                destinations: tracked.map(d => ({
                   id: d.id,
                   platform: d.platform,
                   accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || 'Unknown Account',
@@ -872,8 +901,11 @@ export default function SocialPublishPage() {
         }, 1500);
 
         try {
-          // Trigger the synchronous publish-now API call
-          const finalPost = await apiFetch<SocialPost>(`/social/posts/${createdPostId}/publish-now`, { method: "POST" });
+          // Trigger the synchronous publish-now API call (unpublished targets only)
+          const finalPost = await apiFetch<SocialPost>(`/social/posts/${createdPostId}/publish-now`, {
+            method: "POST",
+            body: JSON.stringify({ accountIds: progressAccountIds }),
+          });
           clearInterval(pollInterval);
 
           const total = finalPost.destinations.length;
@@ -897,7 +929,13 @@ export default function SocialPublishPage() {
 
           fetchData(); // Final refresh of dashboard
 
-          if (failed > 0) {
+          if (failed > 0 && completed > 0) {
+            toast({
+              title: "Partially Published",
+              description: `${completed} platform(s) went live. Failed: ${finalPost.errorMessage || 'see destination errors'}. Use Retry for failed accounts only.`,
+              variant: "destructive",
+            });
+          } else if (failed > 0) {
             toast({ 
               title: "Publishing Finished with Errors", 
               description: `Some destinations failed: ${finalPost.errorMessage || ''}`, 
@@ -955,10 +993,62 @@ export default function SocialPublishPage() {
 
   const handleRetryPost = async (postId: string) => {
     try {
-      await apiFetch<any>(`/social/posts/${postId}/retry`, { method: "POST" });
-      toast({ title: "Retry Triggered", description: "Retrying publishing to failed platforms" });
+      const existing = posts.find((p) => p.id === postId);
+      const failedDests = (existing?.destinations || []).filter((d) => d.status === "FAILED");
+      if (failedDests.length === 0) {
+        toast({ title: "Nothing to retry", description: "No failed platforms on this post." });
+        return;
+      }
+
+      setIsPublishProgressOpen(true);
+      setPublishStatus({
+        postId,
+        status: "publishing",
+        totalDestinations: failedDests.length,
+        completedDestinations: 0,
+        failedDestinations: 0,
+        destinations: failedDests.map((d) => ({
+          id: d.id,
+          platform: d.platform,
+          accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || "Unknown Account",
+          status: "QUEUED",
+          error: null,
+        })),
+      });
+
+      const finalPost = await apiFetch<SocialPost>(`/social/posts/${postId}/retry`, { method: "POST" });
+      const tracked = finalPost.destinations.filter((d) =>
+        failedDests.some((f) => f.socialAccountId === d.socialAccountId) || d.status === "FAILED",
+      );
+      const completed = tracked.filter((d) => d.status === "PUBLISHED").length;
+      const failed = tracked.filter((d) => d.status === "FAILED").length;
+
+      setPublishStatus({
+        postId,
+        status: failed > 0 ? "failed" : "success",
+        totalDestinations: tracked.length,
+        completedDestinations: completed,
+        failedDestinations: failed,
+        destinations: tracked.map((d) => ({
+          id: d.id,
+          platform: d.platform,
+          accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || "Unknown Account",
+          status: d.status,
+          error: d.lastError,
+          platformPostId: d.platformPostId,
+        })),
+      });
+
+      toast({
+        title: failed > 0 ? "Retry Finished with Errors" : "Retry Complete",
+        description: failed > 0
+          ? `Still failing: ${finalPost.errorMessage || "see destination errors"}`
+          : "Failed platforms were published successfully",
+        variant: failed > 0 ? "destructive" : undefined,
+      });
       fetchData();
     } catch (err: any) {
+      setPublishStatus((prev) => ({ ...prev, status: "failed" }));
       toast({ title: "Retry Failed", description: err.message, variant: "destructive" });
     }
   };
@@ -1900,7 +1990,7 @@ export default function SocialPublishPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Statuses</SelectItem>
-              {["DRAFT", "AWAITING_APPROVAL", "SCHEDULED", "PUBLISHED", "FAILED"].map(s => (
+              {["DRAFT", "AWAITING_APPROVAL", "SCHEDULED", "PUBLISHED", "PARTIAL", "FAILED"].map(s => (
                 <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>
               ))}
             </SelectContent>
@@ -2047,7 +2137,7 @@ export default function SocialPublishPage() {
                           post.status === "PUBLISHED" ? "#10b981" :
                             post.status === "SCHEDULED" ? "#f59e0b" :
                               post.status === "AWAITING_APPROVAL" ? "#0ea5e9" :
-                                post.status === "FAILED" ? "#f43f5e" : "#94a3b8";
+                                post.status === "PARTIAL" ? "#f59e0b" : post.status === "FAILED" ? "#f43f5e" : "#94a3b8";
                         return (
                           <div
                             key={post.id}
@@ -2120,7 +2210,7 @@ export default function SocialPublishPage() {
                             <div className="px-3 py-2 border-t border-border/25 bg-muted/5 flex items-center justify-between min-h-[38px]">
                               <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 border rounded-full flex items-center gap-1 ${ss.text} ${ss.bg} ${ss.border}`}>
                                 <span className={`h-1.5 w-1.5 rounded-full ${ss.dot}`} />
-                                {post.status.replace(/_/g, " ")}
+                                {formatPostStatus(post.status)}
                               </span>
                               <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                                 <Button variant="ghost" size="icon" onClick={() => handleEditPost(post)} className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted" title="Edit">
@@ -2167,7 +2257,7 @@ export default function SocialPublishPage() {
                               const ss = getStatusStyle(post.status);
                               const isSelected = selectedPostIds.includes(post.id);
                               const isActive = activePostId === post.id;
-                              const statusAccent = post.status === "PUBLISHED" ? "#10b981" : post.status === "SCHEDULED" ? "#f59e0b" : post.status === "AWAITING_APPROVAL" ? "#0ea5e9" : post.status === "FAILED" ? "#f43f5e" : "#94a3b8";
+                              const statusAccent = post.status === "PUBLISHED" ? "#10b981" : post.status === "PARTIAL" ? "#f59e0b" : post.status === "SCHEDULED" ? "#f59e0b" : post.status === "AWAITING_APPROVAL" ? "#0ea5e9" : post.status === "FAILED" ? "#f43f5e" : "#94a3b8";
                               return (
                                 <tr
                                   key={post.id}
@@ -2218,7 +2308,7 @@ export default function SocialPublishPage() {
                                   <td className="p-3">
                                     <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 border rounded-full flex items-center gap-1 w-fit ${ss.text} ${ss.bg} ${ss.border}`}>
                                       <span className={`h-1 w-1 rounded-full ${ss.dot}`} />
-                                      {post.status.replace(/_/g, " ")}
+                                      {formatPostStatus(post.status)}
                                     </span>
                                   </td>
                                   <td className="p-3 text-right" onClick={e => e.stopPropagation()}>
@@ -2479,7 +2569,7 @@ export default function SocialPublishPage() {
                                           {p.destinations.map(d => <span key={d.id}>{getPlatformIcon(d.platform, "h-3.5 w-3.5")}</span>)}
                                         </div>
                                         <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 border rounded-full ${ss.text} ${ss.bg} ${ss.border}`}>
-                                          {p.status.replace(/_/g, " ")}
+                                          {formatPostStatus(p.status)}
                                         </span>
                                       </div>
                                     </div>
@@ -2518,7 +2608,7 @@ export default function SocialPublishPage() {
               return (
                 <span className={`text-[9px] font-black uppercase tracking-widest px-3 py-1 border rounded-full flex items-center gap-1.5 w-fit ${ss.text} ${ss.bg} ${ss.border}`}>
                   <span className={`h-1.5 w-1.5 rounded-full ${ss.dot}`} />
-                  {activePost.status.replace(/_/g, " ")}
+                  {formatPostStatus(activePost.status)}
                 </span>
               );
             })()}
@@ -2974,7 +3064,9 @@ export default function SocialPublishPage() {
                                 <p className="font-semibold">{account.displayName || account.platformUsername}</p>
                                 <p className="text-[10px] text-muted-foreground capitalize">{pConfig.label}</p>
                                 {isAlreadyPublished && (
-                                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">✔ Already published</p>
+                                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
+                                    Already live — will not be re-posted. Only failed/new accounts publish again.
+                                  </p>
                                 )}
                               </TooltipContent>
                             </Tooltip>

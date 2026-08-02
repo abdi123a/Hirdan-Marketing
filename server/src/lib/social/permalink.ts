@@ -81,10 +81,14 @@ export function derivePermalink(
       return `https://www.pinterest.com/pin/${encodeURIComponent(id)}/`;
 
     case 'facebook': {
-      // Graph returns "{pageId}_{postId}" for page posts.
+      // Graph returns "{pageId}_{postId}" for feed posts. Video uploads via
+      // /{page}/videos return a bare video id — /videos/ is the reliable path.
       const [left, right] = id.split('_');
       if (left && right) return `https://www.facebook.com/${left}/posts/${right}`;
-      return ctx.pageId ? `https://www.facebook.com/${ctx.pageId}/posts/${id}` : null;
+      if (ctx.pageId) {
+        return `https://www.facebook.com/${ctx.pageId}/videos/${id}`;
+      }
+      return `https://www.facebook.com/watch/?v=${encodeURIComponent(id)}`;
     }
 
     case 'tiktok':

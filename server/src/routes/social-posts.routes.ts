@@ -4,10 +4,19 @@ import { authenticate } from '../middleware/auth.js';
 import { publishPostToPlatform } from '../lib/social/platform-router.service.js';
 import { captureDestinationPermalink } from '../lib/social/permalink.service.js';
 import { uploadSocialMediaFile } from '../lib/social/storage.service.js';
+import { extractSocialApiError } from '../lib/social/safe-error.js';
 import { callAI, resolveProviderKey } from '../lib/ai-provider.js';
 import multer from 'multer';
 import path from 'path';
 import { PATHS } from '../lib/paths.js';
+
+/** Aggregate post status from per-destination outcomes. */
+function aggregatePostStatus(published: number, failed: number, total: number): string {
+  if (total > 0 && published === total) return 'PUBLISHED';
+  if (published > 0 && failed > 0) return 'PARTIAL';
+  if (failed > 0) return 'FAILED';
+  return 'PUBLISHING';
+}
 
 const router = Router();
 const upload = multer({ dest: path.join(PATHS.UPLOADS_ROOT, 'social-temp') });
@@ -162,22 +171,41 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
     }
 
     if (accountIds && Array.isArray(accountIds)) {
+      // Preserve PUBLISHED destinations so edit + republish does not wipe live
+      // platform posts and then re-publish them. Only non-published destinations
+      // are replaced as QUEUED for the selected accounts.
+      const publishedAccountIds = new Set(
+        currentPost.destinations
+          .filter((d) => d.status === 'PUBLISHED')
+          .map((d) => d.socialAccountId),
+      );
+
       await prisma.socialPostDestination.deleteMany({
-        where: { postId: id as string },
+        where: {
+          postId: id as string,
+          status: { not: 'PUBLISHED' },
+        },
       });
 
-      // FIX: previously did one prisma.socialAccount.findUnique() per account
-      // inside a for-loop (N queries). Batched into a single findMany.
-      const accounts = await prisma.socialAccount.findMany({
-        where: { id: { in: accountIds } },
-      });
-      const accountMap = new Map(accounts.map(a => [a.id, a]));
+      const accountsToQueue = (accountIds as string[]).filter(
+        (accountId) => !publishedAccountIds.has(accountId),
+      );
 
-      const destinationsData = accountIds.map((accountId: string) => ({
-        socialAccountId: accountId,
-        platform: accountMap.get(accountId)?.platform || 'UNKNOWN',
-        status: 'QUEUED',
-      }));
+      if (accountsToQueue.length > 0) {
+        const accounts = await prisma.socialAccount.findMany({
+          where: { id: { in: accountsToQueue } },
+        });
+        const accountMap = new Map(accounts.map((a) => [a.id, a]));
+
+        await prisma.socialPostDestination.createMany({
+          data: accountsToQueue.map((accountId: string) => ({
+            postId: id as string,
+            socialAccountId: accountId,
+            platform: accountMap.get(accountId)?.platform || 'UNKNOWN',
+            status: 'QUEUED',
+          })),
+        });
+      }
 
       await prisma.socialPost.update({
         where: { id: id as string },
@@ -189,9 +217,6 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
           scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
           campaignId: campaignId as string | null,
           status: status || currentPost.status,
-          destinations: {
-            create: destinationsData,
-          },
         },
       });
     } else {
@@ -284,6 +309,7 @@ router.post('/posts/:id/reject', authenticate, async (req, res, next) => {
 router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
   try {
     const { id } = req.params;
+    const { accountIds: targetAccountIds } = req.body || {};
     const post = (await prisma.socialPost.findUnique({
       where: { id: id as string },
       include: {
@@ -298,16 +324,28 @@ router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
       return;
     }
 
+    const targetSet =
+      Array.isArray(targetAccountIds) && targetAccountIds.length > 0
+        ? new Set(targetAccountIds as string[])
+        : null;
+
+    // Never re-publish destinations that already succeeded — edit/retry must only
+    // hit QUEUED/FAILED (or explicitly targeted unpublished) accounts.
+    const destinationsToPublish = post.destinations.filter((dest: any) => {
+      if (dest.status === 'PUBLISHED' && dest.platformPostId) return false;
+      if (targetSet && !targetSet.has(dest.socialAccountId)) return false;
+      return true;
+    });
+
     // Set post status to PUBLISHING
     await prisma.socialPost.update({
       where: { id: id as string },
       data: { status: 'PUBLISHING' },
     });
 
-    let hasErrors = false;
     const errorsList: string[] = [];
 
-    for (const dest of post.destinations) {
+    for (const dest of destinationsToPublish) {
       try {
         await prisma.socialPostDestination.update({
           where: { id: dest.id as string },
@@ -330,10 +368,9 @@ router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
         // Store the live post URL for the "View on platform" action. Non-fatal;
         // TikTok resolves later via resolvePendingPermalinks() once processed.
         await captureDestinationPermalink(dest.id as string, dest.socialAccount, platformPostId);
-      } catch (err: any) {
-        hasErrors = true;
-        const msg = err.response?.data?.error?.message || err.message || 'Publishing failed';
-        errorsList.push(msg);
+      } catch (err: unknown) {
+        const msg = extractSocialApiError(err);
+        errorsList.push(`${dest.platform}: ${msg}`);
 
         await prisma.socialPostDestination.update({
           where: { id: dest.id as string },
@@ -355,12 +392,18 @@ router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
     const publishedDests = allDests.filter((d) => d.status === 'PUBLISHED').length;
     const failedDests = allDests.filter((d) => d.status === 'FAILED').length;
     const isAllPublished = totalDests > 0 && publishedDests === totalDests;
+    const aggregateStatus = aggregatePostStatus(publishedDests, failedDests, totalDests);
 
     const finalPost = await prisma.socialPost.update({
       where: { id: id as string },
       data: {
-        status: isAllPublished ? 'PUBLISHED' : (failedDests > 0 ? 'FAILED' : 'PUBLISHING'),
-        publishedAt: isAllPublished ? new Date() : null,
+        status: aggregateStatus,
+        // Keep the first successful publish time on partial failures instead of clearing it.
+        publishedAt: isAllPublished
+          ? new Date()
+          : publishedDests > 0
+            ? (post.publishedAt || new Date())
+            : null,
         errorMessage: isAllPublished ? null : (errorsList.length > 0 ? errorsList.join('; ') : null),
       },
       include: {
@@ -401,7 +444,6 @@ router.post('/posts/:id/retry', authenticate, async (req, res, next) => {
       data: { status: 'PUBLISHING' },
     });
 
-    let hasErrors = false;
     const errorsList: string[] = [];
 
     for (const dest of post.destinations) {
@@ -427,10 +469,9 @@ router.post('/posts/:id/retry', authenticate, async (req, res, next) => {
         // Store the live post URL for the "View on platform" action. Non-fatal;
         // TikTok resolves later via resolvePendingPermalinks() once processed.
         await captureDestinationPermalink(dest.id as string, dest.socialAccount, platformPostId);
-      } catch (err: any) {
-        hasErrors = true;
-        const msg = err.response?.data?.error?.message || err.message || 'Retry failed';
-        errorsList.push(msg);
+      } catch (err: unknown) {
+        const msg = extractSocialApiError(err);
+        errorsList.push(`${dest.platform}: ${msg}`);
 
         await prisma.socialPostDestination.update({
           where: { id: dest.id as string },
@@ -452,12 +493,17 @@ router.post('/posts/:id/retry', authenticate, async (req, res, next) => {
     const publishedDests = allDests.filter((d) => d.status === 'PUBLISHED').length;
     const failedDests = allDests.filter((d) => d.status === 'FAILED').length;
     const isAllPublished = totalDests > 0 && publishedDests === totalDests;
+    const aggregateStatus = aggregatePostStatus(publishedDests, failedDests, totalDests);
 
     const finalPost = await prisma.socialPost.update({
       where: { id: id as string },
       data: {
-        status: isAllPublished ? 'PUBLISHED' : (failedDests > 0 ? 'FAILED' : 'PUBLISHING'),
-        publishedAt: isAllPublished ? new Date() : null,
+        status: aggregateStatus,
+        publishedAt: isAllPublished
+          ? new Date()
+          : publishedDests > 0
+            ? (post.publishedAt || new Date())
+            : null,
         errorMessage: isAllPublished ? null : (errorsList.length > 0 ? errorsList.join('; ') : null),
       },
       include: {

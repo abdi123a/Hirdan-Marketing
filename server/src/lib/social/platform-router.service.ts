@@ -1,5 +1,6 @@
 import { SocialAccount, SocialPost } from '@prisma/client';
 import { decryptToken } from './token-crypto.service.js';
+import { extractSocialApiError, isAuthError } from './safe-error.js';
 import * as meta from './meta.service.js';
 import * as tiktok from './tiktok.service.js';
 import * as linkedin from './linkedin.service.js';
@@ -25,8 +26,63 @@ export function validateCaption(platform: string, caption: string): void {
   }
 }
 
+async function persistRefreshedToken(
+  account: SocialAccount,
+  refreshed: { accessTokenEnc: string; refreshTokenEnc: string | null; tokenExpiresAt: Date | null },
+): Promise<SocialAccount> {
+  const { prisma } = await import('../prisma.js');
+  return prisma.socialAccount.update({
+    where: { id: account.id },
+    data: {
+      accessTokenEnc: refreshed.accessTokenEnc,
+      refreshTokenEnc: refreshed.refreshTokenEnc,
+      tokenExpiresAt: refreshed.tokenExpiresAt,
+      healthStatus: 'healthy',
+      healthMessage: null,
+    },
+  });
+}
+
+async function markAccountAuthFailure(account: SocialAccount, message: string): Promise<void> {
+  try {
+    const { prisma } = await import('../prisma.js');
+    await prisma.socialAccount.update({
+      where: { id: account.id },
+      data: {
+        healthStatus: 'expired',
+        healthMessage: message.slice(0, 500),
+      },
+    });
+  } catch {
+    // non-fatal
+  }
+}
+
+/** Refresh when expired / near expiry, or when force=true (e.g. after a 401). */
+async function ensureFreshAccessToken(account: SocialAccount, force = false): Promise<SocialAccount> {
+  if (!account.refreshTokenEnc) return account;
+
+  const expiresAt = account.tokenExpiresAt ? new Date(account.tokenExpiresAt).getTime() : null;
+  // YouTube access tokens last ~1h — refresh a bit earlier than Meta's 60-day tokens.
+  const skewMs = account.platform.toLowerCase() === 'youtube' ? 15 * 60 * 1000 : 5 * 60 * 1000;
+  const needsRefresh = force || (expiresAt !== null && expiresAt < Date.now() + skewMs);
+  if (!needsRefresh) return account;
+
+  try {
+    const refreshed = await refreshAccountToken(account);
+    return await persistRefreshedToken(account, refreshed);
+  } catch (err: unknown) {
+    console.warn(
+      `[publish] Token refresh failed for ${account.platform} ${account.id}:`,
+      extractSocialApiError(err),
+    );
+    return account;
+  }
+}
+
 export async function publishPostToPlatform(post: SocialPost, account: SocialAccount): Promise<string> {
   const platform = account.platform.toLowerCase();
+  account = await ensureFreshAccessToken(account);
   
   // Resolve per-platform caption override if present
   let caption = post.caption;
@@ -140,12 +196,44 @@ export async function publishPostToPlatform(post: SocialPost, account: SocialAcc
       // ✅ Retrieve dynamic privacy from the post's platformContent
       const youtubeContent = (post.platformContent as any)?.youtube || {};
       const privacy = youtubeContent.privacy || 'public';
-      return await youtube.publishToYouTube({
-        accessToken,
-        videoUrl: mediaUrls[0],
-        caption,
-        privacy,
-      });
+      try {
+        return await youtube.publishToYouTube({
+          accessToken,
+          videoUrl: mediaUrls[0],
+          caption,
+          privacy,
+        });
+      } catch (err: unknown) {
+        // Hostinger logs: YouTube often fails with 401 even when cron "refreshed"
+        // — force one refresh+retry before surfacing the error.
+        if (!isAuthError(err) || !account.refreshTokenEnc) {
+          if (isAuthError(err)) {
+            await markAccountAuthFailure(
+              account,
+              'YouTube authentication failed — reconnect this account.',
+            );
+          }
+          throw err;
+        }
+        const refreshedAccount = await ensureFreshAccessToken(account, true);
+        const freshToken = decryptToken(refreshedAccount.accessTokenEnc);
+        try {
+          return await youtube.publishToYouTube({
+            accessToken: freshToken,
+            videoUrl: mediaUrls[0],
+            caption,
+            privacy,
+          });
+        } catch (retryErr: unknown) {
+          if (isAuthError(retryErr)) {
+            await markAccountAuthFailure(
+              refreshedAccount,
+              'YouTube authentication failed — reconnect this account.',
+            );
+          }
+          throw retryErr;
+        }
+      }
     }
 
     case 'x':
@@ -185,18 +273,34 @@ export async function refreshAccountToken(account: SocialAccount): Promise<{ acc
 
   switch (platform) {
     case 'facebook':
-    case 'instagram':
+    case 'instagram': {
+      // refreshTokenEnc holds the long-lived USER token. Exchange it, then re-fetch
+      // the page access token for this account (page tokens themselves aren't refreshable).
+      const longToken = await meta.getMetaLongLivedToken(decryptedRefreshToken);
+      const pages = await meta.getPagesWithInstagram(longToken);
+      const page = pages.find((p) =>
+        platform === 'facebook'
+          ? p.pageId === account.pageId
+          : p.igAccountId === account.igAccountId,
+      );
+      if (!page?.pageAccessToken) {
+        throw new Error(`Could not refresh ${account.platform} page token — reconnect the account`);
+      }
+      const { encryptToken } = await import('./token-crypto.service.js');
+      return {
+        accessTokenEnc: encryptToken(page.pageAccessToken),
+        refreshTokenEnc: encryptToken(longToken),
+        tokenExpiresAt: new Date(Date.now() + 5184000 * 1000),
+      };
+    }
+
     case 'threads': {
-      // Meta Graph tokens last 60 days, refresh by swapping user token again.
-      // getMetaLongLivedToken returns a plaintext token from Meta's API — it must be
-      // ENCRYPTED before storage, not decrypted (that was the bug: decryptToken() on
-      // a plaintext string threw "Invalid stored encrypted token format" every time,
-      // silently failing every Facebook/Instagram/Threads token refresh).
+      // Threads uses the user token directly (stored as access token).
       const longToken = await meta.getMetaLongLivedToken(decryptedRefreshToken);
       const { encryptToken } = await import('./token-crypto.service.js');
       return {
         accessTokenEnc: encryptToken(longToken),
-        refreshTokenEnc: account.refreshTokenEnc,
+        refreshTokenEnc: encryptToken(longToken),
         tokenExpiresAt: new Date(Date.now() + 5184000 * 1000),
       };
     }

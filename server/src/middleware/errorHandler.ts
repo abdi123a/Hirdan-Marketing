@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../lib/errors.js';
 import { env } from '../config/env.js';
+import { redactSecrets } from '../lib/social/safe-error.js';
 
 export function errorHandler(
   err: Error,
@@ -19,9 +20,9 @@ export function errorHandler(
     isOperational = err.isOperational;
   }
 
-  // Log unexpected errors
+  // Log unexpected errors (never dump Axios configs — they often contain tokens)
   if (!isOperational) {
-    console.error('💥 Unexpected error:', err);
+    console.error('💥 Unexpected error:', redactSecrets(err.message), redactSecrets(err.stack || ''));
   }
 
   // SECURITY: only `AppError` messages are written deliberately for end users.

@@ -4,6 +4,7 @@ import { publishPostToPlatform, refreshAccountToken, fetchPlatformInsights } fro
 import { isRateLimitError } from './meta.service.js';
 import { decryptToken } from './token-crypto.service.js';
 import { captureDestinationPermalink, resolvePendingPermalinks } from './permalink.service.js';
+import { extractSocialApiError, logSocialError } from './safe-error.js';
 
 export async function processDuePosts(): Promise<void> {
   try {
@@ -26,11 +27,16 @@ export async function processDuePosts(): Promise<void> {
         AND (sa.rate_limited_until IS NULL OR sa.rate_limited_until <= NOW())
     `);
 
-    // 2. Fetch all destinations currently locked by this process
+    // 2. Fetch destinations claimed for scheduled publishing only.
+    // Exclude publish-now in-flight work (post status PUBLISHING) so the cron
+    // cannot double-publish the same destination.
     const destinations = await prisma.socialPostDestination.findMany({
       where: {
         status: 'PUBLISHING',
         lockedAt: { not: null },
+        post: {
+          status: 'SCHEDULED',
+        },
       },
       include: {
         post: true,
@@ -76,17 +82,16 @@ export async function processDuePosts(): Promise<void> {
         // post. Best-effort and non-fatal: platforms that need processing time
         // (TikTok) get picked up later by resolvePendingPermalinks().
         await captureDestinationPermalink(dest.id, dest.socialAccount, platformPostId);
-      } catch (err: any) {
-        const errorMsg = err.response?.data?.error?.message || err.message || 'Unknown error';
-        console.error(`Error publishing post destination ${dest.id}:`, errorMsg);
+      } catch (err: unknown) {
+        const errorMsg = extractSocialApiError(err);
+        logSocialError(`Error publishing post destination ${dest.id}`, err);
 
         const nextAttempts = dest.attempts + 1;
         const failedPermanently = nextAttempts >= 3;
 
         // Check if rate limited
-        let rateLimitedUntil: Date | null = null;
         if (isRateLimitError(err)) {
-          rateLimitedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 min cooldown
+          const rateLimitedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 min cooldown
           await prisma.socialAccount.update({
             where: { id: dest.socialAccountId },
             data: {
@@ -119,7 +124,6 @@ export async function processDuePosts(): Promise<void> {
       const total = allDests.length;
       const published = allDests.filter(d => d.status === 'PUBLISHED').length;
       const failed = allDests.filter(d => d.status === 'FAILED').length;
-      const queued = allDests.filter(d => d.status === 'QUEUED').length;
 
       if (published === total) {
         await prisma.socialPost.update({
@@ -140,19 +144,24 @@ export async function processDuePosts(): Promise<void> {
           }
         }
       } else if (published + failed === total && failed > 0) {
-        // If all finished, but some or all failed
+        // Partial success (some live, some failed) vs total failure
+        const failedErrors = allDests
+          .filter((d) => d.status === 'FAILED' && d.lastError)
+          .map((d) => `${d.platform}: ${d.lastError}`)
+          .join('; ');
         await prisma.socialPost.update({
           where: { id: postId },
           data: {
-            status: 'FAILED',
-            errorMessage: `Failed to publish to ${failed} out of ${total} platforms.`,
+            status: published > 0 ? 'PARTIAL' : 'FAILED',
+            publishedAt: published > 0 ? new Date() : undefined,
+            errorMessage: failedErrors || `Failed to publish to ${failed} out of ${total} platforms.`,
           },
         });
       }
       // If there are still QUEUED ones, we keep the post status as SCHEDULED so it retries
     }
-  } catch (err: any) {
-    console.error('Error in processDuePosts scheduler:', err);
+  } catch (err: unknown) {
+    logSocialError('Error in processDuePosts scheduler', err);
   }
 }
 
@@ -183,13 +192,14 @@ export async function refreshExpiringTokens(): Promise<void> {
           },
         });
         console.log(`Successfully refreshed token for social account: ${account.displayName} (${account.platform})`);
-      } catch (err: any) {
-        console.error(`Failed to refresh token for account ${account.id}:`, err.message);
+      } catch (err: unknown) {
+        const msg = extractSocialApiError(err);
+        console.error(`Failed to refresh token for account ${account.id}:`, msg);
         await prisma.socialAccount.update({
           where: { id: account.id },
           data: {
             healthStatus: 'expired',
-            healthMessage: `Token refresh failed: ${err.message}`,
+            healthMessage: `Token refresh failed: ${msg}`,
           },
         });
         // Create an system notification for admins
@@ -205,8 +215,8 @@ export async function refreshExpiringTokens(): Promise<void> {
         });
       }
     }
-  } catch (err: any) {
-    console.error('Error in refreshExpiringTokens job:', err);
+  } catch (err: unknown) {
+    logSocialError('Error in refreshExpiringTokens job', err);
   }
 }
 
@@ -232,8 +242,8 @@ export async function syncAccount(accountId: string): Promise<void> {
       isRealSync = true;
       metrics = await fetchPlatformInsights(account);
     }
-  } catch (err: any) {
-    const errorMsg = err.response?.data?.error?.message || err.message || 'Unknown error';
+  } catch (err: unknown) {
+    const errorMsg = extractSocialApiError(err);
     console.warn(`Real API sync failed for account ${account.id}:`, errorMsg);
     syncError = `API Error: ${errorMsg}`;
   }
@@ -508,15 +518,17 @@ export async function collectDailyInsights(clientId?: string): Promise<void> {
     for (const account of accounts) {
       try {
         await syncAccount(account.id);
-      } catch (err: any) {
-        console.error(`Failed to collect daily insights for account ${account.id}:`, err.message);
+      } catch (err: unknown) {
+        logSocialError(`Failed to collect daily insights for account ${account.id}`, err);
       }
     }
 
     // Collect post insights for posts published in the last 90 days
     const recentPosts = await prisma.socialPost.findMany({
       where: {
-        status: 'PUBLISHED',
+        // Include PARTIAL so successful destinations still collect insights
+        // when another platform (e.g. YouTube) failed.
+        status: { in: ['PUBLISHED', 'PARTIAL'] },
         publishedAt: {
           gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
         },
@@ -614,13 +626,13 @@ export async function collectDailyInsights(clientId?: string): Promise<void> {
               fetchedAt: new Date(),
             },
           });
-        } catch (err: any) {
-          console.error(`Failed to collect post insights for destination ${dest.id}:`, err.message);
+        } catch (err: unknown) {
+          logSocialError(`Failed to collect post insights for destination ${dest.id}`, err);
         }
       }
     }
-  } catch (err: any) {
-    console.error('Error in collectDailyInsights job:', err);
+  } catch (err: unknown) {
+    logSocialError('Error in collectDailyInsights job', err);
   }
 }
 

@@ -19,6 +19,8 @@ type PendingPickerSession = {
   platform: string;
   clientId: string;
   groupId: string;
+  /** Long-lived Meta user token — stored as refreshTokenEnc so page tokens can be renewed. */
+  userAccessToken?: string;
   pages: Array<{
     pageId: string;
     pageName: string;
@@ -142,7 +144,7 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
       // If only 1 page → save immediately, skip picker
       if (relevantPages.length === 1) {
         const page = relevantPages[0];
-        await saveMetaAccount(platform, clientId, groupId, page);
+        await saveMetaAccount(platform, clientId, groupId, page, longLivedToken);
         res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?connected=true`);
         return;
       }
@@ -154,6 +156,7 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
         platform,
         clientId,
         groupId,
+        userAccessToken: longLivedToken,
         pages: relevantPages as any,
       });
 
@@ -231,15 +234,25 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
 
     res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?connected=true`);
   } catch (err: any) {
-    console.error(`[OAuth Callback Error] Platform: ${req.params.platform}:`, err?.response?.data || err?.message || err);
+    const { extractSocialApiError, redactSecrets } = await import('../lib/social/safe-error.js');
+    const safeMsg = extractSocialApiError(err);
+    console.error(`[OAuth Callback Error] Platform: ${req.params.platform}:`, redactSecrets(safeMsg));
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const errorMsg = err?.response?.data?.error_description || err?.response?.data?.error || err.message || 'OAuth authentication failed';
-    res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?error=${encodeURIComponent(errorMsg)}`);
+    res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?error=${encodeURIComponent(safeMsg)}`);
   }
 });
 
 // ─── Helper: save a Meta account ─────────────────────────────────────────────
-async function saveMetaAccount(platform: string, clientId: string, groupId: string, page: any) {
+async function saveMetaAccount(
+  platform: string,
+  clientId: string,
+  groupId: string,
+  page: any,
+  userAccessToken?: string,
+) {
+  // Store the long-lived USER token as refreshTokenEnc so the cron can renew
+  // page tokens before the ~60-day Meta expiry. Page tokens alone are not refreshable.
+  const refreshTokenEnc = userAccessToken ? encryptToken(userAccessToken) : undefined;
   let acc;
   if (platform === 'facebook') {
     acc = await prisma.socialAccount.upsert({
@@ -249,6 +262,7 @@ async function saveMetaAccount(platform: string, clientId: string, groupId: stri
         platformUsername: page.pageName, displayName: page.pageName, pageId: page.pageId,
         avatarUrl: page.pageAvatarUrl || null,
         accessTokenEnc: encryptToken(page.pageAccessToken),
+        refreshTokenEnc: refreshTokenEnc || null,
         tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
         groupName: groupId, groupColor: 'blue',
       },
@@ -256,7 +270,10 @@ async function saveMetaAccount(platform: string, clientId: string, groupId: stri
         platformUsername: page.pageName, displayName: page.pageName,
         avatarUrl: page.pageAvatarUrl || undefined,
         accessTokenEnc: encryptToken(page.pageAccessToken),
+        ...(refreshTokenEnc ? { refreshTokenEnc } : {}),
         tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+        healthStatus: 'healthy',
+        healthMessage: null,
       },
     });
   } else if (platform === 'instagram' && page.igAccountId) {
@@ -268,6 +285,7 @@ async function saveMetaAccount(platform: string, clientId: string, groupId: stri
         pageId: page.pageId, igAccountId: page.igAccountId,
         avatarUrl: page.igAvatarUrl || null,
         accessTokenEnc: encryptToken(page.pageAccessToken),
+        refreshTokenEnc: refreshTokenEnc || null,
         tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
         groupName: groupId, groupColor: 'purple',
       },
@@ -275,7 +293,10 @@ async function saveMetaAccount(platform: string, clientId: string, groupId: stri
         platformUsername: page.igUsername || page.pageName, displayName: page.igUsername || page.pageName,
         avatarUrl: page.igAvatarUrl || undefined,
         accessTokenEnc: encryptToken(page.pageAccessToken),
+        ...(refreshTokenEnc ? { refreshTokenEnc } : {}),
         tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+        healthStatus: 'healthy',
+        healthMessage: null,
       },
     });
   }
@@ -345,7 +366,7 @@ router.post('/oauth/select-account', authenticate, async (req, res, next) => {
 
     let savedCount = 0;
     for (const page of toSave) {
-      await saveMetaAccount(platform, clientId, groupId, page);
+      await saveMetaAccount(platform, clientId, groupId, page, session.userAccessToken);
       savedCount++;
     }
 
