@@ -61,22 +61,28 @@ Assets attach to a **business/system user** rather than to a per-login user gran
 Adding client B's Page is **additive** — it does not revoke client A. This removes
 the failure mode entirely rather than mitigating it.
 
+> ### ⚠️ This is an agency tool — do NOT claim client Pages
+>
+> Hirdan manages Pages **on behalf of clients** (the Buffer / Hootsuite / Metricool
+> model). The clients own their Pages and grant admin access; we never own them.
+>
+> **Claiming a Page transfers ownership** and is the wrong move here — do not use
+> *Add a Page → Claim* on a client's Page. The correct mechanism is **Partner
+> access**: the client shares their Page with our Business portfolio and keeps
+> ownership. See §3b.
+
 ### Prerequisites
 
 - A **Meta Business portfolio** at `business.facebook.com`.
-- Every client Page **and** its linked Instagram Business account must be *owned by*
-  that portfolio — not merely admin'd by your personal account. Ownership transfer
-  is done in **Business settings → Accounts → Pages → Add**.
+- Each client grants that portfolio **partner access** to their Page and Instagram
+  account (§3b). Ownership stays with the client.
 - `business_management` stays in the configuration (already present in both).
 
 ### Steps
 
 1. **Create or confirm the Business portfolio**, then complete Business Verification
    (see §4 — it is also required for App Review, so do it once).
-2. **Bring each Page into the portfolio.** For Pages you already admin personally,
-   use *Add a Page* → *Claim*. Instagram accounts come in via
-   **Accounts → Instagram accounts**, and must be Professional/Business accounts
-   linked to their Page.
+2. **Get partner access to each client Page** — see §3b below. Do not claim them.
 3. **Create a system user**: Business settings → Users → System users → Add.
    Give it the **Admin** role.
 4. **Assign assets** to that system user — every client Page and IG account, with
@@ -116,8 +122,9 @@ token, so it can't be checked in advance:
 
 - **Asset listing.** `getPagesWithInstagram` calls `/me/accounts`. In Graph API
   Explorer, call `/me/accounts` with the system user token and check it returns
-  the assigned Pages. If your setup returns nothing, tell me and I'll switch it
-  to `/{business-id}/owned_pages` — same fields, ~10 lines.
+  the assigned Pages. With partner-shared Pages this may return nothing — in that
+  case it becomes `/{business-id}/client_pages` (partner access) or
+  `/{business-id}/owned_pages`. Same fields either way, ~10 lines of change.
 
 `refreshExpiringTokens` should stay either way: FLB system user tokens are
 typically 60-day, and a never-expiring token simply never trips the threshold.
@@ -130,12 +137,64 @@ merging clients during the transition.
 
 ---
 
+## 3b. Partner access — the agency mechanism
+
+This is how a client grants Hirdan access **without giving up ownership**. It is
+the correct substitute for claiming, and it is what makes the system-user path
+viable for an agency.
+
+### What you send the client (once per client)
+
+Give them your **Business portfolio ID** (Business settings → Business info) and
+these steps:
+
+1. Go to `business.facebook.com` → **Business settings**.
+2. **Users → Partners → Add → Give a partner access to your assets.**
+3. Paste Hirdan's Business portfolio ID.
+4. Select their **Page** → grant *Manage Page* / Full control.
+5. Select their **Instagram account** → grant full access.
+
+The client keeps ownership. They can revoke at any time. If a client's Page is not
+already in a Business portfolio, they will be prompted to create one — that is
+normal and free.
+
+### After they accept
+
+The Page and IG account appear under **Accounts** in your portfolio as
+*shared with you*. Assign them to your system user exactly like owned assets
+(§3 step 4).
+
+### Why this beats the current setup
+
+| | Personal-admin (today) | Partner access + system user |
+| --- | --- | --- |
+| Grant model | one per Facebook user, **replaced** each login | per-asset, **additive** |
+| Connecting client B | revokes client A | no effect on A |
+| Client offboards | you must remember to remove | client revokes, clean |
+| Survives you losing personal admin | no | yes |
+
+### If a client won't do it
+
+Fall back to the agency-wide single-grant model (§1): one Facebook login with
+**every** client Page checked, then assign Pages to clients inside the CRM. The
+shipped code supports this. It works — it is just fragile, because one narrowed
+dialog breaks the others.
+
+---
+
 ## 4. App Review / publishing checklist
 
 The app is currently **Unpublished** with **Standard Access**. In that state only
 people holding an app role (Admin/Developer/Tester) can grant permissions — which
 is why it works with your own Facebook account and will fail the instant a client
 tries to connect their own Page.
+
+**For an agency tool this is not optional.** Hirdan manages Pages it does not own,
+on behalf of paying clients. Running that on a development-mode app works only for
+as long as every Page happens to be admin'd by the one Facebook account that also
+holds an app role. The moment a client grants access through their own login — or
+partner access replaces personal admin — Standard Access stops being enough.
+Treat App Review as required work, not a later nicety.
 
 ### Before you can submit
 
