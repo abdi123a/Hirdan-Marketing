@@ -287,6 +287,10 @@ export async function refreshAccountToken(account: SocialAccount): Promise<{ acc
     case 'instagram': {
       // refreshTokenEnc holds the long-lived USER token. Exchange it, then re-fetch
       // the page access token for this account (page tokens themselves aren't refreshable).
+      //
+      // Only call this after the stored PAGE token already failed auth. Reminting
+      // from a shared Facebook login whose current grant is missing this Page will
+      // throw — callers must leave the stored page token untouched in that case.
       const longToken = await meta.getMetaLongLivedToken(decryptedRefreshToken);
       const pages = await meta.getPagesWithInstagram(longToken);
       const page = pages.find((p) =>
@@ -301,13 +305,62 @@ export async function refreshAccountToken(account: SocialAccount): Promise<{ acc
           .slice(0, 8)
           .join(', ');
         throw new Error(
-          `This Facebook login no longer has access to “${account.displayName}”. ` +
-            `Reconnect ${account.platform} and select that Page/IG account in the Facebook dialog` +
-            (available ? ` (currently available: ${available})` : '') +
-            '.',
+          `Cannot remint “${account.displayName}” from this Facebook login` +
+            (available ? ` (Pages currently granted: ${available})` : '') +
+            `. Reconnect ${account.platform} for this client only — other clients keep their own tokens.`,
         );
       }
       const { encryptToken } = await import('./token-crypto.service.js');
+
+      // Bonus: if this login also grants sibling clients' Pages, refresh those
+      // page tokens too — without moving ownership between clients.
+      try {
+        const { prisma } = await import('../prisma.js');
+        const refreshEnc = encryptToken(longToken);
+        const expires = new Date(Date.now() + 5184000 * 1000);
+        for (const siblingPage of pages) {
+          if (!siblingPage.pageAccessToken) continue;
+          const isSelf =
+            platform === 'facebook'
+              ? siblingPage.pageId === account.pageId || siblingPage.pageId === account.platformUserId
+              : siblingPage.igAccountId === account.igAccountId ||
+                siblingPage.igAccountId === account.platformUserId;
+          if (isSelf) continue;
+
+          const siblings = await prisma.socialAccount.findMany({
+            where: {
+              isActive: true,
+              id: { not: account.id },
+              OR: [
+                { platform: 'facebook', pageId: siblingPage.pageId },
+                { platform: 'facebook', platformUserId: siblingPage.pageId },
+                ...(siblingPage.igAccountId
+                  ? [
+                      { platform: 'instagram', igAccountId: siblingPage.igAccountId },
+                      { platform: 'instagram', platformUserId: siblingPage.igAccountId },
+                    ]
+                  : []),
+              ],
+            },
+            select: { id: true },
+          });
+          for (const sib of siblings) {
+            await prisma.socialAccount.update({
+              where: { id: sib.id },
+              data: {
+                accessTokenEnc: encryptToken(siblingPage.pageAccessToken),
+                refreshTokenEnc: refreshEnc,
+                tokenExpiresAt: expires,
+                healthStatus: 'healthy',
+                healthMessage: null,
+              },
+            });
+          }
+        }
+      } catch (healErr: unknown) {
+        console.warn('[token] Sibling Meta heal after remint failed:', extractSocialApiError(healErr));
+      }
+
       return {
         accessTokenEnc: encryptToken(page.pageAccessToken),
         refreshTokenEnc: encryptToken(longToken),
@@ -402,15 +455,17 @@ async function fetchInsightsOnce(
 }
 
 export async function fetchPlatformInsights(account: SocialAccount): Promise<{ followers: number; reach: number | null; impressions: number | null; profileVisits: number | null }> {
-  // Meta PAGE tokens are often marked invalid by Graph even while our stored
-  // expiry is still in the future (FLB reconnect / permission churn). Always
-  // re-mint the page token from the USER refresh token before insights.
-  // YouTube access tokens die in ~1h — refresh-near-expiry covers that.
-  const platform = account.platform.toLowerCase();
-  const forceMetaPageRefresh =
-    (platform === 'facebook' || platform === 'instagram') && !!account.refreshTokenEnc;
-
-  let fresh = await ensureFreshAccessToken(account, forceMetaPageRefresh);
+  // IMPORTANT (multi-client Meta):
+  // Do NOT force-remint Facebook/Instagram page tokens from the USER token on
+  // every Sync. All agency clients often share one personal Facebook login, and
+  // Login-for-Business keeps a single Page grant for that user. Reminting Tokka
+  // after Papparoti was the last reconnect makes /me/accounts return only
+  // Papparoti — Sync then marks Tokka/Te'amo as broken even when their stored
+  // page tokens were still fine.
+  //
+  // Use the stored page token first. Remint from the user token only after an
+  // auth error (same path as publish). YouTube still refreshes near expiry.
+  let fresh = await ensureFreshAccessToken(account, false);
   try {
     const metrics = await fetchInsightsOnce(fresh);
     // Successful sync clears a stale Issue badge from a previous failed run.
@@ -424,6 +479,7 @@ export async function fetchPlatformInsights(account: SocialAccount): Promise<{ f
     return metrics;
   } catch (err: unknown) {
     if (!isAuthError(err) || !fresh.refreshTokenEnc) throw err;
+    // Auth failed with the stored page token — try one remint from the user token.
     fresh = await ensureFreshAccessToken(fresh, true);
     try {
       const metrics = await fetchInsightsOnce(fresh);

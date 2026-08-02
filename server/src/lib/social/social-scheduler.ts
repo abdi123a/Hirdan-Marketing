@@ -187,11 +187,50 @@ export async function refreshExpiringTokens(): Promise<void> {
 
     for (const account of accounts) {
       if (!account.refreshTokenEnc) continue;
+      const platform = account.platform.toLowerCase();
       // Skip YouTube tokens that are still fresh (>20 min left) to avoid hammering Google.
-      if (account.platform.toLowerCase() === 'youtube' && account.tokenExpiresAt) {
+      if (platform === 'youtube' && account.tokenExpiresAt) {
         const msLeft = new Date(account.tokenExpiresAt).getTime() - Date.now();
         if (msLeft > 20 * 60 * 1000) continue;
       }
+
+      // Meta multi-client: never remint from the USER token just because expiry is
+      // near. Reminting uses /me/accounts for the shared Facebook login — if the
+      // latest FLB grant only includes one Page, reminting would "expire" every
+      // other client's still-valid page token. Probe the stored page token first.
+      if (platform === 'facebook' || platform === 'instagram') {
+        const probeId = account.pageId || account.platformUserId;
+        if (probeId) {
+          try {
+            const { isPageTokenStillValid } = await import('./meta.service.js');
+            const stillValid = await isPageTokenStillValid(
+              probeId,
+              decryptToken(account.accessTokenEnc),
+            );
+            if (stillValid) {
+              await prisma.socialAccount.update({
+                where: { id: account.id },
+                data: {
+                  // Keep the working page token; push expiry out so cron backs off.
+                  tokenExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                  healthStatus: 'healthy',
+                  healthMessage: null,
+                },
+              });
+              console.log(
+                `Kept valid Meta page token for ${account.displayName} (${account.platform}) — skipped user-token remint`,
+              );
+              continue;
+            }
+          } catch (probeErr: unknown) {
+            console.warn(
+              `Meta page-token probe failed for ${account.id}:`,
+              extractSocialApiError(probeErr),
+            );
+          }
+        }
+      }
+
       try {
         const refreshData = await refreshAccountToken(account);
         await prisma.socialAccount.update({
@@ -208,6 +247,16 @@ export async function refreshExpiringTokens(): Promise<void> {
       } catch (err: unknown) {
         const msg = extractSocialApiError(err);
         console.error(`Failed to refresh token for account ${account.id}:`, msg);
+
+        // Meta: if remint failed but we couldn't prove the page token is dead,
+        // do not mark expired — Sync/publish will surface a real auth failure.
+        if (platform === 'facebook' || platform === 'instagram') {
+          console.warn(
+            `Leaving Meta account ${account.id} untouched after remint failure (preserve multi-client tokens)`,
+          );
+          continue;
+        }
+
         await prisma.socialAccount.update({
           where: { id: account.id },
           data: {
