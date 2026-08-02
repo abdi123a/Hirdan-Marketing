@@ -164,13 +164,49 @@ export async function exchangeMetaCodeForToken(platform: 'facebook' | 'instagram
   return data.access_token;
 }
 
+/** Inspect a token via /debug_token. `expiresAt` is a unix seconds value; 0 means never. */
+export async function debugMetaToken(
+  token: string,
+): Promise<{ expiresAt: number; type: string; isValid: boolean }> {
+  const appId = process.env.META_APP_ID;
+  const appSecret = process.env.META_APP_SECRET;
+  if (!appId || !appSecret) throw new Error('Meta credentials are not fully configured');
+  const { data } = await axios.get(`${GRAPH_URL}/debug_token`, {
+    params: { input_token: token, access_token: `${appId}|${appSecret}` },
+    timeout: 10_000,
+  });
+  const d = data?.data || {};
+  return { expiresAt: d.expires_at ?? 0, type: d.type || 'UNKNOWN', isValid: !!d.is_valid };
+}
+
 export async function getMetaLongLivedToken(shortLivedToken: string): Promise<string> {
   const appId = process.env.META_APP_ID;
   const appSecret = process.env.META_APP_SECRET;
   if (!appId || !appSecret) throw new Error('Meta credentials are not fully configured');
-  const { data } = await axios.get(`${GRAPH_URL}/oauth/access_token`, {
-    params: { grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: shortLivedToken },
-  });
+  let data: any;
+  try {
+    ({ data } = await axios.get(`${GRAPH_URL}/oauth/access_token`, {
+      params: { grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: shortLivedToken },
+    }));
+  } catch (err) {
+    // Login-for-Business configs using a SYSTEM USER access token hand back a
+    // token that is already long-lived (or never-expiring) and cannot be run
+    // through fb_exchange_token. Accept it — but only after /debug_token proves
+    // it really is long-lived, otherwise a transient exchange failure would let
+    // a 1-hour token get stored behind a 60-day expiry and die silently.
+    const info = await debugMetaToken(shortLivedToken).catch(() => null);
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const alreadyLongLived =
+      !!info?.isValid && (info.expiresAt === 0 || info.expiresAt * 1000 > Date.now() + SEVEN_DAYS_MS);
+    if (alreadyLongLived) {
+      console.log(
+        `[Meta] Token is already long-lived (type=${info!.type}, ` +
+          `expires=${info!.expiresAt === 0 ? 'never' : new Date(info!.expiresAt * 1000).toISOString()}) — using as-is.`,
+      );
+      return shortLivedToken;
+    }
+    throw err;
+  }
   return data.access_token;
 }
 
