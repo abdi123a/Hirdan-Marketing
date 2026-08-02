@@ -77,7 +77,16 @@ interface AccountRow {
   avatarUrl: string | null; healthStatus: string; healthMessage: string | null; updatedAt: string;
   lastImportedAt?: string | null; source?: string;
   metricStatus?: { reach: string; impressions: string; videoViews: string };
-  latestMetrics: { followers: number | null; reach: number | null; impressions: number | null; profileVisits: number | null; videoViews: number | null; engagementRate: number | null; date: string } | null;
+  latestMetrics: {
+    followers: number | null;
+    reach: number | null;
+    impressions: number | null;
+    profileVisits: number | null;
+    videoViews: number | null;
+    engagementRate: number | null;
+    date: string | null;
+    periodDays?: number;
+  } | null;
 }
 
 interface Client { id: string; name: string; company: string }
@@ -1785,18 +1794,50 @@ export default function SocialAnalyzePage() {
             {/* ══════════════ ACCOUNTS ══════════════ */}
             {activeTab === "accounts" && (
               <div className="space-y-6">
-                <div><h2 className="text-lg font-bold">Account Analytics</h2><p className="text-xs text-muted-foreground">Detailed metrics for every connected social account</p></div>
+                <div>
+                  <h2 className="text-lg font-bold">Account Analytics</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Live followers · reach &amp; impressions for {dateRangeText}
+                  </p>
+                </div>
                 <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
                   {(analytics?.accounts||[]).map((acc) => {
                     const m = acc.latestMetrics;
                     const isHealthy = acc.healthStatus === "healthy";
                     const plat = acc.platform?.toLowerCase();
+                    const periodLabel = dateMode === "custom" ? "Period" : `${dateRange}d`;
                     const slots = [
-                      { key: "followers", label: plat === "youtube" ? "Subscribers" : "Followers", value: m?.followers ?? null, status: "available" as string },
-                      { key: "reach", label: "Reach", value: m?.reach ?? null, status: acc.metricStatus?.reach || (m?.reach != null ? "available" : "unavailable") },
-                      { key: "impressions", label: "Impressions", value: m?.impressions ?? null, status: acc.metricStatus?.impressions || (m?.impressions != null ? "available" : "unavailable") },
+                      {
+                        key: "followers",
+                        label: plat === "youtube" ? "Subscribers" : "Followers",
+                        sub: "Live",
+                        value: m?.followers ?? null,
+                        status: "available" as string,
+                      },
+                      {
+                        key: "reach",
+                        label: "Reach",
+                        sub: periodLabel,
+                        value: m?.reach ?? null,
+                        status: acc.metricStatus?.reach || (m?.reach != null ? "available" : "unavailable"),
+                      },
+                      {
+                        key: "impressions",
+                        label: "Impressions",
+                        sub: periodLabel,
+                        value: m?.impressions ?? null,
+                        status: acc.metricStatus?.impressions || (m?.impressions != null ? "available" : "unavailable"),
+                      },
                     ];
-                    const slotNote = (status: string) => status === "locked" ? (plat === "instagram" ? "Needs Instagram insights permission" : "Needs an extra platform permission") : `Not provided by ${acc.platform}`;
+                    const slotNote = (status: string) => {
+                      if (status === "locked") {
+                        return plat === "instagram"
+                          ? "Needs Instagram insights permission"
+                          : "Needs an extra platform permission";
+                      }
+                      if (plat === "tiktok") return "Import TikTok Studio export to view reach & impressions";
+                      return `Not provided by ${acc.platform}`;
+                    };
                     return (
                       <Card key={acc.id} className="rounded-2xl shadow-sm border border-border/80 overflow-hidden">
                         <div className="flex items-center gap-3 p-5 border-b border-border/40">
@@ -1820,13 +1861,18 @@ export default function SocialAnalyzePage() {
                               <div key={slot.key} className="p-4 text-center">
                                 <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">{slot.label}</p>
                                 {shown ? (
-                                  <p className="text-lg font-black text-foreground mt-1">{fmtN(slot.value)}</p>
+                                  <>
+                                    <p className="text-lg font-black text-foreground mt-1">{fmtN(slot.value)}</p>
+                                    <span className="text-[8px] text-muted-foreground/70 mt-0.5 leading-tight">{slot.sub}</span>
+                                  </>
                                 ) : (
                                   <div className="mt-1 flex flex-col items-center" title={slotNote(slot.status)}>
                                     <span className="text-lg font-black text-muted-foreground/30 leading-none inline-flex items-center gap-1">
                                       {slot.status === "locked" && <Lock className="h-3 w-3"/>}—
                                     </span>
-                                    <span className="text-[8px] text-muted-foreground/70 mt-1 leading-tight">{slot.status === "locked" ? "Enable to view" : "Not available"}</span>
+                                    <span className="text-[8px] text-muted-foreground/70 mt-1 leading-tight">
+                                      {slot.status === "locked" ? "Enable to view" : plat === "tiktok" ? "Import to view" : "Not available"}
+                                    </span>
                                   </div>
                                 )}
                               </div>

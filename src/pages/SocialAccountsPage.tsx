@@ -175,6 +175,7 @@ export default function SocialAccountsPage() {
   useEffect(() => {
     const connected = searchParams.get("connected");
     const error = searchParams.get("error");
+    const warning = searchParams.get("warning");
     let returnTo: string | null = null;
     try { returnTo = sessionStorage.getItem("oauth_return"); sessionStorage.removeItem("oauth_return"); } catch { /* ignore */ }
     if (connected === "true") {
@@ -183,6 +184,13 @@ export default function SocialAccountsPage() {
         navigate(returnTo);
         return;
       }
+    }
+    if (warning) {
+      toast({
+        title: "Other clients may need reconnect",
+        description: decodeURIComponent(warning),
+        variant: "destructive",
+      });
     }
     if (error) toast({ title: "OAuth Failed", description: decodeURIComponent(error), variant: "destructive" });
   }, []);
@@ -942,6 +950,15 @@ export default function SocialAccountsPage() {
                   <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-100">
                     <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
                     <p className="text-xs text-amber-700">No platforms are enabled. Go to Settings → Plugins to enable API integrations first.</p>
+                  </div>
+                )}
+                {(wizardPlatform === "facebook" || wizardPlatform === "instagram") && (
+                  <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/40 border border-border/60">
+                    <AlertTriangle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Connect <strong>only this client</strong>. Other clients keep their own Facebook/Instagram
+                      tokens — you do not need to select every Page in one go.
+                    </p>
                   </div>
                 )}
                 <div className="flex items-center justify-between gap-3 pt-2">

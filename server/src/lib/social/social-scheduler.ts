@@ -1,6 +1,11 @@
 import cron from 'node-cron';
 import { prisma } from '../prisma.js';
-import { publishPostToPlatform, refreshAccountToken, fetchPlatformInsights } from './platform-router.service.js';
+import {
+  publishPostToPlatform,
+  refreshAccountToken,
+  fetchPlatformInsights,
+  ensureFreshAccessToken,
+} from './platform-router.service.js';
 import { isRateLimitError } from './meta.service.js';
 import { decryptToken } from './token-crypto.service.js';
 import { captureDestinationPermalink, resolvePendingPermalinks } from './permalink.service.js';
@@ -167,18 +172,26 @@ export async function processDuePosts(): Promise<void> {
 
 export async function refreshExpiringTokens(): Promise<void> {
   try {
-    // Refresh tokens expiring in the next 7 days
+    // Meta/TikTok: refresh within 7 days. YouTube access tokens last ~1h, so
+    // also pick up any YouTube account whose token is already expired / near expiry.
     const expiryThreshold = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const accounts = await prisma.socialAccount.findMany({
       where: {
         isActive: true,
-        tokenExpiresAt: {
-          lte: expiryThreshold,
-        },
+        OR: [
+          { tokenExpiresAt: { lte: expiryThreshold } },
+          { platform: 'youtube', refreshTokenEnc: { not: null } },
+        ],
       },
     });
 
     for (const account of accounts) {
+      if (!account.refreshTokenEnc) continue;
+      // Skip YouTube tokens that are still fresh (>20 min left) to avoid hammering Google.
+      if (account.platform.toLowerCase() === 'youtube' && account.tokenExpiresAt) {
+        const msLeft = new Date(account.tokenExpiresAt).getTime() - Date.now();
+        if (msLeft > 20 * 60 * 1000) continue;
+      }
       try {
         const refreshData = await refreshAccountToken(account);
         await prisma.socialAccount.update({
@@ -319,21 +332,9 @@ export async function syncAccount(accountId: string): Promise<void> {
     }
   }
   
-  if (isRealSync && platform === 'youtube') {
-    // If the sum of daily reach in DB is greater than the current lifetime views, it is invalid mock data.
-    // We clear it so it gets seeded correctly using scaled values.
-    const totalHistoricalReach = await prisma.accountInsightDaily.aggregate({
-      where: { socialAccountId: account.id },
-      _sum: { reach: true },
-    });
-    const sumReach = totalHistoricalReach._sum.reach || 0;
-    if (sumReach > (metrics.reach || 0)) {
-      console.log(`Clearing bad mock history for YouTube account ${account.id} (historical sum ${sumReach} > current lifetime views ${metrics.reach})`);
-      await prisma.accountInsightDaily.deleteMany({
-        where: { socialAccountId: account.id },
-      });
-    }
-  }
+  // NOTE: never delete historical insight rows during live sync. Older code wiped
+  // YouTube history when sum(reach) > lifetime views (common with mock seeds),
+  // which also destroyed real accumulated days. History is append-only for live accounts.
 
   if (isMock) {
     const baseFollowers: Record<string, number> = {
@@ -394,20 +395,39 @@ export async function syncAccount(accountId: string): Promise<void> {
   // Don't let the daily live sync clobber a row that was populated from an
   // imported export (TikTok Studio) — those rows are richer than the API. When
   // the date already has imported data, only refresh the follower count.
+  //
+  // Also: never let a flaky API response overwrite good numbers with zeros.
+  // Sync is upsert-today only; past days are never rewritten.
   const existing = await prisma.accountInsightDaily.findUnique({
     where: { socialAccountId_date: { socialAccountId: account.id, date: today } },
-    select: { source: true },
+    select: {
+      source: true,
+      followers: true,
+      reach: true,
+      impressions: true,
+      profileVisits: true,
+      lifetimeViewsSnapshot: true,
+    },
   });
   const isImported = existing?.source === 'import';
 
+  const keepPositive = (incoming: number | null | undefined, prev: number | null | undefined): number | null => {
+    if (incoming == null) return prev ?? null;
+    if (incoming === 0 && (prev ?? 0) > 0) return prev ?? null;
+    return incoming;
+  };
+
   const apiData = {
-    followers: metrics.followers,
-    reach: reachIncrement,
-    impressions: impressionsIncrement,
-    profileVisits: profileVisitsVal,
-    lifetimeViewsSnapshot,
+    followers: keepPositive(metrics.followers, existing?.followers) ?? 0,
+    reach: keepPositive(reachIncrement, existing?.reach),
+    impressions: keepPositive(impressionsIncrement, existing?.impressions),
+    profileVisits: keepPositive(profileVisitsVal, existing?.profileVisits),
+    lifetimeViewsSnapshot:
+      lifetimeViewsSnapshot && lifetimeViewsSnapshot > 0
+        ? lifetimeViewsSnapshot
+        : (existing?.lifetimeViewsSnapshot ?? null),
     engagementRate,
-    source: 'api',
+    source: 'api' as const,
   };
 
   await prisma.accountInsightDaily.upsert({
@@ -422,7 +442,9 @@ export async function syncAccount(accountId: string): Promise<void> {
       date: today,
       ...apiData,
     },
-    update: isImported ? { followers: metrics.followers } : apiData,
+    update: isImported
+      ? { followers: keepPositive(metrics.followers, existing?.followers) ?? existing?.followers ?? 0 }
+      : apiData,
   });
 
   // FIX (fake analytics history): this used to seed 30 days of history for ANY
@@ -551,7 +573,11 @@ export async function collectDailyInsights(clientId?: string): Promise<void> {
           let metrics = { impressions: 0, reach: 0, likes: 0, comments: 0, shares: 0, saved: 0, views: 0 };
           
           const decryptToken = (await import('./token-crypto.service.js')).decryptToken;
-          const token = dest.socialAccount?.accessTokenEnc ? decryptToken(dest.socialAccount.accessTokenEnc) : '';
+          let socialAccount = dest.socialAccount;
+          if (socialAccount?.refreshTokenEnc) {
+            socialAccount = await ensureFreshAccessToken(socialAccount);
+          }
+          const token = socialAccount?.accessTokenEnc ? decryptToken(socialAccount.accessTokenEnc) : '';
           const isMock = !token || token === 'mock_access_token_data' || token.startsWith('mock_');
 
           if (isMock) {
@@ -585,17 +611,31 @@ export async function collectDailyInsights(clientId?: string): Promise<void> {
             continue;
           }
 
-          // If a live fetch returned a total blank slate, keep any previously
-          // stored numbers rather than overwriting with zeros from a failed call.
+          // Preserve previously stored post metrics when a live fetch returns
+          // blanks / partial zeros (common for video insights permission gaps).
+          const existingPostInsight = await prisma.postInsight.findUnique({
+            where: { postId_platform: { postId: post.id, platform: dest.platform } },
+          });
           const hasSignal =
             metrics.likes > 0 || metrics.comments > 0 || metrics.shares > 0 ||
             metrics.saved > 0 || metrics.views > 0 || metrics.reach > 0 || metrics.impressions > 0;
-          if (!isMock && !hasSignal) {
-            const existing = await prisma.postInsight.findUnique({
-              where: { postId_platform: { postId: post.id, platform: dest.platform } },
-            });
-            if (existing) continue;
-          }
+          if (!isMock && !hasSignal && existingPostInsight) continue;
+
+          const mergeMetric = (incoming: number, prev: number | null | undefined): number => {
+            if (incoming > 0) return incoming;
+            if ((prev ?? 0) > 0) return prev as number;
+            return incoming;
+          };
+
+          const merged = {
+            impressions: mergeMetric(metrics.impressions, existingPostInsight?.impressions),
+            reach: mergeMetric(metrics.reach, existingPostInsight?.reach),
+            likes: mergeMetric(metrics.likes, existingPostInsight?.likes),
+            comments: mergeMetric(metrics.comments, existingPostInsight?.comments),
+            shares: mergeMetric(metrics.shares, existingPostInsight?.shares),
+            saved: mergeMetric(metrics.saved, existingPostInsight?.saved),
+            views: mergeMetric(metrics.views, existingPostInsight?.views),
+          };
 
           await prisma.postInsight.upsert({
             where: {
@@ -607,22 +647,10 @@ export async function collectDailyInsights(clientId?: string): Promise<void> {
             create: {
               postId: post.id,
               platform: dest.platform,
-              impressions: metrics.impressions,
-              reach: metrics.reach,
-              likes: metrics.likes,
-              comments: metrics.comments,
-              shares: metrics.shares,
-              saved: metrics.saved,
-              views: metrics.views,
+              ...merged,
             },
             update: {
-              impressions: metrics.impressions,
-              reach: metrics.reach,
-              likes: metrics.likes,
-              comments: metrics.comments,
-              shares: metrics.shares,
-              saved: metrics.saved,
-              views: metrics.views,
+              ...merged,
               fetchedAt: new Date(),
             },
           });
@@ -642,8 +670,8 @@ export function startSocialScheduler(): void {
     processDuePosts().catch(err => console.error('social scheduler processDuePosts error:', err));
   });
 
-  // 2. Refresh expiring tokens every 2 hours
-  cron.schedule('0 */2 * * *', () => {
+  // 2. Refresh expiring tokens every 45 minutes (YouTube access tokens ~1h)
+  cron.schedule('*/45 * * * *', () => {
     refreshExpiringTokens().catch(err => console.error('social scheduler refreshExpiringTokens error:', err));
   });
 

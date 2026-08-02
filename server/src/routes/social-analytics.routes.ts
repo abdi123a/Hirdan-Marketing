@@ -454,18 +454,36 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     const currVideoViews = sumMetric(currentMetrics, 'videoViews', 'videoViews');
     const prevVideoViews = sumMetric(prevMetrics, 'videoViews', 'videoViews');
 
-    // Per-account capability (what a single platform can report, not the union).
-    const acctCan = (platform: string, key: MetricKey): boolean => metricPlatformOk(platform, key);
-    // Status for a per-account metric slot: 'available' (show the value),
-    // 'locked' (obtainable with an extra permission — grey with a reason),
-    // or 'unavailable' (the platform's API can't provide it — grey with a reason).
-    const metricStatusOf = (platform: string, key: MetricKey): 'available' | 'locked' | 'unavailable' => {
+    // Per-account capability. Import metrics are gated on THIS account having
+    // an import, not merely "some tiktok account on the client was imported".
+    const metricStatusOf = (
+      platform: string,
+      key: MetricKey,
+      hasImport: boolean,
+    ): 'available' | 'locked' | 'unavailable' => {
       const decl = METRIC_AVAILABILITY[platform]?.[key];
       if (decl === 'live') return 'available';
-      if (decl === 'import') return importedPlatforms.has(platform) ? 'available' : 'unavailable';
+      if (decl === 'import') return hasImport ? 'available' : 'unavailable';
       if (decl === 'scope') return 'locked';
       return 'unavailable';
     };
+
+    // Period totals per account (sum of daily rows in the selected range).
+    // Account cards used to show only the latest day's reach/impressions, which
+    // made Meta look tiny and hid TikTok Studio import rows once a newer
+    // followers-only API row landed on top.
+    const periodByAccount = new Map<string, { reach: number; impressions: number; videoViews: number; likes: number; comments: number; shares: number }>();
+    for (const row of currentMetrics as any[]) {
+      const id = row.socialAccountId as string;
+      const cur = periodByAccount.get(id) || { reach: 0, impressions: 0, videoViews: 0, likes: 0, comments: 0, shares: 0 };
+      cur.reach += Number(row.reach) || 0;
+      cur.impressions += Number(row.impressions) || 0;
+      cur.videoViews += Number(row.videoViews) || 0;
+      cur.likes += Number(row.likes) || 0;
+      cur.comments += Number(row.comments) || 0;
+      cur.shares += Number(row.shares) || 0;
+      periodByAccount.set(id, cur);
+    }
 
     // ── Response ──
     res.json({
@@ -508,26 +526,38 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
       accounts: accountsWithLatest.map(a => {
         const plat = a.platform.toLowerCase();
         const L: any = a.latest;
+        const hasImport = !!a.lastImportedAt;
+        const period = periodByAccount.get(a.id) || { reach: 0, impressions: 0, videoViews: 0, likes: 0, comments: 0, shares: 0 };
+        const reachStatus = metricStatusOf(plat, 'reach', hasImport);
+        const impressionsStatus = metricStatusOf(plat, 'impressions', hasImport);
+        const videoViewsStatus = metricStatusOf(plat, 'videoViews', hasImport);
+        const engagementStatus = metricStatusOf(plat, 'engagementRate', hasImport);
+        const periodEngagement = period.likes + period.comments + period.shares;
+        const periodER = period.reach > 0
+          ? parseFloat(((periodEngagement / period.reach) * 100).toFixed(2))
+          : null;
         return {
           id: a.id, platform: a.platform, displayName: a.displayName, platformUsername: a.platformUsername,
           avatarUrl: a.avatarUrl, healthStatus: a.healthStatus, healthMessage: a.healthMessage, updatedAt: a.updatedAt,
           lastImportedAt: a.lastImportedAt, source: a.lastImportedAt ? 'import' : 'api',
-          // Per-metric status so cards can grey out an absent metric WITH a reason
-          // instead of silently dropping it (looking broken/inconsistent).
           metricStatus: {
-            reach: metricStatusOf(plat, 'reach'),
-            impressions: metricStatusOf(plat, 'impressions'),
-            videoViews: metricStatusOf(plat, 'videoViews'),
+            reach: reachStatus,
+            impressions: impressionsStatus,
+            videoViews: videoViewsStatus,
           },
-          latestMetrics: L ? {
+          // followers = latest live count; reach/impressions = sum over selected period
+          latestMetrics: {
             followers: a.latestFollowers?.followers ?? null,
-            reach: acctCan(plat, 'reach') ? (L.reach ?? null) : null,
-            impressions: acctCan(plat, 'impressions') ? (L.impressions ?? null) : null,
-            profileVisits: acctCan(plat, 'profileVisits') ? (L.profileVisits ?? null) : null,
-            videoViews: acctCan(plat, 'videoViews') ? (L.videoViews ?? null) : null,
-            engagementRate: acctCan(plat, 'engagementRate') ? (Number(L.engagementRate) || null) : null,
-            date: L.date,
-          } : null,
+            reach: reachStatus === 'available' ? period.reach : null,
+            impressions: impressionsStatus === 'available' ? period.impressions : null,
+            profileVisits: metricStatusOf(plat, 'profileVisits', hasImport) === 'available'
+              ? (L?.profileVisits ?? null)
+              : null,
+            videoViews: videoViewsStatus === 'available' ? period.videoViews : null,
+            engagementRate: engagementStatus === 'available' ? periodER : null,
+            date: L?.date ?? null,
+            periodDays: days,
+          },
         };
       }),
       monthlyComparison,

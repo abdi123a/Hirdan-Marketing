@@ -1384,6 +1384,15 @@ function ClientSocialProfilesTab({ clientId }: { clientId: string }) {
               No platforms are enabled. Enable them in Settings → Plugins first.
             </div>
           )}
+          {(selectedPlatform === "facebook" || selectedPlatform === "instagram") && (
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-muted/40 border border-border/60 text-xs text-muted-foreground leading-relaxed">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>
+                Connect only this client’s Page/Instagram. Other clients keep their existing connections —
+                you do not need to select everyone at once.
+              </span>
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
             <Button

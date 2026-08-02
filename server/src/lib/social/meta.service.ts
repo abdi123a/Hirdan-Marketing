@@ -81,53 +81,53 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
 
   let redirectUri = '';
   let scopes: string[] = [];
-  // Facebook Login for Business configs (from Meta App Dashboard → Configurations).
-  // When set, OAuth must use config_id — raw scopes that aren't on the config
-  // cause "Invalid Scopes" (e.g. pages_read_user_content).
+  // Facebook Login for Business configs (App Dashboard → Facebook Login for Business → Configurations).
+  // This app requires config_id — Meta rejects the dialog with "config_id is required" without it,
+  // and rejects undeclared raw scopes with "Invalid Scopes".
   let configId = '';
 
   if (platform === 'facebook') {
     redirectUri = process.env.META_REDIRECT_URI_FACEBOOK || '';
-    configId = process.env.META_CONFIG_ID_FACEBOOK || '';
-    // Fallback scopes — must match the "Facebook Page" Login-for-Business config.
-    scopes = [
-      'pages_show_list',
-      'pages_read_engagement',
-      'pages_manage_posts',
-      'pages_manage_metadata',
-      'read_insights',
-      'business_management',
-    ];
+    configId = (process.env.META_CONFIG_ID_FACEBOOK || '').trim();
   } else if (platform === 'instagram') {
     redirectUri = process.env.META_REDIRECT_URI_INSTAGRAM || '';
-    configId = process.env.META_CONFIG_ID_INSTAGRAM || '';
-    // Fallback scopes — must match the "Instagram Account" Login-for-Business config.
-    scopes = [
-      'pages_show_list',
-      'pages_read_engagement',
-      'instagram_basic',
-      'instagram_content_publish',
-      'instagram_manage_insights',
-      'read_insights',
-      'business_management',
-    ];
+    configId = (process.env.META_CONFIG_ID_INSTAGRAM || '').trim();
   } else if (platform === 'threads') {
     redirectUri = process.env.META_REDIRECT_URI_THREADS || '';
     scopes = ['threads_basic', 'threads_content_publish', 'threads_manage_insights'];
   }
 
-  const state = createOAuthState(platform, clientId, groupId);
-  const params = new URLSearchParams({
-    client_id: appId,
-    redirect_uri: redirectUri,
-    state,
-    response_type: 'code',
-  });
+  if (!redirectUri) {
+    throw new Error(`META_REDIRECT_URI_${platform.toUpperCase()} is not configured`);
+  }
 
-  if (platform !== 'threads' && configId) {
-    // Login for Business: config_id replaces scope (permissions come from the config).
+  if ((platform === 'facebook' || platform === 'instagram') && !configId) {
+    throw new Error(
+      `META_CONFIG_ID_${platform.toUpperCase()} is required for Facebook Login for Business. ` +
+        'Set it from App Dashboard → Facebook Login for Business → Configurations.',
+    );
+  }
+
+  const state = createOAuthState(platform, clientId, groupId);
+
+  // Put config_id early so it cannot be lost if a client truncates long query strings.
+  const params = new URLSearchParams();
+  params.set('client_id', appId);
+  if (configId) {
     params.set('config_id', configId);
+  }
+  params.set('redirect_uri', redirectUri);
+  params.set('state', state);
+  params.set('response_type', 'code');
+
+  if (configId) {
+    // Required when forcing authorization-code grant for Login for Business.
     params.set('override_default_response_type', 'true');
+    // Page grant scope ("opt in to current Pages only" vs "all current and
+    // future Pages") is NOT controllable via OAuth query params when using
+    // config_id — it is set on the Login for Business Configuration in Meta
+    // App Dashboard. Prefer "all current and future Pages" there so reconnecting
+    // one client cannot silently revoke the other clients' Pages.
   } else {
     params.set('scope', scopes.join(','));
   }
@@ -135,7 +135,9 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
   if (platform === 'threads') {
     return `https://www.threads.net/oauth/authorize?${params.toString()}`;
   }
-  return `https://www.facebook.com/${GRAPH_VERSION}/dialog/oauth?${params.toString()}`;
+
+  const graphVersion = process.env.META_GRAPH_VERSION || GRAPH_VERSION || 'v20.0';
+  return `https://www.facebook.com/${graphVersion}/dialog/oauth?${params.toString()}`;
 }
 
 export async function exchangeMetaCodeForToken(platform: 'facebook' | 'instagram' | 'threads', code: string): Promise<string> {
@@ -194,24 +196,68 @@ export interface MetaPageInstagramInfo {
 }
 
 export async function getPagesWithInstagram(userAccessToken: string): Promise<MetaPageInstagramInfo[]> {
-  const { data } = await axios.get(`${GRAPH_URL}/me/accounts`, {
-    params: {
-      access_token: userAccessToken,
-      fields: 'id,name,access_token,fan_count,picture{url},instagram_business_account{id,username,followers_count,profile_picture_url}',
-    },
-  });
-  if (!data || !data.data) return [];
-  return data.data.map((page: any) => ({
-    pageId: page.id,
-    pageName: page.name,
-    pageAccessToken: page.access_token,
-    pageFollowers: page.fan_count || 0,
-    pageAvatarUrl: page.picture?.data?.url || null,
-    igAccountId: page.instagram_business_account?.id || null,
-    igUsername: page.instagram_business_account?.username || null,
-    igFollowers: page.instagram_business_account?.followers_count ?? null,
-    igAvatarUrl: page.instagram_business_account?.profile_picture_url || null,
-  }));
+  // /me/accounts is paginated (default ~25). Without following `paging.next`,
+  // clients with many Pages silently lose Tokka/Papparoti/etc. on refresh.
+  const pages: MetaPageInstagramInfo[] = [];
+  let url: string | null = `${GRAPH_URL}/me/accounts`;
+  let params: Record<string, string | number> | undefined = {
+    access_token: userAccessToken,
+    fields: 'id,name,access_token,fan_count,picture{url},instagram_business_account{id,username,followers_count,profile_picture_url}',
+    limit: 100,
+  };
+
+  for (let i = 0; i < 20 && url; i++) {
+    const { data }: { data: any } = await axios.get(url, params ? { params } : undefined);
+    for (const page of data?.data || []) {
+      pages.push({
+        pageId: page.id,
+        pageName: page.name,
+        pageAccessToken: page.access_token,
+        pageFollowers: page.fan_count || 0,
+        pageAvatarUrl: page.picture?.data?.url || null,
+        igAccountId: page.instagram_business_account?.id || null,
+        igUsername: page.instagram_business_account?.username || null,
+        igFollowers: page.instagram_business_account?.followers_count ?? null,
+        igAvatarUrl: page.instagram_business_account?.profile_picture_url || null,
+      });
+    }
+    url = data?.paging?.next || null;
+    params = undefined; // next URL already contains query params
+  }
+
+  return pages;
+}
+
+/**
+ * Cheap liveness probe for a stored page token.
+ *
+ * Facebook Login for Business replaces the app's whole Page grant for a given
+ * Facebook user, so connecting client B with only B's Page checked silently
+ * kills the page tokens issued earlier for clients A and C. Probing lets us
+ * detect that at reconnect time instead of discovering it on the next publish.
+ *
+ * Returns false ONLY on an auth/permission rejection. Rate limits, network
+ * blips and unknown failures return true so a working account is never
+ * mis-flagged as disconnected.
+ */
+export async function isPageTokenStillValid(pageId: string, pageAccessToken: string): Promise<boolean> {
+  try {
+    await axios.get(`${GRAPH_URL}/${pageId}`, {
+      params: { fields: 'id', access_token: pageAccessToken },
+      timeout: 10_000,
+    });
+    return true;
+  } catch (err: any) {
+    if (isRateLimitError(err)) return true;
+    const code = err?.response?.data?.error?.code;
+    const status = err?.response?.status;
+    // 190 = invalid/expired token, 102 = session invalid, 10 / 200 = permission
+    // revoked, 458-467 = app not authorized / re-login required.
+    const AUTH_ERROR_CODES = [10, 102, 190, 200, 458, 459, 463, 464, 467];
+    if (typeof code === 'number' && AUTH_ERROR_CODES.includes(code)) return false;
+    if (status === 401 || status === 403) return false;
+    return true;
+  }
 }
 
 async function publishVideoToMetaResumable({
@@ -514,10 +560,9 @@ async function waitForThreadsContainerReady(containerId: string, accessToken: st
 
 export async function getMetaInsights(accountId: string, token: string, platform: 'facebook' | 'instagram'): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number | null }> {
   if (platform === 'facebook') {
-    // Reach and impressions are DIFFERENT metrics — reach = unique people
-    // (page_impressions_unique), impressions = total views (page_impressions).
-    // The old code fetched a single `page_media_view` and reported it as both,
-    // which made every Facebook card show reach == impressions.
+    // Meta deprecated page_impressions / page_impressions_unique (Nov 2025).
+    // Current replacements: page_media_view (impressions) and
+    // page_total_media_view_unique (reach / unique viewers).
     let reachVal = 0;
     let impressionsVal = 0;
     const fbInsightValue = (item: any): number => {
@@ -530,29 +575,50 @@ export async function getMetaInsights(accountId: string, token: string, platform
     };
     try {
       const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
-        params: { metric: 'page_impressions_unique,page_impressions', period: 'day', access_token: token },
+        params: {
+          metric: 'page_media_view,page_total_media_view_unique',
+          period: 'day',
+          access_token: token,
+        },
       });
-      reachVal = fbInsightValue(data.data?.find((item: any) => item.name === 'page_impressions_unique'));
-      impressionsVal = fbInsightValue(data.data?.find((item: any) => item.name === 'page_impressions'));
+      impressionsVal = fbInsightValue(data.data?.find((item: any) => item.name === 'page_media_view'));
+      reachVal = fbInsightValue(data.data?.find((item: any) => item.name === 'page_total_media_view_unique'));
     } catch (err) {
-      // Some metrics are deprecated on newer Graph versions; fall back to the
-      // views metric for reach so the card still shows a real number.
+      // Fallbacks if one of the new metrics isn't available on this Page yet.
       try {
         const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
-          params: { metric: 'page_views_total', period: 'day', access_token: token },
+          params: { metric: 'page_media_view', period: 'day', access_token: token },
         });
-        reachVal = fbInsightValue(data.data?.find((item: any) => item.name === 'page_views_total'));
-      } catch { /* leave zeros */ }
+        impressionsVal = fbInsightValue(data.data?.find((item: any) => item.name === 'page_media_view'));
+        reachVal = impressionsVal;
+      } catch {
+        try {
+          const { data } = await axios.get(`${GRAPH_URL}/${accountId}/insights`, {
+            params: { metric: 'page_views_total', period: 'day', access_token: token },
+          });
+          reachVal = fbInsightValue(data.data?.find((item: any) => item.name === 'page_views_total'));
+        } catch { /* leave zeros */ }
+      }
     }
-    const { data: pageData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
-      params: { fields: 'fan_count,followers_count', access_token: token },
-    });
-    return {
-      followers: pageData.followers_count || pageData.fan_count || 0,
-      reach: reachVal,
-      impressions: impressionsVal || reachVal,
-      profileVisits: null,
-    };
+    try {
+      const { data: pageData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
+        params: { fields: 'fan_count,followers_count', access_token: token },
+      });
+      return {
+        followers: pageData.followers_count || pageData.fan_count || 0,
+        reach: reachVal,
+        impressions: impressionsVal || reachVal,
+        profileVisits: null,
+      };
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err.message || '';
+      if (msg.toLowerCase().includes('impersonat') || msg.toLowerCase().includes('permission')) {
+        throw new Error(
+          `Facebook page token is invalid or missing Page access — reconnect Facebook and select this Page in the dialog. (${msg})`,
+        );
+      }
+      throw err;
+    }
   } else {
     let reachVal = 0;
     let impressionsVal = 0;
@@ -607,19 +673,32 @@ export async function getMetaInsights(accountId: string, token: string, platform
       }
     }
 
-    // Missing instagram_manage_insights used to fail silently (followers synced,
-    // reach/views stayed 0, UI looked "broken"). Surface it so Sync Metrics
-    // marks the account unhealthy and the user can reconnect.
-    if (insightsPermissionError) {
+    // Prefer followers even when insights fail — an invalid/expired page token
+    // used to throw before we could read followers_count, so Sync looked fully
+    // broken even though historical data was fine.
+    let followers = 0;
+    try {
+      const { data: igData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
+        params: { fields: 'followers_count', access_token: token },
+      });
+      followers = igData.followers_count || 0;
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err.message || '';
+      if (insightsPermissionError || isPermissionErr(err)) {
+        throw new Error(
+          `Instagram page token is invalid or missing Page access — reconnect Instagram and select this account in the Facebook dialog. (${insightsPermissionError || msg})`,
+        );
+      }
+      throw err;
+    }
+
+    if (insightsPermissionError && reachVal === 0 && impressionsVal === 0) {
       throw new Error(
-        `Instagram insights permission missing — reconnect the account with insights enabled. (${insightsPermissionError})`
+        `Instagram insights unavailable — reconnect Instagram and select this account in the Facebook dialog. (${insightsPermissionError})`,
       );
     }
 
-    const { data: igData } = await axios.get(`${GRAPH_URL}/${accountId}`, {
-      params: { fields: 'followers_count', access_token: token },
-    });
-    return { followers: igData.followers_count || 0, reach: reachVal, impressions: impressionsVal, profileVisits: null };
+    return { followers, reach: reachVal, impressions: impressionsVal, profileVisits: null };
   }
 }
 

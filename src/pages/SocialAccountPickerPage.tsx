@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { apiFetch } from "@/lib/api-client";
 import {
   CheckCircle2, RefreshCw, AlertCircle, ArrowLeft, Users,
-  Shield, ChevronRight, Sparkles,
+  Shield, ChevronRight, Sparkles, Lock,
 } from "lucide-react";
 
 interface PickerAccount {
@@ -16,6 +16,7 @@ interface PickerAccount {
   avatarUrl: string | null;
   followers: number;
   platform: string;
+  ownedByOtherClient?: { clientName: string; accountName: string } | null;
 }
 
 const getPlatformIcon = (platform: string, cls = "h-5 w-5 rounded-sm object-contain") => {
@@ -55,6 +56,11 @@ export default function SocialAccountPickerPage() {
   const [error, setError] = useState("");
   const [expiresIn, setExpiresIn] = useState(600);
 
+  const selectableAccounts = useMemo(
+    () => accounts.filter((a) => !a.ownedByOtherClient),
+    [accounts],
+  );
+
   useEffect(() => {
     if (!sessionId) { setError("Invalid session — no session ID found."); setIsLoading(false); return; }
     fetchAccounts();
@@ -81,7 +87,8 @@ export default function SocialAccountPickerPage() {
     }
   };
 
-  const toggleSelect = (id: string) => {
+  const toggleSelect = (id: string, locked?: boolean) => {
+    if (locked) return;
     setSelected(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -91,8 +98,8 @@ export default function SocialAccountPickerPage() {
   };
 
   const handleSelectAll = () => {
-    if (selected.size === accounts.length) setSelected(new Set());
-    else setSelected(new Set(accounts.map(a => a.id)));
+    if (selected.size === selectableAccounts.length) setSelected(new Set());
+    else setSelected(new Set(selectableAccounts.map(a => a.id)));
   };
 
   const handleConnect = async () => {
@@ -102,11 +109,24 @@ export default function SocialAccountPickerPage() {
     }
     setIsSaving(true);
     try {
-      const res = await apiFetch<{ success: boolean; savedCount: number }>(`/social/oauth/select-account`, {
+      const res = await apiFetch<{
+        success: boolean;
+        savedCount: number;
+        siblingsRefreshed?: number;
+        siblingsDropped?: Array<{ accountName: string; clientName: string }>;
+        skippedOwned?: string[];
+      }>(`/social/oauth/select-account`, {
         method: "POST",
         body: JSON.stringify({ sessionId, selectedIds: Array.from(selected) }),
       });
-      toast({ title: `✅ ${res.savedCount} Account${res.savedCount !== 1 ? "s" : ""} Connected!`, description: "Your social accounts are now linked and ready." });
+      const parts: string[] = [`Linked to this client.`];
+      if (res.siblingsRefreshed) {
+        parts.push(`Also refreshed ${res.siblingsRefreshed} other client account${res.siblingsRefreshed !== 1 ? "s" : ""} that were in this Facebook login.`);
+      }
+      toast({
+        title: `✅ ${res.savedCount} Account${res.savedCount !== 1 ? "s" : ""} Connected!`,
+        description: parts.join(" "),
+      });
       navigate("/dashboard/social-media/accounts?connected=true");
     } catch (err: any) {
       toast({ title: "Connection Failed", description: err.message, variant: "destructive" });
@@ -121,6 +141,7 @@ export default function SocialAccountPickerPage() {
 
   const minutesLeft = Math.floor(expiresIn / 60);
   const secondsLeft = expiresIn % 60;
+  const lockedCount = accounts.length - selectableAccounts.length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/10 flex items-center justify-center p-6">
@@ -151,7 +172,8 @@ export default function SocialAccountPickerPage() {
                   Choose {platformLabel} Account{accounts.length !== 1 ? "s" : ""}
                 </h1>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  {accounts.length} account{accounts.length !== 1 ? "s" : ""} found — select which to connect
+                  {accounts.length} account{accounts.length !== 1 ? "s" : ""} found — pick only this client’s Page
+                  {lockedCount > 0 ? ` · ${lockedCount} already owned by other clients` : ""}
                 </p>
               </div>
               {expiresIn > 0 && (
@@ -186,18 +208,29 @@ export default function SocialAccountPickerPage() {
               </div>
             ) : (
               <>
+                {(platform === "facebook" || platform === "instagram") && (
+                  <div className="mx-6 mt-4 rounded-xl border border-border/60 bg-muted/20 px-4 py-3 text-sm">
+                    <p className="font-semibold text-foreground">Select only this client’s account</p>
+                    <p className="mt-1 text-muted-foreground text-xs leading-relaxed">
+                      Other clients’ Pages stay locked below and keep their own tokens — you do not need to
+                      connect everyone at once. Pick the Page that belongs to this client.
+                    </p>
+                  </div>
+                )}
+
                 {/* Select all header */}
                 <div className="flex items-center justify-between px-6 py-3 border-b border-border/40 bg-muted/5">
                   <div className="flex items-center gap-3">
                     <input
                       type="checkbox"
                       id="select-all"
-                      checked={selected.size === accounts.length && accounts.length > 0}
+                      checked={selected.size === selectableAccounts.length && selectableAccounts.length > 0}
                       onChange={handleSelectAll}
+                      disabled={selectableAccounts.length === 0}
                       className="rounded accent-primary h-4 w-4"
                     />
                     <label htmlFor="select-all" className="text-xs font-bold text-muted-foreground cursor-pointer">
-                      Select All ({accounts.length})
+                      Select available ({selectableAccounts.length})
                     </label>
                   </div>
                   <span className="text-xs text-muted-foreground">
@@ -208,17 +241,23 @@ export default function SocialAccountPickerPage() {
                 {/* Account list */}
                 <div className="divide-y divide-border/40">
                   {accounts.map((acc) => {
+                    const locked = Boolean(acc.ownedByOtherClient);
                     const isSelected = selected.has(acc.id);
                     return (
                       <div
                         key={acc.id}
-                        onClick={() => toggleSelect(acc.id)}
-                        className={`flex items-center gap-4 p-5 cursor-pointer transition-all hover:bg-muted/5 ${isSelected ? "bg-primary/3 border-l-2 border-l-primary" : ""}`}
+                        onClick={() => toggleSelect(acc.id, locked)}
+                        className={`flex items-center gap-4 p-5 transition-all ${
+                          locked
+                            ? "opacity-60 cursor-not-allowed bg-muted/10"
+                            : `cursor-pointer hover:bg-muted/5 ${isSelected ? "bg-primary/3 border-l-2 border-l-primary" : ""}`
+                        }`}
                       >
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={() => toggleSelect(acc.id)}
+                          disabled={locked}
+                          onChange={() => toggleSelect(acc.id, locked)}
                           className="rounded accent-primary h-4 w-4 shrink-0"
                           onClick={e => e.stopPropagation()}
                         />
@@ -243,7 +282,7 @@ export default function SocialAccountPickerPage() {
                           {acc.username && (
                             <p className="text-xs text-muted-foreground font-mono mt-0.5">@{acc.username}</p>
                           )}
-                          <div className="flex items-center gap-3 mt-1.5">
+                          <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                             {acc.followers > 0 && (
                               <span className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
                                 <Users className="h-3 w-3" />
@@ -254,15 +293,20 @@ export default function SocialAccountPickerPage() {
                               <Shield className="h-2.5 w-2.5" />
                               {acc.platform}
                             </span>
+                            {locked && acc.ownedByOtherClient && (
+                              <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">
+                                <Lock className="h-2.5 w-2.5" />
+                                Connected to {acc.ownedByOtherClient.clientName}
+                              </span>
+                            )}
                           </div>
                         </div>
 
-                        {/* Selected indicator */}
-                        {isSelected && (
-                          <div className="shrink-0">
-                            <CheckCircle2 className="h-5 w-5 text-primary" />
-                          </div>
-                        )}
+                        {locked ? (
+                          <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
+                        ) : isSelected ? (
+                          <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
+                        ) : null}
                       </div>
                     );
                   })}

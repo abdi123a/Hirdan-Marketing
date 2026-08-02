@@ -14,6 +14,18 @@ import { randomBytes } from 'crypto';
 const router = Router();
 
 // ─── In-memory account picker session store (10 min TTL) ─────────────────────
+type PendingMetaPage = {
+  pageId: string;
+  pageName: string;
+  pageAccessToken: string;
+  pageFollowers?: number | null;
+  pageAvatarUrl?: string | null;
+  igAccountId?: string | null;
+  igUsername?: string | null;
+  igFollowers?: number | null;
+  igAvatarUrl?: string | null;
+};
+
 type PendingPickerSession = {
   expires: number;
   platform: string;
@@ -21,15 +33,13 @@ type PendingPickerSession = {
   groupId: string;
   /** Long-lived Meta user token — stored as refreshTokenEnc so page tokens can be renewed. */
   userAccessToken?: string;
-  pages: Array<{
-    pageId: string;
-    pageName: string;
-    pageAccessToken: string;
-    igAccountId?: string | null;
-    igUsername?: string | null;
-    followers?: number | null;
-    avatarUrl?: string | null;
-  }>;
+  /** Pages shown in the picker (platform-filtered). */
+  pages: PendingMetaPage[];
+  /**
+   * Full /me/accounts grant from this login. Used to re-mint sibling client
+   * tokens even when the user only selects one Page in our picker.
+   */
+  allPages?: PendingMetaPage[];
 };
 
 const pendingOAuthStore = new Map<string, PendingPickerSession>();
@@ -81,6 +91,15 @@ router.get('/oauth/connect', authenticate, async (req, res, next) => {
     let authUrl = '';
     if (platform === 'facebook' || platform === 'instagram' || platform === 'threads') {
       authUrl = meta.getMetaAuthorizationUrl(platform as any, clientId, groupId);
+      try {
+        const parsed = new URL(authUrl);
+        console.log(
+          `[OAuth Connect] platform=${platform} hasConfigId=${parsed.searchParams.has('config_id')} ` +
+            `hasScope=${parsed.searchParams.has('scope')} responseType=${parsed.searchParams.get('response_type')}`,
+        );
+      } catch {
+        /* ignore URL parse errors */
+      }
     } else if (platform === 'tiktok') {
       authUrl = tiktok.getTikTokAuthorizationUrl(clientId, groupId);
     } else if (platform === 'linkedin') {
@@ -110,7 +129,20 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
   try {
-    const { code, state } = req.query as { code: string; state: string };
+    const { code, state, error, error_description, error_reason } = req.query as {
+      code: string;
+      state: string;
+      error?: string;
+      error_description?: string;
+      error_reason?: string;
+    };
+    if (error) {
+      console.error(
+        `[OAuth Callback Error] Platform: ${platform}: Meta returned error=` +
+          `${error} reason=${error_reason || ''} desc=${error_description || ''}`,
+      );
+      throw new Error(error_description || error_reason || error);
+    }
     if (!code || !state) throw new Error('Callback missing code or state parameters');
 
     const verified = verifyOAuthState(state);
@@ -144,7 +176,23 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
       // If only 1 page → save immediately, skip picker
       if (relevantPages.length === 1) {
         const page = relevantPages[0];
-        await saveMetaAccount(platform, clientId, groupId, page, longLivedToken);
+        const owner = await findPageOwner(platform, clientId, page);
+        if (owner) {
+          // Still reconcile — this grant may have refreshed (or revoked) siblings.
+          await reconcileSiblingMetaAccounts(longLivedToken, pages);
+          const ownerName = owner.client?.company || owner.client?.name || 'another client';
+          const label = platform === 'instagram'
+            ? (page.igUsername || page.pageName)
+            : page.pageName;
+          throw new Error(
+            `"${label}" is already connected to ${ownerName}. ` +
+              `Open that client to reconnect, or keep all client Pages checked in Facebook and pick a different account.`,
+          );
+        }
+        const saved = await saveMetaAccount(platform, clientId, groupId, page, longLivedToken);
+        // Refresh siblings only when their Page happened to be in this grant;
+        // otherwise leave their stored tokens untouched.
+        await reconcileSiblingMetaAccounts(longLivedToken, pages, saved?.id);
         res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?connected=true`);
         return;
       }
@@ -157,7 +205,8 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
         clientId,
         groupId,
         userAccessToken: longLivedToken,
-        pages: relevantPages as any,
+        pages: relevantPages as PendingMetaPage[],
+        allPages: pages as PendingMetaPage[],
       });
 
       res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/select-account?session=${sessionId}&platform=${platform}`);
@@ -242,6 +291,132 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
   }
 });
 
+/**
+ * A Facebook Page / IG Business account belongs to exactly one client.
+ *
+ * The unique key on SocialAccount is [clientId, platform, platformUserId], so
+ * saving a Page that another client already owns does NOT collide — it creates
+ * a second row and the same Page ends up living under two clients. That is the
+ * "all three clients became one CRM account" failure. Look up the real owner
+ * first so we can skip instead of duplicating.
+ */
+async function findPageOwner(platform: string, clientId: string, page: any) {
+  const ownerMatches: any[] = [];
+  if (platform === 'facebook' && page.pageId) {
+    ownerMatches.push({ platformUserId: page.pageId }, { pageId: page.pageId });
+  } else if (platform === 'instagram' && page.igAccountId) {
+    ownerMatches.push({ platformUserId: page.igAccountId }, { igAccountId: page.igAccountId });
+  }
+  if (!ownerMatches.length) return null;
+
+  return prisma.socialAccount.findFirst({
+    where: { platform, clientId: { not: clientId }, OR: ownerMatches },
+    select: {
+      id: true,
+      displayName: true,
+      client: { select: { name: true, company: true } },
+    },
+  });
+}
+
+type SiblingReconcileResult = {
+  refreshed: number;
+  /** Always empty — we preserve siblings that are missing from this grant. */
+  dropped: Array<{ accountName: string; clientName: string; platform: string }>;
+};
+
+/**
+ * Preserve-other-clients model (Claude's approach):
+ *
+ * Connecting Papparoti must NOT require selecting Tokka/Te'Amo in Facebook, and
+ * must NOT overwrite or expire those clients' stored Page tokens.
+ *
+ * - If a sibling Page IS in this grant → refresh its page token (bonus).
+ * - If a sibling Page is NOT in this grant → leave its row completely alone.
+ *   We never copy this login's user token onto another client, and we never
+ *   mark them expired just because they weren't selected this time.
+ *
+ * Meta can still revoke deselected Pages on their side when Login-for-Business
+ * is set to "current Pages only". That is a Meta config issue — fix it in the
+ * App Dashboard with "all current and future Pages", not by forcing the user
+ * to multi-select every client on each connect.
+ */
+async function reconcileSiblingMetaAccounts(
+  userAccessToken: string,
+  pages: Array<{
+    pageId: string;
+    pageAccessToken?: string;
+    igAccountId?: string | null;
+  }>,
+  exceptAccountIds?: string | string[],
+): Promise<SiblingReconcileResult> {
+  const result: SiblingReconcileResult = { refreshed: 0, dropped: [] };
+
+  const usable = pages.filter((p) => p.pageAccessToken);
+  if (!usable.length) return result;
+
+  const byPageId = new Map(usable.map((p) => [p.pageId, p]));
+  const byIgId = new Map(
+    usable.filter((p) => p.igAccountId).map((p) => [p.igAccountId as string, p]),
+  );
+
+  const exclude = exceptAccountIds
+    ? Array.isArray(exceptAccountIds) ? exceptAccountIds : [exceptAccountIds]
+    : [];
+
+  const siblings = await prisma.socialAccount.findMany({
+    where: {
+      isActive: true,
+      platform: { in: ['facebook', 'instagram'] },
+      ...(exclude.length ? { id: { notIn: exclude } } : {}),
+    },
+    select: {
+      id: true,
+      platform: true,
+      pageId: true,
+      platformUserId: true,
+      igAccountId: true,
+    },
+  });
+
+  const refreshTokenEnc = encryptToken(userAccessToken);
+  const tokenExpiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+
+  for (const acc of siblings) {
+    const page =
+      acc.platform === 'facebook'
+        ? byPageId.get(acc.pageId || acc.platformUserId)
+        : byIgId.get(acc.igAccountId || acc.platformUserId) ||
+          byPageId.get(acc.pageId || '');
+
+    // Not in this grant → preserve existing tokens. Do not touch the row.
+    if (!page?.pageAccessToken) continue;
+
+    await prisma.socialAccount.update({
+      where: { id: acc.id },
+      data: {
+        accessTokenEnc: encryptToken(page.pageAccessToken),
+        refreshTokenEnc,
+        tokenExpiresAt,
+        healthStatus: 'healthy',
+        healthMessage: null,
+      },
+    });
+    result.refreshed++;
+    try {
+      const { syncAccount } = await import('../lib/social/social-scheduler.js');
+      await syncAccount(acc.id);
+    } catch (err) {
+      console.warn(`[OAuth] Sibling sync failed for ${acc.id}:`, err);
+    }
+  }
+
+  if (result.refreshed > 0) {
+    console.log(`[OAuth] Refreshed ${result.refreshed} sibling Meta account(s) from shared Facebook login`);
+  }
+  return result;
+}
+
 // ─── Helper: save a Meta account ─────────────────────────────────────────────
 async function saveMetaAccount(
   platform: string,
@@ -249,7 +424,17 @@ async function saveMetaAccount(
   groupId: string,
   page: any,
   userAccessToken?: string,
-) {
+): Promise<{ id: string } | null> {
+  // Never attach another client's Page under a different CRM client.
+  const owner = await findPageOwner(platform, clientId, page);
+  if (owner) {
+    const ownerName = owner.client?.company || owner.client?.name || 'another client';
+    throw new Error(
+      `This ${platform} account is already connected to ${ownerName}. ` +
+        'Reconnect under that client instead of attaching it here.',
+    );
+  }
+
   // Store the long-lived USER token as refreshTokenEnc so the cron can renew
   // page tokens before the ~60-day Meta expiry. Page tokens alone are not refreshable.
   const refreshTokenEnc = userAccessToken ? encryptToken(userAccessToken) : undefined;
@@ -309,6 +494,7 @@ async function saveMetaAccount(
       console.error('Failed to run initial sync for meta account:', err);
     }
   }
+  return acc ? { id: acc.id } : null;
 }
 
 // ─── 3. Get pending picker session ───────────────────────────────────────────
@@ -319,17 +505,29 @@ router.get('/oauth/pending/:sessionId', authenticate, async (req, res) => {
     return;
   }
 
+  const ownership = await Promise.all(
+    session.pages.map(async (p) => {
+      const owner = await findPageOwner(session.platform, session.clientId, p);
+      return owner
+        ? {
+            clientName: owner.client?.company || owner.client?.name || 'another client',
+            accountName: owner.displayName,
+          }
+        : null;
+    }),
+  );
+
   // Return sanitized account list (no tokens)
-  // FIX: previously read p.followers / p.avatarUrl, which never existed on the
-  // page objects returned by getPagesWithInstagram — every account here showed
-  // 0 followers and no photo. Now reads the correct real fields per platform.
-  const accounts = session.pages.map((p: any) => ({
+  const accounts = session.pages.map((p: any, i: number) => ({
     id: session.platform === 'facebook' ? p.pageId : (p.igAccountId || p.pageId),
     name: session.platform === 'facebook' ? p.pageName : (p.igUsername || p.pageName),
     username: p.igUsername || null,
     avatarUrl: session.platform === 'facebook' ? (p.pageAvatarUrl || null) : (p.igAvatarUrl || p.pageAvatarUrl || null),
     followers: session.platform === 'facebook' ? (p.pageFollowers || 0) : (p.igFollowers ?? p.pageFollowers ?? 0),
     platform: session.platform,
+    ownedByOtherClient: ownership[i]
+      ? { clientName: ownership[i]!.clientName, accountName: ownership[i]!.accountName }
+      : null,
   }));
 
   res.json({
@@ -365,13 +563,55 @@ router.post('/oauth/select-account', authenticate, async (req, res, next) => {
     });
 
     let savedCount = 0;
+    const savedIds: string[] = [];
+    const skippedOwned: string[] = [];
+
     for (const page of toSave) {
-      await saveMetaAccount(platform, clientId, groupId, page, session.userAccessToken);
+      const owner = await findPageOwner(platform, clientId, page);
+      if (owner) {
+        const ownerName = owner.client?.company || owner.client?.name || 'another client';
+        const label = platform === 'instagram'
+          ? (page.igUsername || page.pageName)
+          : page.pageName;
+        skippedOwned.push(`${label} (owned by ${ownerName})`);
+        continue;
+      }
+      const saved = await saveMetaAccount(platform, clientId, groupId, page, session.userAccessToken);
+      if (saved?.id) savedIds.push(saved.id);
       savedCount++;
     }
 
+    if (savedCount === 0 && skippedOwned.length > 0) {
+      res.status(409).json({
+        error:
+          `Selected account(s) already belong to another client: ${skippedOwned.join(', ')}. ` +
+          `Reconnect under that client, or pick this client’s own Page.`,
+      });
+      return;
+    }
+
+    // Re-mint tokens for every Page in the Facebook grant (not just selected ones)
+    let siblingsRefreshed = 0;
+    let siblingsDropped: SiblingReconcileResult['dropped'] = [];
+    if (session.userAccessToken) {
+      const grantPages = session.allPages?.length ? session.allPages : session.pages;
+      const reconcile = await reconcileSiblingMetaAccounts(
+        session.userAccessToken,
+        grantPages,
+        savedIds,
+      );
+      siblingsRefreshed = reconcile.refreshed;
+      siblingsDropped = reconcile.dropped;
+    }
+
     pendingOAuthStore.delete(sessionId);
-    res.json({ success: true, savedCount });
+    res.json({
+      success: true,
+      savedCount,
+      siblingsRefreshed,
+      siblingsDropped,
+      skippedOwned,
+    });
   } catch (err) {
     next(err);
   }

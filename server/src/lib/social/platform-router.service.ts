@@ -59,13 +59,16 @@ async function markAccountAuthFailure(account: SocialAccount, message: string): 
 }
 
 /** Refresh when expired / near expiry, or when force=true (e.g. after a 401). */
-async function ensureFreshAccessToken(account: SocialAccount, force = false): Promise<SocialAccount> {
+export async function ensureFreshAccessToken(account: SocialAccount, force = false): Promise<SocialAccount> {
   if (!account.refreshTokenEnc) return account;
 
   const expiresAt = account.tokenExpiresAt ? new Date(account.tokenExpiresAt).getTime() : null;
   // YouTube access tokens last ~1h — refresh a bit earlier than Meta's 60-day tokens.
   const skewMs = account.platform.toLowerCase() === 'youtube' ? 15 * 60 * 1000 : 5 * 60 * 1000;
-  const needsRefresh = force || (expiresAt !== null && expiresAt < Date.now() + skewMs);
+  const needsRefresh =
+    force ||
+    expiresAt === null || // unknown expiry — refresh before calling APIs
+    expiresAt < Date.now() + skewMs;
   if (!needsRefresh) return account;
 
   try {
@@ -73,9 +76,17 @@ async function ensureFreshAccessToken(account: SocialAccount, force = false): Pr
     return await persistRefreshedToken(account, refreshed);
   } catch (err: unknown) {
     console.warn(
-      `[publish] Token refresh failed for ${account.platform} ${account.id}:`,
+      `[token] Refresh failed for ${account.platform} ${account.id}:`,
       extractSocialApiError(err),
     );
+    // Keep returning the account so callers can still try / surface a clear error,
+    // but mark expired when the stored access token is already past expiry.
+    if (expiresAt !== null && expiresAt < Date.now()) {
+      await markAccountAuthFailure(
+        account,
+        `Token refresh failed — reconnect this ${account.platform} account. (${extractSocialApiError(err)})`,
+      );
+    }
     return account;
   }
 }
@@ -280,11 +291,21 @@ export async function refreshAccountToken(account: SocialAccount): Promise<{ acc
       const pages = await meta.getPagesWithInstagram(longToken);
       const page = pages.find((p) =>
         platform === 'facebook'
-          ? p.pageId === account.pageId
-          : p.igAccountId === account.igAccountId,
+          ? p.pageId === account.pageId || p.pageId === account.platformUserId
+          : p.igAccountId === account.igAccountId || p.igAccountId === account.platformUserId,
       );
       if (!page?.pageAccessToken) {
-        throw new Error(`Could not refresh ${account.platform} page token — reconnect the account`);
+        const available = pages
+          .map((p) => p.pageName || p.igUsername || p.pageId)
+          .filter(Boolean)
+          .slice(0, 8)
+          .join(', ');
+        throw new Error(
+          `This Facebook login no longer has access to “${account.displayName}”. ` +
+            `Reconnect ${account.platform} and select that Page/IG account in the Facebook dialog` +
+            (available ? ` (currently available: ${available})` : '') +
+            '.',
+        );
       }
       const { encryptToken } = await import('./token-crypto.service.js');
       return {
@@ -349,7 +370,9 @@ export async function refreshAccountToken(account: SocialAccount): Promise<{ acc
   };
 }
 
-export async function fetchPlatformInsights(account: SocialAccount): Promise<{ followers: number; reach: number | null; impressions: number | null; profileVisits: number | null }> {
+async function fetchInsightsOnce(
+  account: SocialAccount,
+): Promise<{ followers: number; reach: number | null; impressions: number | null; profileVisits: number | null }> {
   const platform = account.platform.toLowerCase();
   const accessToken = decryptToken(account.accessTokenEnc);
 
@@ -375,5 +398,49 @@ export async function fetchPlatformInsights(account: SocialAccount): Promise<{ f
     }
     default:
       return { followers: 0, reach: null, impressions: null, profileVisits: null };
+  }
+}
+
+export async function fetchPlatformInsights(account: SocialAccount): Promise<{ followers: number; reach: number | null; impressions: number | null; profileVisits: number | null }> {
+  // Meta PAGE tokens are often marked invalid by Graph even while our stored
+  // expiry is still in the future (FLB reconnect / permission churn). Always
+  // re-mint the page token from the USER refresh token before insights.
+  // YouTube access tokens die in ~1h — refresh-near-expiry covers that.
+  const platform = account.platform.toLowerCase();
+  const forceMetaPageRefresh =
+    (platform === 'facebook' || platform === 'instagram') && !!account.refreshTokenEnc;
+
+  let fresh = await ensureFreshAccessToken(account, forceMetaPageRefresh);
+  try {
+    const metrics = await fetchInsightsOnce(fresh);
+    // Successful sync clears a stale Issue badge from a previous failed run.
+    if (fresh.healthStatus !== 'healthy') {
+      const { prisma } = await import('../prisma.js');
+      await prisma.socialAccount.update({
+        where: { id: fresh.id },
+        data: { healthStatus: 'healthy', healthMessage: null },
+      });
+    }
+    return metrics;
+  } catch (err: unknown) {
+    if (!isAuthError(err) || !fresh.refreshTokenEnc) throw err;
+    fresh = await ensureFreshAccessToken(fresh, true);
+    try {
+      const metrics = await fetchInsightsOnce(fresh);
+      const { prisma } = await import('../prisma.js');
+      await prisma.socialAccount.update({
+        where: { id: fresh.id },
+        data: { healthStatus: 'healthy', healthMessage: null },
+      });
+      return metrics;
+    } catch (retryErr: unknown) {
+      if (isAuthError(retryErr)) {
+        await markAccountAuthFailure(
+          fresh,
+          `${fresh.platform} authentication failed — reconnect this account. (${extractSocialApiError(retryErr)})`,
+        );
+      }
+      throw retryErr;
+    }
   }
 }
