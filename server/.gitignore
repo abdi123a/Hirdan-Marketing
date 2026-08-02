@@ -1,5 +1,10 @@
 node_modules/
 dist/
 .env
+# Backups made before editing .env hold the same secrets (META_APP_SECRET,
+# TOKEN_ENCRYPTION_KEY, DATABASE_URL) but did not match the `.env` rule above,
+# so a `git add -A` would have committed them in plain text.
+.env.*
+!.env.example
 *.log
 uploads/

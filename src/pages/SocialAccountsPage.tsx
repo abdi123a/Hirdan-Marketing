@@ -232,10 +232,16 @@ export default function SocialAccountsPage() {
   };
 
   const handleDisconnect = async (accountId: string, name: string) => {
-    if (!confirm(`Disconnect ${name}? This will stop all scheduled posts to this account.`)) return;
+    if (!confirm(
+      `Disconnect ${name}?\n\nScheduled posts to this account stop immediately. ` +
+      `Its published posts and analytics history are kept — reconnecting restores syncing.`
+    )) return;
     try {
-      await apiFetch<any>(`/social/accounts/${accountId}`, { method: "DELETE" });
-      toast({ title: "Disconnected", description: `${name} has been removed.` });
+      const res = await apiFetch<{ message?: string }>(`/social/accounts/${accountId}`, { method: "DELETE" });
+      toast({
+        title: "Disconnected",
+        description: res?.message || `${name} disconnected. Post history and analytics are preserved.`,
+      });
       fetchData();
     } catch (err: any) {
       toast({ title: "Failed", description: err.message, variant: "destructive" });
