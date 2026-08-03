@@ -256,6 +256,8 @@ export interface User {
   name: string;
   email: string;
   role: 'ADMIN' | 'MANAGER' | 'STAFF' | 'CLIENT';
+  permissions?: Partial<Record<string, 'NONE' | 'READ' | 'WRITE' | 'MANAGE'>> | null;
+  resolvedPermissions?: Record<string, 'NONE' | 'READ' | 'WRITE' | 'MANAGE'>;
   teamMemberId?: string | null;
   teamMember?: {
     id: string;
@@ -590,7 +592,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.31.42",
+  appVersion: "2.31.43",
   versionHistory: [
     {
       version: "2.23.0",
@@ -1142,20 +1144,37 @@ export const useAgencyStore = create<AgencyStore>()(
       },
 
       fetchAllData: async () => {
-        await Promise.all([
-          get().fetchClients(),
-          get().fetchProjects(),
-          get().fetchInvoices(),
-          get().fetchSubscriptions(),
-          get().fetchProformas(),
-          get().fetchPackages(),
-          get().fetchServices(),
-          get().fetchTeam(),
-          get().fetchLeads(),
-          get().fetchUsers(),
-          get().fetchSettings(),
-          get().fetchTaskAnalytics()
-        ]);
+        // Only fetch modules the current user can actually read.
+        // Prevents 403 storms that leave non-admin dashboards empty/broken.
+        const auth = (await import('./auth-store')).useAuthStore.getState().user;
+        const { hasPermission, resolvePermissions } = await import('./permissions');
+
+        const role = auth?.role;
+        const isAdmin = role === 'admin';
+        const perms =
+          auth?.permissions ??
+          (role && role !== 'client'
+            ? resolvePermissions(role.toUpperCase() as 'ADMIN' | 'MANAGER' | 'STAFF')
+            : null);
+
+        const can = (module: Parameters<typeof hasPermission>[1]) =>
+          isAdmin || hasPermission(perms, module, 'READ');
+
+        const tasks: Promise<unknown>[] = [get().fetchSettings()];
+
+        if (can('clients')) tasks.push(get().fetchClients());
+        if (can('projects')) tasks.push(get().fetchProjects());
+        if (can('invoices')) tasks.push(get().fetchInvoices());
+        if (can('subscriptions')) tasks.push(get().fetchSubscriptions());
+        if (can('proforma')) tasks.push(get().fetchProformas());
+        if (can('packages')) tasks.push(get().fetchPackages());
+        if (can('services')) tasks.push(get().fetchServices());
+        if (can('team')) tasks.push(get().fetchTeam());
+        if (can('leads')) tasks.push(get().fetchLeads());
+        if (isAdmin || can('users')) tasks.push(get().fetchUsers());
+        if (isAdmin) tasks.push(get().fetchTaskAnalytics());
+
+        await Promise.all(tasks);
       },
 
       addClient: async (client) => {

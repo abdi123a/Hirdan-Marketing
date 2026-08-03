@@ -16,16 +16,17 @@ type StreamEvent =
  * new inbound mail, delivery/tracking updates, and unread counts arrive live.
  * Fires a desktop notification on new inbound mail. Auto-reconnects with backoff.
  */
-export function useEmailStream(options?: { onNewInbound?: (e: { conversationId: string }) => void }) {
+export function useEmailStream(options?: { onNewInbound?: (e: { conversationId: string }) => void; enabled?: boolean }) {
   const qc = useQueryClient();
   const token = useAuthStore((s) => s.token);
   const esRef = useRef<EventSource | null>(null);
   const retryRef = useRef(0);
   const closedRef = useRef(false);
   const onNewInbound = options?.onNewInbound;
+  const enabled = options?.enabled !== false;
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || !enabled) return;
     closedRef.current = false;
 
     // Ask for desktop notification permission once.
@@ -68,6 +69,7 @@ export function useEmailStream(options?: { onNewInbound?: (e: { conversationId: 
         es.addEventListener('event-update', (ev) => {
           const data = JSON.parse((ev as MessageEvent).data) as StreamEvent & { type: 'event-update' };
           qc.invalidateQueries({ queryKey: emailKeys.conversation(data.conversationId) });
+          qc.invalidateQueries({ queryKey: emailKeys.emailEvents(data.emailId) });
           qc.invalidateQueries({ queryKey: ['email', 'conversations'] });
         });
 
@@ -98,5 +100,5 @@ export function useEmailStream(options?: { onNewInbound?: (e: { conversationId: 
       esRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, enabled]);
 }

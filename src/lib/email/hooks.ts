@@ -12,13 +12,15 @@ export const emailKeys = {
   outbox: ['email', 'outbox'] as const,
   drafts: ['email', 'drafts'] as const,
   tracking: (mailboxId?: string) => ['email', 'tracking', mailboxId ?? 'all'] as const,
+  emailEvents: (id: string) => ['email', 'events', id] as const,
 };
 
-export function useMailboxes() {
+export function useMailboxes(enabled = true) {
   return useQuery({
     queryKey: emailKeys.mailboxes,
     queryFn: () => emailApi.listMailboxes().then((r) => r.mailboxes),
     staleTime: 60_000,
+    enabled,
   });
 }
 
@@ -148,6 +150,17 @@ export function useTrackingSummary(mailboxId?: string) {
     queryKey: emailKeys.tracking(mailboxId),
     queryFn: () => emailApi.trackingSummary(mailboxId),
     staleTime: 30_000,
+  });
+}
+
+/** Live event timeline for one outbound email (refetches while open). */
+export function useEmailEvents(emailId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: emailId ? emailKeys.emailEvents(emailId) : ['email', 'events', 'none'],
+    queryFn: () => emailApi.getEmailEvents(emailId as string),
+    enabled: !!emailId && enabled,
+    refetchInterval: enabled ? 20_000 : false,
+    staleTime: 5_000,
   });
 }
 

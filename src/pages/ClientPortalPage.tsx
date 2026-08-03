@@ -1010,7 +1010,7 @@ export default function ClientPortalPage() {
             <p className="text-muted-foreground mt-2">
               {isForcedPasswordChange
                 ? 'Please change your password to unlock full portal access.'
-                : 'Manage your account, track projects, and view documents.'}
+                : `Your client workspace${displayClient.company ? ` for ${displayClient.company}` : ''} — only the sections shared with you are available below.`}
             </p>
           </motion.div>
 

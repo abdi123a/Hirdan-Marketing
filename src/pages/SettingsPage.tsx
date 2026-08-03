@@ -77,6 +77,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyStore, AgencySettings, PaymentMethod, SocialLink, VersionEntry } from "@/lib/store";
+import { usePermissions } from "@/hooks/usePermissions";
 import { ProtectedBrandingImage } from "@/components/ProtectedBrandingImage";
 import { Progress } from "@/components/ui/progress";
 import { apiFetch, downloadProtectedFile } from "@/lib/api-client";
@@ -193,6 +194,9 @@ const DEFAULT_EMAIL_TEMPLATES: EmailTemplate[] = [
 
 export default function SettingsPage() {
   const { toast } = useToast();
+  const { canManage, canRead } = usePermissions();
+  const canManageUsers = canManage('users');
+  const canAccessSettings = canRead('settings');
   const navigate = useNavigate();
   const { settings, updateSettings, fetchSettings, uploadFile } = useAgencyStore();
   const [formData, setFormData] = useState<AgencySettings>(settings);
@@ -791,9 +795,11 @@ export default function SettingsPage() {
           <TabsTrigger value="social" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
             <Link className="h-3.5 w-3.5" /> Social
           </TabsTrigger>
+          {canManageUsers && (
           <TabsTrigger value="users" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
             <Users className="h-3.5 w-3.5" /> Users
           </TabsTrigger>
+          )}
           <TabsTrigger value="landing-page" className="gap-1.5 px-4 py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg transition-all text-xs font-medium shrink-0">
             <LayoutGrid className="h-3.5 w-3.5" /> Landing Page
           </TabsTrigger>
@@ -885,6 +891,7 @@ export default function SettingsPage() {
                   <Link className="h-4 w-4 shrink-0" />
                   <span>Social Links</span>
                 </TabsTrigger>
+                {canManageUsers && (
                 <TabsTrigger
                   value="users"
                   className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
@@ -892,6 +899,7 @@ export default function SettingsPage() {
                   <Users className="h-4 w-4 shrink-0" />
                   <span>Users</span>
                 </TabsTrigger>
+                )}
                 <TabsTrigger
                   value="landing-page"
                   className="w-full justify-start gap-3 px-3 py-2.5 text-sm font-medium rounded-xl data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none hover:bg-muted/60 transition-all text-muted-foreground data-[state=active]:font-semibold"
@@ -3349,9 +3357,11 @@ export default function SettingsPage() {
             </Dialog>
           )}
         </TabsContent>
+        {canManageUsers && (
         <TabsContent value="users" className="mt-0 outline-none">
           <UsersPage />
         </TabsContent>
+        )}
         <TabsContent value="landing-page" className="mt-0 outline-none">
           <LandingPageEditor />
         </TabsContent>

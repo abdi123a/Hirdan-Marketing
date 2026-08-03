@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { PermissionGate } from "@/components/PermissionGate";
 import { useAuthStore } from "@/lib/auth-store";
 
 import { useState, useEffect, lazy, Suspense } from "react";
@@ -102,21 +103,7 @@ function AppRoutes() {
         ]);
 
         if (authData.user) {
-          // Normalize role to lowercase for the store
-          const normalizedUser = {
-            role: authData.user.role.toLowerCase() as any,
-            email: authData.user.email,
-            name: authData.user.name,
-            ...(authData.user.client ? {
-              company: authData.user.client.company,
-              clientId: authData.user.client.id,
-            } : {})
-          };
-          
-          useAuthStore.setState({
-            user: normalizedUser,
-            isAuthenticated: true
-          });
+          useAuthStore.getState().setUserFromApi(authData.user);
         } else {
           logout();
         }
@@ -211,86 +198,86 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<DashboardOverview />} />
-        <Route path="clients" element={<ClientsPage />} />
-        <Route path="clients/add" element={<AddClientPage />} />
-        <Route path="clients/edit/:id" element={<EditClientPage />} />
-        <Route path="clients/view/:id" element={<ClientDetailsPage />} />
+        <Route index element={<PermissionGate module="dashboard"><DashboardOverview /></PermissionGate>} />
+        <Route path="clients" element={<PermissionGate module="clients"><ClientsPage /></PermissionGate>} />
+        <Route path="clients/add" element={<PermissionGate module="clients" minimum="WRITE"><AddClientPage /></PermissionGate>} />
+        <Route path="clients/edit/:id" element={<PermissionGate module="clients" minimum="WRITE"><EditClientPage /></PermissionGate>} />
+        <Route path="clients/view/:id" element={<PermissionGate module="clients"><ClientDetailsPage /></PermissionGate>} />
 
         {/* User Management */}
         <Route path="users" element={<Navigate to="/dashboard/settings?tab=users" replace />} />
         <Route path="users/add" element={
-          <ProtectedRoute allowedRoles="admin">
+          <PermissionGate module="users" minimum="MANAGE">
             <AddUserPage />
-          </ProtectedRoute>
+          </PermissionGate>
         } />
         <Route path="users/edit/:id" element={
-          <ProtectedRoute allowedRoles="admin">
+          <PermissionGate module="users" minimum="MANAGE">
             <AddUserPage />
-          </ProtectedRoute>
+          </PermissionGate>
         } />
 
-        <Route path="projects" element={<ProjectsPage />} />
-        <Route path="projects/add" element={<AddProjectPage />} />
-        <Route path="projects/edit/:id" element={<EditProjectPage />} />
-        <Route path="projects/view/:id" element={<ProjectDetailsPage />} />
-        <Route path="team" element={<TeamPage />} />
-        <Route path="team/add" element={<AddEmployeePage />} />
-        <Route path="team/edit/:id" element={<AddEmployeePage />} />
-        <Route path="team/view/:id" element={<EmployeeProfilePage />} />
+        <Route path="projects" element={<PermissionGate module="projects"><ProjectsPage /></PermissionGate>} />
+        <Route path="projects/add" element={<PermissionGate module="projects" minimum="WRITE"><AddProjectPage /></PermissionGate>} />
+        <Route path="projects/edit/:id" element={<PermissionGate module="projects" minimum="WRITE"><EditProjectPage /></PermissionGate>} />
+        <Route path="projects/view/:id" element={<PermissionGate module="projects"><ProjectDetailsPage /></PermissionGate>} />
+        <Route path="team" element={<PermissionGate module="team"><TeamPage /></PermissionGate>} />
+        <Route path="team/add" element={<PermissionGate module="team" minimum="WRITE"><AddEmployeePage /></PermissionGate>} />
+        <Route path="team/edit/:id" element={<PermissionGate module="team" minimum="WRITE"><AddEmployeePage /></PermissionGate>} />
+        <Route path="team/view/:id" element={<PermissionGate module="team"><EmployeeProfilePage /></PermissionGate>} />
         
         {/* HR Document Generator */}
         <Route path="hr" element={
-          <ProtectedRoute allowedRoles={["admin", "manager"]}>
+          <PermissionGate module="hr">
             <HrDocumentsPage />
-          </ProtectedRoute>
+          </PermissionGate>
         } />
         <Route path="hr/generate" element={
-          <ProtectedRoute allowedRoles={["admin", "manager"]}>
+          <PermissionGate module="hr" minimum="WRITE">
             <GenerateHrDocumentPage />
-          </ProtectedRoute>
+          </PermissionGate>
         } />
-        <Route path="invoices" element={<InvoicesPage />} />
-        <Route path="invoices/add" element={<AddInvoicePage />} />
-        <Route path="invoices/edit/:id" element={<EditInvoicePage />} />
-        <Route path="invoices/view/:id" element={<InvoiceDetailsPage />} />
-        <Route path="subscriptions" element={<SubscriptionsPage />} />
-        <Route path="subscriptions/add" element={<AddSubscriptionPage />} />
-        <Route path="subscriptions/edit/:id" element={<EditSubscriptionPage />} />
-        <Route path="subscriptions/view/:id" element={<SubscriptionDetailsPage />} />
-        <Route path="social-media" element={<SocialMediaTasksPage />} />
-        <Route path="social-media/planner" element={<SocialMediaPlannerPage />} />
-        <Route path="social-media/analyze" element={<SocialAnalyzePage />} />
-        <Route path="social-media/publish" element={<SocialPublishPage />} />
-        <Route path="social-media/accounts" element={<SocialAccountsPage />} />
-        <Route path="social-media/select-account" element={<SocialAccountPickerPage />} />
-        <Route path="social-media/presentation" element={<SocialStrategyPresentationStudioPage />} />
-        <Route path="reports/monthly" element={<MonthlyReportStudioPage />} />
-        <Route path="reports/financial" element={<FinancialReportPage />} />
-        <Route path="expenses" element={<ExpensesPage />} />
-        <Route path="calendar" element={<CalendarPage />} />
-        <Route path="proforma" element={<ProformaPage />} />
-        <Route path="proforma/add" element={<AddProformaPage />} />
-        <Route path="proforma/edit/:id" element={<EditProformaPage />} />
-        <Route path="proforma/view/:id" element={<ProformaDetailsPage />} />
-        <Route path="packages" element={<PackagesPage />} />
-        <Route path="packages/add" element={<AddPackagePage />} />
-        <Route path="packages/edit/:id" element={<EditPackagePage />} />
-        <Route path="packages/view/:id" element={<PackageDetailsPage />} />
-        <Route path="services" element={<ServicesPage />} />
-        <Route path="services/add" element={<AddServicePage />} />
-        <Route path="services/edit/:id" element={<EditServicePage />} />
-        <Route path="services/view/:id" element={<ServiceDetailsPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="ai-assistant" element={<AiAssistantPage />} />
+        <Route path="invoices" element={<PermissionGate module="invoices"><InvoicesPage /></PermissionGate>} />
+        <Route path="invoices/add" element={<PermissionGate module="invoices" minimum="WRITE"><AddInvoicePage /></PermissionGate>} />
+        <Route path="invoices/edit/:id" element={<PermissionGate module="invoices" minimum="WRITE"><EditInvoicePage /></PermissionGate>} />
+        <Route path="invoices/view/:id" element={<PermissionGate module="invoices"><InvoiceDetailsPage /></PermissionGate>} />
+        <Route path="subscriptions" element={<PermissionGate module="subscriptions"><SubscriptionsPage /></PermissionGate>} />
+        <Route path="subscriptions/add" element={<PermissionGate module="subscriptions" minimum="WRITE"><AddSubscriptionPage /></PermissionGate>} />
+        <Route path="subscriptions/edit/:id" element={<PermissionGate module="subscriptions" minimum="WRITE"><EditSubscriptionPage /></PermissionGate>} />
+        <Route path="subscriptions/view/:id" element={<PermissionGate module="subscriptions"><SubscriptionDetailsPage /></PermissionGate>} />
+        <Route path="social-media" element={<PermissionGate module="social_media"><SocialMediaTasksPage /></PermissionGate>} />
+        <Route path="social-media/planner" element={<PermissionGate module="social_media"><SocialMediaPlannerPage /></PermissionGate>} />
+        <Route path="social-media/analyze" element={<PermissionGate module="social_media"><SocialAnalyzePage /></PermissionGate>} />
+        <Route path="social-media/publish" element={<PermissionGate module="social_media"><SocialPublishPage /></PermissionGate>} />
+        <Route path="social-media/accounts" element={<PermissionGate module="social_media"><SocialAccountsPage /></PermissionGate>} />
+        <Route path="social-media/select-account" element={<PermissionGate module="social_media"><SocialAccountPickerPage /></PermissionGate>} />
+        <Route path="social-media/presentation" element={<PermissionGate module="strategy_decks"><SocialStrategyPresentationStudioPage /></PermissionGate>} />
+        <Route path="reports/monthly" element={<PermissionGate module="monthly_reports"><MonthlyReportStudioPage /></PermissionGate>} />
+        <Route path="reports/financial" element={<PermissionGate module="financial_reports"><FinancialReportPage /></PermissionGate>} />
+        <Route path="expenses" element={<PermissionGate module="expenses"><ExpensesPage /></PermissionGate>} />
+        <Route path="calendar" element={<PermissionGate module="calendar"><CalendarPage /></PermissionGate>} />
+        <Route path="proforma" element={<PermissionGate module="proforma"><ProformaPage /></PermissionGate>} />
+        <Route path="proforma/add" element={<PermissionGate module="proforma" minimum="WRITE"><AddProformaPage /></PermissionGate>} />
+        <Route path="proforma/edit/:id" element={<PermissionGate module="proforma" minimum="WRITE"><EditProformaPage /></PermissionGate>} />
+        <Route path="proforma/view/:id" element={<PermissionGate module="proforma"><ProformaDetailsPage /></PermissionGate>} />
+        <Route path="packages" element={<PermissionGate module="packages"><PackagesPage /></PermissionGate>} />
+        <Route path="packages/add" element={<PermissionGate module="packages" minimum="WRITE"><AddPackagePage /></PermissionGate>} />
+        <Route path="packages/edit/:id" element={<PermissionGate module="packages" minimum="WRITE"><EditPackagePage /></PermissionGate>} />
+        <Route path="packages/view/:id" element={<PermissionGate module="packages"><PackageDetailsPage /></PermissionGate>} />
+        <Route path="services" element={<PermissionGate module="services"><ServicesPage /></PermissionGate>} />
+        <Route path="services/add" element={<PermissionGate module="services" minimum="WRITE"><AddServicePage /></PermissionGate>} />
+        <Route path="services/edit/:id" element={<PermissionGate module="services" minimum="WRITE"><EditServicePage /></PermissionGate>} />
+        <Route path="services/view/:id" element={<PermissionGate module="services"><ServiceDetailsPage /></PermissionGate>} />
+        <Route path="settings" element={<PermissionGate module="settings"><SettingsPage /></PermissionGate>} />
+        <Route path="ai-assistant" element={<PermissionGate module="ai_assistant"><AiAssistantPage /></PermissionGate>} />
         <Route path="settings/landing-page" element={<Navigate to="/dashboard/settings?tab=landing-page" replace />} />
         <Route path="plugins" element={<Navigate to="/dashboard/settings?tab=plugins" replace />} />
-        <Route path="transfers" element={<FileTransfer />} />
-        <Route path="leads" element={<LeadsPage />} />
-        <Route path="email" element={<EmailCenterPage />} />
-        <Route path="email/mailboxes" element={<EmailMailboxesPage />} />
-        <Route path="email/templates" element={<EmailTemplatesPage />} />
-        <Route path="email/analytics" element={<EmailAnalyticsPage />} />
+        <Route path="transfers" element={<PermissionGate module="transfers"><FileTransfer /></PermissionGate>} />
+        <Route path="leads" element={<PermissionGate module="leads"><LeadsPage /></PermissionGate>} />
+        <Route path="email" element={<PermissionGate module="email"><EmailCenterPage /></PermissionGate>} />
+        <Route path="email/mailboxes" element={<PermissionGate module="email" minimum="MANAGE"><EmailMailboxesPage /></PermissionGate>} />
+        <Route path="email/templates" element={<PermissionGate module="email"><EmailTemplatesPage /></PermissionGate>} />
+        <Route path="email/analytics" element={<PermissionGate module="email"><EmailAnalyticsPage /></PermissionGate>} />
         <Route path="notifications" element={<NotificationsPage />} />
       </Route>
       <Route path="*" element={<NotFound />} />

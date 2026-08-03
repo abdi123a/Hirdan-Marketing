@@ -191,6 +191,12 @@ router.post(
 
       setRefreshTokenCookie(res, refreshToken);
 
+      const { resolvePermissions } = await import('../lib/permissions.js');
+      const resolvedPermissions = resolvePermissions(
+        user.role,
+        (user as any).permissions || null
+      );
+
       res.json({
         accessToken,
         // refreshToken is now handled via cookie
@@ -199,6 +205,8 @@ router.post(
           email: user.email,
           name: user.name,
           role: user.role,
+          permissions: (user as any).permissions || null,
+          resolvedPermissions,
           requiresPasswordChange: !!user.mustChangePassword,
           mustChangePassword: !!user.mustChangePassword,
         },
@@ -465,6 +473,7 @@ router.get('/me', authenticate, async (req: Request, res: Response, next) => {
         email: true,
         name: true,
         role: true,
+        permissions: true,
         mustChangePassword: true,
         client: {
           select: {
@@ -480,9 +489,16 @@ router.get('/me', authenticate, async (req: Request, res: Response, next) => {
       throw AppError.notFound('User not found');
     }
 
+    const { resolvePermissions } = await import('../lib/permissions.js');
+    const resolvedPermissions = resolvePermissions(
+      user.role,
+      (user.permissions as any) || null
+    );
+
     res.json({
       user: {
         ...user,
+        resolvedPermissions,
         requiresPasswordChange: !!user.mustChangePassword,
       },
     });

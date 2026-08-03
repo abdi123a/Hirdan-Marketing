@@ -62,7 +62,7 @@ export default function UsersPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-foreground tracking-tight">Users</h1>
-          <p className="text-muted-foreground mt-1">Manage system access and roles</p>
+          <p className="text-muted-foreground mt-1">Manage system access, sidebar modules, and read/write permissions</p>
         </div>
         <Button variant="hero" className="gap-2" onClick={() => navigate("/dashboard/users/add")}>
           <Plus className="h-4 w-4" /> Add User
@@ -165,6 +165,28 @@ export default function UsersPage() {
                       <div className="flex items-center gap-2 text-xs opacity-50 italic">
                         <UserIcon className="h-3.5 w-3.5" />
                         <span>Not linked to profile</span>
+                      </div>
+                    )}
+                    {u.role !== 'ADMIN' && u.resolvedPermissions && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {Object.entries(u.resolvedPermissions)
+                          .filter(([, level]) => level !== 'NONE')
+                          .slice(0, 4)
+                          .map(([mod, level]) => (
+                            <Badge key={mod} variant="secondary" className="text-[9px] font-medium px-1.5 py-0 capitalize">
+                              {mod.replace(/_/g, ' ')} · {String(level).toLowerCase()}
+                            </Badge>
+                          ))}
+                        {Object.values(u.resolvedPermissions).filter((l) => l !== 'NONE').length > 4 && (
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+                            +{Object.values(u.resolvedPermissions).filter((l) => l !== 'NONE').length - 4} more
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                    {u.role === 'ADMIN' && (
+                      <div className="mt-2">
+                        <Badge className="text-[9px] bg-rose-100 text-rose-700 hover:bg-rose-100 border-0">Full system access</Badge>
                       </div>
                     )}
                   </div>

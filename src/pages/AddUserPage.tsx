@@ -6,12 +6,24 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ArrowLeft, Save, User as UserIcon, Mail, Shield, Lock, Link as LinkIcon, AlertCircle, ExternalLink } from "lucide-react";
+import { ArrowLeft, Save, User as UserIcon, Mail, Lock, Link as LinkIcon, AlertCircle, ExternalLink, Shield } from "lucide-react";
 import { useAgencyStore, User } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { PermissionMatrix } from "@/components/PermissionMatrix";
+import {
+  type PermissionMap,
+  resolvePermissions,
+} from "@/lib/permissions";
 
-const ROLES = ["ADMIN", "MANAGER", "STAFF", "CLIENT"];
+const ROLES = ["ADMIN", "MANAGER", "STAFF", "CLIENT"] as const;
+
+const ROLE_BLURBS: Record<string, string> = {
+  ADMIN: "Full system control. Permissions cannot be restricted.",
+  MANAGER: "Client & project oversight. Customize modules below.",
+  STAFF: "Day-to-day work access. Customize modules below.",
+  CLIENT: "Client portal only — no agency dashboard modules.",
+};
 
 export default function AddUserPage() {
   const navigate = useNavigate();
@@ -30,9 +42,13 @@ export default function AddUserPage() {
     teamMemberId: "" as string | null,
     clientId: "" as string | null,
   });
+  const [permissions, setPermissions] = useState<PermissionMap>(() =>
+    resolvePermissions("STAFF", null)
+  );
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [conflictUser, setConflictUser] = useState<User | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchTeam();
@@ -45,15 +61,18 @@ export default function AddUserPage() {
       setForm({
         name: existingUser.name,
         email: existingUser.email,
-        password: "", // Don't show password hash
+        password: "",
         role: existingUser.role,
         teamMemberId: existingUser.teamMember?.id || "",
         clientId: existingUser.client?.id || "",
       });
+      setPermissions(
+        existingUser.resolvedPermissions ||
+          resolvePermissions(existingUser.role, existingUser.permissions || null)
+      );
     }
   }, [isEdit, existingUser]);
 
-  // Check for email conflicts in the frontend
   useEffect(() => {
     if (!isEdit && form.email) {
       const conflict = users.find(u => (u.email || "").toLowerCase() === form.email.toLowerCase());
@@ -63,6 +82,12 @@ export default function AddUserPage() {
     }
   }, [form.email, users, isEdit]);
 
+  const handleRoleChange = (role: User["role"]) => {
+    setForm((f) => ({ ...f, role }));
+    // Apply new role defaults when role changes (admin clears custom map)
+    setPermissions(resolvePermissions(role, null));
+  };
+
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.name.trim()) e.name = "Full name is required";
@@ -70,7 +95,7 @@ export default function AddUserPage() {
     else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = "Invalid email address";
     if (!isEdit && !form.password) e.password = "Password is required";
     else if (form.password && form.password.length < 6) e.password = "Password must be at least 6 characters";
-    
+
     if (conflictUser) {
       e.email = "A user with this email already exists";
     }
@@ -93,8 +118,7 @@ export default function AddUserPage() {
         name: member.name,
         email: member.email,
       }));
-      
-      // If the member is already linked to a user, inform the user
+
       if (member.userId) {
         const linkedUser = users.find(u => u.id === member.userId);
         if (linkedUser && !isEdit) {
@@ -109,6 +133,7 @@ export default function AddUserPage() {
 
   const handleSubmit = async () => {
     if (!validate()) return;
+    setSaving(true);
     try {
       const payload = {
         name: form.name,
@@ -116,27 +141,30 @@ export default function AddUserPage() {
         role: form.role,
         ...(form.password ? { password: form.password } : {}),
         teamMemberId: form.teamMemberId || null,
+        permissions: form.role === "ADMIN" ? null : permissions,
       };
 
       if (isEdit) {
         await updateUser(id!, payload);
-        toast({ title: "User Updated", description: `${form.name} has been updated.` });
+        toast({ title: "User Updated", description: `${form.name}'s access and permissions have been updated.` });
       } else {
         await addUser(payload as any);
-        toast({ title: "User Added", description: `${form.name} has been added to the system.` });
+        toast({ title: "User Added", description: `${form.name} has been granted system access.` });
       }
       navigate("/dashboard/users");
     } catch (e: any) {
-      toast({ 
-        title: "Error", 
-        description: e.message || `Failed to ${isEdit ? "update" : "add"} user.`, 
-        variant: "destructive" 
+      toast({
+        title: "Error",
+        description: e.message || `Failed to ${isEdit ? "update" : "add"} user.`,
+        variant: "destructive"
       });
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="space-y-6 max-w-3xl mx-auto pb-10">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="rounded-xl h-10 w-10 hover:bg-muted font-heading">
           <ArrowLeft className="h-5 w-5" />
@@ -146,7 +174,9 @@ export default function AddUserPage() {
             {isEdit ? "Edit User Access" : "Create User Access"}
           </h1>
           <p className="text-muted-foreground mt-0.5">
-            {isEdit ? "Update account details and permissions" : "Grant system access to a team member or employee"}
+            {isEdit
+              ? "Update credentials, role, sidebar modules, and read/write access"
+              : "Grant login access and configure exactly what they can see and do"}
           </p>
         </div>
       </div>
@@ -156,7 +186,7 @@ export default function AddUserPage() {
           <LinkIcon className="h-4 w-4 text-primary" />
           <AlertTitle className="text-sm font-semibold">Pro Tip</AlertTitle>
           <AlertDescription className="text-xs">
-            Select a team member first to automatically fill their name and email.
+            Select a team member first to automatically fill their name and email, then fine-tune their module permissions.
           </AlertDescription>
         </Alert>
       )}
@@ -285,7 +315,7 @@ export default function AddUserPage() {
 
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/80">System Role <span className="text-destructive">*</span></Label>
-              <Select value={form.role} onValueChange={(v: any) => setForm(f => ({ ...f, role: v }))}>
+              <Select value={form.role} onValueChange={(v: any) => handleRoleChange(v)}>
                 <SelectTrigger className="bg-muted/30 border-muted-foreground/20">
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
@@ -295,12 +325,29 @@ export default function AddUserPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <div className="bg-muted/50 p-3 rounded-lg mt-2 hidden sm:block">
-                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                   <strong>Admin:</strong> Full system control. <strong>Manager:</strong> Client & Project oversight. <strong>Staff:</strong> View & update assigned tasks.
-                 </p>
-              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed mt-2">
+                {ROLE_BLURBS[form.role]}
+              </p>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Step 3: Permissions */}
+        <Card className="shadow-premium border-border/50 overflow-hidden">
+          <CardHeader className="pb-4 border-b border-border/50 bg-muted/20">
+            <CardTitle className="text-base font-bold flex items-center gap-2 font-heading">
+              <Shield className="h-4 w-4 text-primary" /> Sidebar &amp; Dashboard Access
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Control which menu items appear for this user and whether they can read, write, or fully manage each area.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <PermissionMatrix
+              role={form.role}
+              value={permissions}
+              onChange={setPermissions}
+            />
           </CardContent>
         </Card>
 
@@ -309,13 +356,13 @@ export default function AddUserPage() {
            <Button variant="outline" onClick={() => navigate(-1)} className="rounded-xl px-6 border-muted-foreground/20 font-heading">
              Back to Users
            </Button>
-           <Button 
-             onClick={handleSubmit} 
-             disabled={!!conflictUser && !isEdit}
-             className="rounded-xl px-8 gap-2 shadow-hero transition-all hover:scale-[1.02] active:scale-[0.98] font-heading" 
+           <Button
+             onClick={handleSubmit}
+             disabled={(!!conflictUser && !isEdit) || saving}
+             className="rounded-xl px-8 gap-2 shadow-hero transition-all hover:scale-[1.02] active:scale-[0.98] font-heading"
              variant="hero"
            >
-             <Save className="h-4 w-4" /> {isEdit ? "Update Account" : "Grant Access"}
+             <Save className="h-4 w-4" /> {isEdit ? "Save Access" : "Grant Access"}
            </Button>
         </div>
       </div>

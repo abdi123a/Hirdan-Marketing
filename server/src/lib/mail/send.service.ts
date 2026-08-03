@@ -223,16 +223,22 @@ export async function sendMailboxEmail(input: SendMailInput): Promise<SendMailRe
       : { status: isScheduled ? 'SCHEDULED' : 'SENT', resendId, sentAt: isScheduled ? null : now },
   });
 
-  await prisma.emailEvent.create({
-    data: sendError
-      ? { emailId: email.id, type: 'FAILED', payload: { error: sendError }, occurredAt: new Date() }
-      : {
-          emailId: email.id,
-          type: isScheduled ? 'SCHEDULED' : 'SENT',
-          payload: resendId ? { resendId } : undefined,
-          occurredAt: new Date(),
-        },
-  });
+  // Immediate sends: QUEUED then SENT. Scheduled: keep the single SCHEDULED
+  // event from step 4 (don't duplicate) until the outbox retry marks SENT.
+  if (sendError) {
+    await prisma.emailEvent.create({
+      data: { emailId: email.id, type: 'FAILED', payload: { error: sendError }, occurredAt: new Date() },
+    });
+  } else if (!isScheduled) {
+    await prisma.emailEvent.create({
+      data: {
+        emailId: email.id,
+        type: 'SENT',
+        payload: resendId ? { resendId } : undefined,
+        occurredAt: new Date(),
+      },
+    });
+  }
 
   const updatedConversation = await prisma.conversation.update({
     where: { id: conversation.id },

@@ -28,15 +28,27 @@ router.get('/track/open/:id.png', async (req: Request, res: Response) => {
       });
 
       if (email) {
-        const existingOpen = await prisma.emailEvent.findFirst({
-          where: { emailId: email.id, type: 'OPENED' },
+        // Debounce rapid prefetch/reloads (same open within 45s) but still
+        // record genuine re-opens so the timeline reflects real engagement.
+        const recentOpen = await prisma.emailEvent.findFirst({
+          where: {
+            emailId: email.id,
+            type: 'OPENED',
+            occurredAt: { gte: new Date(Date.now() - 45_000) },
+          },
+          orderBy: { occurredAt: 'desc' },
         });
 
-        if (!existingOpen) {
+        if (!recentOpen) {
           await prisma.emailEvent.create({
             data: {
               emailId: email.id,
               type: 'OPENED',
+              payload: {
+                source: 'pixel',
+                userAgent: req.get('user-agent') || undefined,
+                ip: req.ip || undefined,
+              },
               occurredAt: new Date(),
             },
           });

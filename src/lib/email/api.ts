@@ -13,9 +13,11 @@ import type {
   DepartmentStat,
   DirectoryUser,
   Draft,
+  EmailEvent,
   EmailFolder,
   EmailLabel,
   EmailMessage,
+  EmailStatus,
   EmailTemplate,
   Mailbox,
   MailboxPermission,
@@ -184,6 +186,8 @@ export const emailApi = {
 
   // ─── Tracking ──────────────────────────────────────────────────
   getEmail: (id: string) => apiFetch<{ email: EmailMessage }>(`/email/emails/${id}`),
+  getEmailEvents: (id: string) =>
+    apiFetch<{ status: EmailStatus; events: EmailEvent[] }>(`/email/emails/${id}/events`),
   trackingSummary: (mailboxId?: string) => {
     const qs = mailboxId ? `?mailboxId=${mailboxId}` : '';
     return apiFetch<TrackingSummary>(`/email/tracking/summary${qs}`);

@@ -12,6 +12,7 @@ import { SuspenseFallback } from "@/components/ui/PageSkeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthStore } from "@/lib/auth-store";
 import { useAgencyStore } from "@/lib/store";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,19 +24,23 @@ import {
 import { apiFetch } from "@/lib/api-client";
 import { NotificationCenter } from "./NotificationCenter";
 import { useEmailStream } from "@/lib/email/useEmailStream";
+import { PermissionGate } from "@/components/PermissionGate";
 
 export default function DashboardLayout() {
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
   const { user, logout } = useAuthStore();
   const { settings, fetchSettings, fetchAllData } = useAgencyStore();
+  const { canRead } = usePermissions();
+  const canReadEmail = canRead("email");
+  const canReadSettings = canRead("settings");
   const navigate = useNavigate();
   const location = useLocation();
   const isLandingEditor =
     location.pathname === "/dashboard/settings" &&
     new URLSearchParams(location.search).get("tab") === "landing-page";
 
-  useEmailStream();
+  useEmailStream({ enabled: canReadEmail });
 
   useEffect(() => {
     fetchSettings();
@@ -63,7 +68,7 @@ export default function DashboardLayout() {
   const adminName = settings.agencyName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <SidebarProvider open={!isLandingEditor}>
+    <SidebarProvider defaultOpen>
       {/*
         The shell owns the viewport height and `main` is the only scroll
         container. Previously the whole document scrolled, and because
@@ -76,7 +81,7 @@ export default function DashboardLayout() {
         {!isLandingEditor && <AppSidebar />}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {!isLandingEditor && <header className="shrink-0 z-30 border-b border-border bg-card/80 backdrop-blur-md">
-            <div className="h-14 md:h-16 flex items-center justify-between gap-2 px-4 md:px-6">
+            <div className="h-14 md:h-16 flex items-center justify-between gap-2 px-3 sm:px-4 md:px-6">
               <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
                 {/* Mobile Sidebar Toggle & Logo */}
                 <div className="flex items-center gap-2 md:hidden shrink-0">
@@ -101,7 +106,7 @@ export default function DashboardLayout() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <NotificationCenter />
-                <div className="w-px h-6 bg-border mx-1" />
+                <div className="w-px h-6 bg-border mx-1 hidden sm:block" />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button className="flex items-center gap-3 pl-1 hover:opacity-80 transition-opacity outline-none">
@@ -122,10 +127,12 @@ export default function DashboardLayout() {
                       </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => navigate('/dashboard/settings')} className="cursor-pointer">
-                      Settings
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
+                    {canReadSettings && (
+                      <DropdownMenuItem onClick={() => navigate('/dashboard/settings')} className="cursor-pointer">
+                        Settings
+                      </DropdownMenuItem>
+                    )}
+                    {canReadSettings && <DropdownMenuSeparator />}
                     <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-red-600 focus:text-red-600">
                       <LogOut className="mr-2 h-4 w-4" />
                       Sign out
@@ -144,9 +151,11 @@ export default function DashboardLayout() {
               />
             </form>
           </header>}
-          <main className={isLandingEditor ? "flex-1 overflow-y-auto overflow-x-hidden min-w-0 min-h-0" : "flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 lg:p-8 min-w-0 min-h-0"}>
+          <main className={isLandingEditor ? "flex-1 overflow-y-auto overflow-x-hidden min-w-0 min-h-0" : "flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6 lg:p-8 min-w-0 min-h-0"}>
             <Suspense fallback={<SuspenseFallback />}>
-              <Outlet />
+              <PermissionGate>
+                <Outlet />
+              </PermissionGate>
             </Suspense>
           </main>
         </div>

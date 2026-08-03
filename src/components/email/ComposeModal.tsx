@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Send, Paperclip, X, Loader2, Clock, Flag, Save } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import {
+  Send, Paperclip, X, Loader2, Clock, Flag, Trash2,
+  Minus, Maximize2, Minimize2,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -16,6 +19,7 @@ import { useSendEmail } from '@/lib/email/hooks';
 import { fileToAttachment, type PreparedAttachment } from '@/lib/email/attachments';
 import { applyTemplateVars } from '@/lib/email/templateVars';
 import { formatBytes } from '@/lib/email/format';
+import { useIsMobile } from '@/hooks/use-mobile';
 import type { EmailPriority, EmailTemplate, Mailbox } from '@/lib/email/types';
 
 export interface ComposeInitial {
@@ -37,7 +41,10 @@ interface Props {
 
 const PRIORITIES: EmailPriority[] = ['LOW', 'NORMAL', 'HIGH'];
 
+type ComposeSize = 'normal' | 'minimized' | 'expanded';
+
 export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Props) {
+  const isMobile = useIsMobile();
   const writable = useMemo(
     () => mailboxes.filter((m) => m.isActive && (m.accessLevel === 'ADMIN' || m.accessLevel === 'WRITE' || m.accessLevel === 'MANAGE')),
     [mailboxes]
@@ -57,6 +64,8 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
   const [attachments, setAttachments] = useState<PreparedAttachment[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [draftId, setDraftId] = useState<string | undefined>();
+  const [size, setSize] = useState<ComposeSize>('normal');
+  const [toFocused, setToFocused] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const send = useSendEmail();
   const selectedMailbox = writable.find((m) => m.id === mailboxId);
@@ -76,12 +85,27 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
     setShowSchedule(false);
     setAttachments([]);
     setDraftId(initial?.draftId);
-    // Seed editor body after mount.
+    setSize(isMobile ? 'expanded' : 'normal');
+    setToFocused(false);
     setTimeout(() => {
       if (editorRef.current) editorRef.current.innerHTML = initial?.html || '';
     }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Escape minimizes (Gmail-like) unless already minimized → then closes via discard prompt path.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      if (size === 'minimized') void saveDraftAndClose();
+      else setSize('minimized');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, size, mailboxId, to, cc, bcc, subject, priority, draftId]);
 
   const addFiles = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -98,7 +122,7 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
     }
   };
 
-  // ── Autosave draft every few seconds when there is content ─────
+  // Autosave draft every few seconds when there is content
   useEffect(() => {
     if (!open) return;
     const interval = setInterval(async () => {
@@ -163,165 +187,295 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
     onClose();
   };
 
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && saveDraftAndClose()}>
-      <DialogContent
-        /* Full-screen on phones — a compose window squeezed into a centred card
-           leaves almost no room for the body once the toolbars are stacked. */
-        className="flex h-[100dvh] max-h-[100dvh] w-full max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:h-auto sm:max-h-[88vh] sm:w-[calc(100%-2rem)] sm:max-w-3xl sm:rounded-lg"
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+  const discard = async () => {
+    try {
+      if (draftId) await emailApi.deleteDraft(draftId);
+    } catch { /* ignore */ }
+    onClose();
+  };
+
+  if (!open || typeof document === 'undefined') return null;
+
+  const titleLabel = subject.trim() || (initial?.subject ? initial.subject : 'New Message');
+  const showRecipientDetails = toFocused || to.length > 0 || showCc || showBcc;
+
+  const shell = (
+    <div
+      role="dialog"
+      aria-label="Compose email"
+      className={cn(
+        'fixed z-[80] flex flex-col overflow-hidden bg-background shadow-2xl transition-[width,height,border-radius] duration-200',
+        // Mobile: always fullscreen
+        isMobile && 'inset-0 rounded-none',
+        // Desktop sizes
+        !isMobile && size === 'minimized' && 'bottom-0 right-6 h-10 w-[300px] rounded-t-lg',
+        !isMobile && size === 'normal' && 'bottom-0 right-6 h-[min(560px,calc(100dvh-5rem))] w-[min(560px,calc(100vw-2rem))] rounded-t-lg',
+        !isMobile && size === 'expanded' && 'inset-4 bottom-4 right-4 top-4 h-auto w-auto rounded-xl',
+      )}
+      style={
+        !isMobile && size !== 'minimized'
+          ? { boxShadow: '0 8px 28px rgba(0,0,0,.28)' }
+          : !isMobile
+            ? { boxShadow: '0 1px 6px rgba(0,0,0,.2)' }
+            : undefined
+      }
+    >
+      {/* Title bar — brand primary chrome */}
+      <div
+        className={cn(
+          'flex h-10 shrink-0 cursor-default items-center gap-1 bg-primary px-3 text-primary-foreground select-none',
+          size === 'minimized' && 'cursor-pointer'
+        )}
+        onClick={() => {
+          if (size === 'minimized') setSize('normal');
+        }}
       >
-        <div className="flex items-center border-b px-4 py-2.5 pr-12">
-          <h2 className="text-sm font-semibold">New message</h2>
-        </div>
-
-        <div
-          className="flex min-h-0 flex-1 flex-col"
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium tracking-wide">
+          {titleLabel}
+        </span>
+        {!isMobile && (
+          <>
+            <button
+              type="button"
+              title={size === 'minimized' ? 'Restore' : 'Minimize'}
+              className="rounded p-1.5 text-primary-foreground/80 hover:bg-primary-foreground/15 hover:text-primary-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSize((s) => (s === 'minimized' ? 'normal' : 'minimized'));
+              }}
+            >
+              <Minus className="h-3.5 w-3.5" strokeWidth={2.5} />
+            </button>
+            <button
+              type="button"
+              title={size === 'expanded' ? 'Exit full screen' : 'Full screen'}
+              className="rounded p-1.5 text-primary-foreground/80 hover:bg-primary-foreground/15 hover:text-primary-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSize((s) => (s === 'expanded' ? 'normal' : 'expanded'));
+              }}
+            >
+              {size === 'expanded'
+                ? <Minimize2 className="h-3.5 w-3.5" strokeWidth={2.5} />
+                : <Maximize2 className="h-3.5 w-3.5" strokeWidth={2.5} />}
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          title="Save & close"
+          className="rounded p-1.5 text-primary-foreground/80 hover:bg-primary-foreground/15 hover:text-primary-foreground"
+          onClick={(e) => {
+            e.stopPropagation();
+            void saveDraftAndClose();
+          }}
         >
-          {/* From */}
-          <div className="flex items-center gap-2 border-b px-4 py-1.5">
-            <span className="w-12 text-xs text-muted-foreground">From</span>
-            <Select value={mailboxId} onValueChange={setMailboxId}>
-              <SelectTrigger className="h-8 flex-1 border-0 text-sm shadow-none focus:ring-0">
-                <SelectValue placeholder="Select a mailbox" />
-              </SelectTrigger>
-              <SelectContent>
-                {writable.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    <span className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: m.color || '#6366f1' }} />
-                      {m.displayName} &lt;{m.email}&gt;
-                    </span>
-                  </SelectItem>
-                ))}
-                {writable.length === 0 && <div className="px-2 py-1.5 text-xs text-muted-foreground">No sendable mailboxes</div>}
-              </SelectContent>
-            </Select>
-          </div>
+          <X className="h-3.5 w-3.5" strokeWidth={2.5} />
+        </button>
+      </div>
 
-          {/* To */}
-          <div className="flex items-center gap-2 border-b px-4 py-1.5">
-            <span className="w-12 text-xs text-muted-foreground">To</span>
-            <div className="flex-1"><EmailChipsInput value={to} onChange={setTo} placeholder="Recipients" className="border-0 px-0" /></div>
-            <div className="flex shrink-0 gap-2 text-xs text-muted-foreground">
-              {!showCc && <button onClick={() => setShowCc(true)} className="hover:text-foreground">Cc</button>}
-              {!showBcc && <button onClick={() => setShowBcc(true)} className="hover:text-foreground">Bcc</button>}
-            </div>
-          </div>
-
-          {showCc && (
-            <div className="flex items-center gap-2 border-b px-4 py-1.5">
-              <span className="w-12 text-xs text-muted-foreground">Cc</span>
-              <div className="flex-1"><EmailChipsInput value={cc} onChange={setCc} className="border-0 px-0" /></div>
-            </div>
-          )}
-          {showBcc && (
-            <div className="flex items-center gap-2 border-b px-4 py-1.5">
-              <span className="w-12 text-xs text-muted-foreground">Bcc</span>
-              <div className="flex-1"><EmailChipsInput value={bcc} onChange={setBcc} className="border-0 px-0" /></div>
-            </div>
-          )}
-
-          {/* Subject */}
-          <div className="flex items-center gap-2 border-b px-4 py-1.5">
-            <span className="w-12 text-xs text-muted-foreground">Subject</span>
-            <Input
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="Subject"
-              className="h-8 flex-1 border-0 px-0 text-sm shadow-none focus-visible:ring-0"
-            />
-          </div>
-
-          {/* Body */}
-          <div className={cn('min-h-0 flex-1 overflow-auto', dragOver && 'bg-primary/5 ring-2 ring-inset ring-primary/40')}>
-            <RichTextEditor editorRef={editorRef} minHeight="220px" placeholder="Write your message…" />
-          </div>
-
-          {/* Attachments */}
-          {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 border-t px-4 py-2">
-              {attachments.map((a, i) => (
-                <span key={i} className="flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1 text-xs">
-                  <Paperclip className="h-3 w-3" />
-                  <span className="max-w-[160px] truncate">{a.filename}</span>
-                  <span className="text-muted-foreground">{formatBytes(a.size)}</span>
-                  <button onClick={() => setAttachments((prev) => prev.filter((_, idx) => idx !== i))}>
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Schedule row */}
-          {showSchedule && (
-            <div className="flex flex-wrap items-center gap-2 border-t px-4 py-2 text-sm">
-              <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Send at</span>
-              <Input
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={(e) => setScheduledAt(e.target.value)}
-                className="h-8 w-auto min-w-0 flex-1 text-xs sm:flex-none"
-              />
-              {scheduledAt && (
-                <button onClick={() => { setScheduledAt(''); setShowSchedule(false); }} className="text-xs text-muted-foreground hover:text-foreground">
-                  Clear
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Footer — wraps on narrow screens instead of pushing controls off-screen */}
-        <div className="flex flex-wrap items-center gap-2 border-t px-4 py-2.5">
-          <Button onClick={handleSend} disabled={send.isPending} className="gap-1.5">
-            {send.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            {scheduledAt ? 'Schedule' : 'Send'}
-          </Button>
-
-          <input ref={fileRef} type="file" multiple hidden onChange={(e) => addFiles(e.target.files)} />
-          <Button variant="ghost" size="icon" className="h-8 w-8" title="Attach" onClick={() => fileRef.current?.click()}>
-            <Paperclip className="h-4 w-4" />
-          </Button>
-          <TemplatePicker compact onSelect={insertTemplate} />
-          <Button
-            variant="ghost" size="icon" className={cn('h-8 w-8', showSchedule && 'text-primary')}
-            title="Schedule send" onClick={() => setShowSchedule((v) => !v)}
+      {size !== 'minimized' && (
+        <>
+          <div
+            className="flex min-h-0 flex-1 flex-col"
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); void addFiles(e.dataTransfer.files); }}
           >
-            <Clock className="h-4 w-4" />
-          </Button>
+            {/* From */}
+            <div className="flex items-center gap-2 border-b border-border/70 px-3 py-1.5">
+              <span className="w-10 shrink-0 text-[13px] text-muted-foreground">From</span>
+              <Select value={mailboxId} onValueChange={setMailboxId}>
+                <SelectTrigger className="h-8 flex-1 border-0 px-1 text-[13px] shadow-none focus:ring-0">
+                  <SelectValue placeholder="Select a mailbox" />
+                </SelectTrigger>
+                <SelectContent>
+                  {writable.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      <span className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: m.color || '#6366f1' }} />
+                        {m.displayName} &lt;{m.email}&gt;
+                      </span>
+                    </SelectItem>
+                  ))}
+                  {writable.length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">No sendable mailboxes</div>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="flex items-center gap-1 sm:ml-1">
-            <Flag className={cn('h-4 w-4 shrink-0', priority === 'HIGH' ? 'text-red-500' : 'text-muted-foreground')} />
-            <Select value={priority} onValueChange={(v) => setPriority(v as EmailPriority)}>
-              <SelectTrigger className="h-8 w-[110px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PRIORITIES.map((p) => (
-                  <SelectItem key={p} value={p} className="text-xs">{p[0] + p.slice(1).toLowerCase()} priority</SelectItem>
+            {/* Recipients — Gmail-style: To + Cc/Bcc on the same row */}
+            <div
+              className="flex items-start gap-2 border-b border-border/70 px-3 py-1.5"
+              onFocus={() => setToFocused(true)}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) setToFocused(false);
+              }}
+            >
+              {(showRecipientDetails || toFocused) && (
+                <span className="mt-1.5 w-10 shrink-0 text-[13px] text-muted-foreground">To</span>
+              )}
+              <div className="min-w-0 flex-1">
+                <EmailChipsInput
+                  value={to}
+                  onChange={setTo}
+                  placeholder="Recipients"
+                  className="border-0 bg-transparent px-0 py-0.5 shadow-none"
+                />
+              </div>
+              <div className="mt-1.5 flex shrink-0 gap-2.5 text-[13px] text-muted-foreground">
+                {!showCc && (
+                  <button type="button" onClick={() => setShowCc(true)} className="hover:text-foreground">
+                    Cc
+                  </button>
+                )}
+                {!showBcc && (
+                  <button type="button" onClick={() => setShowBcc(true)} className="hover:text-foreground">
+                    Bcc
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {showCc && (
+              <div className="flex items-center gap-2 border-b border-border/70 px-3 py-1.5">
+                <span className="w-10 shrink-0 text-[13px] text-muted-foreground">Cc</span>
+                <div className="min-w-0 flex-1">
+                  <EmailChipsInput value={cc} onChange={setCc} className="border-0 bg-transparent px-0 py-0.5 shadow-none" />
+                </div>
+              </div>
+            )}
+            {showBcc && (
+              <div className="flex items-center gap-2 border-b border-border/70 px-3 py-1.5">
+                <span className="w-10 shrink-0 text-[13px] text-muted-foreground">Bcc</span>
+                <div className="min-w-0 flex-1">
+                  <EmailChipsInput value={bcc} onChange={setBcc} className="border-0 bg-transparent px-0 py-0.5 shadow-none" />
+                </div>
+              </div>
+            )}
+
+            {/* Subject */}
+            <div className="flex items-center border-b border-border/70 px-3 py-1">
+              <Input
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="Subject"
+                className="h-9 flex-1 border-0 px-0 text-[13px] shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
+              />
+            </div>
+
+            {/* Body */}
+            <div
+              className={cn(
+                'min-h-0 flex-1 overflow-auto',
+                dragOver && 'bg-primary/5 ring-2 ring-inset ring-primary/40'
+              )}
+            >
+              <RichTextEditor
+                editorRef={editorRef}
+                minHeight={size === 'expanded' || isMobile ? '280px' : '160px'}
+                maxHeight={size === 'expanded' || isMobile ? undefined : '280px'}
+                placeholder="Compose email"
+                className="!rounded-none !border-0"
+              />
+            </div>
+
+            {/* Attachments */}
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 border-t px-3 py-2">
+                {attachments.map((a, i) => (
+                  <span key={i} className="flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1 text-xs">
+                    <Paperclip className="h-3 w-3" />
+                    <span className="max-w-[160px] truncate">{a.filename}</span>
+                    <span className="text-muted-foreground">{formatBytes(a.size)}</span>
+                    <button type="button" onClick={() => setAttachments((prev) => prev.filter((_, idx) => idx !== i))}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
                 ))}
-              </SelectContent>
-            </Select>
+              </div>
+            )}
+
+            {showSchedule && (
+              <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2 text-sm">
+                <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Send at</span>
+                <Input
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                  className="h-8 w-auto min-w-0 flex-1 text-xs sm:flex-none"
+                />
+                {scheduledAt && (
+                  <button
+                    type="button"
+                    onClick={() => { setScheduledAt(''); setShowSchedule(false); }}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
-          <div className="ml-auto flex items-center gap-1">
-            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={saveDraftAndClose}>
-              <Save className="h-4 w-4" />
-              {/* The icon alone carries this once space is tight */}
-              <span className="hidden sm:inline">Save draft</span>
-              <span className="sr-only sm:hidden">Save draft</span>
+          {/* Footer — Gmail: Send left, tools, trash far right */}
+          <div className="flex flex-wrap items-center gap-1 border-t px-2 py-2">
+            <Button
+              onClick={() => void handleSend()}
+              disabled={send.isPending}
+              className="h-9 gap-1.5 rounded-full px-5 font-medium shadow-sm"
+            >
+              {send.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              {scheduledAt ? 'Schedule' : 'Send'}
             </Button>
+
+            <input ref={fileRef} type="file" multiple hidden onChange={(e) => void addFiles(e.target.files)} />
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Attach files" onClick={() => fileRef.current?.click()}>
+              <Paperclip className="h-4 w-4" />
+            </Button>
+            <TemplatePicker compact onSelect={insertTemplate} />
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn('h-8 w-8 text-muted-foreground', showSchedule && 'text-primary')}
+              title="Schedule send"
+              onClick={() => setShowSchedule((v) => !v)}
+            >
+              <Clock className="h-4 w-4" />
+            </Button>
+
+            <div className="hidden items-center gap-0.5 sm:flex">
+              <Flag className={cn('h-3.5 w-3.5 shrink-0', priority === 'HIGH' ? 'text-red-500' : 'text-muted-foreground')} />
+              <Select value={priority} onValueChange={(v) => setPriority(v as EmailPriority)}>
+                <SelectTrigger className="h-8 w-[100px] border-0 text-xs shadow-none focus:ring-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORITIES.map((p) => (
+                    <SelectItem key={p} value={p} className="text-xs">{p[0] + p.slice(1).toLowerCase()}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="ml-auto">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-red-600"
+                title="Discard draft"
+                onClick={() => void discard()}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </>
+      )}
+    </div>
   );
+
+  return createPortal(shell, document.body);
 }

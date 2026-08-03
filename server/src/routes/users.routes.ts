@@ -1,11 +1,19 @@
 import { Router, type Request, type Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { AppError } from '../lib/errors.js';
 import { parsePagination } from '../lib/pagination.js';
+import {
+  ACCESS_LEVELS,
+  PERMISSION_MODULES,
+  type PermissionMap,
+  resolvePermissions,
+  sanitizePermissionMap,
+} from '../lib/permissions.js';
 
 const router = Router();
 
@@ -16,6 +24,8 @@ const passwordSchema = z.string()
   .regex(/[0-9]/, 'Password must contain at least one number')
   .regex(/[\W_]/, 'Password must contain at least one special character');
 
+const permissionMapSchema = z.record(z.string(), z.enum(ACCESS_LEVELS)).optional().nullable();
+
 const userSchema = z.object({
   name: z.string().min(1),
   email: z.string().email(),
@@ -23,10 +33,28 @@ const userSchema = z.object({
   role: z.enum(['ADMIN', 'MANAGER', 'STAFF', 'CLIENT']),
   teamMemberId: z.string().optional().nullable(),
   clientId: z.string().optional().nullable(),
+  permissions: permissionMapSchema,
 });
+
+function shapeUser(user: any) {
+  const overrides = (user.permissions as PermissionMap | null) || null;
+  return {
+    ...user,
+    permissions: overrides,
+    resolvedPermissions: resolvePermissions(user.role, overrides),
+  };
+}
 
 router.use(authenticate);
 router.use(requireAdmin);
+
+// ─── GET /api/users/permission-catalog ────────────────────────────
+router.get('/permission-catalog', (_req: Request, res: Response) => {
+  res.json({
+    modules: PERMISSION_MODULES,
+    levels: ACCESS_LEVELS,
+  });
+});
 
 // ─── GET /api/users ───────────────────────────────────────────────
 router.get('/', async (_req: Request, res: Response, next) => {
@@ -52,7 +80,7 @@ router.get('/', async (_req: Request, res: Response, next) => {
       take,
       skip,
     });
-    res.json({ users });
+    res.json({ users: users.map(shapeUser) });
   } catch (error) {
     next(error);
   }
@@ -61,7 +89,7 @@ router.get('/', async (_req: Request, res: Response, next) => {
 // ─── POST /api/users ──────────────────────────────────────────────
 router.post('/', validate({ body: userSchema.extend({ password: passwordSchema }) }), async (req: Request, res: Response, next) => {
   try {
-    const { name, email, password, role, teamMemberId, clientId } = req.body;
+    const { name, email, password, role, teamMemberId, clientId, permissions } = req.body;
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
@@ -69,6 +97,7 @@ router.post('/', validate({ body: userSchema.extend({ password: passwordSchema }
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
+    const sanitized = permissions != null ? sanitizePermissionMap(permissions) : null;
 
     const user = await prisma.user.create({
       data: {
@@ -76,6 +105,9 @@ router.post('/', validate({ body: userSchema.extend({ password: passwordSchema }
         email,
         passwordHash,
         role,
+        permissions: role === 'ADMIN' || sanitized === null
+          ? Prisma.DbNull
+          : sanitized,
         ...(teamMemberId ? { teamMember: { connect: { id: teamMemberId } } } : {}),
         ...(clientId ? { client: { connect: { id: clientId } } } : {}),
       },
@@ -85,7 +117,7 @@ router.post('/', validate({ body: userSchema.extend({ password: passwordSchema }
       }
     });
 
-    res.status(201).json({ user });
+    res.status(201).json({ user: shapeUser(user) });
   } catch (error) {
     console.error('Add user error:', error);
     next(error);
@@ -96,7 +128,7 @@ router.post('/', validate({ body: userSchema.extend({ password: passwordSchema }
 router.put('/:id', validate({ body: userSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const id = req.params.id as string;
-    const { name, email, password, role, teamMemberId, clientId } = req.body;
+    const { name, email, password, role, teamMemberId, clientId, permissions } = req.body;
 
     // Check email uniqueness if email is being changed
     if (email) {
@@ -118,6 +150,17 @@ router.put('/:id', validate({ body: userSchema.partial() }), async (req: Request
     
     if (password) {
       data.passwordHash = await bcrypt.hash(password, 12);
+    }
+
+    if (permissions !== undefined) {
+      const effectiveRole = role ?? (await prisma.user.findUnique({ where: { id }, select: { role: true } }))?.role;
+      if (effectiveRole === 'ADMIN') {
+        data.permissions = Prisma.DbNull;
+      } else if (permissions === null) {
+        data.permissions = Prisma.DbNull;
+      } else {
+        data.permissions = sanitizePermissionMap(permissions);
+      }
     }
 
     if (teamMemberId !== undefined) {
@@ -145,7 +188,7 @@ router.put('/:id', validate({ body: userSchema.partial() }), async (req: Request
       }
     });
 
-    res.json({ user });
+    res.json({ user: shapeUser(user) });
   } catch (error) {
     next(error);
   }

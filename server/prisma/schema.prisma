@@ -17,6 +17,9 @@ model User {
   passwordResetExpiry   DateTime?              @map("password_reset_expiry")
   role                  UserRole               @default(CLIENT)
   name                  String
+  /// Per-module access overrides: { "clients": "WRITE", "invoices": "READ", ... }
+  /// Levels: NONE | READ | WRITE | MANAGE. ADMIN always has full access.
+  permissions           Json?
   createdAt             DateTime               @default(now()) @map("created_at")
   updatedAt             DateTime               @updatedAt @map("updated_at")
   client                Client?
