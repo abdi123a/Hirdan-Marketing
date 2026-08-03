@@ -285,34 +285,27 @@ body {
   min-height: 0;
 }
 
-/* Event cards */
+/* Event cards — accent follows rounded corners (inset shadow, no square strip) */
 .event-card {
   position: relative;
   background: #ffffff;
   border: 1px solid rgba(15, 23, 42, 0.07);
   border-radius: 9px;
-  padding: 8px 8px 8px 11px;
+  padding: 8px 8px 8px 12px;
   overflow: hidden;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-}
-
-.event-card::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--accent, #9b8fd4);
+  isolation: isolate;
+  box-shadow:
+    inset 3px 0 0 0 var(--accent, #9b8fd4),
+    0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .event-card--shoot {
-  background: linear-gradient(180deg, #f4f8ff 0%, #ffffff 70%);
+  background: linear-gradient(165deg, #eef4ff 0%, #f8faff 42%, #ffffff 100%);
   border-color: rgba(29, 78, 216, 0.14);
 }
 
 .event-card--live {
-  background: linear-gradient(180deg, #fdf4ff 0%, #ffffff 70%);
+  background: linear-gradient(165deg, #fdf0ff 0%, #fdf8ff 42%, #ffffff 100%);
   border-color: rgba(192, 38, 211, 0.14);
 }
 
