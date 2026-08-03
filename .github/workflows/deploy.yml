@@ -86,7 +86,7 @@ jobs:
           echo "📁 Copying Backend compiled files to api.hirdanmarketing.com..."
           rsync -avz \
             -e "ssh -p ${{ env.SSH_PORT }} -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30 -i ~/.ssh/id_ed25519" \
-            server/dist server/package.json server/package-lock.json server/prisma server/scripts \
+            server/dist server/package.json server/package-lock.json server/prisma server/scripts server/templates \
             root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
 
       # Step 6: Run server commands (dependencies install & restart service)
@@ -134,6 +134,9 @@ jobs:
 
             echo "📦 Installing all Backend dependencies (incl. dev for Prisma CLI)..."
             npm install --legacy-peer-deps
+
+            echo "🌐 Ensuring Puppeteer Chrome is installed for PDF export..."
+            npx puppeteer browsers install chrome || echo "⚠️ Puppeteer Chrome install failed — PDF export may 503 until Chrome is available."
 
             echo "🗄️ Running pre-migration database backup..."
             node scripts/backup.cjs
