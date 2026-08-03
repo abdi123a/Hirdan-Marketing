@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,18 +9,19 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as DayCalendar } from "@/components/ui/calendar";
 import {
   ArrowLeft, Plus, Download, Copy, ChevronLeft, ChevronRight,
   Instagram, Facebook, Linkedin, Youtube, Twitter,
-  Trash2, Pencil, Calendar, Loader2, Zap, Send, Image,
-  Sparkles, FileDown, CheckCircle2, Clock, Eye, AlertCircle
+  Trash2, Pencil, Calendar as CalendarIcon, Loader2, Zap, Send, Image,
+  Sparkles, FileDown, CheckCircle2, Clock, Eye, AlertCircle, X
 } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, apiFetchBlob } from "@/lib/api-client";
 import { CardGridSkeleton } from "@/components/ui/PageSkeleton";
 import { useAgencyStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
+import { cn } from "@/lib/utils";
 
 // ─── Constants & Config ───────────────────────────────────────────
 
@@ -36,13 +37,201 @@ const PLATFORM_CONFIG: Record<string, { icon: any; color: string; bg: string; la
   OTHER: { icon: Sparkles, color: "text-muted-foreground", bg: "bg-muted/50 border-border", label: "Other", pdfColor: "#888888" },
 };
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: any }> = {
-  DRAFT: { label: "Draft", color: "text-slate-500", bg: "bg-slate-100 border-slate-300 dark:bg-slate-800/50 dark:border-slate-600", icon: Clock },
-  SCHEDULED: { label: "Scheduled", color: "text-blue-600", bg: "bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700", icon: Calendar },
-  FILMED: { label: "Filmed", color: "text-purple-600", bg: "bg-purple-50 border-purple-200 dark:bg-purple-900/30 dark:border-purple-700", icon: Eye },
-  PUBLISHED: { label: "Published", color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-700", icon: CheckCircle2 },
-  DELAYED: { label: "Delayed", color: "text-red-500", bg: "bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-700", icon: AlertCircle },
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: any; hint: string }> = {
+  DRAFT: { label: "Draft", color: "text-slate-500", bg: "bg-slate-100 border-slate-300 dark:bg-slate-800/50 dark:border-slate-600", icon: Clock, hint: "not ready" },
+  SCHEDULED: { label: "Scheduled", color: "text-blue-600", bg: "bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700", icon: CalendarIcon, hint: "queued to post" },
+  FILMED: { label: "Filmed", color: "text-purple-600", bg: "bg-purple-50 border-purple-200 dark:bg-purple-900/30 dark:border-purple-700", icon: Eye, hint: "shot, not posted" },
+  PUBLISHED: { label: "Published", color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-700", icon: CheckCircle2, hint: "live" },
+  DELAYED: { label: "Delayed", color: "text-red-500", bg: "bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-700", icon: AlertCircle, hint: "behind schedule" },
 };
+
+const PLATFORM_ICON_SRC: Record<string, string> = {
+  INSTAGRAM: "/social-icons/instagram.png",
+  FACEBOOK: "/social-icons/Facebook.png",
+  LINKEDIN: "/social-icons/linkedin.png",
+  YOUTUBE: "/social-icons/youtube.png",
+  X: "/social-icons/twitter.png",
+  TIKTOK: "/social-icons/tiktok.png",
+  PINTEREST: "/social-icons/pinterest.png",
+};
+
+const SHOOT_EVENT_COLOR = "#6B7FD4";
+
+function showShootDayField(contentType: string): boolean {
+  return contentType !== "story";
+}
+
+function formatPlannerDate(value: string): string {
+  if (!value) return "";
+  const d = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function formatPlannerDateLong(value: string): string {
+  if (!value) return "";
+  const d = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function toDateInputValue(date: Date): string {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function parseDateInputValue(value: string): Date | undefined {
+  if (!value) return undefined;
+  const d = new Date(`${value}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+function PlannerDateField({
+  value,
+  onChange,
+  placeholder = "Pick a date",
+  defaultMonth,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder?: string;
+  defaultMonth?: Date;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = parseDateInputValue(value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen} modal>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className={cn(
+            "w-full h-10 justify-between rounded-xl px-3 font-medium shadow-none",
+            !value && "text-muted-foreground"
+          )}
+        >
+          <span className="inline-flex items-center gap-2 min-w-0">
+            <CalendarIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="truncate">
+              {value ? formatPlannerDateLong(value) : placeholder}
+            </span>
+          </span>
+          {value ? (
+            <span
+              role="button"
+              tabIndex={0}
+              className="ml-1 rounded-sm p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+              onClick={e => {
+                e.preventDefault();
+                e.stopPropagation();
+                onChange("");
+              }}
+              onKeyDown={e => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onChange("");
+                }
+              }}
+              aria-label="Clear date"
+            >
+              <X className="h-3.5 w-3.5" />
+            </span>
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 rotate-90 text-muted-foreground/70" />
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-auto p-0 z-[120] rounded-2xl shadow-xl border border-border/80 overflow-hidden"
+        align="start"
+        side="bottom"
+        sideOffset={6}
+        collisionPadding={12}
+      >
+        <DayCalendar
+          mode="single"
+          selected={selected}
+          defaultMonth={selected || defaultMonth}
+          onSelect={date => {
+            if (!date) {
+              onChange("");
+              return;
+            }
+            onChange(toDateInputValue(date));
+            setOpen(false);
+          }}
+          initialFocus
+          className="p-3"
+        />
+        <div className="flex items-center justify-between gap-2 border-t border-border/60 bg-muted/30 px-3 py-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs font-semibold"
+            onClick={() => {
+              onChange("");
+              setOpen(false);
+            }}
+          >
+            Clear
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs font-semibold text-primary"
+            onClick={() => {
+              onChange(toDateInputValue(new Date()));
+              setOpen(false);
+            }}
+          >
+            Today
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function PlatformIconImg({
+  platform,
+  className = "h-3.5 w-3.5",
+}: {
+  platform: string;
+  className?: string;
+}) {
+  const src = PLATFORM_ICON_SRC[platform];
+  const label = PLATFORM_CONFIG[platform]?.label || platform;
+  if (src) {
+    return <img src={src} alt={label} title={label} className={`${className} object-contain`} />;
+  }
+  const FallbackIcon = PLATFORM_CONFIG[platform]?.icon || Sparkles;
+  return <FallbackIcon className={className} aria-label={label} />;
+}
+
+function PlatformIconStack({ platforms, size = "sm" }: { platforms: string[]; size?: "sm" | "md" }) {
+  const box = size === "md" ? "h-5 w-5" : "h-4 w-4";
+  const icon = size === "md" ? "h-3 w-3" : "h-2.5 w-2.5";
+  return (
+    <div className="flex items-center">
+      {platforms.map((pl, i) => (
+        <span
+          key={pl}
+          className={`${box} rounded-full bg-white dark:bg-card border border-border/70 shadow-sm flex items-center justify-center ${i > 0 ? "-ml-1" : ""}`}
+          style={{ zIndex: platforms.length - i }}
+          title={PLATFORM_CONFIG[pl]?.label || pl}
+        >
+          <PlatformIconImg platform={pl} className={icon} />
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const ALL_PLATFORMS = Object.keys(PLATFORM_CONFIG);
 const ALL_STATUSES = Object.keys(STATUS_CONFIG);
@@ -264,119 +453,6 @@ function LegendPill({
   );
 }
 
-// ─── Reusable PDF Components ──────────────────────────────────────
-
-function PdfLegendPill({
-  label,
-  backgroundColor,
-  borderColor,
-  dotColor,
-}: {
-  label: string;
-  backgroundColor: string;
-  borderColor: string;
-  dotColor: string;
-}) {
-  return (
-    <div
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "7px",
-        padding: "7px 16px",
-        borderRadius: "999px",
-        backgroundColor,
-        border: `2px solid ${borderColor}`,
-        boxSizing: "border-box",
-      }}
-    >
-      <span
-        style={{
-          width: "9px",
-          height: "9px",
-          borderRadius: "999px",
-          backgroundColor: dotColor,
-          flexShrink: 0,
-          display: "inline-block",
-        }}
-      />
-      <span
-        style={{
-          fontSize: "11px",
-          fontWeight: 800,
-          color: dotColor,
-          textTransform: "uppercase",
-          letterSpacing: "0.9px",
-          lineHeight: 1,
-        }}
-      >
-        {label}
-      </span>
-    </div>
-  );
-}
-
-function PdfFooterItem({
-  text,
-  iconSrc,
-  color = "#ffffff",
-  fontWeight = 600,
-}: {
-  text: string;
-  iconSrc: string;
-  color?: string;
-  fontWeight?: number;
-}) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        color,
-        height: "12px",
-      }}
-    >
-      <span
-        style={{
-          width: "12px",
-          height: "12px",
-          textAlign: "center",
-          flexShrink: 0,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <img
-          src={iconSrc}
-          alt=""
-          style={{
-            width: "12px",
-            height: "12px",
-            objectFit: "contain",
-            display: "block",
-          }}
-        />
-      </span>
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          fontSize: "11px",
-          fontWeight,
-          whiteSpace: "nowrap",
-          lineHeight: "12px",
-          height: "12px",
-        }}
-      >
-        {text}
-      </span>
-    </div>
-  );
-}
-
 // ─── Planner Tab ──────────────────────────────────────────────────
 
 export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }: PlannerTabProps) {
@@ -410,7 +486,6 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
 
   const { settings } = useAgencyStore();
   const { toast } = useToast();
-  const pdfRef = useRef<HTMLDivElement>(null);
 
   const clientDisplayName = clientCompany || clientName || "Client";
 
@@ -526,7 +601,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
       return;
     }
     if (!form.publishDate) {
-      toast({ title: "Publish Date is required", variant: "destructive" });
+      toast({ title: "Goes live date is required", variant: "destructive" });
       return;
     }
 
@@ -536,6 +611,8 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
         const oldPostIds = editingPost.postIds;
         let idIndex = 0;
 
+        const shootingDate = showShootDayField(form.contentType) ? form.shootingDate : "";
+
         for (const platform of form.platforms) {
           const payload = {
             month,
@@ -544,7 +621,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
             platform,
             status: form.status,
             contentType: form.contentType || "graphic",
-            shootingDate: form.shootingDate,
+            shootingDate,
             publishDate: form.publishDate,
             notes: form.notes || null,
           };
@@ -570,6 +647,8 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
 
         toast({ title: "Post updated" });
       } else {
+        const shootingDate = showShootDayField(form.contentType) ? form.shootingDate : "";
+
         for (const platform of form.platforms) {
           const payload = {
             month,
@@ -578,7 +657,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
             platform,
             status: form.status,
             contentType: form.contentType || "graphic",
-            shootingDate: form.shootingDate,
+            shootingDate,
             publishDate: form.publishDate,
             notes: form.notes || null,
           };
@@ -736,57 +815,50 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
   };
 
   const handleExportPDF = async () => {
-    if (!pdfRef.current) return;
     setExporting(true);
     try {
-      // Ensure web fonts are loaded before rasterizing.
-      const docWithFonts = document as Document & { fonts?: { ready: Promise<unknown> } };
-      if (docWithFonts.fonts?.ready) {
-        await docWithFonts.fonts.ready;
-      }
-      // Ensure embedded footer icons are fully decoded before capture.
-      const imageNodes = Array.from(pdfRef.current.querySelectorAll("img"));
-      await Promise.all(
-        imageNodes.map(async img => {
-          if (img.decode) {
-            try {
-              await img.decode();
-              return;
-            } catch {
-              // Fall back to load events if decode fails.
-            }
-          }
-          await new Promise<void>(resolve => {
-            if (img.complete) return resolve();
-            img.onload = () => resolve();
-            img.onerror = () => resolve();
-          });
-        })
-      );
-
-      const captureScale = 3;
-      const jpegQuality = 0.94;
-      const canvas = await html2canvas(pdfRef.current, {
-        // Higher scale improves text and icon sharpness in export.
-        scale: captureScale,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        logging: false,
+      const blob = await apiFetchBlob('/reports/content-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientName: clientDisplayName,
+          month,
+          year,
+          agency: {
+            agencyName: settings.agencyName || 'Hirdan Marketing',
+            logo: settings.logo || null,
+            primaryColor: settings.primaryColor || '#504188',
+            phone: settings.phone || null,
+            adminEmail: settings.adminEmail || null,
+            website: settings.website || null,
+          },
+          posts: groupedPosts.map(g => ({
+            id: g.id,
+            title: g.title,
+            status: g.status,
+            contentType: g.contentType || null,
+            shootingDate: g.shootingDate || null,
+            publishDate: g.publishDate || null,
+            platforms: g.platforms,
+          })),
+        }),
       });
 
-      const imgData = canvas.toDataURL("image/jpeg", jpegQuality);
-      const pdf = new jsPDF({
-        orientation: canvas.width > canvas.height ? "landscape" : "portrait",
-        unit: "px",
-        format: [canvas.width, canvas.height],
-        compress: true,
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${clientDisplayName}-${MONTHS[month - 1]}-${year}-Content-Plan.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast({ title: 'PDF exported!', description: 'Download started' });
+    } catch (err: any) {
+      toast({
+        title: 'Export failed',
+        description: err?.message || 'Could not generate PDF',
+        variant: 'destructive',
       });
-
-      pdf.addImage(imgData, "JPEG", 0, 0, canvas.width, canvas.height, undefined, "FAST");
-      pdf.save(`${clientDisplayName}-${MONTHS[month - 1]}-${year}-Content-Plan.pdf`);
-      toast({ title: "PDF exported!", description: "Download started" });
-    } catch {
-      toast({ title: "Export failed", variant: "destructive" });
     } finally {
       setExporting(false);
     }
@@ -839,21 +911,22 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
 
       {/* Calendar Grid */}
       <Card className="border-border/50 overflow-hidden">
-        <div className="overflow-x-auto">
-          <div className="min-w-[700px]">
+        <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 sm:px-0">
+          <div className="min-w-[560px] sm:min-w-[680px]">
             <div
               className="grid grid-cols-7"
               style={{ backgroundColor: settings.primaryColor || "#504188" }}
             >
               {DAYS_OF_WEEK.map(d => (
-                <div key={d} className="py-2.5 px-2 text-center text-[10px] font-bold uppercase tracking-widest text-white/90">
-                  {d}
+                <div key={d} className="py-2 px-1 sm:py-2.5 sm:px-2 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-white/90">
+                  <span className="sm:hidden">{d.slice(0, 1)}</span>
+                  <span className="hidden sm:inline">{d.slice(0, 3)}</span>
                 </div>
               ))}
             </div>
 
             {weeks.map((week, wi) => (
-              <div key={wi} className="grid grid-cols-7 border-t border-[#C5CAD8]">
+              <div key={wi} className="grid grid-cols-7 border-t border-border/60">
                 {week.map((day, di) => {
                   const eventsOnDay = getEventsForDay(groupedPosts, day, month, year);
                   const isToday = day === now.getDate() && month === now.getMonth() + 1 && year === now.getFullYear();
@@ -861,7 +934,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                   return (
                     <div
                       key={di}
-                      className={`min-h-[90px] border-r last:border-r-0 border-[#C5CAD8] bg-[#D5D9E8]/40 dark:bg-[#2E3A59]/10 relative ${day ? "cursor-pointer hover:bg-primary/5 transition-colors" : "opacity-40"}`}
+                      className={`min-h-[100px] sm:min-h-[112px] border-r last:border-r-0 border-border/50 bg-muted/20 dark:bg-muted/10 relative ${day ? "cursor-pointer hover:bg-primary/[0.04] transition-colors" : "opacity-35"}`}
                       onClick={() =>
                         day &&
                         openAdd(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`)
@@ -869,16 +942,19 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                     >
                       {day && (
                         <>
-                          <div className="px-2 pt-1.5 pb-1">
+                          <div className="px-1.5 sm:px-2 pt-1.5 pb-1 flex items-center justify-between gap-1">
                             <span
-                              className={`text-[10px] font-bold uppercase tracking-wider ${isToday ? "text-primary" : "text-[#2E3A59] dark:text-foreground/80"
-                                }`}
+                              className={`inline-flex items-center justify-center min-w-[1.35rem] h-5 px-1 rounded-md text-[10px] font-bold tabular-nums ${
+                                isToday
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground"
+                              }`}
                             >
-                              {DAYS_OF_WEEK[di].slice(0, 3)} {String(day).padStart(2, "0")}
+                              {day}
                             </span>
                           </div>
 
-                          <div className="px-1 pb-1 space-y-1">
+                          <div className="px-1 sm:px-1.5 pb-1.5 space-y-1 min-w-0">
                             {eventsOnDay.map(ev => {
                               const g = ev.group;
                               const isShoot = ev.type === "SHOOT";
@@ -887,60 +963,80 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                               const ctAccentColor = CONTENT_TYPE_COLORS[ct] || "#9b8fd4";
                               const ctConfig = CONTENT_TYPE_CONFIG[ct];
                               const statusColor = PDF_STATUS_DOT_COLORS[g.status] || PDF_STATUS_DOT_COLORS.DRAFT;
-                              const eventLabel = isShoot ? "Shooting" : (STATUS_CONFIG[g.status]?.label || g.status);
+                              const eventLabel = isShoot ? "Shoot" : (STATUS_CONFIG[g.status]?.label || g.status);
 
                               return (
                                 <div
                                   key={ev.id}
-                                  className="flex flex-col gap-1.5 px-2.5 py-2 rounded-r-[10px] rounded-l-none shadow-[0_2px_6px_rgba(0,0,0,0.06)] border border-black/5 border-l-0 cursor-pointer transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_6px_14px_rgba(0,0,0,0.10)] bg-white dark:bg-card"
-                                  title={`${g.title} (${g.platforms.join(", ")}) — ${ctConfig?.label || ct} — Status: ${g.status}`}
+                                  className="relative min-w-0 rounded-lg border border-border/70 bg-background dark:bg-card shadow-sm hover:shadow-md hover:border-border transition-all duration-150 cursor-pointer overflow-hidden"
+                                  title={`${g.title} (${g.platforms.map(p => PLATFORM_CONFIG[p]?.label || p).join(", ")}) — ${ctConfig?.label || ct} — ${isShoot ? "Shoot day" : "Goes live"} — Status: ${g.status}`}
                                   onClick={e => {
                                     e.stopPropagation();
                                     openEdit(g);
                                   }}
-                                  style={{
-                                    borderLeft: `3px solid ${ctAccentColor}`,
-                                  }}
                                 >
-                                  {/* Top row: event label + status dot */}
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span 
-                                      className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[7px] font-black uppercase tracking-[0.08em] text-white"
-                                      style={{
-                                        backgroundColor: isShoot ? "#6B7FD4" : statusColor
-                                      }}
-                                    >
-                                      {eventLabel}
-                                    </span>
+                                  <div
+                                    className="absolute left-0 top-0 bottom-0 w-[3px]"
+                                    style={{ backgroundColor: ctAccentColor }}
+                                  />
+                                  <div className="pl-2 pr-1.5 py-1.5 space-y-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-1 min-w-0">
+                                      <span
+                                        className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[8px] sm:text-[9px] font-bold uppercase tracking-wide text-white truncate max-w-[calc(100%-1.25rem)]"
+                                        style={{
+                                          backgroundColor: isShoot ? SHOOT_EVENT_COLOR : statusColor,
+                                        }}
+                                      >
+                                        {eventLabel}
+                                      </span>
 
-                                    <Select
-                                      value={g.status}
-                                      onValueChange={(v) => handleStatusChangeGroup(g, v)}
-                                    >
-                                      <SelectTrigger className="h-4 w-4 border-none shadow-none p-0 bg-transparent flex items-center justify-center">
-                                        <div
-                                          className="w-1.5 h-1.5 rounded-full ring-2 ring-offset-1 ring-offset-transparent transition-all hover:scale-125"
-                                          style={{ backgroundColor: stStyle.color }}
-                                          title={`Current Status: ${g.status} (Click to change)`}
-                                        />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {ALL_STATUSES.map(s => (
-                                          <SelectItem key={s} value={s} className="text-[10px] py-1 px-2">
-                                            <div className="flex items-center gap-2">
-                                              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: STATUS_CONFIG[s].color }} />
-                                              {STATUS_CONFIG[s].label}
-                                            </div>
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
+                                      <Select
+                                        value={g.status}
+                                        onValueChange={(v) => handleStatusChangeGroup(g, v)}
+                                      >
+                                        <SelectTrigger
+                                          className="h-4 w-4 shrink-0 border-none shadow-none p-0 bg-transparent flex items-center justify-center [&>svg]:hidden"
+                                          onClick={e => e.stopPropagation()}
+                                        >
+                                          <div
+                                            className="w-2 h-2 rounded-full transition-transform hover:scale-125"
+                                            style={{
+                                              backgroundColor: stStyle.color,
+                                              boxShadow: `0 0 0 1.5px ${stStyle.border}`,
+                                            }}
+                                            title={`Status: ${STATUS_CONFIG[g.status]?.label || g.status}`}
+                                          />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {ALL_STATUSES.map(s => (
+                                            <SelectItem key={s} value={s} className="text-[10px] py-1 px-2">
+                                              <div className="flex items-center gap-2">
+                                                <div
+                                                  className="w-1.5 h-1.5 rounded-full"
+                                                  style={{
+                                                    backgroundColor: getStatusStyle(
+                                                      s,
+                                                      settings.primaryColor || "#504188",
+                                                      "#f6b317"
+                                                    ).color,
+                                                  }}
+                                                />
+                                                {STATUS_CONFIG[s].label}
+                                              </div>
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
 
-                                  {/* Post title with emoji in front */}
-                                  <div className="text-[9px] font-semibold text-[#111827] dark:text-foreground leading-tight line-clamp-2 flex items-center gap-1">
-                                    <span className="text-[10px] leading-none shrink-0">{ctConfig?.emoji || "🎨"}</span>
-                                    <span>{g.title}</span>
+                                    <p className="text-[10px] sm:text-[11px] font-semibold text-foreground leading-snug line-clamp-2 break-words">
+                                      <span className="mr-1" aria-hidden>{ctConfig?.emoji || "🎨"}</span>
+                                      {g.title}
+                                    </p>
+
+                                    {g.platforms.length > 0 ? (
+                                      <PlatformIconStack platforms={g.platforms} />
+                                    ) : null}
                                   </div>
                                 </div>
                               );
@@ -960,6 +1056,15 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Legend:</p>
+        <LegendPill
+          label="Shoot"
+          dotColor={SHOOT_EVENT_COLOR}
+          style={{
+            backgroundColor: "rgba(107, 127, 212, 0.12)",
+            color: SHOOT_EVENT_COLOR,
+            borderColor: "rgba(107, 127, 212, 0.35)",
+          }}
+        />
         {Object.entries(STATUS_CONFIG).map(([k, v]) => {
           const st = getStatusStyle(k, settings.primaryColor || "#504188", "#f6b317");
           return (
@@ -982,7 +1087,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
         <Card className="border-border/50 overflow-hidden">
           <CardHeader className="pb-3 border-b border-border/40 bg-muted/10">
             <CardTitle className="text-sm font-display flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-primary" />
+              <CalendarIcon className="h-4 w-4 text-primary" />
               {MONTHS[month - 1]} {year} — Content Schedule
             </CardTitle>
           </CardHeader>
@@ -991,7 +1096,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
               <table className="w-full text-xs">
                 <thead className="bg-muted/20 border-b border-border/40">
                   <tr>
-                    {["Post Title", "Platform", "Status", "Shoot Date", "Publish Date", "Notes", ""].map(h => (
+                    {["Post Title", "Platform", "Status", "Shoot day", "Goes live", "Notes", ""].map(h => (
                       <th
                         key={h}
                         className="px-4 py-2.5 text-left font-bold text-[10px] uppercase tracking-wider text-muted-foreground"
@@ -1011,23 +1116,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                         <td className="px-4 py-2.5 text-[11px] font-semibold text-foreground max-w-[180px] truncate">{g.title}</td>
                         <td className="px-4 py-2.5">
                           <div className="flex flex-wrap gap-1">
-                            {g.platforms.map((pl: string) => {
-                              const pc = PLATFORM_CONFIG[pl] || PLATFORM_CONFIG.OTHER;
-                              const PIcon = pc.icon;
-                              return (
-                                <div
-                                  key={pl}
-                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[8px] font-bold ${pc.bg}`}
-                                >
-                                  {pl === "PINTEREST" ? (
-                                    <img src="/social-icons/pinterest.png" className="h-2.5 w-2.5 object-contain" alt="Pinterest" />
-                                  ) : (
-                                    <PIcon className={`h-2.5 w-2.5 ${pc.color}`} />
-                                  )}
-                                  <span className={pc.color}>{pc.label.slice(0, 3)}</span>
-                                </div>
-                              );
-                            })}
+                            <PlatformIconStack platforms={g.platforms} size="md" />
                           </div>
                         </td>
                         <td className="px-4 py-2.5">
@@ -1100,7 +1189,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
 
       {posts.length === 0 && (
         <div className="py-16 text-center border-2 border-dashed border-border/40 rounded-2xl bg-muted/5">
-          <Calendar className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+          <CalendarIcon className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
           <p className="text-sm font-bold text-muted-foreground">
             No posts planned for {MONTHS[month - 1]} {year}
           </p>
@@ -1113,559 +1202,41 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
         </div>
       )}
 
-      {/* Hidden PDF Template */}
-      <div className="fixed -left-[9999px] top-0 pointer-events-none" aria-hidden>
-        <div
-          ref={pdfRef}
-          style={{
-            width: 1200,
-            backgroundColor: "#ffffff",
-            fontFamily: "'Inter', -apple-system, sans-serif",
-            position: "relative",
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          {/* Watermark */}
-          <div
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%) rotate(-45deg)",
-              opacity: 0.04,
-              pointerEvents: "none",
-              zIndex: 0,
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              width: "140%",
-            }}
-          >
-            {settings.logo ? (
-              <img
-                src={settings.logo}
-                alt="watermark"
-                crossOrigin="anonymous"
-                style={{ width: "100%", height: "auto", filter: "grayscale(100%)" }}
-              />
-            ) : (
-              <div
-                style={{
-                  fontSize: "240px",
-                  fontWeight: 900,
-                  color: "#0f172a",
-                  textTransform: "uppercase",
-                  textAlign: "center",
-                  lineHeight: 0.9,
-                }}
-              >
-                {settings.agencyName || "Hirdan"}
-              </div>
-            )}
-          </div>
-
-          {/* Top bar */}
-          <div style={{ display: "flex", height: "12px", width: "100%", zIndex: 1, position: "relative" }}>
-            <div style={{ flex: 1, background: settings.primaryColor || "#504188" }} />
-            <div style={{ width: "30%", background: "#f6b317" }} />
-          </div>
-
-          <div
-            style={{
-              padding: "40px",
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              zIndex: 1,
-              position: "relative",
-            }}
-          >
-            {/* Header */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "40px",
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                {settings.logo ? (
-                  <img
-                    src={settings.logo}
-                    alt={settings.agencyName}
-                    crossOrigin="anonymous"
-                    style={{ height: "100px", width: "auto", objectFit: "contain", maxWidth: "400px" }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      fontSize: "56px",
-                      fontWeight: 900,
-                      color: settings.primaryColor || "#504188",
-                      letterSpacing: "-1.5px",
-                      lineHeight: 1,
-                    }}
-                  >
-                    {settings.agencyName || "Hirdan Marketing"}
-                  </div>
-                )}
-              </div>
-
-              <div style={{ textAlign: "right" }}>
-                <div
-                  style={{
-                    fontSize: "48px",
-                    fontWeight: 900,
-                    color: settings.primaryColor || "#504188",
-                    letterSpacing: "-1.5px",
-                    textTransform: "uppercase",
-                    lineHeight: 1,
-                    marginBottom: "24px",
-                  }}
-                >
-                  CONTENT PLAN
-                </div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(180px, 1fr))",
-                    gap: "12px",
-                    justifyContent: "end",
-                  }}
-                >
-                  <div
-                    style={{
-                      border: `1px solid ${hexToRgba(settings.primaryColor || "#504188", 0.35)}`,
-                      background: hexToRgba(settings.primaryColor || "#504188", 0.08),
-                      borderRadius: "12px",
-                      padding: "10px 12px",
-                      textAlign: "left",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: "9px",
-                        fontWeight: 900,
-                        color: settings.primaryColor || "#504188",
-                        textTransform: "uppercase",
-                        letterSpacing: "1.2px",
-                        marginBottom: "5px",
-                        lineHeight: 1,
-                      }}
-                    >
-                      Client
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "15px",
-                        fontWeight: 900,
-                        color: "#0f172a",
-                        lineHeight: 1.15,
-                        wordBreak: "break-word",
-                      }}
-                    >
-                      {clientDisplayName}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      border: "1px solid rgba(246,179,23,0.45)",
-                      background: "rgba(246,179,23,0.12)",
-                      borderRadius: "12px",
-                      padding: "10px 12px",
-                      textAlign: "left",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: "9px",
-                        fontWeight: 900,
-                        color: "#a16207",
-                        textTransform: "uppercase",
-                        letterSpacing: "1.2px",
-                        marginBottom: "5px",
-                        lineHeight: 1,
-                      }}
-                    >
-                      Schedule
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "15px",
-                        fontWeight: 900,
-                        color: "#0f172a",
-                        lineHeight: 1.15,
-                      }}
-                    >
-                      {MONTHS[month - 1]} {year}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Calendar */}
-            <div
-              style={{
-                border: "2px solid #e2e8f0",
-                borderRadius: "12px",
-                overflow: "hidden",
-                backgroundColor: "#ffffff",
-                flex: 1,
-              }}
-            >
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
-                {DAYS_OF_WEEK.map((d, i) => (
-                  <div
-                    key={d}
-                    style={{
-                      padding: "14px 16px",
-                      background: settings.primaryColor || "#504188",
-                      color: "#ffffff",
-                      textAlign: "center",
-                      fontSize: "11px",
-                      fontWeight: 800,
-                      textTransform: "uppercase",
-                      letterSpacing: "1px",
-                      borderRight: i < 6 ? "1px solid rgba(255,255,255,0.2)" : "none",
-                    }}
-                  >
-                    {d}
-                  </div>
-                ))}
-              </div>
-
-              {weeks.map((week, wi) => (
-                <div
-                  key={wi}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(7, 1fr)",
-                    borderTop: wi === 0 ? "none" : "1px solid #e2e8f0",
-                  }}
-                >
-                  {week.map((day, di) => {
-                    const eventsOnDay = getEventsForDay(groupedPosts, day, month, year);
-                    const isWeekend = di === 0 || di === 6;
-
-                    return (
-                      <div
-                        key={di}
-                        style={{
-                          minHeight: "135px",
-                          borderRight: di < 6 ? "1px solid #e2e8f0" : "none",
-                          backgroundColor: day ? (isWeekend ? "#fafafa" : "#ffffff") : "#f1f5f9",
-                          padding: "12px 10px",
-                          boxSizing: "border-box",
-                          display: "flex",
-                          flexDirection: "column",
-                        }}
-                      >
-                        {day && (
-                          <>
-                            <div
-                              style={{
-                                fontSize: "18px",
-                                fontWeight: 900,
-                                color: "#94a3b8",
-                                textAlign: "right",
-                                marginBottom: "8px",
-                                lineHeight: 1,
-                              }}
-                            >
-                              {day}
-                            </div>
-
-                            <div
-                              style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "6px",
-                                flex: 1,
-                              }}
-                            >
-                              {eventsOnDay.map((ev) => {
-                                const g = ev.group;
-                                const contentType = g.contentType || inferContentType(g.title, g.platforms);
-                                const accentColor = CONTENT_TYPE_COLORS[contentType] || "#9b8fd4";
-                                const statusDotColor = PDF_STATUS_DOT_COLORS[g.status] || PDF_STATUS_DOT_COLORS.DRAFT;
-
-                                // Inline SVG platform icons (html2canvas-safe)
-                                const PlatformIconSvg = ({ platform }: { platform: string }) => {
-                                  const iconColor = "#64748b";
-                                  const size = 13;
-                                  // Simple brand-recognisable glyphs via path / text
-                                  if (platform === "INSTAGRAM") {
-                                    return (
-                                      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
-                                        <circle cx="12" cy="12" r="4"/>
-                                        <circle cx="17.5" cy="6.5" r="1" fill={iconColor} stroke="none"/>
-                                      </svg>
-                                    );
-                                  }
-                                  if (platform === "FACEBOOK") {
-                                    return (
-                                      <svg width={size} height={size} viewBox="0 0 24 24" fill={iconColor}>
-                                        <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
-                                      </svg>
-                                    );
-                                  }
-                                  if (platform === "TIKTOK") {
-                                    return (
-                                      <svg width={size} height={size} viewBox="0 0 24 24" fill={iconColor}>
-                                        <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34V8.98a8.14 8.14 0 0 0 4.77 1.53V7.07a4.85 4.85 0 0 1-1-.38z"/>
-                                      </svg>
-                                    );
-                                  }
-                                  if (platform === "LINKEDIN") {
-                                    return (
-                                      <svg width={size} height={size} viewBox="0 0 24 24" fill={iconColor}>
-                                        <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/>
-                                        <rect x="2" y="9" width="4" height="12"/>
-                                        <circle cx="4" cy="4" r="2"/>
-                                      </svg>
-                                    );
-                                  }
-                                  if (platform === "YOUTUBE") {
-                                    return (
-                                      <svg width={size} height={size} viewBox="0 0 24 24" fill={iconColor}>
-                                        <path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.95 1.96C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.95-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/>
-                                        <polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" fill="#fff"/>
-                                      </svg>
-                                    );
-                                  }
-                                  if (platform === "X") {
-                                    return (
-                                      <svg width={size} height={size} viewBox="0 0 24 24" fill={iconColor}>
-                                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                                      </svg>
-                                    );
-                                  }
-                                  if (platform === "PINTEREST") {
-                                    return (
-                                      <svg width={size} height={size} viewBox="0 0 24 24" fill={iconColor}>
-                                        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.08 3.16 9.42 7.63 11.16-.1-.95-.19-2.41.04-3.45.21-.93 1.37-5.82 1.37-5.82s-.35-.7-.35-1.74c0-1.63.95-2.85 2.13-2.85 1.01 0 1.49.75 1.49 1.66 0 1.01-.64 2.53-.98 3.93-.28 1.18.59 2.14 1.75 2.14 2.1 0 3.72-2.22 3.72-5.42 0-2.84-2.04-4.82-4.94-4.82-3.37 0-5.34 2.53-5.34 5.14 0 1.02.39 2.11.88 2.71a.36.36 0 0 1 .08.34c-.1.4-.3.1.33.56c-.04.16-.16.28-.27.32-.47-.22-1.12-1.07-1.12-2.12 0-3.36 2.44-6.44 7.03-6.44 3.69 0 6.56 2.63 6.56 6.15 0 3.67-2.31 6.62-5.52 6.62-1.08 0-2.1-.56-2.44-1.22 0 0-.53 2.04-.66 2.54-.24.92-.89 2.08-1.32 2.79C10.02 23.82 11.01 24 12 24c6.63 0 12-5.37 12-12S18.63 0 12 0z"/>
-                                      </svg>
-                                    );
-                                  }
-                                  // Fallback: a simple circle with first letter
-                                  const label = (PLATFORM_CONFIG[platform]?.label || platform).slice(0, 1).toUpperCase();
-                                  return (
-                                    <svg width={size} height={size} viewBox="0 0 24 24">
-                                      <circle cx="12" cy="12" r="11" fill="none" stroke={iconColor} strokeWidth="2"/>
-                                      <text x="12" y="16" textAnchor="middle" fontSize="11" fontWeight="700" fill={iconColor}>{label}</text>
-                                    </svg>
-                                  );
-                                };
-
-                                return (
-                                  <div
-                                    key={ev.id}
-                                    style={{
-                                      backgroundColor: "#f8fafc",
-                                      borderLeft: `4px solid ${accentColor}`,
-                                      borderTop: "0.5px solid #e2e8f0",
-                                      borderRight: "0.5px solid #e2e8f0",
-                                      borderBottom: "0.5px solid #e2e8f0",
-                                      borderRadius: "0 8px 8px 0",
-                                      padding: "8px 10px",
-                                      display: "flex",
-                                      flexDirection: "column",
-                                      gap: "4px",
-                                      boxSizing: "border-box",
-                                      position: "relative",
-                                    }}
-                                  >
-                                    {/* Status dot — top right */}
-                                    <span
-                                      style={{
-                                        position: "absolute",
-                                        top: "8px",
-                                        right: "8px",
-                                        width: "6px",
-                                        height: "6px",
-                                        borderRadius: "50%",
-                                        backgroundColor: statusDotColor,
-                                        display: "inline-block",
-                                        flexShrink: 0,
-                                      }}
-                                    />
-
-                                    {/* Platform icons row */}
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: "4px",
-                                        flexWrap: "wrap",
-                                        paddingRight: "14px", // avoid overlap with status dot
-                                      }}
-                                    >
-                                      {g.platforms.map((pl: string) => (
-                                        <span key={pl} style={{ display: "inline-flex", alignItems: "center", lineHeight: 0 }}>
-                                          <PlatformIconSvg platform={pl} />
-                                        </span>
-                                      ))}
-                                    </div>
-
-                                     {/* Title — bottom, most prominent, with emoji in front */}
-                                     <div
-                                       style={{
-                                         fontSize: "11px",
-                                         fontWeight: 500,
-                                         color: "#1f2937",
-                                         lineHeight: 1.3,
-                                         marginTop: "auto",
-                                         fontFamily: "'Inter', -apple-system, sans-serif",
-                                         display: "flex",
-                                         alignItems: "center",
-                                         gap: "4px",
-                                       }}
-                                     >
-                                       <span style={{ fontSize: "12px", lineHeight: 1, flexShrink: 0 }}>
-                                         {CONTENT_TYPE_CONFIG[contentType]?.emoji || "🎨"}
-                                       </span>
-                                       <span>{g.title}</span>
-                                     </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div
-            style={{
-              marginTop: "auto",
-              background: settings.primaryColor || "#504188",
-              color: "#ffffff",
-              padding: "24px 40px",
-              zIndex: 1,
-              position: "relative",
-            }}
-          >
-            <div
-              style={{
-                width: "70%",
-                height: "5px",
-                background: "#f6b317",
-                borderRadius: "4px",
-                position: "absolute",
-                top: 0,
-                left: "15%",
-              }}
-            />
-
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "24px" }}>
-              <div style={{ display: "flex", gap: "6px", alignItems: "flex-start", flexDirection: "column", justifyContent: "center" }}>
-                <div
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: 800,
-                    textTransform: "uppercase",
-                    letterSpacing: "1px",
-                    opacity: 0.9,
-                    lineHeight: 1,
-                  }}
-                >
-                  PREPARED BY {settings.agencyName?.toUpperCase() || "HIRDAN MARKETING"}
-                </div>
-
-                <div
-                  style={{
-                    fontSize: "10px",
-                    color: "rgba(255,255,255,0.5)",
-                    fontWeight: 600,
-                    fontStyle: "italic",
-                    lineHeight: 1,
-                  }}
-                >
-                  Plan generated{" "}
-                  {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                </div>
-              </div>
-
-              <div style={{ textAlign: "right", display: "flex", alignItems: "center", justifyContent: "flex-end", minHeight: "32px" }}>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "28px",
-                    alignItems: "center",
-                    justifyContent: "flex-end",
-                    opacity: 0.95,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {settings.phone && (
-                    <PdfFooterItem
-                      iconSrc="/pdf-icons/phone.png"
-                      text={settings.phone}
-                    />
-                  )}
-
-                  {settings.adminEmail && (
-                    <PdfFooterItem
-                      iconSrc="/pdf-icons/email.png"
-                      text={settings.adminEmail}
-                    />
-                  )}
-
-                  {settings.website && (
-                    <PdfFooterItem
-                      iconSrc="/pdf-icons/web.png"
-                      text={settings.website.replace(/^https?:\/\//, "")}
-                      color="#f6b317"
-                      fontWeight={900}
-                    />
-                  )}
-                </div>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </div>
-
       {/* Add/Edit Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle className="font-display">{editingPost ? "Edit Post" : "Add Content Post"}</DialogTitle>
-            <DialogDescription className="text-xs">
-              {MONTHS[month - 1]} {year} • {clientDisplayName}
+        <DialogContent className="sm:max-w-[640px] max-h-[min(92dvh,840px)] overflow-hidden flex flex-col gap-0 p-0">
+          <DialogHeader className="px-4 sm:px-6 pt-5 pb-4 pr-12 border-b border-border/60 shrink-0 text-left">
+            <DialogTitle className="font-display text-lg sm:text-xl">
+              {editingPost ? "Edit Post" : "Add Content Post"}
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
+              {MONTHS[month - 1]} {year} · {clientDisplayName}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-1">
-            <div>
-              <Label className="text-xs font-bold">Post Title *</Label>
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-5">
+            {/* What */}
+            <section className="space-y-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  What
+                </Label>
+                <span className="text-[10px] text-muted-foreground">Required</span>
+              </div>
               <Input
-                placeholder="e.g. Publishing Video 1"
+                placeholder="e.g. Video 1 — Waafi Residences"
                 value={form.title}
                 onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
-                className="mt-1.5"
+                className="h-11 text-sm"
               />
-            </div>
+            </section>
 
-            {/* ── Content Type Selector ── */}
-            <div>
-              <Label className="text-xs font-bold block mb-2">Content Type *</Label>
-              <div className="grid grid-cols-4 gap-2">
+            {/* What kind */}
+            <section className="space-y-2">
+              <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                What kind
+              </Label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {Object.entries(CONTENT_TYPE_CONFIG).map(([key, cfg]) => {
                   const isSelected = form.contentType === key;
                   const dotColor = CONTENT_TYPE_COLORS[key];
@@ -1674,23 +1245,23 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                       key={key}
                       type="button"
                       onClick={() => setForm(p => ({ ...p, contentType: key }))}
-                      className={`flex flex-col items-center gap-1 px-2 py-3 rounded-xl border-2 text-center transition-all duration-150 ${
+                      className={`flex flex-col items-start sm:items-center gap-1.5 px-3 py-3 rounded-xl border-2 text-left sm:text-center transition-all duration-150 min-h-[88px] ${
                         isSelected
-                          ? "border-current shadow-sm scale-[1.03]"
-                          : "border-border/60 hover:border-border bg-muted/20 hover:bg-muted/40"
+                          ? "shadow-sm"
+                          : "border-border/60 hover:border-border bg-muted/15 hover:bg-muted/30"
                       }`}
-                      style={isSelected ? { borderColor: dotColor, backgroundColor: `${dotColor}12` } : {}}
+                      style={isSelected ? { borderColor: dotColor, backgroundColor: `${dotColor}14` } : {}}
                     >
                       <span className="text-xl leading-none">{cfg.emoji}</span>
                       <span
-                        className="text-[11px] font-bold leading-none"
-                        style={isSelected ? { color: dotColor } : { color: "var(--muted-foreground)" }}
+                        className="text-[12px] font-bold leading-none"
+                        style={isSelected ? { color: dotColor } : undefined}
                       >
                         {cfg.label}
                       </span>
                       <span
-                        className="text-[9px] leading-tight opacity-70"
-                        style={isSelected ? { color: dotColor } : { color: "var(--muted-foreground)" }}
+                        className="text-[10px] leading-snug text-muted-foreground"
+                        style={isSelected ? { color: dotColor, opacity: 0.85 } : undefined}
                       >
                         {cfg.description}
                       </span>
@@ -1698,101 +1269,228 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                   );
                 })}
               </div>
-            </div>
+            </section>
 
-            <div className="space-y-3">
-              <div>
-                <Label className="text-xs font-bold block mb-2">Platforms *</Label>
-                <div className="flex flex-wrap gap-2">
-                  {ALL_PLATFORMS.map(pl => {
-                    const pc = PLATFORM_CONFIG[pl];
-                    const PIcon = pc.icon;
-                    const isSelected = form.platforms.includes(pl);
+            {/* Where */}
+            <section className="space-y-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Where
+                </Label>
+                <span className="text-[10px] text-muted-foreground">Select one or more</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {ALL_PLATFORMS.map(pl => {
+                  const pc = PLATFORM_CONFIG[pl];
+                  const isSelected = form.platforms.includes(pl);
 
-                    return (
-                      <button
-                        key={pl}
-                        type="button"
-                        onClick={() => {
-                          setForm(p => {
-                            const newPlatforms = p.platforms.includes(pl)
-                              ? p.platforms.filter((x: string) => x !== pl)
-                              : [...p.platforms, pl];
-                            return { ...p, platforms: newPlatforms };
-                          });
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${isSelected
+                  return (
+                    <button
+                      key={pl}
+                      type="button"
+                      onClick={() => {
+                        setForm(p => {
+                          const newPlatforms = p.platforms.includes(pl)
+                            ? p.platforms.filter((x: string) => x !== pl)
+                            : [...p.platforms, pl];
+                          return { ...p, platforms: newPlatforms };
+                        });
+                      }}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                        isSelected
                           ? `${pc.bg} border-current ${pc.color} shadow-sm ring-1 ring-current`
-                          : "bg-muted/50 border-transparent text-muted-foreground hover:bg-muted"
-                          }`}
-                      >
-                        {pl === "PINTEREST" ? (
-                          <img src="/social-icons/pinterest.png" className="h-3.5 w-3.5 object-contain" alt="Pinterest" />
-                        ) : (
-                          <PIcon className="h-3.5 w-3.5" />
-                        )}
-                        {pc.label}
-                      </button>
-                    );
-                  })}
+                          : "bg-muted/40 border-border/50 text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <span className="h-7 w-7 rounded-lg bg-background border border-border/60 flex items-center justify-center shrink-0">
+                        <PlatformIconImg platform={pl} className="h-4 w-4" />
+                      </span>
+                      <span className="truncate">{pc.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* When */}
+            <section className="space-y-2.5 rounded-xl border border-border/60 bg-muted/20 p-3 sm:p-4">
+              <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                When
+              </Label>
+              <div
+                className={`grid gap-3 ${
+                  showShootDayField(form.contentType)
+                    ? "grid-cols-1 sm:grid-cols-2"
+                    : "grid-cols-1"
+                }`}
+              >
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold">
+                    Goes live <span className="text-destructive">*</span>
+                  </Label>
+                  <PlannerDateField
+                    value={form.publishDate}
+                    onChange={v => setForm(p => ({ ...p, publishDate: v }))}
+                    placeholder="Select publish date"
+                    defaultMonth={new Date(year, month - 1, 1)}
+                  />
+                  <p className="text-[10px] text-muted-foreground leading-snug">
+                    When this posts for the client.
+                  </p>
                 </div>
+                {showShootDayField(form.contentType) ? (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold">
+                      Shoot day{" "}
+                      <span className="text-muted-foreground font-medium">(optional)</span>
+                    </Label>
+                    <PlannerDateField
+                      value={form.shootingDate}
+                      onChange={v => setForm(p => ({ ...p, shootingDate: v }))}
+                      placeholder="Select shoot day"
+                      defaultMonth={new Date(year, month - 1, 1)}
+                    />
+                    <p className="text-[10px] text-muted-foreground leading-snug">
+                      When you film or create it.
+                    </p>
+                  </div>
+                ) : null}
               </div>
+              <p className="text-[10px] sm:text-[11px] text-muted-foreground leading-relaxed border-t border-border/50 pt-2.5">
+                <span className="font-semibold text-foreground/80">Tip:</span> Shoot day is for production.
+                Goes live is the client-facing publish date. Stories only need Goes live.
+              </p>
+            </section>
 
-              <div>
-                <Label className="text-xs font-bold">Status *</Label>
-                <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v }))}>
-                  <SelectTrigger className="mt-1.5">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ALL_STATUSES.map(s => (
-                      <SelectItem key={s} value={s}>
-                        {STATUS_CONFIG[s].label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            {/* Status */}
+            <section className="space-y-2">
+              <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                Status
+              </Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {ALL_STATUSES.map(s => {
+                  const cfg = STATUS_CONFIG[s];
+                  const st = getStatusStyle(s, settings.primaryColor || "#504188", "#f6b317");
+                  const isSelected = form.status === s;
+                  const StatusIcon = cfg.icon;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setForm(p => ({ ...p, status: s }))}
+                      className={`flex items-start gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${
+                        isSelected
+                          ? "shadow-sm"
+                          : "border-border/60 bg-background hover:bg-muted/40"
+                      }`}
+                      style={
+                        isSelected
+                          ? {
+                              borderColor: st.border,
+                              backgroundColor: st.bg,
+                              boxShadow: `0 0 0 1px ${st.border}`,
+                            }
+                          : undefined
+                      }
+                    >
+                      <span
+                        className="mt-0.5 h-7 w-7 rounded-lg flex items-center justify-center shrink-0 border"
+                        style={{
+                          color: st.color,
+                          backgroundColor: isSelected ? "#fff" : st.bg,
+                          borderColor: st.border,
+                        }}
+                      >
+                        <StatusIcon className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-xs font-bold" style={{ color: isSelected ? st.color : undefined }}>
+                          {cfg.label}
+                        </span>
+                        <span className="block text-[10px] text-muted-foreground leading-snug mt-0.5">
+                          {cfg.hint}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-            </div>
+            </section>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs font-bold">Shooting Date *</Label>
-                <Input
-                  type="date"
-                  value={form.shootingDate}
-                  onChange={e => setForm(p => ({ ...p, shootingDate: e.target.value }))}
-                  className="mt-1.5"
-                />
-              </div>
-              <div>
-                <Label className="text-xs font-bold">Publish Date *</Label>
-                <Input
-                  type="date"
-                  value={form.publishDate}
-                  onChange={e => setForm(p => ({ ...p, publishDate: e.target.value }))}
-                  className="mt-1.5"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label className="text-xs font-bold">Notes</Label>
+            {/* Notes */}
+            <section className="space-y-2">
+              <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                Notes
+              </Label>
               <Textarea
-                placeholder="Optional notes or content brief..."
+                placeholder="Optional brief, caption ideas, or production notes…"
                 value={form.notes}
                 onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
-                className="mt-1.5 min-h-[80px] resize-none"
+                className="min-h-[88px] resize-none text-sm"
               />
-            </div>
+            </section>
           </div>
 
-          <DialogFooter className="flex items-center justify-between w-full">
+          {/* Live summary */}
+          <div className="px-4 sm:px-6 py-3 border-t border-border/60 bg-muted/30 shrink-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+              Preview
+            </p>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs sm:text-sm font-medium text-foreground">
+              {form.platforms.length > 0 ? (
+                <span className="inline-flex items-center" title={form.platforms.map(p => PLATFORM_CONFIG[p]?.label || p).join(", ")}>
+                  {form.platforms.map((pl, i) => (
+                    <span
+                      key={pl}
+                      className="h-5 w-5 rounded-full bg-background border border-border/70 flex items-center justify-center"
+                      style={{ marginLeft: i > 0 ? -4 : 0, zIndex: form.platforms.length - i }}
+                    >
+                      <PlatformIconImg platform={pl} className="h-3 w-3" />
+                    </span>
+                  ))}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">No platforms</span>
+              )}
+              <span className="text-muted-foreground/50">·</span>
+              <span>{CONTENT_TYPE_CONFIG[form.contentType]?.label || "Content"}</span>
+              <span className="text-muted-foreground/50">·</span>
+              <span>
+                {form.publishDate
+                  ? `Goes live ${formatPlannerDate(form.publishDate)}`
+                  : "Goes live not set"}
+              </span>
+              {showShootDayField(form.contentType) && form.shootingDate ? (
+                <>
+                  <span className="text-muted-foreground/50">·</span>
+                  <span>Shoot {formatPlannerDate(form.shootingDate)}</span>
+                </>
+              ) : null}
+              <span className="text-muted-foreground/50">·</span>
+              <span
+                className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                style={{
+                  color: getStatusStyle(form.status, settings.primaryColor || "#504188", "#f6b317").color,
+                  backgroundColor: getStatusStyle(form.status, settings.primaryColor || "#504188", "#f6b317").bg,
+                }}
+              >
+                {STATUS_CONFIG[form.status]?.label || form.status}
+              </span>
+            </div>
+            {form.title.trim() ? (
+              <p className="text-[11px] text-muted-foreground mt-1.5 truncate">
+                “{form.title.trim()}”
+              </p>
+            ) : null}
+          </div>
+
+          <DialogFooter className="px-4 sm:px-6 py-3 border-t border-border/60 shrink-0 flex-row items-center justify-between gap-2 sm:space-x-0">
             {editingPost ? (
               <Button
                 type="button"
                 variant="destructive"
-                className="mr-auto gap-1.5 text-xs font-semibold"
+                size="sm"
+                className="gap-1.5 text-xs font-semibold"
                 onClick={async () => {
                   if (confirm("Are you sure you want to delete this post?")) {
                     await handleDelete(editingPost.postIds);
@@ -1802,12 +1500,14 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
               >
                 <Trash2 className="h-3.5 w-3.5" /> Delete
               </Button>
-            ) : null}
+            ) : (
+              <span className="hidden sm:inline" />
+            )}
             <div className="flex items-center gap-2 ml-auto">
-              <Button variant="ghost" onClick={() => setShowAddDialog(false)}>
+              <Button variant="ghost" size="sm" onClick={() => setShowAddDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleSave} disabled={saving} className="gap-1.5">
+              <Button onClick={handleSave} disabled={saving} size="sm" className="gap-1.5 min-w-[110px]">
                 {saving ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : editingPost ? (
@@ -2028,7 +1728,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
 
                       <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                         <Badge variant="secondary" className="px-1.5 py-0 text-[10px] uppercase tracking-wider">{post.platform}</Badge>
-                        <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> Publish: {post.publishDate}</span>
+                        <span className="flex items-center gap-1"><CalendarIcon className="h-3 w-3" /> Publish: {post.publishDate}</span>
                       </div>
 
                       <Textarea
@@ -2151,7 +1851,7 @@ export default function SocialMediaPlannerPage() {
         />
       ) : (
         <div className="py-20 text-center border-2 border-dashed border-border/30 rounded-3xl bg-muted/5">
-          <Calendar className="h-12 w-12 text-muted-foreground/25 mx-auto mb-4" />
+          <CalendarIcon className="h-12 w-12 text-muted-foreground/25 mx-auto mb-4" />
           <p className="text-sm font-bold text-muted-foreground">Select a client to start planning</p>
           <p className="text-xs text-muted-foreground/60 mt-1">
             Monthly content calendars are linked to individual clients

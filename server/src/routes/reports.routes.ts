@@ -7,10 +7,88 @@ import { validate } from '../middleware/validate.js';
 import { AppError } from '../lib/errors.js';
 import { callAI, resolveProviderKey } from '../lib/ai-provider.js';
 import { createNotification } from '../lib/notifications.js';
+import { renderContentPlanPdf } from '../lib/pdf/render-content-plan.js';
 
 const router = Router();
 router.use(authenticate);
 router.use(requireAdmin);
+
+const contentPlanPdfDto = z.object({
+  clientName: z.string().min(1).max(200),
+  month: z.number().int().min(1).max(12),
+  year: z.number().int().min(2000).max(2100),
+  agency: z.object({
+    agencyName: z.string().max(200).optional().nullable(),
+    logo: z.string().max(2_000_000).optional().nullable(),
+    primaryColor: z.string().max(32).optional().nullable(),
+    phone: z.string().max(64).optional().nullable(),
+    adminEmail: z.string().max(200).optional().nullable(),
+    website: z.string().max(300).optional().nullable(),
+  }),
+  posts: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(100),
+        title: z.string().min(1).max(300),
+        status: z.string().min(1).max(40),
+        contentType: z.string().max(40).optional().nullable(),
+        shootingDate: z.string().max(32).optional().nullable(),
+        publishDate: z.string().max(32).optional().nullable(),
+        platforms: z.array(z.string().min(1).max(40)).min(0).max(12),
+      })
+    )
+    .max(500),
+});
+
+// ─── POST /api/reports/content-plan ───────────────────────────────
+// Puppeteer PDF export for the monthly content planner.
+router.post(
+  '/content-plan',
+  validate({ body: contentPlanPdfDto }),
+  async (req: Request, res: Response, next) => {
+    try {
+      const body = req.body as z.infer<typeof contentPlanPdfDto>;
+
+      // Prefer live agency settings for branding so the logo always matches Settings.
+      const settings = await prisma.agencySettings.findFirst({
+        select: {
+          agencyName: true,
+          logo: true,
+          primaryColor: true,
+          phone: true,
+          adminEmail: true,
+          website: true,
+        },
+      });
+
+      const pdfBuffer = await renderContentPlanPdf({
+        ...body,
+        agency: {
+          agencyName: settings?.agencyName || body.agency.agencyName,
+          logo: settings?.logo || body.agency.logo,
+          primaryColor: settings?.primaryColor || body.agency.primaryColor,
+          phone: settings?.phone || body.agency.phone,
+          adminEmail: settings?.adminEmail || body.agency.adminEmail,
+          website: settings?.website || body.agency.website,
+        },
+      });
+
+      const safeClient = body.clientName.replace(/[^\w\-]+/g, '_').slice(0, 60);
+      const months = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December',
+      ];
+      const filename = `${safeClient}-${months[body.month - 1]}-${body.year}-Content-Plan.pdf`;
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', String(pdfBuffer.length));
+      res.send(pdfBuffer);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 const sectionKeys = [
   'cover',

@@ -1,6 +1,7 @@
 import { env } from './config/env.js';
 import app from './app.js';
 import { prisma } from './lib/prisma.js';
+import { closePdfBrowser } from './lib/pdf/puppeteer-browser.js';
 
 // ─── Load email credentials from DB into process.env ─────────────
 // Runs once after boot so that the sendEmail() utility works immediately
@@ -90,6 +91,7 @@ async function shutdown(signal: string) {
   console.log(`\n${signal} received. Shutting down gracefully...`);
 
   server.close(async () => {
+    await closePdfBrowser();
     await prisma.$disconnect();
     console.log('✅ Server shut down cleanly');
     process.exit(0);

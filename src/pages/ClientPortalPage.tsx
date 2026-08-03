@@ -2260,8 +2260,15 @@ export default function ClientPortalPage() {
                                   <Badge variant="secondary" className="text-[10px] uppercase font-bold">{post.status}</Badge>
                                 </div>
                               </div>
-                              <div className="text-xs text-muted-foreground shrink-0">
-                                {post.publishDate ? `Publish: ${formatDate(post.publishDate)}` : "Publish date not set"}
+                              <div className="text-xs text-muted-foreground shrink-0 space-y-0.5 text-right">
+                                <div>
+                                  {post.publishDate ? `Goes live: ${formatDate(post.publishDate)}` : "Goes live date not set"}
+                                </div>
+                                {post.shootingDate ? (
+                                  <div className="text-[11px] text-muted-foreground/80">
+                                    Shoot: {formatDate(post.shootingDate)}
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                             {post.notes ? (

@@ -1,12 +1,13 @@
 {
   "name": "hirdan-marketing-server",
-  "version": "2.31.38",
+  "version": "2.31.39",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "postinstall": "npx puppeteer browsers install chrome",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
@@ -32,6 +33,7 @@
     "multer": "^2.1.1",
     "node-cron": "^4.6.0",
     "pdfkit": "^0.19.1",
+    "puppeteer": "^25.4.0",
     "resend": "^6.17.2",
     "sanitize-html": "^2.17.6",
     "svix": "^1.99.1",

@@ -187,8 +187,14 @@ export async function apiFetchBlob(endpoint: string, options: RequestInit = {}):
   }
 
   if (!response.ok) {
-    const errorMsg = `Failed to fetch file: ${response.status} ${response.statusText}`;
-    throw new Error(errorMsg);
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const errBody = await response.clone().json();
+      if (errBody?.message) detail = String(errBody.message);
+    } catch {
+      // keep status text
+    }
+    throw new Error(detail);
   }
 
   return response.blob();
