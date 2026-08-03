@@ -19,3 +19,35 @@ export function sumItems(items?: InvoiceItem[]): number {
   return items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
 }
 
+/** Strip HTML so rich-editor descriptions still match plain inventory names. */
+function normalizeItemDescription(description: string): string {
+  return description.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim().toLowerCase();
+}
+
+/** Add an inventory line, or bump qty when the same item is already on the list. */
+export function upsertInventoryLineItem(
+  items: InvoiceItem[],
+  description: string,
+  unitPrice: number,
+  quantity = 1,
+): InvoiceItem[] {
+  const target = normalizeItemDescription(description);
+  if (!target) {
+    return [...items, { description, quantity, unitPrice }];
+  }
+
+  const existingIndex = items.findIndex(
+    (item) => normalizeItemDescription(item.description) === target,
+  );
+
+  if (existingIndex >= 0) {
+    return items.map((item, i) =>
+      i === existingIndex
+        ? { ...item, quantity: item.quantity + quantity }
+        : item,
+    );
+  }
+
+  return [...items, { description, quantity, unitPrice }];
+}
+

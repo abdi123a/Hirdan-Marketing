@@ -9,6 +9,10 @@ import { auditLog } from '../lib/audit.js';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { parsePagination } from '../lib/pagination.js';
+import { renderProformaPdfById } from '../lib/pdf/document-pdf.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { PATHS } from '../lib/paths.js';
 
 const proformaItemSchema = z.object({
   description: z.string().min(1),
@@ -89,6 +93,43 @@ router.get('/:id', async (req: Request, res: Response, next) => {
     }
 
     res.json({ proforma });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── GET /api/proformas/:id/export-pdf ────────────────────────────
+// Puppeteer PDF — same PremiumInvoice design, server-rendered.
+router.get('/:id/export-pdf', async (req: Request, res: Response, next) => {
+  try {
+    const idOrNumber = req.params.id as string;
+    const proforma = await prisma.proforma.findFirst({
+      where: {
+        OR: [{ id: idOrNumber }, { proformaNumber: idOrNumber }],
+      },
+      select: { id: true, clientId: true },
+    });
+    if (!proforma) throw AppError.notFound('Proforma not found');
+
+    if (req.user!.role === 'CLIENT') {
+      const client = await prisma.client.findUnique({ where: { userId: req.user!.userId } });
+      if (!client || proforma.clientId !== client.id) throw AppError.forbidden('Access denied');
+    }
+
+    const { buffer, filename } = await renderProformaPdfById(idOrNumber);
+
+    // Cache on disk for later reuse
+    try {
+      const pdfPath = path.resolve(PATHS.DOCUMENTS, `Proforma_${proforma.id}.pdf`);
+      await fs.writeFile(pdfPath, buffer);
+    } catch (fsErr) {
+      console.error('[Proforma PDF] Failed to cache PDF:', fsErr);
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', String(buffer.length));
+    res.send(buffer);
   } catch (error) {
     next(error);
   }
@@ -344,14 +385,20 @@ router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response,
     });
     if (!targetProforma) throw AppError.notFound('Proforma not found');
 
-    const { to, cc, subject, body, pdfBase64, filename, isFollowUp, followUpType, customNote, verificationUrl } = req.body;
-    if (!to || !subject || !body || !pdfBase64) {
-      throw AppError.badRequest('Missing required fields: to, subject, body, and pdfBase64 are required.');
+    const { to, cc, subject, body, filename, isFollowUp, followUpType, customNote, verificationUrl } = req.body;
+    if (!to || !subject || !body) {
+      throw AppError.badRequest('Missing required fields: to, subject, and body are required.');
     }
 
-    // Process PDF attachment
-    const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
+    // Server-render PDF (Puppeteer) — never trust client-uploaded PDF bytes
+    const { buffer, filename: renderedFilename } = await renderProformaPdfById(targetProforma.id);
+
+    try {
+      const pdfPath = path.resolve(PATHS.DOCUMENTS, `Proforma_${targetProforma.id}.pdf`);
+      await fs.writeFile(pdfPath, buffer);
+    } catch (fsErr) {
+      console.error('[Email] Failed to save proforma PDF to system:', fsErr);
+    }
 
     // Sanitize rich text inputs
     const cleanBody = sanitizeRichText(body);
@@ -397,7 +444,7 @@ router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response,
       attachments: [
         {
           content: buffer,
-          filename: filename || `Proforma_${targetProforma.proformaNumber || targetProforma.id}.pdf`,
+          filename: filename || renderedFilename || `Proforma_${targetProforma.proformaNumber || targetProforma.id}.pdf`,
           contentType: 'application/pdf',
         }
       ]

@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatCurrency, parseCurrency } from "@/lib/utils";
+import { upsertInventoryLineItem } from "@/lib/money";
 import { ClientSelector } from "@/components/ClientSelector";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
@@ -274,7 +275,7 @@ export default function AddProformaPage() {
                       <DropdownMenuLabel>Add Service</DropdownMenuLabel>
                       {services.map(s => (
                         <DropdownMenuItem key={s.id} onClick={() => {
-                          setItems(prev => [...prev, { description: s.name, quantity: 1, unitPrice: parseCurrency(s.basePrice) }]);
+                          setItems(prev => upsertInventoryLineItem(prev, s.name, parseCurrency(s.basePrice)));
                         }}>
                           {s.name} ({s.basePrice})
                         </DropdownMenuItem>
@@ -283,7 +284,7 @@ export default function AddProformaPage() {
                       <DropdownMenuLabel>Add Package</DropdownMenuLabel>
                       {packages.map(p => (
                         <DropdownMenuItem key={p.id} onClick={() => {
-                          setItems(prev => [...prev, { description: p.name, quantity: 1, unitPrice: parseCurrency(p.price) }]);
+                          setItems(prev => upsertInventoryLineItem(prev, p.name, parseCurrency(p.price)));
                         }}>
                           {p.name} ({p.price})
                         </DropdownMenuItem>

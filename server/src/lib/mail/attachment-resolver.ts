@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
 import type { Attachment } from '@prisma/client';
 import { prisma } from '../prisma.js';
@@ -46,8 +46,8 @@ export async function ensureAttachmentFile(att: Attachment): Promise<string> {
   const safeName = (att.filename || 'attachment').replace(/[^\w.\-]+/g, '_').slice(0, 200) || 'attachment';
   const relKey = path.join('email', att.emailId ?? 'inbound', `${att.id}-${safeName}`);
   const abs = path.join(PATHS.UPLOADS_ROOT, relKey);
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, buf);
+  await fs.mkdir(path.dirname(abs), { recursive: true });
+  await fs.writeFile(abs, buf);
 
   await prisma.attachment.update({ where: { id: att.id }, data: { storageKey: relKey, size: buf.length } });
   return abs;

@@ -43,6 +43,15 @@ jobs:
           npm install --legacy-peer-deps
           npx prisma generate
           npm run build
+          # Local money-helper smoke (no DB / no running server required for that part)
+          node --input-type=module -e "
+            import { centsToMajor, dollarsToCents, computeInvoiceTotalsCents } from './dist/lib/money.js';
+            if (centsToMajor(1999) !== 19.99) throw new Error('centsToMajor');
+            if (dollarsToCents(19.99) !== 1999) throw new Error('dollarsToCents');
+            const t = computeInvoiceTotalsCents({ items: [{ quantity: 2, unitPrice: 10000 }], taxRate: 10, discount: 5, discountType: 'PERCENTAGE' });
+            if (t.totalCents !== 21000) throw new Error(JSON.stringify(t));
+            console.log('money helpers ok');
+          "
 
       # Step 3: Setup SSH key + allow GitHub Actions IPs on VPS firewall
       - name: Setup SSH key
@@ -166,5 +175,13 @@ jobs:
             # --- RESTART NODEJS SERVICE ---
             echo "🔄 Restarting Node.js service for api.hirdanmarketing.com..."
             sudo -u hirdanmarketing-api pm2 restart api || pm2 restart api || pm2 restart all || echo "Restart command failed, manual intervention needed."
+
+            echo "🩺 Post-restart health smoke..."
+            sleep 3
+            curl -fsS --max-time 15 "http://127.0.0.1:3001/api/health" || curl -fsS --max-time 15 "https://api.hirdanmarketing.com/api/health" || {
+              echo "❌ Health check failed after restart"
+              exit 1
+            }
+            echo "✅ Health OK"
 
             echo "✅ Deployment completed successfully!"

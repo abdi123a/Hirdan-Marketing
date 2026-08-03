@@ -1,6 +1,7 @@
 import { prisma } from './prisma.js';
 import { sendEmail, generateEmailHtml } from './email.js';
 import { createNotification } from './notifications.js';
+import { formatCents } from './money.js';
 
 const INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -140,7 +141,7 @@ export async function runBillingCycle(): Promise<void> {
       if (now >= dueDateWithGrace) {
         console.log(`Sending payment reminder for invoice ${inv.invoiceNumber} to ${client.email}`);
 
-        const amountFormatted = `${currencySymbol} ${(inv.amount / 100).toFixed(2)}`;
+        const amountFormatted = formatCents(inv.amount, currencySymbol);
         const dueDateFormatted = inv.dueDate.toISOString().split('T')[0];
 
         const subject = `Payment Reminder: Invoice ${inv.invoiceNumber} is Unpaid`;
@@ -212,7 +213,7 @@ export async function runBillingCycle(): Promise<void> {
       if (now >= overdueDate) {
         console.log(`Sending overdue notice for invoice ${inv.invoiceNumber} to ${client.email}`);
 
-        const amountFormatted = `${currencySymbol} ${(inv.amount / 100).toFixed(2)}`;
+        const amountFormatted = formatCents(inv.amount, currencySymbol);
         const dateFormatted = inv.date.toISOString().split('T')[0];
 
         const subject = `URGENT: Invoice ${inv.invoiceNumber} is OVERDUE`;

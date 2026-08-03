@@ -6,10 +6,12 @@ import { sendEmail, generateEmailHtml } from '../lib/email.js';
 import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
 import { parsePagination } from '../lib/pagination.js';
-import fs from 'fs';
+import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import { PATHS } from '../lib/paths.js';
 import { createNotification } from '../lib/notifications.js';
+import { renderHrPdfById } from '../lib/pdf/document-pdf.js';
 
 const router = Router();
 router.use(authenticate);
@@ -335,17 +337,33 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: createHrDocum
   }
 });
 
+// ─── GET /api/hr/documents/:id/export-pdf ─────────────────────────
+// Puppeteer PDF — same PremiumHrDocument design, server-rendered.
+router.get('/:id/export-pdf', requireRole('ADMIN', 'MANAGER'), async (req: Request, res: Response, next) => {
+  try {
+    const documentId = req.params.id as string;
+    const existing = await prisma.hrDocument.findUnique({
+      where: { id: documentId },
+      select: { id: true },
+    });
+    if (!existing) throw AppError.notFound('Document not found');
+
+    const { buffer, filename } = await renderHrPdfById(documentId);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', String(buffer.length));
+    res.send(buffer);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ─── POST /api/hr/documents/:id/pdf ───────────────────────────────
-// Upload client-generated PDF file for this document
+// Server-generate (Puppeteer) and cache PDF for this document.
 router.post('/:id/pdf', requireRole('ADMIN', 'MANAGER'), async (req: Request, res: Response, next) => {
   try {
     const documentId = req.params.id as string;
-    const { pdfBase64 } = req.body;
-
-    if (!pdfBase64) {
-      throw AppError.badRequest('pdfBase64 is required');
-    }
-
     const document = await prisma.hrDocument.findUnique({
       where: { id: documentId },
     });
@@ -353,22 +371,10 @@ router.post('/:id/pdf', requireRole('ADMIN', 'MANAGER'), async (req: Request, re
       throw AppError.notFound('Document not found');
     }
 
-    // Decode base64
-    const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
+    await renderHrPdfById(documentId);
 
-    // Save file locally in employee-docs
-    const filename = `hr-${document.docNumber.toLowerCase()}-v${document.version}-${Date.now()}.pdf`;
-    const filePath = path.resolve(PATHS.EMPLOYEE_DOCS, filename);
-
-    fs.writeFileSync(filePath, buffer);
-
-    const pdfUrl = `/uploads/employee-docs/${filename}`;
-
-    // Update database
-    const updatedDocument = await prisma.hrDocument.update({
+    const updatedDocument = await prisma.hrDocument.findUnique({
       where: { id: documentId },
-      data: { pdfUrl },
     });
 
     res.json({ document: updatedDocument });
@@ -535,7 +541,7 @@ router.post('/:id/reject', async (req: Request, res: Response, next) => {
 router.post('/:id/send-email', requireRole('ADMIN', 'MANAGER'), async (req: Request, res: Response, next) => {
   try {
     const documentId = req.params.id as string;
-    const { to, cc, subject, body, pdfBase64, filename } = req.body;
+    const { to, cc, subject, body, filename } = req.body;
 
     const document = await prisma.hrDocument.findUnique({
       where: { id: documentId },
@@ -551,20 +557,20 @@ router.post('/:id/send-email', requireRole('ADMIN', 'MANAGER'), async (req: Requ
     }
 
     let buffer: Buffer;
-    if (pdfBase64) {
-      const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
-      buffer = Buffer.from(base64Data, 'base64');
-    } else {
-      // Try to load saved PDF from disk
+    try {
+      const rendered = await renderHrPdfById(documentId);
+      buffer = rendered.buffer;
+    } catch (err) {
+      // Fallback to cached file if render fails
       if (!document.pdfUrl) {
-        throw AppError.badRequest('Document PDF has not been generated and uploaded yet.');
+        throw err;
       }
       const filenameOnDisk = path.basename(document.pdfUrl);
       const filePath = path.resolve(PATHS.EMPLOYEE_DOCS, filenameOnDisk);
-      if (!fs.existsSync(filePath)) {
+      if (!fsSync.existsSync(filePath)) {
         throw AppError.notFound('Document PDF file not found on disk.');
       }
-      buffer = fs.readFileSync(filePath);
+      buffer = await fs.readFile(filePath);
     }
 
     // Generate styled branding HTML

@@ -73,7 +73,7 @@ router.post('/attachments/:id/replace', async (req: Request, res: Response, next
     if (old.supersededById) throw AppError.badRequest('This attachment already has a newer version');
     const input = replaceSchema.parse(req.body);
 
-    const stored = storeAttachments(old.email!.id, [
+    const stored = await storeAttachments(old.email!.id, [
       { filename: input.filename, content: input.content, contentType: input.contentType },
     ]);
     if (!stored.length) throw AppError.badRequest('Empty file');

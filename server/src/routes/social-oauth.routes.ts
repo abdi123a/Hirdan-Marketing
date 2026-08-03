@@ -754,7 +754,10 @@ router.get('/accounts/workspace-summary', authenticate, async (req, res, next) =
   try {
     const [clients, allAccounts, latestSyncs, latestInsights, lastPublishes] = await Promise.all([
       prisma.client.findMany({ select: { id: true, name: true, company: true } }),
-      prisma.socialAccount.findMany({ orderBy: { createdAt: 'desc' } }),
+      prisma.socialAccount.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 2000,
+      }),
       prisma.accountInsightDaily.groupBy({
         by: ['socialAccountId'],
         _max: { date: true },

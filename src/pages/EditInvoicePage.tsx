@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Save, Plus, Trash2, Receipt, Shield, Loader2, GripVertical, CreditCard } from "lucide-react";
 import { useAgencyStore, Invoice, InvoiceItem } from "@/lib/store";
+import { upsertInventoryLineItem } from "@/lib/money";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, parseCurrency } from "@/lib/utils";
 import { ClientSelector } from "@/components/ClientSelector";
@@ -327,7 +328,7 @@ export default function EditInvoicePage() {
                       <DropdownMenuLabel>Add Service</DropdownMenuLabel>
                       {services.map(s => (
                         <DropdownMenuItem key={s.id} onClick={() => {
-                          setItems(prev => [...prev, { description: s.name, quantity: 1, unitPrice: parseCurrency(s.basePrice) }]);
+                          setItems(prev => upsertInventoryLineItem(prev, s.name, parseCurrency(s.basePrice)));
                         }}>
                           {s.name} ({s.basePrice})
                         </DropdownMenuItem>
@@ -336,7 +337,7 @@ export default function EditInvoicePage() {
                       <DropdownMenuLabel>Add Package</DropdownMenuLabel>
                       {packages.map(p => (
                         <DropdownMenuItem key={p.id} onClick={() => {
-                          setItems(prev => [...prev, { description: p.name, quantity: 1, unitPrice: parseCurrency(p.price) }]);
+                          setItems(prev => upsertInventoryLineItem(prev, p.name, parseCurrency(p.price)));
                         }}>
                           {p.name} ({p.price})
                         </DropdownMenuItem>

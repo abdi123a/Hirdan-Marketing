@@ -37,8 +37,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch } from "@/lib/api-client";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
+import { printInvoicePdf } from "@/lib/document-pdf";
 
 export default function InvoiceDetailsPage() {
   const { id } = useParams<{ id: string }>();
@@ -55,6 +54,7 @@ export default function InvoiceDetailsPage() {
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   const invoice = useMemo(() => invoices.find((i) => i.id === id || (i as any)._dbId === id), [invoices, id]);
   const client = useMemo(() => clients.find((c) => c.company === invoice?.client || c.name === invoice?.client), [clients, invoice]);
@@ -77,95 +77,6 @@ export default function InvoiceDetailsPage() {
       });
     }
   }, [invoice?.id, getVerificationToken]);
-
-  const generateAndUploadPdf = async () => {
-    try {
-      const element = printRef.current?.querySelector('.print-content') as HTMLElement || printRef.current;
-      if (!element) return;
-
-      // Wait for images
-      const images = Array.from(element.querySelectorAll('img'));
-      await Promise.all(
-        images.map(img => {
-          if (img.complete) return Promise.resolve();
-          return new Promise(resolve => {
-            img.onload = resolve;
-            img.onerror = resolve;
-          });
-        })
-      );
-
-      const captureScale = 2;
-      const canvas = await html2canvas(element, {
-        scale: captureScale,
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-        width: 794,
-        height: element.scrollHeight,
-        onclone: (clonedDoc) => {
-          const el = clonedDoc.querySelector('.print-content') as HTMLElement;
-          if (el) {
-            el.style.width = '794px';
-            el.style.margin = '0';
-            el.style.padding = '0';
-          }
-        }
-      });
-
-      const imgData = canvas.toDataURL("image/jpeg", 0.9);
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = 210;
-      const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
-      const pageHeight = 297;
-
-      let heightLeft = pdfHeightRatio;
-      let position = 0;
-
-      if (pdfHeightRatio <= 300) {
-        pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
-      } else {
-        pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-        heightLeft -= pageHeight;
-
-        while (heightLeft > 10) {
-          position = heightLeft - pdfHeightRatio;
-          pdf.addPage();
-          pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-          heightLeft -= pageHeight;
-        }
-      }
-
-      const pdfDataUri = pdf.output('datauristring');
-      const base64Data = pdfDataUri.split(',')[1] || pdfDataUri;
-
-      const dbId = invoice._dbId || invoice.id;
-      await apiFetch(`/invoices/${dbId}/pdf`, {
-        method: "POST",
-        body: JSON.stringify({
-          pdfBase64: base64Data,
-        }),
-      });
-      console.log('[InvoiceDetails] Background invoice PDF cached successfully.');
-    } catch (err) {
-      console.error('[InvoiceDetails] Background PDF cache upload failed:', err);
-    }
-  };
-
-  useEffect(() => {
-    if (invoice?.id && !isInitialLoading) {
-      const timer = setTimeout(() => {
-        generateAndUploadPdf();
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [invoice?.id, isInitialLoading]);
 
   if (isInitialLoading) {
     return (
@@ -216,80 +127,11 @@ export default function InvoiceDetailsPage() {
       return;
     }
     setIsSendingEmail(true);
-    toast({ title: "Generating PDF", description: "Rendering and converting your invoice document..." });
+    toast({ title: "Sending Email", description: "Generating PDF on the server and delivering..." });
 
     try {
-      const element = printRef.current?.querySelector('.print-content') as HTMLElement || printRef.current;
-      if (!element) throw new Error("Document element not found");
-
-      // Wait for images
-      const images = Array.from(element.querySelectorAll('img'));
-      await Promise.all(
-        images.map(img => {
-          if (img.complete) return Promise.resolve();
-          return new Promise(resolve => {
-            img.onload = resolve;
-            img.onerror = resolve;
-          });
-        })
-      );
-
-      const captureScale = 3;
-      const jpegQuality = 0.95;
-      const canvas = await html2canvas(element, {
-        scale: captureScale,
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-        width: 794,
-        height: element.scrollHeight,
-        onclone: (clonedDoc) => {
-          const el = clonedDoc.querySelector('.print-content') as HTMLElement;
-          if (el) {
-            el.style.width = '794px';
-            el.style.margin = '0';
-            el.style.padding = '0';
-          }
-        }
-      });
-
-      const imgData = canvas.toDataURL("image/jpeg", jpegQuality);
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = 210;
-      const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
-      const pageHeight = 297;
-
-      let heightLeft = pdfHeightRatio;
-      let position = 0;
-
-      if (pdfHeightRatio <= 300) {
-        pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
-      } else {
-        pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-        heightLeft -= pageHeight;
-
-        while (heightLeft > 10) {
-          position = heightLeft - pdfHeightRatio;
-          pdf.addPage();
-          pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-          heightLeft -= pageHeight;
-        }
-      }
-
-      // Convert to base64
-      const pdfDataUri = pdf.output('datauristring');
-      const base64Data = pdfDataUri.split(',')[1] || pdfDataUri;
-
-      toast({ title: "Sending Email", description: "Delivering email with PDF attachment..." });
-
-      // Call API
       const dbId = invoice._dbId || invoice.id;
+
       const response = await apiFetch<{ success: boolean; message?: string }>(`/invoices/${dbId}/send-email`, {
         method: "POST",
         body: JSON.stringify({
@@ -297,7 +139,6 @@ export default function InvoiceDetailsPage() {
           cc: emailCc,
           subject: emailSubject,
           body: emailBody,
-          pdfBase64: base64Data,
           filename: `Invoice_${invoice.id}.pdf`,
         }),
       });
@@ -376,12 +217,27 @@ export default function InvoiceDetailsPage() {
           <div className="flex flex-wrap items-center gap-2 justify-start lg:justify-end">
             <Button
               variant="outline"
-              onClick={() => {
-                setTimeout(() => window.print(), 50);
+              onClick={async () => {
+                if (!invoice?.id || isPrinting) return;
+                setIsPrinting(true);
+                try {
+                  await printInvoicePdf(invoice.id);
+                } catch (error) {
+                  console.error(error);
+                  toast({
+                    title: "Print failed",
+                    description: "Could not prepare the PDF for printing. Please try again.",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setIsPrinting(false);
+                }
               }}
+              disabled={isPrinting}
               className="h-10 px-4 gap-2 rounded-xl"
             >
-              <Printer className="h-4 w-4" /> Print / Save PDF
+              {isPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              {isPrinting ? "Preparing…" : "Print / Save PDF"}
             </Button>
             <Button
               variant="outline"

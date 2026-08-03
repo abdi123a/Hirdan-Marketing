@@ -8,6 +8,7 @@ import { AppError } from '../lib/errors.js';
 import { callAI, resolveProviderKey } from '../lib/ai-provider.js';
 import { createNotification } from '../lib/notifications.js';
 import { renderContentPlanPdf } from '../lib/pdf/render-content-plan.js';
+import { renderHtmlPagesPdf } from '../lib/pdf/render-html-pages.js';
 
 const router = Router();
 router.use(authenticate);
@@ -79,6 +80,47 @@ router.post(
         'July', 'August', 'September', 'October', 'November', 'December',
       ];
       const filename = `${safeClient}-${months[body.month - 1]}-${body.year}-Content-Plan.pdf`;
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', String(pdfBuffer.length));
+      res.send(pdfBuffer);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+const htmlPagesPdfDto = z.object({
+  pages: z
+    .array(z.string().min(1).max(1_500_000))
+    .min(1)
+    .max(20),
+  widthPx: z.number().finite().positive().max(10_000),
+  heightPx: z.number().finite().positive().max(10_000),
+  filename: z.string().min(1).max(200).optional(),
+  extraCss: z.string().max(500_000).optional(),
+});
+
+// ─── POST /api/reports/html-pages-pdf ─────────────────────────────
+// Puppeteer PDF export for studio pages (monthly report, strategy deck, etc.).
+router.post(
+  '/html-pages-pdf',
+  validate({ body: htmlPagesPdfDto }),
+  async (req: Request, res: Response, next) => {
+    try {
+      const body = req.body as z.infer<typeof htmlPagesPdfDto>;
+
+      const pdfBuffer = await renderHtmlPagesPdf({
+        pages: body.pages,
+        widthPx: body.widthPx,
+        heightPx: body.heightPx,
+        extraCss: body.extraCss,
+      });
+
+      const rawName = body.filename || 'export.pdf';
+      const safeName = rawName.replace(/[^\w.\-]+/g, '_').slice(0, 180);
+      const filename = safeName.toLowerCase().endsWith('.pdf') ? safeName : `${safeName}.pdf`;
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

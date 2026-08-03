@@ -482,10 +482,10 @@ interface AgencyStore {
   fetchHrDocumentsForEmployee: (employeeId: string) => Promise<HrDocument[]>;
   fetchHrDocumentById: (id: string) => Promise<HrDocument>;
   createHrDocument: (payload: { employeeId: string; docType: string; docNumber?: string; content: any; status?: string }) => Promise<HrDocument>;
-  uploadHrDocumentPdf: (id: string, pdfBase64: string) => Promise<HrDocument>;
+  uploadHrDocumentPdf: (id: string) => Promise<HrDocument>;
   approveHrDocument: (id: string, comment?: string) => Promise<HrDocument>;
   rejectHrDocument: (id: string, comment: string) => Promise<HrDocument>;
-  sendHrDocumentEmail: (id: string, payload: { to: string; cc?: string; subject: string; body: string; pdfBase64?: string; filename?: string }) => Promise<any>;
+  sendHrDocumentEmail: (id: string, payload: { to: string; cc?: string; subject: string; body: string; filename?: string }) => Promise<any>;
 
   addInvoice: (invoice: Omit<Invoice, 'id'> & { id?: string }) => Promise<void>;
   updateInvoice: (id: string, invoice: Partial<Invoice>) => Promise<void>;
@@ -590,7 +590,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.31.41",
+  appVersion: "2.31.42",
   versionHistory: [
     {
       version: "2.23.0",
@@ -1536,15 +1536,15 @@ export const useAgencyStore = create<AgencyStore>()(
           throw error;
         }
       },
-      uploadHrDocumentPdf: async (id, pdfBase64) => {
+      uploadHrDocumentPdf: async (id) => {
         try {
           const res = await apiFetch<{ document: HrDocument }>(`/hr/documents/${id}/pdf`, {
             method: 'POST',
-            body: JSON.stringify({ pdfBase64 }),
+            body: JSON.stringify({}),
           });
           return res.document;
         } catch (error) {
-          console.error("Failed to upload HR document PDF:", error);
+          console.error("Failed to generate HR document PDF:", error);
           throw error;
         }
       },

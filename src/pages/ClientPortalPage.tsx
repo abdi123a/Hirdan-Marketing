@@ -20,15 +20,11 @@ import {
 } from 'lucide-react';
 import { apiFetch, apiUpload, downloadProtectedFile } from '@/lib/api-client';
 import hirdanLogo from '@/assets/hirdan-logo.png';
-import { useReactToPrint } from 'react-to-print';
-import { useRef } from 'react';
-import { PremiumInvoice } from '@/components/PremiumInvoice';
+import { downloadInvoicePdf, downloadProformaPdf } from '@/lib/document-pdf';
 import { DocumentViewer } from '@/components/DocumentViewer';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ClientPortalTour } from '@/components/ClientPortalTour';
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
 import { useToast } from "@/hooks/use-toast";
 
 const fadeIn = {
@@ -137,8 +133,6 @@ export default function ClientPortalPage() {
     setSearchParams({ tab });
   };
   const [selectedPreviewDoc, setSelectedPreviewDoc] = useState<{ title: string, fileUrl: string, type?: string } | null>(null);
-  const downloadRef = useRef<HTMLDivElement>(null);
-  const [activeDownloadDocument, setActiveDownloadDocument] = useState<{ type: 'Invoice' | 'Proforma', data: any } | null>(null);
   const { toast } = useToast();
   const [accountForm, setAccountForm] = useState({
     name: '',
@@ -232,94 +226,6 @@ export default function ClientPortalPage() {
   const [actionType, setActionType] = useState<'accept' | 'reject' | null>(null);
   const [actionComment, setActionComment] = useState('');
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
-  const [isUploadingCache, setIsUploadingCache] = useState(false);
-
-  useEffect(() => {
-    if (viewingDoc && viewingDoc.type === 'Invoice') {
-      const timer = setTimeout(async () => {
-        if (!downloadRef.current || isUploadingCache) return;
-        setIsUploadingCache(true);
-        try {
-          const element = downloadRef.current.querySelector('.print-content') as HTMLElement || downloadRef.current;
-          
-          // Wait for images
-          const images = Array.from(element.querySelectorAll('img'));
-          await Promise.all(
-            images.map(img => {
-              if (img.complete) return Promise.resolve();
-              return new Promise(resolve => {
-                img.onload = resolve;
-                img.onerror = resolve;
-              });
-            })
-          );
-
-          const canvas = await html2canvas(element, {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            backgroundColor: "#ffffff",
-            width: 794,
-            height: element.scrollHeight,
-            onclone: (clonedDoc) => {
-              const el = clonedDoc.querySelector('.print-content') as HTMLElement;
-              if (el) {
-                el.style.width = '794px';
-                el.style.margin = '0';
-                el.style.padding = '0';
-              }
-            }
-          });
-
-          const imgData = canvas.toDataURL("image/jpeg", 0.9);
-          const pdf = new jsPDF({
-            orientation: "portrait",
-            unit: "mm",
-            format: "a4",
-          });
-
-          const imgProps = pdf.getImageProperties(imgData);
-          const pdfWidth = 210;
-          const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
-          const pageHeight = 297;
-          
-          let heightLeft = pdfHeightRatio;
-          let position = 0;
-
-          if (pdfHeightRatio <= 300) {
-            pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
-          } else {
-            pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-            heightLeft -= pageHeight;
-
-            while (heightLeft > 10) {
-              position = heightLeft - pdfHeightRatio;
-              pdf.addPage();
-              pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-              heightLeft -= pageHeight;
-            }
-          }
-
-          const pdfDataUri = pdf.output('datauristring');
-          const base64Data = pdfDataUri.split(',')[1] || pdfDataUri;
-
-          const dbId = viewingDoc.data._dbId || viewingDoc.data.id;
-          await apiFetch(`/invoices/${dbId}/pdf`, {
-            method: "POST",
-            body: JSON.stringify({
-              pdfBase64: base64Data,
-            }),
-          });
-          console.log('[ClientPortal] Background invoice PDF cached successfully.');
-        } catch (err) {
-          console.error('[ClientPortal] Background PDF cache upload failed:', err);
-        } finally {
-          setIsUploadingCache(false);
-        }
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [viewingDoc]);
 
   const handleDocActionSubmit = async () => {
     if (!viewingDoc || !actionType) return;
@@ -461,96 +367,28 @@ export default function ClientPortalPage() {
   // handlePrint removed as modal is gone
 
   const handleDownloadDirect = async (doc: { type: 'Invoice' | 'Proforma', data: any }) => {
-    toast({ 
-      title: "Processing PDF", 
-      description: `Generating your ${doc.type.toLowerCase()}...` 
+    toast({
+      title: "Processing PDF",
+      description: `Generating your ${doc.type.toLowerCase()}...`
     });
-    
-    setActiveDownloadDocument(doc);
-    
-    setTimeout(async () => {
-      if (!downloadRef.current) return;
-      
-      try {
-        const captureScale = 3;
-        const jpegQuality = 0.95;
 
-        const element = downloadRef.current.querySelector('.print-content') as HTMLElement || downloadRef.current;
-
-        const images = Array.from(element.querySelectorAll('img'));
-        await Promise.all(
-          images.map(img => {
-            if (img.complete) return Promise.resolve();
-            return new Promise(resolve => {
-              img.onload = resolve;
-              img.onerror = resolve;
-            });
-          })
-        );
-        
-        const canvas = await html2canvas(element, {
-          scale: captureScale, 
-          useCORS: true,
-          logging: false,
-          backgroundColor: "#ffffff",
-          width: 794,
-          height: element.scrollHeight,
-          onclone: (clonedDoc) => {
-            const el = clonedDoc.querySelector('.print-content') as HTMLElement;
-            if (el) {
-              el.style.width = '794px';
-              el.style.margin = '0';
-              el.style.padding = '0';
-            }
-          }
-        });
-
-        const imgData = canvas.toDataURL("image/jpeg", jpegQuality);
-        const pdf = new jsPDF({
-          orientation: "portrait",
-          unit: "mm",
-          format: "a4",
-        });
-
-        const imgProps = pdf.getImageProperties(imgData);
-        const pdfWidth = 210;
-        const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
-        const pageHeight = 297;
-        
-        let heightLeft = pdfHeightRatio;
-        let position = 0;
-
-        // If it's roughly one page, fill the full A4 to ensure footer is at the bottom
-        if (pdfHeightRatio <= 300) {
-          pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
-        } else {
-          pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-          heightLeft -= pageHeight;
-
-          // Threshold of 10mm to avoid an empty final page from minor layout overflows
-          while (heightLeft > 10) {
-            position = heightLeft - pdfHeightRatio;
-            pdf.addPage();
-            pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-            heightLeft -= pageHeight;
-          }
-        }
-
-        const filename = doc.type === 'Invoice' ? `Invoice_${doc.data.id}` : `Proforma_${doc.data.id}`;
-        pdf.save(`${filename}.pdf`);
-
-        toast({ title: "PDF Downloaded", description: `${filename}.pdf has been saved.` });
-      } catch (error) {
-        console.error("PDF generation failed:", error);
-        toast({
-          title: "Download Failed",
-          description: "There was an error generating the PDF.",
-          variant: "destructive"
-        });
-      } finally {
-        setActiveDownloadDocument(null);
+    try {
+      const id = doc.data._dbId || doc.data.id;
+      const filename = doc.type === 'Invoice' ? `Invoice_${doc.data.id}.pdf` : `Proforma_${doc.data.id}.pdf`;
+      if (doc.type === 'Invoice') {
+        await downloadInvoicePdf(id, filename);
+      } else {
+        await downloadProformaPdf(id, filename);
       }
-    }, 1200);
+      toast({ title: "PDF Downloaded", description: `${filename} has been saved.` });
+    } catch (error: any) {
+      console.error("PDF generation failed:", error);
+      toast({
+        title: "Download Failed",
+        description: error?.message || "There was an error generating the PDF.",
+        variant: "destructive"
+      });
+    }
   };
 
   useEffect(() => {
@@ -2765,26 +2603,6 @@ export default function ClientPortalPage() {
         onClose={() => setSelectedPreviewDoc(null)}
         document={selectedPreviewDoc}
       />
-
-      <div className="fixed -left-[9999px] top-0 pointer-events-none" aria-hidden="true">
-        {activeDownloadDocument ? (
-          <div ref={downloadRef}>
-            <PremiumInvoice
-              type={activeDownloadDocument.type}
-              data={activeDownloadDocument.data}
-              settings={settings}
-            />
-          </div>
-        ) : (viewingDoc && viewingDoc.type === 'Invoice') ? (
-          <div ref={downloadRef}>
-            <PremiumInvoice
-              type="Invoice"
-              data={viewingDoc.data}
-              settings={settings}
-            />
-          </div>
-        ) : null}
-      </div>
 
       <ClientPortalTour
         clientId={clientUser?.clientId || ''}

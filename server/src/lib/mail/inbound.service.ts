@@ -264,7 +264,7 @@ export async function processInboundEmail(input: any): Promise<boolean> {
         content: a.content,
         contentType: a.content_type || a.contentType,
       }));
-      const stored = storeAttachments(email.id, incoming);
+      const stored = await storeAttachments(email.id, incoming);
       if (stored.length) {
         await prisma.attachment.createMany({
           data: stored.map((s) => ({

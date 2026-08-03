@@ -147,7 +147,7 @@ export async function sendMailboxEmail(input: SendMailInput): Promise<SendMailRe
   // 3. Persist attachments (to disk + rows) and prepare Resend payload
   let resendAttachments: Array<{ filename: string; content: string }> | undefined;
   if (input.attachments && input.attachments.length) {
-    const stored = storeAttachments(email.id, input.attachments);
+    const stored = await storeAttachments(email.id, input.attachments);
     if (stored.length) {
       await prisma.attachment.createMany({
         data: stored.map((s) => ({

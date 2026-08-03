@@ -58,7 +58,7 @@ async function main() {
   if (mailbox) {
     const convo = await prisma.conversation.create({ data: { mailboxId: mailbox.id, subject: 'Attach smoke', threadKey: 'attach smoke' } });
     const email = await prisma.email.create({ data: { conversationId: convo.id, mailboxId: mailbox.id, direction: 'OUTBOUND', status: 'SENT', fromEmail: mailbox.email, toEmails: ['x@example.com'], subject: 'Attach smoke' } });
-    const [stored] = storeAttachments(email.id, [{ filename: 'doc.txt', content: Buffer.from('v1').toString('base64'), contentType: 'text/plain' }]);
+    const [stored] = await storeAttachments(email.id, [{ filename: 'doc.txt', content: Buffer.from('v1').toString('base64'), contentType: 'text/plain' }]);
     const att = await prisma.attachment.create({ data: { emailId: email.id, filename: stored.filename, mimeType: stored.mimeType, size: stored.size, storageKey: stored.storageKey, checksum: stored.checksum } });
 
     const replaced = await api(`/email/attachments/${att.id}/replace`, {

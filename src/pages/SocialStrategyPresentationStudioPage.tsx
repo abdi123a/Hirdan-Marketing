@@ -17,9 +17,9 @@ import {
 } from "lucide-react";
 import { useAgencyStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
-import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import pptxgen from "pptxgenjs";
+import { exportHtmlPagesPdf, serializeElementForPdf } from "@/lib/document-pdf";
 import hirdanLogo from "@/assets/hirdan-logo.png";
 import { ProtectedBrandingImage } from "@/components/ProtectedBrandingImage";
 
@@ -343,7 +343,7 @@ export function SocialStrategyPresentationStudioPage() {
     });
   };
 
-  // High-Resolution PDF Exporter (Pixel-Perfect 16:9 Real Design Capture)
+  // High-Resolution PDF Exporter (Puppeteer via serialized slide HTML)
   const handleExportPDF = async () => {
     if (!slideRef.current) return;
     setIsExporting(true);
@@ -354,33 +354,22 @@ export function SocialStrategyPresentationStudioPage() {
 
     try {
       const originalSlideIndex = currentSlideIndex;
-      const pdf = new jsPDF({
-        orientation: "landscape",
-        unit: "px",
-        format: [1400, 787.5]
-      });
+      const pages: string[] = [];
 
       for (let i = 0; i < 7; i++) {
         setCurrentSlideIndex(i);
-        await new Promise(res => setTimeout(res, 400));
-        
-        const canvas = await html2canvas(slideRef.current, {
-          scale: 3,
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          backgroundColor: canvasTheme === "dark" ? "#090d16" : "#ffffff",
-          windowWidth: 1400,
-          windowHeight: 787.5
-        });
-
-        const imgData = canvas.toDataURL("image/png", 1.0);
-        if (i > 0) pdf.addPage([1400, 787.5], "landscape");
-        pdf.addImage(imgData, "PNG", 0, 0, 1400, 787.5);
+        await new Promise((res) => setTimeout(res, 400));
+        if (!slideRef.current) throw new Error("Slide canvas unavailable");
+        pages.push(serializeElementForPdf(slideRef.current));
       }
 
       setCurrentSlideIndex(originalSlideIndex);
-      pdf.save(`${deck.companyName.replace(/\s+/g, "_")}_Social_Strategy.pdf`);
+      await exportHtmlPagesPdf({
+        pages,
+        widthPx: 1400,
+        heightPx: 787.5,
+        filename: `${deck.companyName.replace(/\s+/g, "_")}_Social_Strategy.pdf`,
+      });
       toast({
         title: "PDF Presentation Exported!",
         description: "Your 7-page PDF presentation with the real design is downloaded."

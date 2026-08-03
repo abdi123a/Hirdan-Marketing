@@ -48,34 +48,58 @@ const createDepositSchema = z.object({
  * - Expenses deducted from account
  * - Transfers out deducted
  * - Transfers in added
+ * - Deposits added
  */
 async function getAccountBalance(accountId: string): Promise<number> {
-  const [expensesAgg, transfersOutAgg, transfersInAgg, depositsAgg] = await Promise.all([
-    prisma.expense.aggregate({
-      where: { accountId },
+  const balances = await getAccountBalances([accountId]);
+  return balances.get(accountId) ?? 0;
+}
+
+/** Batch-compute balances for many accounts (4 groupBy queries total). */
+async function getAccountBalances(accountIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  for (const id of accountIds) map.set(id, 0);
+  if (accountIds.length === 0) return map;
+
+  const [expenses, transfersOut, transfersIn, deposits] = await Promise.all([
+    prisma.expense.groupBy({
+      by: ['accountId'],
+      where: { accountId: { in: accountIds } },
       _sum: { amount: true },
     }),
-    prisma.accountTransfer.aggregate({
-      where: { fromAccountId: accountId },
+    prisma.accountTransfer.groupBy({
+      by: ['fromAccountId'],
+      where: { fromAccountId: { in: accountIds } },
       _sum: { amount: true },
     }),
-    prisma.accountTransfer.aggregate({
-      where: { toAccountId: accountId },
+    prisma.accountTransfer.groupBy({
+      by: ['toAccountId'],
+      where: { toAccountId: { in: accountIds } },
       _sum: { amount: true },
     }),
-    prisma.deposit.aggregate({
-      where: { accountId },
+    prisma.deposit.groupBy({
+      by: ['accountId'],
+      where: { accountId: { in: accountIds } },
       _sum: { amount: true },
     }),
   ]);
 
-  const totalExpenses = expensesAgg._sum.amount ?? 0;
-  const totalOut = transfersOutAgg._sum.amount ?? 0;
-  const totalIn = transfersInAgg._sum.amount ?? 0;
-  const totalDeposits = depositsAgg._sum.amount ?? 0;
+  for (const row of deposits) {
+    if (!row.accountId) continue;
+    map.set(row.accountId, (map.get(row.accountId) ?? 0) + (row._sum.amount ?? 0));
+  }
+  for (const row of transfersIn) {
+    map.set(row.toAccountId, (map.get(row.toAccountId) ?? 0) + (row._sum.amount ?? 0));
+  }
+  for (const row of transfersOut) {
+    map.set(row.fromAccountId, (map.get(row.fromAccountId) ?? 0) - (row._sum.amount ?? 0));
+  }
+  for (const row of expenses) {
+    if (!row.accountId) continue;
+    map.set(row.accountId, (map.get(row.accountId) ?? 0) - (row._sum.amount ?? 0));
+  }
 
-  // Balance = deposits + money in - money out - expenses
-  return totalDeposits + totalIn - totalOut - totalExpenses;
+  return map;
 }
 
 // ─── GET /api/accounts ────────────────────────────────────────────────
@@ -86,13 +110,11 @@ router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
       orderBy: { createdAt: 'asc' },
     });
 
-    // Add balance to each account
-    const accountsWithBalance = await Promise.all(
-      accounts.map(async (account) => ({
-        ...account,
-        balance: await getAccountBalance(account.id),
-      }))
-    );
+    const balances = await getAccountBalances(accounts.map((a) => a.id));
+    const accountsWithBalance = accounts.map((account) => ({
+      ...account,
+      balance: balances.get(account.id) ?? 0,
+    }));
 
     res.json({ accounts: accountsWithBalance });
   } catch (error) {

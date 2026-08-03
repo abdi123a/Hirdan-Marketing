@@ -9,9 +9,12 @@ import { parsePagination } from '../lib/pagination.js';
 import { auditLog } from '../lib/audit.js';
 import { createNotification } from '../lib/notifications.js';
 import { syncInvoiceDeposit } from '../lib/deposit-sync.js';
-import fs from 'fs';
+import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import { PATHS } from '../lib/paths.js';
+import { renderInvoicePdfById } from '../lib/pdf/document-pdf.js';
+import { formatCents } from '../lib/money.js';
 
 const router = Router();
 router.use(authenticate);
@@ -70,6 +73,42 @@ router.get('/:id', async (req: Request, res: Response, next) => {
     if (!invoice) throw AppError.notFound('Invoice not found');
 
     res.json({ invoice });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── GET /api/invoices/:id/export-pdf ─────────────────────────────
+// Puppeteer PDF — same PremiumInvoice design, server-rendered.
+router.get('/:id/export-pdf', async (req: Request, res: Response, next) => {
+  try {
+    const idOrNumber = req.params.id as string;
+    const where: any = {
+      OR: [{ id: idOrNumber }, { invoiceNumber: idOrNumber }],
+    };
+    if (req.user!.role === 'CLIENT') {
+      const client = await prisma.client.findUnique({ where: { userId: req.user!.userId } });
+      if (!client) throw AppError.forbidden('Client profile not found');
+      where.clientId = client.id;
+    }
+
+    const allowed = await prisma.invoice.findFirst({ where, select: { id: true } });
+    if (!allowed) throw AppError.notFound('Invoice not found');
+
+    const { buffer, filename } = await renderInvoicePdfById(idOrNumber);
+
+    // Cache on disk for later reuse
+    try {
+      const pdfPath = path.resolve(PATHS.DOCUMENTS, `Invoice_${allowed.id}.pdf`);
+      await fs.writeFile(pdfPath, buffer);
+    } catch (fsErr) {
+      console.error('[Invoice PDF] Failed to cache PDF:', fsErr);
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', String(buffer.length));
+    res.send(buffer);
   } catch (error) {
     next(error);
   }
@@ -345,35 +384,6 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) =>
   }
 });
 
-router.post('/:id/pdf', async (req: Request, res: Response, next) => {
-  try {
-    const targetInvoice = await prisma.invoice.findFirst({
-      where: {
-        OR: [
-          { id: req.params.id as string },
-          { invoiceNumber: req.params.id as string }
-        ]
-      }
-    });
-    if (!targetInvoice) throw AppError.notFound('Invoice not found');
-
-    const { pdfBase64 } = req.body;
-    if (!pdfBase64) {
-      throw AppError.badRequest('pdfBase64 is required');
-    }
-
-    const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
-
-    const pdfPath = path.resolve(PATHS.DOCUMENTS, `Invoice_${targetInvoice.id}.pdf`);
-    fs.writeFileSync(pdfPath, buffer);
-
-    res.json({ success: true, message: 'Invoice PDF saved successfully' });
-  } catch (error) {
-    next(error);
-  }
-});
-
 router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response, next) => {
   try {
     const targetInvoice = await prisma.invoice.findFirst({
@@ -386,19 +396,17 @@ router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response,
     });
     if (!targetInvoice) throw AppError.notFound('Invoice not found');
 
-    const { to, cc, subject, body, pdfBase64, filename } = req.body;
-    if (!to || !subject || !body || !pdfBase64) {
-      throw AppError.badRequest('Missing required fields: to, subject, body, and pdfBase64 are required.');
+    const { to, cc, subject, body, filename } = req.body;
+    if (!to || !subject || !body) {
+      throw AppError.badRequest('Missing required fields: to, subject, and body are required.');
     }
 
-    // Process PDF attachment
-    const base64Data = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
+    // Server-render PDF (Puppeteer) — never trust client-uploaded PDF bytes
+    const { buffer, filename: renderedFilename } = await renderInvoicePdfById(targetInvoice.id);
 
-    // Save PDF to system filesystem
     const pdfPath = path.resolve(PATHS.DOCUMENTS, `Invoice_${targetInvoice.id}.pdf`);
     try {
-      fs.writeFileSync(pdfPath, buffer);
+      await fs.writeFile(pdfPath, buffer);
     } catch (fsErr) {
       console.error('[Email] Failed to save invoice PDF to system:', fsErr);
     }
@@ -425,7 +433,7 @@ router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response,
       attachments: [
         {
           content: buffer,
-          filename: filename || `Invoice_${targetInvoice.invoiceNumber || targetInvoice.id}.pdf`,
+          filename: filename || renderedFilename || `Invoice_${targetInvoice.invoiceNumber || targetInvoice.id}.pdf`,
           contentType: 'application/pdf',
         }
       ]
@@ -457,24 +465,35 @@ async function sendPaymentConfirmationEmail(invoiceId: string) {
 
     const settings = await prisma.agencySettings.findFirst();
     const currencySymbol = settings?.currency ?? 'USD';
-    const amountFormatted = `${currencySymbol} ${(inv.amount / 100).toFixed(2)}`;
+    const amountFormatted = formatCents(inv.amount, currencySymbol);
 
     const subject = `Payment Confirmed: Invoice ${inv.invoiceNumber}`;
 
     const paymentDate = new Date();
     const monthPaid = paymentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
 
-    // Check if the PDF file exists in the system filesystem
+    // Prefer cached PDF; otherwise render via Puppeteer
     const pdfPath = path.resolve(PATHS.DOCUMENTS, `Invoice_${inv.id}.pdf`);
     let pdfBuffer: Buffer | null = null;
-    if (fs.existsSync(pdfPath)) {
+    if (fsSync.existsSync(pdfPath)) {
       try {
-        pdfBuffer = fs.readFileSync(pdfPath);
+        pdfBuffer = await fs.readFile(pdfPath);
       } catch (err) {
         console.error(`[Email] Failed to read invoice PDF from system at ${pdfPath}:`, err);
       }
-    } else {
-      console.warn(`[Email] Invoice PDF not found in system at ${pdfPath}. Sending email without attachment.`);
+    }
+    if (!pdfBuffer) {
+      try {
+        const rendered = await renderInvoicePdfById(inv.id);
+        pdfBuffer = rendered.buffer;
+        try {
+          await fs.writeFile(pdfPath, pdfBuffer);
+        } catch (fsErr) {
+          console.error('[Email] Failed to cache payment-confirmation PDF:', fsErr);
+        }
+      } catch (err) {
+        console.error(`[Email] Failed to render invoice PDF for payment confirmation:`, err);
+      }
     }
 
     const attachmentText = pdfBuffer

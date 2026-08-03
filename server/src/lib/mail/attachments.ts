@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { PATHS } from '../paths.js';
@@ -31,9 +31,9 @@ export function decodeBase64(content: string): Buffer {
 }
 
 /** Persist base64 attachments to disk and return metadata + buffers. */
-export function storeAttachments(emailId: string, items: IncomingAttachment[]): StoredAttachment[] {
+export async function storeAttachments(emailId: string, items: IncomingAttachment[]): Promise<StoredAttachment[]> {
   const dir = path.join(PATHS.EMAIL, emailId);
-  fs.mkdirSync(dir, { recursive: true });
+  await fs.mkdir(dir, { recursive: true });
 
   const stored: StoredAttachment[] = [];
   const usedNames = new Set<string>();
@@ -59,7 +59,7 @@ export function storeAttachments(emailId: string, items: IncomingAttachment[]): 
 
     const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
     const storageKey = path.join('email', emailId, safeName);
-    fs.writeFileSync(path.join(PATHS.UPLOADS_ROOT, storageKey), buffer);
+    await fs.writeFile(path.join(PATHS.UPLOADS_ROOT, storageKey), buffer);
 
     stored.push({
       filename: safeName,

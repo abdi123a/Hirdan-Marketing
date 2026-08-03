@@ -125,6 +125,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
       className="print-content"
       style={{
         width: '210mm',
+        maxWidth: '210mm',
         minHeight: '297mm',
         background: '#ffffff',
         fontFamily: "'Inter', -apple-system, sans-serif",
@@ -132,7 +133,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
         margin: '0 auto',
         color: textDark,
         boxSizing: 'border-box',
-        overflow: 'hidden',
+        overflow: 'visible',
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -174,7 +175,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
         <div style={{ width: '30%', background: accentColor }}></div>
       </div>
 
-      <div style={{ padding: '32px 40px 0 40px', flex: 1, display: 'flex', flexDirection: 'column', zIndex: 1, position: 'relative' }}>
+      <div className="print-body" style={{ padding: '32px 40px 0 40px', flex: '0 0 auto', display: 'flex', flexDirection: 'column', zIndex: 1, position: 'relative' }}>
 
         {/* ───────────────── HEADER ───────────────── */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px' }}>
@@ -325,7 +326,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
         )}
 
         {/* ───────────────── TOTALS & NOTES & SIGNATURE ───────────────── */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', pageBreakInside: 'avoid', marginBottom: '40px' }}>
+        <div className="print-closing" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', pageBreakInside: 'avoid', breakInside: 'avoid', marginBottom: '40px' }}>
 
           {/* Notes - Redesigned Section */}
           <div style={{ flex: 1, paddingRight: '40px' }}>
@@ -506,13 +507,16 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
       </div>
 
       {/* ───────────────── TRUE FOOTER (Unique High-End Badge Layout - Revised) ───────────────── */}
-      <div style={{
+      <div
+        className="print-footer"
+        style={{
         marginTop: 'auto',
         background: primaryColor,
         color: '#ffffff',
         padding: '28px 40px',
         zIndex: 1,
-        position: 'relative'
+        position: 'relative',
+        flexShrink: 0,
       }}>
         {/* Floating Accent Line - Thicker & Bold */}
         <div style={{
@@ -602,18 +606,21 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
       <style dangerouslySetInnerHTML={{
         __html: `
         @page {
-          size: auto;
+          size: A4;
           margin: 0;
         }
         @media print {
           html, body, #root {
+            width: 210mm !important;
+            max-width: 210mm !important;
+            min-height: 297mm !important;
             height: auto !important;
-            min-height: auto !important;
-            overflow: visible !important;
-            position: static !important;
-            background: white !important;
             margin: 0 !important;
             padding: 0 !important;
+            overflow: visible !important;
+            background: white !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           body * {
             visibility: hidden;
@@ -625,16 +632,42 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            box-shadow: none !important;
+            width: 210mm !important;
+            max-width: 210mm !important;
+            min-height: 297mm !important;
             height: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-sizing: border-box !important;
+            box-shadow: none !important;
             overflow: visible !important;
+            display: flex !important;
+            flex-direction: column !important;
             page-break-after: auto;
+            background: #ffffff !important;
           }
-          body {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
+          .print-content .print-body {
+            flex: 1 1 auto !important;
+            padding-bottom: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+          }
+          .print-content .print-closing {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            margin-top: auto !important;
+          }
+          .print-content table thead th {
+            border-top: 36px solid #ffffff !important;
+          }
+          .print-content .print-footer {
+            position: relative !important;
+            left: auto !important;
+            right: auto !important;
+            bottom: auto !important;
+            margin-top: 0 !important;
+            flex-shrink: 0 !important;
+            width: 100% !important;
           }
         }
       `}} />

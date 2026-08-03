@@ -40,8 +40,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { apiFetch } from "@/lib/api-client";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
+import { printProformaPdf } from "@/lib/document-pdf";
 import RichTextEditor from "@/components/RichTextEditor";
 
 export default function ProformaDetailsPage() {
@@ -59,6 +58,7 @@ export default function ProformaDetailsPage() {
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [emailMode, setEmailMode] = useState<"standard" | "followup">("standard");
   const [followUpPreset, setFollowUpPreset] = useState<"GENTLE_REMINDER" | "EXPIRING_SOON" | "DEPOSIT_REQUIRED" | "FINAL_NOTICE">("GENTLE_REMINDER");
 
@@ -249,80 +249,11 @@ export default function ProformaDetailsPage() {
       return;
     }
     setIsSendingEmail(true);
-    toast({ title: "Generating PDF", description: "Rendering and converting your proforma document..." });
+    toast({ title: emailMode === "followup" ? "Sending Follow-Up Email" : "Sending Email", description: "Generating PDF on the server and delivering..." });
 
     try {
-      const element = printRef.current?.querySelector('.print-content') as HTMLElement || printRef.current;
-      if (!element) throw new Error("Document element not found");
-
-      // Wait for images
-      const images = Array.from(element.querySelectorAll('img'));
-      await Promise.all(
-        images.map(img => {
-          if (img.complete) return Promise.resolve();
-          return new Promise(resolve => {
-            img.onload = resolve;
-            img.onerror = resolve;
-          });
-        })
-      );
-
-      const captureScale = 3;
-      const jpegQuality = 0.95;
-      const canvas = await html2canvas(element, {
-        scale: captureScale, 
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-        width: 794,
-        height: element.scrollHeight,
-        onclone: (clonedDoc) => {
-          const el = clonedDoc.querySelector('.print-content') as HTMLElement;
-          if (el) {
-            el.style.width = '794px';
-            el.style.margin = '0';
-            el.style.padding = '0';
-          }
-        }
-      });
-
-      const imgData = canvas.toDataURL("image/jpeg", jpegQuality);
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = 210;
-      const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
-      const pageHeight = 297;
-      
-      let heightLeft = pdfHeightRatio;
-      let position = 0;
-
-      if (pdfHeightRatio <= 300) {
-        pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
-      } else {
-        pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-        heightLeft -= pageHeight;
-
-        while (heightLeft > 10) {
-          position = heightLeft - pdfHeightRatio;
-          pdf.addPage();
-          pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-          heightLeft -= pageHeight;
-        }
-      }
-
-      // Convert to base64
-      const pdfDataUri = pdf.output('datauristring');
-      const base64Data = pdfDataUri.split(',')[1] || pdfDataUri;
-
-      toast({ title: emailMode === "followup" ? "Sending Follow-Up Email" : "Sending Email", description: "Delivering email with PDF attachment..." });
-
-      // Call API
       const dbId = proforma._dbId || proforma.id;
+
       const currentBody = richTextRef.current?.innerHTML || emailBody;
       const response = await apiFetch<{ success: boolean; message?: string }>(`/proformas/${dbId}/send-email`, {
         method: "POST",
@@ -331,7 +262,6 @@ export default function ProformaDetailsPage() {
           cc: emailCc,
           subject: emailSubject,
           body: currentBody,
-          pdfBase64: base64Data,
           filename: `Proforma_${proforma.id}.pdf`,
           isFollowUp: emailMode === "followup",
           followUpType: followUpPreset,
@@ -424,12 +354,27 @@ export default function ProformaDetailsPage() {
             )}
             <Button
               variant="outline"
-              onClick={() => {
-                setTimeout(() => window.print(), 50);
+              onClick={async () => {
+                if (!proforma?.id || isPrinting) return;
+                setIsPrinting(true);
+                try {
+                  await printProformaPdf(proforma.id);
+                } catch (error) {
+                  console.error(error);
+                  toast({
+                    title: "Print failed",
+                    description: "Could not prepare the PDF for printing. Please try again.",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setIsPrinting(false);
+                }
               }}
+              disabled={isPrinting}
               className="h-10 px-4 gap-2 rounded-xl"
             >
-              <Printer className="h-4 w-4" /> Print / Save PDF
+              {isPrinting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              {isPrinting ? "Preparing…" : "Print / Save PDF"}
             </Button>
             <Button
               variant="outline"

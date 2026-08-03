@@ -16,12 +16,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
-import jsPDF from "jspdf";
 import { formatCurrency } from "@/lib/utils";
 import { deriveSubtotalFromTotal, parseAmountNumber, sumItems } from "@/lib/money";
-import html2canvas from "html2canvas";
-import { PremiumInvoice } from "@/components/PremiumInvoice";
-import { useRef } from "react";
+import { downloadInvoicePdf } from "@/lib/document-pdf";
 
 const statusColor = (s: string) =>
   s === "Paid" ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400" :
@@ -40,8 +37,6 @@ export default function InvoicesPage() {
     fetchClients();
   }, [fetchInvoices, fetchClients]);
   const [isDownloading, setIsDownloading] = useState(false);
-  const pdfRef = useRef<HTMLDivElement>(null);
-  const [activeInvoice, setActiveInvoice] = useState<Invoice | null>(null);
 
   const filtered = invoices.filter((inv) =>
     inv.id.toLowerCase().includes(search.toLowerCase()) ||
@@ -100,96 +95,22 @@ export default function InvoicesPage() {
   };
 
   const handleDownload = async (inv: Invoice) => {
-    setActiveInvoice(inv);
     setIsDownloading(true);
-
     toast({ title: "Processing PDF", description: "Generating your invoice..." });
-
-    // Small delay to ensure the hidden component renders
-    setTimeout(async () => {
-      if (!pdfRef.current) return;
-
-      try {
-        const element = pdfRef.current.querySelector('.print-content') as HTMLElement || pdfRef.current;
-        
-        // Wait for all images in the target to be fully loaded
-        const images = Array.from(element.querySelectorAll('img'));
-        await Promise.all(
-          images.map(img => {
-            if (img.complete) return Promise.resolve();
-            return new Promise(resolve => {
-              img.onload = resolve;
-              img.onerror = resolve;
-            });
-          })
-        );
-
-        const captureScale = 3;
-        const jpegQuality = 0.95;
-        
-        const canvas = await html2canvas(element, {
-          scale: captureScale, 
-          useCORS: true,
-          logging: false,
-          backgroundColor: "#ffffff",
-          width: 794,
-          height: element.scrollHeight,
-          onclone: (clonedDoc) => {
-            const el = clonedDoc.querySelector('.print-content') as HTMLElement;
-            if (el) {
-              el.style.width = '794px';
-              el.style.margin = '0';
-              el.style.padding = '0';
-            }
-          }
-        });
-
-        const imgData = canvas.toDataURL("image/jpeg", jpegQuality);
-        const pdf = new jsPDF({
-          orientation: "portrait",
-          unit: "mm",
-          format: "a4",
-        });
-
-        const imgProps = pdf.getImageProperties(imgData);
-        const pdfWidth = 210;
-        const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
-        const pageHeight = 297;
-        
-        let heightLeft = pdfHeightRatio;
-        let position = 0;
-
-        // If it's roughly one page, fill the full A4 to ensure footer is at the bottom
-        if (pdfHeightRatio <= 300) {
-          pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
-        } else {
-          pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-          heightLeft -= pageHeight;
-
-          // Threshold of 10mm to avoid an empty final page from minor layout overflows
-          while (heightLeft > 10) {
-            position = heightLeft - pdfHeightRatio;
-            pdf.addPage();
-            pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-            heightLeft -= pageHeight;
-          }
-        }
-
-        pdf.save(`${inv.id}.pdf`);
-
-        toast({ title: "PDF Downloaded", description: `${inv.id}.pdf has been saved.` });
-      } catch (error) {
-        console.error("PDF generation failed:", error);
-        toast({
-          title: "Download Failed",
-          description: "There was an error generating the PDF. Please try again.",
-          variant: "destructive"
-        });
-      } finally {
-        setIsDownloading(false);
-        setActiveInvoice(null);
-      }
-    }, 1200);
+    try {
+      const id = inv._dbId || inv.id;
+      await downloadInvoicePdf(id, `${inv.id}.pdf`);
+      toast({ title: "PDF Downloaded", description: `${inv.id}.pdf has been saved.` });
+    } catch (error: any) {
+      console.error("PDF generation failed:", error);
+      toast({
+        title: "Download Failed",
+        description: error?.message || "There was an error generating the PDF. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -324,24 +245,6 @@ export default function InvoicesPage() {
           </Table>
         </CardContent>
       </Card>
-
-      {/* Hidden Invoice Renderer for PDF Generation */}
-      <div className="fixed -left-[9999px] top-0 pointer-events-none" aria-hidden="true">
-        {activeInvoice && (
-          <div ref={pdfRef}>
-            <PremiumInvoice
-              type="Invoice"
-              data={{
-                ...activeInvoice,
-                clientEmail: activeInvoice.clientEmail || clients.find(c => c.company === activeInvoice.client || c.name === activeInvoice.client)?.email,
-                clientAddress: activeInvoice.clientAddress || clients.find(c => c.company === activeInvoice.client || c.name === activeInvoice.client)?.address,
-                taxRate: activeInvoice.taxRate ?? settings.taxRate,
-              }}
-              settings={settings}
-            />
-          </div>
-        )}
-      </div>
     </div>
   );
 }

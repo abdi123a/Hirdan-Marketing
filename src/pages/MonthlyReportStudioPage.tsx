@@ -10,8 +10,7 @@ import { AlertCircle, CheckCircle2, FileDown, Loader2, Sparkles, Upload } from "
 import { useAgencyStore } from "@/lib/store";
 import { apiFetch } from "@/lib/api-client";
 import { useToast } from "@/hooks/use-toast";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
+import { exportHtmlPagesPdf, serializeElementForPdf } from "@/lib/document-pdf";
 import { QRCodeSVG } from "qrcode.react";
 import { getShortVerificationUrl } from "@/lib/short-url";
 
@@ -625,30 +624,14 @@ export default function MonthlyReportStudioPage() {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       await new Promise<void>((resolve) => setTimeout(() => resolve(), 300));
 
-      const pdf = new jsPDF({
-        orientation: "landscape",
-        unit: "px",
-        format: [PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT],
-        compress: true,
+      const pages = pageNodes.map((node) => serializeElementForPdf(node));
+      const filename = `${selectedClient?.company || selectedClient?.name || "Client"}-${MONTHS[month - 1]}-${year}-Monthly-Report.pdf`;
+      await exportHtmlPagesPdf({
+        pages,
+        widthPx: PDF_PAGE_WIDTH,
+        heightPx: PDF_PAGE_HEIGHT,
+        filename,
       });
-
-      for (let i = 0; i < pageNodes.length; i++) {
-        const canvas = await html2canvas(pageNodes[i], {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: "#ffffff",
-          logging: false,
-          windowWidth: PDF_PAGE_WIDTH,
-          windowHeight: PDF_PAGE_HEIGHT,
-          width: PDF_PAGE_WIDTH,
-          height: PDF_PAGE_HEIGHT,
-        });
-        const imgData = canvas.toDataURL("image/jpeg", 0.95);
-        if (i > 0) pdf.addPage([PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT], "landscape");
-        pdf.addImage(imgData, "JPEG", 0, 0, PDF_PAGE_WIDTH, PDF_PAGE_HEIGHT, undefined, "FAST");
-      }
-
-      pdf.save(`${selectedClient?.company || selectedClient?.name || "Client"}-${MONTHS[month - 1]}-${year}-Monthly-Report.pdf`);
       toast({ title: "PDF exported", description: "Download started." });
     } catch (err: any) {
       toast({ title: "Export failed", description: err.message, variant: "destructive" });

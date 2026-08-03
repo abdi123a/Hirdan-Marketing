@@ -125,8 +125,14 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     const sumMetric = (rows: any[], field: string, key: MetricKey) =>
       rows.reduce((s, r) => s + (metricPlatformOk((r.account?.platform || '').toLowerCase(), key) ? (Number(r[field]) || 0) : 0), 0);
 
-    // ── Posts ──
-    const postWhere: any = { clientId };
+    // ── Posts (bounded — avoid loading entire history into memory) ──
+    const postWhere: any = {
+      clientId,
+      OR: [
+        { publishedAt: { gte: prevSince } },
+        { publishedAt: null, createdAt: { gte: prevSince } },
+      ],
+    };
     if (contentTypeFilter && contentTypeFilter !== 'ALL') postWhere.mediaType = contentTypeFilter;
     const allPosts = await prisma.socialPost.findMany({
       where: postWhere,
@@ -142,6 +148,7 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
         },
       },
       orderBy: { createdAt: 'desc' },
+      take: 2000,
     });
 
     // FIX: scope posts to the selected platform, same as accounts already are above.
@@ -176,7 +183,11 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     const [demoRows, activityRows, importedVideos] = await Promise.all([
       prisma.accountDemographic.findMany({ where: { socialAccountId: { in: accountIds } } }),
       prisma.accountActivity.findMany({ where: { socialAccountId: { in: accountIds } } }),
-      prisma.importedPost.findMany({ where: { socialAccountId: { in: accountIds } }, orderBy: { views: 'desc' } }),
+      prisma.importedPost.findMany({
+        where: { socialAccountId: { in: accountIds } },
+        orderBy: { views: 'desc' },
+        take: 500,
+      }),
     ]);
     const platformOf = new Map(accounts.map(a => [a.id, a.platform.toLowerCase()]));
     // Account metadata needed to build public post URLs (handles, page ids).
@@ -637,7 +648,11 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
         .filter(a => platformFilter === 'ALL' || a.platform.toUpperCase() === platformFilter)
         .map(a => a.id);
       if (eligibleIds.length) {
-        const vids = await prisma.importedPost.findMany({ where: { socialAccountId: { in: eligibleIds } } });
+        const vids = await prisma.importedPost.findMany({
+          where: { socialAccountId: { in: eligibleIds } },
+          orderBy: { views: 'desc' },
+          take: 500,
+        });
         importedRows = vids.filter(v => !search || (v.title || '').toLowerCase().includes(search.toLowerCase()));
       }
     }
@@ -738,7 +753,11 @@ router.get('/analytics/post/:id', authenticate, async (req, res, next) => {
     // Pull in any export rows for this post's TikTok destinations.
     const accountIds = post.destinations.map(d => d.socialAccountId);
     const importedRows = accountIds.length
-      ? await prisma.importedPost.findMany({ where: { socialAccountId: { in: accountIds } } })
+      ? await prisma.importedPost.findMany({
+          where: { socialAccountId: { in: accountIds } },
+          orderBy: { importedAt: 'desc' },
+          take: 2000,
+        })
       : [];
 
     const { posts: [unifiedPost] } = unifyPosts({

@@ -15,9 +15,9 @@ import {
   UserCircle, FileText, ArrowRight, ShieldAlert, CheckCircle2, XCircle, Search
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 import { PremiumHrDocument } from "@/components/PremiumHrDocument";
+import { apiFetchBlob } from "@/lib/api-client";
+import { triggerBlobDownload } from "@/lib/document-pdf";
 
 type DocType = 'WORK_CERTIFICATE' | 'SALARY_CERTIFICATE' | 'PAYSLIP' | 'WARNING_CERTIFICATE' | 'INTERNSHIP_ACCEPTED_CERTIFICATE' | 'INTERNSHIP_LETTER';
 
@@ -374,82 +374,23 @@ export default function GenerateHrDocumentPage() {
       const generatedDocId = docRes.id;
       const docNumber = docRes.docNumber;
 
-      // 1.5. Fetch verification token for the newly created document
+      // Fetch verification token for the newly created document (for on-screen preview)
       try {
         const token = await getVerificationToken("hr_document", generatedDocId);
         setVerificationToken(token);
-        // Wait briefly for React state update and QR code rendering in the DOM
-        await new Promise(resolve => setTimeout(resolve, 350));
       } catch (tokenErr) {
         console.error("Failed to fetch token for new document:", tokenErr);
       }
 
-      // 2. Generate PDF using html2canvas & jsPDF
-      const element = printRef.current?.querySelector('.print-content') as HTMLElement || printRef.current;
-      if (!element) throw new Error("Document element not found");
-
-      // Wait for images to load
-      const images = Array.from(element.querySelectorAll('img'));
-      await Promise.all(
-        images.map(img => {
-          if (img.complete) return Promise.resolve();
-          return new Promise(resolve => {
-            img.onload = resolve;
-            img.onerror = resolve;
-          });
-        })
-      );
-
-      const canvas = await html2canvas(element, {
-        scale: 3, 
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-        width: 794,
-        height: element.scrollHeight,
-      });
-
-      const imgData = canvas.toDataURL("image/jpeg", 0.95);
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = 210;
-      const pdfHeightRatio = (imgProps.height * pdfWidth) / imgProps.width;
-      
-      if (pdfHeightRatio <= 297) {
-        pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
-      } else {
-        let heightLeft = pdfHeightRatio;
-        let position = 0;
-        
-        pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-        heightLeft -= 297;
-
-        while (heightLeft > 5) {
-          position = heightLeft - pdfHeightRatio;
-          pdf.addPage();
-          pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, pdfHeightRatio, undefined, "FAST");
-          heightLeft -= 297;
-        }
-      }
-
-      // Convert to base64
-      const pdfDataUri = pdf.output('datauristring');
-      const base64Data = pdfDataUri.split(',')[1] || pdfDataUri;
-
-      // 3. Upload PDF to server
-      const uploadedDoc = await uploadHrDocumentPdf(generatedDocId, base64Data);
+      // Server-render PDF via Puppeteer and cache on disk
+      const uploadedDoc = await uploadHrDocumentPdf(generatedDocId);
 
       toast({
         title: "Success",
         description: `Document ${docNumber} v${uploadedDoc.version} generated and saved successfully.`,
       });
 
-      return { doc: uploadedDoc, pdf };
+      return { doc: uploadedDoc };
     } catch (err: any) {
       console.error(err);
       toast({
@@ -465,8 +406,9 @@ export default function GenerateHrDocumentPage() {
 
   const handleDownload = async () => {
     try {
-      const { doc, pdf } = await generateAndSaveDocument(false);
-      pdf.save(`${doc.docNumber}.pdf`);
+      const { doc } = await generateAndSaveDocument(false);
+      const blob = await apiFetchBlob(`/hr/documents/${encodeURIComponent(doc.id)}/export-pdf`);
+      triggerBlobDownload(blob, `${doc.docNumber}.pdf`);
       navigate("/dashboard/hr");
     } catch (e) {}
   };
@@ -483,23 +425,14 @@ export default function GenerateHrDocumentPage() {
     if (!viewId) return;
     setIsSubmitting(true);
     try {
-      const approvedDoc = await approveHrDocument(viewId, approvalComment);
+      await approveHrDocument(viewId, approvalComment);
       
-      // Generate approved final PDF with signature/stamp applied and upload it
       toast({
         title: "Generating Final PDF",
-        description: "Rendering document and applying digital signatures...",
+        description: "Rendering document with digital signatures...",
       });
-      
-      const element = printRef.current?.querySelector('.print-content') as HTMLElement || printRef.current;
-      const canvas = await html2canvas(element, { scale: 3, useCORS: true, logging: false, backgroundColor: "#ffffff" });
-      const imgData = canvas.toDataURL("image/jpeg", 0.95);
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
-      const pdfDataUri = pdf.output('datauristring');
-      const base64Data = pdfDataUri.split(',')[1] || pdfDataUri;
 
-      await uploadHrDocumentPdf(viewId, base64Data);
+      await uploadHrDocumentPdf(viewId);
 
       toast({
         title: "Warning Approved",
