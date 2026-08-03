@@ -4,6 +4,7 @@ import { useRef, useEffect } from "react";
 import { ProtectedBrandingImage } from "./ProtectedBrandingImage";
 import { QRCodeSVG } from "qrcode.react";
 import { getShortVerificationUrl } from "@/lib/short-url";
+import { looksLikeHtml, sanitizeHrLetterHtml, plainLetterToHtml } from "@/lib/hr-letter-text";
 
 interface PremiumHrDocumentProps {
   docType: 'WORK_CERTIFICATE' | 'SALARY_CERTIFICATE' | 'PAYSLIP' | 'WARNING_CERTIFICATE' | 'INTERNSHIP_ACCEPTED_CERTIFICATE' | 'INTERNSHIP_LETTER';
@@ -56,6 +57,11 @@ interface PremiumHrDocumentProps {
 
     // Employee gender
     gender?: string;
+
+    // Fully editable letter body
+    sectionTitle?: string;
+    letterText?: string;
+    closingText?: string;
 
     // Document status
     status?: string;
@@ -117,6 +123,33 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings, verifi
   };
 
   const payslipMonths = getLast3Months(data.date);
+
+  const renderLetterBlocks = (text: string, opts?: { justify?: boolean; lastMargin?: number; small?: boolean }) => {
+    if (!text?.trim()) return null;
+    const html = looksLikeHtml(text) ? sanitizeHrLetterHtml(text) : plainLetterToHtml(text);
+    return (
+      <div
+        style={{
+          marginBottom: opts?.lastMargin ?? 20,
+          textAlign: opts?.justify === false ? "left" : "justify",
+          fontSize: opts?.small ? "12px" : undefined,
+          color: opts?.small ? secondary : undefined,
+          lineHeight: 1.8,
+        }}
+        className="hr-letter-html"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  };
+
+  const sectionLabel = (fallback: string, color = primaryColor) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
+      <div style={{ width: '20px', height: '2px', background: color }}></div>
+      <div style={{ fontSize: '11px', fontWeight: 800, color, textTransform: 'uppercase', letterSpacing: '1px' }}>
+        {data.sectionTitle || fallback}
+      </div>
+    </div>
+  );
 
   return (
     <div
@@ -252,61 +285,52 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings, verifi
 
           {/* 1. WORK CERTIFICATE */}
           {docType === 'WORK_CERTIFICATE' && (
-            <div style={{ fontSize: '14px', lineHeight: 1.8, color: textDark, display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '28px' }}>
-                <div style={{ width: '20px', height: '2px', background: primaryColor }}></div>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: primaryColor, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Certificate of Employment
-                </div>
-              </div>
-
-              <p style={{ marginBottom: '20px' }}>To Whom It May Concern,</p>
-              
-              <p style={{ marginBottom: '20px', textAlign: 'justify' }}>
-                This is to formally certify that <strong>{data.employeeName}</strong> (Employee ID: <strong>{data.employeeId}</strong>) is employed with <strong>{settings.agencyName}</strong>. 
-                He/She holds the position of <strong>{data.employeeTitle}</strong> in the <strong>{data.employeeDepartment || 'N/A'}</strong> department, and has been part of our team since <strong>{formatDate(data.employeeHireDate)}</strong>.
-              </p>
-
-              <p style={{ marginBottom: '20px', textAlign: 'justify' }}>
-                Their employment status is currently recorded as <strong>{data.employeeContractType || 'Full-Time'}</strong>.
-                {data.employeeStatus === 'TERMINATED' && data.employeeEndDate ? (
-                  <span> His/Her employment with our organization concluded on <strong>{formatDate(data.employeeEndDate)}</strong>.</span>
-                ) : (
-                  <span> He/She is currently active, in good standing, and continues to be employed by <strong>{settings.agencyName}</strong>.</span>
-                )}
-              </p>
-
-              <p style={{ marginBottom: '40px', textAlign: 'justify' }}>
-                This certificate is issued upon the request of the employee without any liability or financial obligation on the part of <strong>{settings.agencyName}</strong>.
-              </p>
+            <div style={{ fontSize: '14px', lineHeight: 1.8, color: textDark, display: 'flex', flexDirection: 'column' }}>
+              {sectionLabel('Certificate of Employment')}
+              {data.letterText ? renderLetterBlocks(data.letterText, { lastMargin: 40 }) : (
+                <>
+                  <p style={{ marginBottom: '20px' }}>To Whom It May Concern,</p>
+                  <p style={{ marginBottom: '20px', textAlign: 'justify' }}>
+                    This is to formally certify that <strong>{data.employeeName}</strong> is employed with <strong>{settings.agencyName}</strong>.
+                    He/She holds the position of <strong>{data.employeeTitle}</strong> in the <strong>{data.employeeDepartment || 'N/A'}</strong> department, and has been part of our team since <strong>{formatDate(data.employeeHireDate)}</strong>.
+                  </p>
+                  <p style={{ marginBottom: '20px', textAlign: 'justify' }}>
+                    Their employment status is currently recorded as <strong>{data.employeeContractType || 'Full-Time'}</strong>.
+                    {data.employeeStatus === 'TERMINATED' && data.employeeEndDate ? (
+                      <span> His/Her employment with our organization concluded on <strong>{formatDate(data.employeeEndDate)}</strong>.</span>
+                    ) : (
+                      <span> He/She is currently active, in good standing, and continues to be employed by <strong>{settings.agencyName}</strong>.</span>
+                    )}
+                  </p>
+                  <p style={{ marginBottom: '40px', textAlign: 'justify' }}>
+                    This certificate is issued upon the request of the employee without any liability or financial obligation on the part of <strong>{settings.agencyName}</strong>.
+                  </p>
+                </>
+              )}
             </div>
           )}
 
           {/* 2. SALARY CERTIFICATE */}
           {docType === 'SALARY_CERTIFICATE' && (
             <div style={{ fontSize: '14px', lineHeight: 1.8, color: textDark }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
-                <div style={{ width: '20px', height: '2px', background: primaryColor }}></div>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: primaryColor, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Compensation Verification
-                </div>
-              </div>
+              {sectionLabel('Compensation Verification')}
 
-              <p style={{ marginBottom: '16px' }}>To Whom It May Concern,</p>
-
-              <p style={{ marginBottom: '20px', textAlign: 'justify' }}>
-                This is to certify that <strong>{data.employeeName}</strong> (Employee ID: <strong>{data.employeeId}</strong>) is employed with <strong>{settings.agencyName}</strong> as a <strong>{data.employeeTitle}</strong> since <strong>{formatDate(data.employeeHireDate)}</strong>.
-              </p>
-
-              {data.purpose && (
-                <p style={{ marginBottom: '24px', fontStyle: 'italic', color: secondary }}>
-                  This certificate has been issued at the employee's request for the specific purpose of: <strong>{data.purpose}</strong>.
-                </p>
+              {data.letterText ? renderLetterBlocks(data.letterText, { lastMargin: 16 }) : (
+                <>
+                  <p style={{ marginBottom: '16px' }}>To Whom It May Concern,</p>
+                  <p style={{ marginBottom: '20px', textAlign: 'justify' }}>
+                    This is to certify that <strong>{data.employeeName}</strong> is employed with <strong>{settings.agencyName}</strong> as a <strong>{data.employeeTitle}</strong> since <strong>{formatDate(data.employeeHireDate)}</strong>.
+                  </p>
+                  {data.purpose && (
+                    <p style={{ marginBottom: '24px', fontStyle: 'italic', color: secondary }}>
+                      This certificate has been issued at the employee's request for the specific purpose of: <strong>{data.purpose}</strong>.
+                    </p>
+                  )}
+                  <p style={{ marginBottom: '12px' }}>A detailed breakdown of their gross monthly compensation is provided below:</p>
+                </>
               )}
 
-              <p style={{ marginBottom: '12px' }}>A detailed breakdown of their gross monthly compensation is provided below:</p>
-
-              <div style={{ border: `1px solid ${borderColor}`, borderRadius: '12px', overflow: 'hidden', marginBottom: '32px', background: lightBg }}>
+              <div style={{ border: `1px solid ${borderColor}`, borderRadius: '12px', overflow: 'hidden', marginBottom: '24px', background: lightBg }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: `1px solid ${borderColor}`, background: '#f1f5f9' }}>
@@ -345,21 +369,20 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings, verifi
                 </table>
               </div>
 
-              <p style={{ marginBottom: '24px', fontSize: '12px', color: secondary }}>
-                * All disbursals are made in <strong>{data.currency || 'USD'}</strong> via <strong>{data.paymentMethod || 'Bank Transfer'}</strong> to Bank: <strong>{data.bankName || 'N/A'}</strong> (Account: <strong>{data.accountNumber || 'N/A'}</strong>).
-              </p>
+              {data.closingText ? (
+                renderLetterBlocks(data.closingText, { lastMargin: 24, small: true })
+              ) : (
+                <p style={{ marginBottom: '24px', fontSize: '12px', color: secondary }}>
+                  * All disbursals are made in <strong>{data.currency || 'USD'}</strong> via <strong>{data.paymentMethod || 'Bank Transfer'}</strong> to Bank: <strong>{data.bankName || 'N/A'}</strong> (Account: <strong>{data.accountNumber || 'N/A'}</strong>).
+                </p>
+              )}
             </div>
           )}
 
           {/* 3. LAST 3 MONTHS PAYSLIP */}
           {docType === 'PAYSLIP' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                <div style={{ width: '20px', height: '2px', background: primaryColor }}></div>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: primaryColor, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Historical Payroll Statements (Last 3 Cycles)
-                </div>
-              </div>
+              {sectionLabel('Historical Payroll Statements (Last 3 Cycles)')}
 
               {payslipMonths.map((m, idx) => (
                 <div key={m.key} style={{
@@ -461,12 +484,7 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings, verifi
           {/* 4. WARNING CERTIFICATE */}
           {docType === 'WARNING_CERTIFICATE' && (
             <div style={{ fontSize: '14px', lineHeight: 1.8, color: textDark }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
-                <div style={{ width: '20px', height: '2px', background: '#ef4444' }}></div>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Formal Disciplinary Action Letter
-                </div>
-              </div>
+              {sectionLabel('Formal Disciplinary Action Letter', '#ef4444')}
 
               <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderLeft: '4px solid #ef4444', padding: '16px 20px', borderRadius: '0 12px 12px 0', marginBottom: '28px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -481,133 +499,127 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings, verifi
                 </div>
               </div>
 
-              <p style={{ marginBottom: '16px' }}>Dear <strong>{data.employeeName}</strong> (Employee ID: <strong>{data.employeeId}</strong>),</p>
-
-              <p style={{ marginBottom: '20px', textAlign: 'justify' }}>
-                This letter serves as a formal disciplinary warning regarding documented performance concerns or behavioral policy violations. 
-                We hold our employees to the highest professional standards, and it has become necessary to address areas where those standards have not been met.
-              </p>
+              {data.letterText ? renderLetterBlocks(data.letterText, { lastMargin: 20 }) : (
+                <>
+                  <p style={{ marginBottom: '16px' }}>Dear <strong>{data.employeeName}</strong>,</p>
+                  <p style={{ marginBottom: '20px', textAlign: 'justify' }}>
+                    This letter serves as a formal disciplinary warning regarding documented performance concerns or behavioral policy violations.
+                    We hold our employees to the highest professional standards, and it has become necessary to address areas where those standards have not been met.
+                  </p>
+                </>
+              )}
 
               <div style={{ border: `1px solid ${borderColor}`, padding: '20px', borderRadius: '12px', background: lightBg, marginBottom: '24px' }}>
                 <h4 style={{ fontSize: '11px', fontWeight: 800, color: primaryColor, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Description of Infraction / Concerns</h4>
                 <p style={{ margin: 0, fontSize: '13px', color: textDark, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{data.reason || 'No description provided.'}</p>
               </div>
 
-              <p style={{ marginBottom: '20px', textAlign: 'justify' }}>
-                Please be advised that immediate and sustained improvement is required. 
-                Failure to correct these performance issues or any further violations of company policies will result in additional disciplinary actions, up to and including termination of employment.
-              </p>
-
-              {data.issuedBy && (
-                <p style={{ marginBottom: '32px' }}>
-                  This warning letter is formally issued by: <strong>{data.issuedBy}</strong>.
-                </p>
+              {data.closingText ? renderLetterBlocks(data.closingText, { lastMargin: 32 }) : (
+                <>
+                  <p style={{ marginBottom: '20px', textAlign: 'justify' }}>
+                    Please be advised that immediate and sustained improvement is required.
+                    Failure to correct these performance issues or any further violations of company policies will result in additional disciplinary actions, up to and including termination of employment.
+                  </p>
+                  {data.issuedBy && (
+                    <p style={{ marginBottom: '32px' }}>
+                      This warning letter is formally issued by: <strong>{data.issuedBy}</strong>.
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}
 
           {/* 5. INTERNSHIP ACCEPTED CERTIFICATE */}
           {docType === 'INTERNSHIP_ACCEPTED_CERTIFICATE' && (
-            <div style={{ fontSize: '13px', lineHeight: 1.5, color: textDark, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ fontWeight: 700, marginBottom: '2px', fontSize: '14px', color: primaryColor }}>
-                Subject: Internship Confirmation for {data.gender?.toLowerCase() === 'female' ? 'Ms.' : 'Mr.'} {data.employeeName}
+            <div style={{ fontSize: '13px', lineHeight: 1.6, color: textDark, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontWeight: 700, marginBottom: '12px', fontSize: '14px', color: primaryColor }}>
+                {data.sectionTitle || `Subject: Internship Confirmation for ${data.gender?.toLowerCase() === 'female' ? 'Ms.' : 'Mr.'} ${data.employeeName}`}
               </div>
-
-              <p style={{ marginBottom: '4px' }}>
-                Dear {data.coordinatorName || 'Internship Committee'},
-              </p>
-
-              <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
-                We are pleased to inform you that <strong>{data.gender?.toLowerCase() === 'female' ? 'Ms.' : 'Mr.'} {data.employeeName}</strong>, a student from your 
-                institution pursuing a <strong>{data.degreeMajor || 'Bachelor of Science in IT'}</strong>, has been 
-                officially accepted for an internship position at <strong>{settings.agencyName}</strong>.
-              </p>
-
-              <p style={{ marginBottom: '2px' }}>
-                The details of the internship placement are outlined below:
-              </p>
-
-              <div style={{ background: lightBg, border: `1px solid ${borderColor}`, borderRadius: '8px', padding: '10px 14px', marginBottom: '4px' }}>
-                <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                  <li>• <strong>Position Title:</strong> {data.employeeTitle || 'Digital Marketing Intern'}</li>
-                  <li>• <strong>Department:</strong> {data.employeeDepartment || 'Marketing'}</li>
-                  <li>• <strong>Internship Duration:</strong> {data.internshipDuration || '3 Months'}</li>
-                  <li>• <strong>Start Date:</strong> {data.employeeHireDate ? formatDate(data.employeeHireDate) : 'Commencement Date'}</li>
-                  <li>• <strong>End Date:</strong> {data.employeeEndDate ? formatDate(data.employeeEndDate) : 'Expected Completion Date'}</li>
-                  <li>• <strong>Work Schedule:</strong> {data.workSchedule || 'Full-time, 40 hours per week'}</li>
-                  <li>• <strong>Nature of Internship:</strong> {data.natureOfInternship || 'Paid'}</li>
-                </ul>
-              </div>
-
-              <p style={{ marginBottom: '2px' }}>
-                During this internship, the student will work under the direct supervision of <strong>{data.supervisorName || 'Supervisor Name'}</strong> ({data.supervisorTitle || 'Supervisor Title'}). Their primary responsibilities and learning objectives will include:
-              </p>
-
-              <ol style={{ paddingLeft: '20px', margin: '0 0 4px 0', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <li>1. {data.task1 || 'Assisting in the development of client software applications'}</li>
-                <li>2. {data.task2 || 'Analyzing weekly website traffic data and creating reports'}</li>
-                <li>3. {data.task3 || 'Participating in team strategy and brainstorming meetings'}</li>
-              </ol>
-
-              <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
-                If you require any additional information or specific academic paperwork filled out, 
-                please do not hesitate to reach out.
-              </p>
+              {data.letterText ? renderLetterBlocks(data.letterText, { justify: false, lastMargin: 8 }) : (
+                <>
+                  <p style={{ marginBottom: '4px' }}>
+                    Dear {data.coordinatorName || 'Internship Committee'},
+                  </p>
+                  <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
+                    We are pleased to inform you that <strong>{data.gender?.toLowerCase() === 'female' ? 'Ms.' : 'Mr.'} {data.employeeName}</strong>, a student from your
+                    institution pursuing a <strong>{data.degreeMajor || 'Bachelor of Science in IT'}</strong>, has been
+                    officially accepted for an internship position at <strong>{settings.agencyName}</strong>.
+                  </p>
+                  <p style={{ marginBottom: '2px' }}>
+                    The details of the internship placement are outlined below:
+                  </p>
+                  <div style={{ background: lightBg, border: `1px solid ${borderColor}`, borderRadius: '8px', padding: '10px 14px', marginBottom: '4px' }}>
+                    <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                      <li>• <strong>Position Title:</strong> {data.employeeTitle || 'Digital Marketing Intern'}</li>
+                      <li>• <strong>Department:</strong> {data.employeeDepartment || 'Marketing'}</li>
+                      <li>• <strong>Internship Duration:</strong> {data.internshipDuration || '3 Months'}</li>
+                      <li>• <strong>Start Date:</strong> {data.employeeHireDate ? formatDate(data.employeeHireDate) : 'Commencement Date'}</li>
+                      <li>• <strong>End Date:</strong> {data.employeeEndDate ? formatDate(data.employeeEndDate) : 'Expected Completion Date'}</li>
+                      <li>• <strong>Work Schedule:</strong> {data.workSchedule || 'Full-time, 40 hours per week'}</li>
+                      <li>• <strong>Nature of Internship:</strong> {data.natureOfInternship || 'Paid'}</li>
+                    </ul>
+                  </div>
+                  <p style={{ marginBottom: '2px' }}>
+                    During this internship, the student will work under the direct supervision of <strong>{data.supervisorName || 'Supervisor Name'}</strong> ({data.supervisorTitle || 'Supervisor Title'}). Their primary responsibilities and learning objectives will include:
+                  </p>
+                  <ol style={{ paddingLeft: '20px', margin: '0 0 4px 0', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <li>1. {data.task1 || 'Assisting in the development of client software applications'}</li>
+                    <li>2. {data.task2 || 'Analyzing weekly website traffic data and creating reports'}</li>
+                    <li>3. {data.task3 || 'Participating in team strategy and brainstorming meetings'}</li>
+                  </ol>
+                  <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
+                    If you require any additional information or specific academic paperwork filled out,
+                    please do not hesitate to reach out.
+                  </p>
+                </>
+              )}
             </div>
           )}
 
           {/* 6. INTERNSHIP LETTER (COMPLETION) */}
           {docType === 'INTERNSHIP_LETTER' && (
-            <div style={{ fontSize: '13px', lineHeight: 1.5, color: textDark, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                <div style={{ width: '20px', height: '2px', background: primaryColor }}></div>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: primaryColor, textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Internship Completion Certificate
-                </div>
-              </div>
-
-              <div style={{ textAlign: 'center', margin: '4px 0', padding: '2px 0' }}>
-                <div style={{ fontSize: '16px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: primaryColor, marginBottom: '4px' }}>
-                  TO WHOM IT MAY CONCERN
-                </div>
-                <div style={{ width: '80px', height: '3px', background: accentColor, margin: '0 auto' }}></div>
-              </div>
-
-              <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
-                This is to officially certify that <strong>{data.employeeName}</strong>, a student from <strong>{data.institutionName || 'University of Technology'}</strong> pursuing a <strong>{data.degreeMajor || 'Bachelor of Science in IT'}</strong>, has successfully completed their internship program at <strong>{settings.agencyName}</strong>.
-              </p>
-
-              <p style={{ marginBottom: '2px' }}>
-                The details of the internship placement are outlined below:
-              </p>
-
-              <div style={{ background: lightBg, border: `1px solid ${borderColor}`, borderRadius: '8px', padding: '10px 14px', marginBottom: '4px' }}>
-                <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                  <li>• <strong>Position Title:</strong> {data.employeeTitle || 'Digital Marketing Intern'}</li>
-                  <li>• <strong>Department:</strong> {data.employeeDepartment || 'Marketing'}</li>
-                  <li>• <strong>Internship Duration:</strong> {data.internshipDuration || '3 Months'}</li>
-                  <li>• <strong>Start Date:</strong> {data.employeeHireDate ? formatDate(data.employeeHireDate) : 'Commencement Date'}</li>
-                  <li>• <strong>End Date:</strong> {data.employeeEndDate ? formatDate(data.employeeEndDate) : 'Expected Completion Date'}</li>
-                </ul>
-              </div>
-
-              <p style={{ marginBottom: '2px', textAlign: 'justify' }}>
-                During the course of the internship, <strong>{data.employeeName}</strong> demonstrated exceptional dedication, professional conduct, and technical proficiency. They were primarily involved in the following projects and responsibilities:
-              </p>
-
-              <ol style={{ paddingLeft: '20px', margin: '0 0 4px 0', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <li>1. {data.task1 || 'Assisting in the development of client software applications'}</li>
-                <li>2. {data.task2 || 'Analyzing weekly website traffic data and creating reports'}</li>
-                <li>3. {data.task3 || 'Participating in team strategy and brainstorming meetings'}</li>
-              </ol>
-
-              <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
-                Their contribution was highly valuable, and they successfully achieved all the learning objectives set out for this placement. We found them to be self-motivated, eager to learn, and a supportive team player.
-              </p>
-
-              <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
-                We wish them all the success in their future academic and professional endeavors.
-              </p>
+            <div style={{ fontSize: '13px', lineHeight: 1.6, color: textDark, display: 'flex', flexDirection: 'column' }}>
+              {sectionLabel('Internship Completion Certificate')}
+              {data.letterText ? renderLetterBlocks(data.letterText, { justify: false, lastMargin: 8 }) : (
+                <>
+                  <div style={{ textAlign: 'center', margin: '4px 0', padding: '2px 0' }}>
+                    <div style={{ fontSize: '16px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: primaryColor, marginBottom: '4px' }}>
+                      TO WHOM IT MAY CONCERN
+                    </div>
+                    <div style={{ width: '80px', height: '3px', background: accentColor, margin: '0 auto' }}></div>
+                  </div>
+                  <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
+                    This is to officially certify that <strong>{data.employeeName}</strong>, a student from <strong>{data.institutionName || 'University of Technology'}</strong> pursuing a <strong>{data.degreeMajor || 'Bachelor of Science in IT'}</strong>, has successfully completed their internship program at <strong>{settings.agencyName}</strong>.
+                  </p>
+                  <p style={{ marginBottom: '2px' }}>
+                    The details of the internship placement are outlined below:
+                  </p>
+                  <div style={{ background: lightBg, border: `1px solid ${borderColor}`, borderRadius: '8px', padding: '10px 14px', marginBottom: '4px' }}>
+                    <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                      <li>• <strong>Position Title:</strong> {data.employeeTitle || 'Digital Marketing Intern'}</li>
+                      <li>• <strong>Department:</strong> {data.employeeDepartment || 'Marketing'}</li>
+                      <li>• <strong>Internship Duration:</strong> {data.internshipDuration || '3 Months'}</li>
+                      <li>• <strong>Start Date:</strong> {data.employeeHireDate ? formatDate(data.employeeHireDate) : 'Commencement Date'}</li>
+                      <li>• <strong>End Date:</strong> {data.employeeEndDate ? formatDate(data.employeeEndDate) : 'Expected Completion Date'}</li>
+                    </ul>
+                  </div>
+                  <p style={{ marginBottom: '2px', textAlign: 'justify' }}>
+                    During the course of the internship, <strong>{data.employeeName}</strong> demonstrated exceptional dedication, professional conduct, and technical proficiency. They were primarily involved in the following projects and responsibilities:
+                  </p>
+                  <ol style={{ paddingLeft: '20px', margin: '0 0 4px 0', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <li>1. {data.task1 || 'Assisting in the development of client software applications'}</li>
+                    <li>2. {data.task2 || 'Analyzing weekly website traffic data and creating reports'}</li>
+                    <li>3. {data.task3 || 'Participating in team strategy and brainstorming meetings'}</li>
+                  </ol>
+                  <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
+                    Their contribution was highly valuable, and they successfully achieved all the learning objectives set out for this placement. We found them to be self-motivated, eager to learn, and a supportive team player.
+                  </p>
+                  <p style={{ marginBottom: '4px', textAlign: 'justify' }}>
+                    We wish them all the success in their future academic and professional endeavors.
+                  </p>
+                </>
+              )}
             </div>
           )}
 
@@ -809,6 +821,13 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings, verifi
       {/* ───────────────── PRINT STYLES ───────────────── */}
       <style dangerouslySetInnerHTML={{
         __html: `
+        .hr-letter-html p { margin: 0 0 16px 0; }
+        .hr-letter-html p:last-child { margin-bottom: 0; }
+        .hr-letter-html ul, .hr-letter-html ol { margin: 0 0 12px 0; padding-left: 20px; }
+        .hr-letter-html li { margin-bottom: 4px; }
+        .hr-letter-html strong, .hr-letter-html b { font-weight: 700; }
+        .hr-letter-html em, .hr-letter-html i { font-style: italic; }
+        .hr-letter-html u { text-decoration: underline; }
         @page {
           size: auto;
           margin: 0;

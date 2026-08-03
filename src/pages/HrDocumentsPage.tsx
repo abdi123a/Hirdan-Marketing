@@ -16,7 +16,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   Plus, FileText, Landmark, FileSpreadsheet, ShieldAlert,
   Download, RefreshCw, Eye, CheckCircle2, XCircle, Search, Mail, Loader2,
-  GraduationCap, Award, Send, RotateCcw, X, AtSign, Users, Paperclip
+  GraduationCap, Award, Send, RotateCcw, X, AtSign, Users, Paperclip, ChevronRight
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import {
@@ -25,18 +25,56 @@ import {
 import { Label } from "@/components/ui/label";
 import { InlineTableSkeleton } from "@/components/ui/PageSkeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
-const getDocTypeLabel = (docType: string) => {
-  if (docType === 'WORK_CERTIFICATE') return 'Work Certificate';
-  if (docType === 'SALARY_CERTIFICATE') return 'Salary Certificate';
-  if (docType === 'PAYSLIP') return 'Payslip';
-  if (docType === 'WARNING_CERTIFICATE') return 'Warning Certificate';
-  if (docType === 'INTERNSHIP_ACCEPTED_CERTIFICATE') return 'Internship Confirmation';
-  if (docType === 'INTERNSHIP_LETTER') return 'Internship Completion Letter';
-  return docType.replace('_', ' ');
-};
+const DOC_TYPES = [
+  {
+    type: "WORK_CERTIFICATE",
+    label: "Work Certificate",
+    description: "Employment confirmation with role, department, and hire date",
+    icon: FileText,
+    tone: "text-primary bg-primary/10",
+  },
+  {
+    type: "SALARY_CERTIFICATE",
+    label: "Salary Certificate",
+    description: "Compensation verification with salary breakdown",
+    icon: Landmark,
+    tone: "text-amber-600 bg-amber-500/10",
+  },
+  {
+    type: "PAYSLIP",
+    label: "Payslip",
+    description: "Last three months of payroll statements",
+    icon: FileSpreadsheet,
+    tone: "text-emerald-600 bg-emerald-500/10",
+  },
+  {
+    type: "WARNING_CERTIFICATE",
+    label: "Warning Notice",
+    description: "Disciplinary letter — requires manager approval",
+    icon: ShieldAlert,
+    tone: "text-rose-600 bg-rose-500/10",
+  },
+  {
+    type: "INTERNSHIP_ACCEPTED_CERTIFICATE",
+    label: "Internship Confirmation",
+    description: "Acceptance letter with schedule and responsibilities",
+    icon: GraduationCap,
+    tone: "text-sky-600 bg-sky-500/10",
+  },
+  {
+    type: "INTERNSHIP_LETTER",
+    label: "Internship Completion",
+    description: "Completion letter certifying internship achievements",
+    icon: Award,
+    tone: "text-violet-600 bg-violet-500/10",
+  },
+] as const;
 
-// ── CC Tag Input Helper ───────────────────────────────────────────
+const getDocTypeLabel = (docType: string) =>
+  DOC_TYPES.find((d) => d.type === docType)?.label || docType.replace(/_/g, " ");
+
 function CcTagInput({ tags, onAdd, onRemove }: { tags: string[]; onAdd: (v: string) => void; onRemove: (v: string) => void }) {
   const [inputVal, setInputVal] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -81,11 +119,18 @@ function CcTagInput({ tags, onAdd, onRemove }: { tags: string[]; onAdd: (v: stri
         onChange={(e) => setInputVal(e.target.value)}
         onKeyDown={handleKey}
         onBlur={commit}
-        placeholder={tags.length === 0 ? "Add CC recipients… press Enter or comma" : ""}
+        placeholder={tags.length === 0 ? "Add CC recipients…" : ""}
         className="flex-1 min-w-[160px] bg-transparent outline-none text-xs placeholder:text-muted-foreground"
       />
     </div>
   );
+}
+
+function statusBadgeClass(status: string) {
+  if (status === "APPROVED" || status === "FINAL") return "bg-emerald-500/10 text-emerald-600";
+  if (status === "PENDING_APPROVAL") return "bg-amber-500/10 text-amber-600";
+  if (status === "REJECTED") return "bg-red-500/10 text-red-600";
+  return "bg-muted/40 text-muted-foreground";
 }
 
 export default function HrDocumentsPage() {
@@ -100,14 +145,12 @@ export default function HrDocumentsPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Approval modal states
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [isApproveModalOpen, setIsApproveModalOpen] = useState<boolean>(false);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState<boolean>(false);
   const [comment, setComment] = useState<string>("");
   const [actionLoading, setActionLoading] = useState<boolean>(false);
 
-  // Email modal states
   const [emailDocId, setEmailDocId] = useState<string | null>(null);
   const [emailDocRef, setEmailDocRef] = useState<any>(null);
   const [isEmailModalOpen, setIsEmailModalOpen] = useState<boolean>(false);
@@ -125,14 +168,9 @@ export default function HrDocumentsPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      await fetchHrDocuments({ pendingApproval: activeTab === 'approvals' });
+      await fetchHrDocuments({ pendingApproval: activeTab === "approvals" });
     } catch (err) { }
     setLoading(false);
-  };
-
-  const handleApprove = async (id: string) => {
-    setSelectedDocId(id);
-    setIsApproveModalOpen(true);
   };
 
   const handleConfirmApprove = async () => {
@@ -140,10 +178,7 @@ export default function HrDocumentsPage() {
     setActionLoading(true);
     try {
       await approveHrDocument(selectedDocId, comment);
-      toast({
-        title: "Success",
-        description: "Warning certificate approved.",
-      });
+      toast({ title: "Approved", description: "Warning certificate approved." });
       setIsApproveModalOpen(false);
       setComment("");
       loadData();
@@ -158,17 +193,12 @@ export default function HrDocumentsPage() {
     }
   };
 
-  const handleReject = async (id: string) => {
-    setSelectedDocId(id);
-    setIsRejectModalOpen(true);
-  };
-
   const handleConfirmReject = async () => {
     if (!selectedDocId) return;
-    if (!comment || comment.trim().length === 0) {
+    if (!comment.trim()) {
       toast({
         title: "Comment Required",
-        description: "You must provide a reason for rejecting the warning certificate.",
+        description: "Provide a reason for rejecting this warning.",
         variant: "destructive",
       });
       return;
@@ -176,10 +206,7 @@ export default function HrDocumentsPage() {
     setActionLoading(true);
     try {
       await rejectHrDocument(selectedDocId, comment);
-      toast({
-        title: "Success",
-        description: "Warning certificate rejected.",
-      });
+      toast({ title: "Rejected", description: "Warning certificate rejected." });
       setIsRejectModalOpen(false);
       setComment("");
       loadData();
@@ -195,38 +222,30 @@ export default function HrDocumentsPage() {
   };
 
   const buildDefaultBody = (doc: any) =>
-    `Hi ${doc.employee?.name || 'there'},\n\n` +
+    `Hi ${doc.employee?.name || "there"},\n\n` +
     `Please find attached your official ${getDocTypeLabel(doc.docType).toLowerCase()} (${doc.docNumber}) issued on ${formatDate(doc.generatedAt)}.\n\n` +
-    `If you have any questions, please do not hesitate to contact the HR department.\n\n` +
+    `If you have any questions, please contact the HR department.\n\n` +
     `Best regards,\nHR Department\n${settings.agencyName}`;
 
   const handleOpenEmailModal = (doc: any) => {
-    const body = buildDefaultBody(doc);
     setEmailDocId(doc.id);
     setEmailDocRef(doc);
     setEmailTo(doc.employee?.email || "");
     setEmailToError("");
     setCcTags([]);
     setEmailSubject(`${getDocTypeLabel(doc.docType)} – ${doc.docNumber}`);
-    setEmailBody(body);
+    setEmailBody(buildDefaultBody(doc));
     setIsEmailModalOpen(true);
-  };
-
-  const handleResetEmailBody = () => {
-    if (emailDocRef) setEmailBody(buildDefaultBody(emailDocRef));
   };
 
   const handleSendEmail = async () => {
     if (!emailDocId) return;
-
-    // Validate To field
     const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
     if (!emailTo.trim() || !emailRegex.test(emailTo.trim())) {
       setEmailToError("Please enter a valid email address.");
       return;
     }
     setEmailToError("");
-
     setIsSendingEmail(true);
     try {
       await sendHrDocumentEmail(emailDocId, {
@@ -236,8 +255,8 @@ export default function HrDocumentsPage() {
         body: emailBody,
       });
       toast({
-        title: "✅ Email Sent",
-        description: `HR document successfully delivered to ${emailTo.trim()}.`,
+        title: "Email Sent",
+        description: `Document delivered to ${emailTo.trim()}.`,
       });
       setIsEmailModalOpen(false);
     } catch (err: any) {
@@ -251,297 +270,189 @@ export default function HrDocumentsPage() {
     }
   };
 
+  const pendingCount = hrDocuments.filter((d) => d.status === "PENDING_APPROVAL").length;
+
   const filteredDocs = hrDocuments.filter((doc) => {
     const query = searchQuery.toLowerCase();
     return (
       doc.docNumber.toLowerCase().includes(query) ||
       doc.employee.name.toLowerCase().includes(query) ||
-      doc.docType.toLowerCase().includes(query)
+      doc.docType.toLowerCase().includes(query) ||
+      getDocTypeLabel(doc.docType).toLowerCase().includes(query)
     );
   });
 
   return (
     <div className="space-y-6 p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-primary to-violet-500 bg-clip-text text-transparent">
-            HR Document Hub
-          </h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground tracking-tight">HR Documents</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Auto-generate and manage formal, A4-formatted employee certificates and warning notices.
+            Generate certificates, payslips, and notices — then download or email them.
           </p>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <TabsList className="bg-muted/60 p-1 rounded-xl">
             <TabsTrigger value="documents" className="rounded-lg text-xs font-semibold px-4 py-1.5">
-              Documents Library
+              Library
             </TabsTrigger>
             {user?.role !== "staff" && (
               <TabsTrigger value="approvals" className="rounded-lg text-xs font-semibold px-4 py-1.5 flex items-center gap-1.5">
-                Approvals Queue
-                {hrDocuments.filter(d => d.status === 'PENDING_APPROVAL').length > 0 && (
-                  <Badge variant="destructive" className="h-4 min-w-4 px-1 rounded-full text-[9px] flex items-center justify-center font-bold">
-                    {hrDocuments.filter(d => d.status === 'PENDING_APPROVAL').length}
+                Approvals
+                {pendingCount > 0 && (
+                  <Badge variant="destructive" className="h-4 min-w-4 px-1 rounded-full text-[9px] font-bold">
+                    {pendingCount}
                   </Badge>
                 )}
               </TabsTrigger>
             )}
           </TabsList>
 
-          <div className="relative w-64">
+          <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search documents..."
+              placeholder="Search by name or ref…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-9 text-xs rounded-xl border-border bg-card"
+              className="pl-9 h-9 text-xs rounded-xl"
             />
           </div>
         </div>
 
-        {/* Tab 1: Documents list and Card Grid */}
-        <TabsContent value="documents" className="space-y-8 mt-0 outline-none">
-          {/* Card Grid */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* Work Certificate */}
-            <Card className="border-border/50 shadow-sm hover:shadow-md transition duration-200 flex flex-col justify-between">
-              <CardHeader className="pb-3">
-                <div className="h-10 w-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary mb-3">
-                  <FileText className="h-5 w-5" />
-                </div>
-                <CardTitle className="text-base font-bold">Work Certificate</CardTitle>
-                <CardDescription className="text-xs">
-                  Certificate of employment confirming hire date, role, and active/ended contract status.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <Button
-                  onClick={() => navigate("/dashboard/hr/generate?type=WORK_CERTIFICATE")}
-                  className="w-full h-9 text-xs rounded-lg font-semibold"
-                  variant="hero"
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Generate
-                </Button>
-              </CardContent>
-            </Card>
+        <TabsContent value="documents" className="space-y-6 mt-0 outline-none">
+          {/* Compact type picker */}
+          <Card className="border-border/50 shadow-sm overflow-hidden">
+            <CardHeader className="pb-3 border-b border-border/40">
+              <CardTitle className="text-base font-bold">Create a document</CardTitle>
+              <CardDescription className="text-xs">
+                Choose a type to start — pick the employee and edit every field on the next screen.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border/40">
+                {DOC_TYPES.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.type}
+                      type="button"
+                      onClick={() => navigate(`/dashboard/hr/generate?type=${item.type}`)}
+                      className="group flex items-start gap-3 p-4 text-left hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                    >
+                      <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center shrink-0", item.tone)}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1">
+                          <span className="text-sm font-semibold text-foreground">{item.label}</span>
+                          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug line-clamp-2">
+                          {item.description}
+                        </p>
+                      </div>
+                      <Plus className="h-3.5 w-3.5 text-muted-foreground/50 mt-1 shrink-0 group-hover:text-primary transition-colors" />
+                    </button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
 
-            {/* Salary Certificate */}
-            <Card className="border-border/50 shadow-sm hover:shadow-md transition duration-200 flex flex-col justify-between">
-              <CardHeader className="pb-3">
-                <div className="h-10 w-10 bg-amber-500/10 rounded-xl flex items-center justify-center text-amber-500 mb-3">
-                  <Landmark className="h-5 w-5" />
-                </div>
-                <CardTitle className="text-base font-bold">Salary Certificate</CardTitle>
-                <CardDescription className="text-xs">
-                  Formal compensation verification listing basic salary, all allowances, and gross total.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <Button
-                  onClick={() => navigate("/dashboard/hr/generate?type=SALARY_CERTIFICATE")}
-                  className="w-full h-9 text-xs rounded-lg font-semibold"
-                  variant="hero"
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Generate
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Last 3 Months Payslip */}
-            <Card className="border-border/50 shadow-sm hover:shadow-md transition duration-200 flex flex-col justify-between">
-              <CardHeader className="pb-3">
-                <div className="h-10 w-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500 mb-3">
-                  <FileSpreadsheet className="h-5 w-5" />
-                </div>
-                <CardTitle className="text-base font-bold">Last 3 Months Payslip</CardTitle>
-                <CardDescription className="text-xs">
-                  Print-friendly historical payslips for the employee's last three completed payroll cycles.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <Button
-                  onClick={() => navigate("/dashboard/hr/generate?type=PAYSLIP")}
-                  className="w-full h-9 text-xs rounded-lg font-semibold"
-                  variant="hero"
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Generate
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Warning Certificate */}
-            <Card className="border-border/50 shadow-sm hover:shadow-md transition duration-200 flex flex-col justify-between">
-              <CardHeader className="pb-3">
-                <div className="h-10 w-10 bg-rose-500/10 rounded-xl flex items-center justify-center text-rose-500 mb-3">
-                  <ShieldAlert className="h-5 w-5" />
-                </div>
-                <CardTitle className="text-base font-bold">Warning Certificate</CardTitle>
-                <CardDescription className="text-xs">
-                  Formal disciplinary notice. Requires manager sign-off before it can be finalized and delivered.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <Button
-                  onClick={() => navigate("/dashboard/hr/generate?type=WARNING_CERTIFICATE")}
-                  className="w-full h-9 text-xs rounded-lg font-semibold"
-                  variant="hero"
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Generate
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Internship Accepted Certificate */}
-            <Card className="border-border/50 shadow-sm hover:shadow-md transition duration-200 flex flex-col justify-between">
-              <CardHeader className="pb-3">
-                <div className="h-10 w-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-500 mb-3">
-                  <GraduationCap className="h-5 w-5" />
-                </div>
-                <CardTitle className="text-base font-bold">Internship Confirmation</CardTitle>
-                <CardDescription className="text-xs">
-                  Official confirmation of internship acceptance detailing duration, schedule, and learning objectives.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <Button
-                  onClick={() => navigate("/dashboard/hr/generate?type=INTERNSHIP_ACCEPTED_CERTIFICATE")}
-                  className="w-full h-9 text-xs rounded-lg font-semibold"
-                  variant="hero"
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Generate
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Internship Completion Letter */}
-            <Card className="border-border/50 shadow-sm hover:shadow-md transition duration-200 flex flex-col justify-between">
-              <CardHeader className="pb-3">
-                <div className="h-10 w-10 bg-purple-500/10 rounded-xl flex items-center justify-center text-purple-500 mb-3">
-                  <Award className="h-5 w-5" />
-                </div>
-                <CardTitle className="text-base font-bold">Internship Letter (Completion)</CardTitle>
-                <CardDescription className="text-xs">
-                  Official internship completion letter certifying achievements, performance, and projects.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <Button
-                  onClick={() => navigate("/dashboard/hr/generate?type=INTERNSHIP_LETTER")}
-                  className="w-full h-9 text-xs rounded-lg font-semibold"
-                  variant="hero"
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Generate
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Recent Documents Table */}
-          <Card className="border-border/50 shadow-sm overflow-hidden bg-card">
+          {/* Recent documents */}
+          <Card className="border-border/50 shadow-sm overflow-hidden">
             <CardHeader className="border-b border-border/40 pb-4">
-              <CardTitle className="text-lg font-bold">Recent HR Documents</CardTitle>
-              <CardDescription className="text-xs">History of all generated certificates, warnings, and payslips.</CardDescription>
+              <CardTitle className="text-base font-bold">Recent documents</CardTitle>
+              <CardDescription className="text-xs">Edit, download, email, or review any generated document.</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               {loading ? (
                 <InlineTableSkeleton rows={5} />
               ) : filteredDocs.length === 0 ? (
-                <div className="p-12 text-center text-xs text-muted-foreground italic">No generated documents found.</div>
+                <div className="p-12 text-center text-sm text-muted-foreground">
+                  No documents yet. Create one above to get started.
+                </div>
               ) : (
                 <Table>
                   <TableHeader className="bg-muted/10">
                     <TableRow>
-                      <TableHead className="font-bold text-xs">Doc Number</TableHead>
-                      <TableHead className="font-bold text-xs">Employee</TableHead>
-                      <TableHead className="font-bold text-xs">Type</TableHead>
-                      <TableHead className="font-bold text-xs">Version</TableHead>
-                      <TableHead className="font-bold text-xs">Date Generated</TableHead>
-                      <TableHead className="font-bold text-xs">Status</TableHead>
-                      <TableHead className="text-right font-bold text-xs">Actions</TableHead>
+                      <TableHead className="font-semibold text-xs">Reference</TableHead>
+                      <TableHead className="font-semibold text-xs">Employee</TableHead>
+                      <TableHead className="font-semibold text-xs">Type</TableHead>
+                      <TableHead className="font-semibold text-xs">Issued</TableHead>
+                      <TableHead className="font-semibold text-xs">Status</TableHead>
+                      <TableHead className="text-right font-semibold text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredDocs.map((doc) => {
-                      const isDownloadable = doc.status === 'APPROVED' || doc.status === 'FINAL';
-
+                      const isDownloadable = doc.status === "APPROVED" || doc.status === "FINAL";
                       return (
                         <TableRow key={doc.id} className="hover:bg-muted/5">
-                          <TableCell className="font-mono text-xs font-bold text-primary">{doc.docNumber}</TableCell>
                           <TableCell>
-                            <div>
-                              <p className="font-semibold text-sm text-foreground/80">{doc.employee?.name}</p>
-                              <span className="text-[10px] text-muted-foreground">{doc.employee?.department || 'Staff'}</span>
-                            </div>
+                            <div className="font-mono text-xs font-semibold text-primary">{doc.docNumber}</div>
+                            <div className="text-[10px] text-muted-foreground">v{doc.version}</div>
                           </TableCell>
-                          <TableCell className="text-xs font-medium text-muted-foreground">
+                          <TableCell>
+                            <p className="font-medium text-sm">{doc.employee?.name}</p>
+                            <span className="text-[10px] text-muted-foreground">{doc.employee?.department || "Staff"}</span>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
                             {getDocTypeLabel(doc.docType)}
                           </TableCell>
-                          <TableCell className="text-xs font-mono">v{doc.version}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {formatDate(doc.generatedAt)}
                           </TableCell>
                           <TableCell>
                             <Badge
                               variant="outline"
-                              className={`text-[9px] font-black uppercase tracking-wider border-0 px-2.5 py-0.5 rounded-full ${doc.status === 'APPROVED' || doc.status === 'FINAL'
-                                  ? 'bg-emerald-500/10 text-emerald-600'
-                                  : doc.status === 'PENDING_APPROVAL'
-                                    ? 'bg-amber-500/10 text-amber-600'
-                                    : doc.status === 'REJECTED'
-                                      ? 'bg-red-500/10 text-red-600'
-                                      : 'bg-muted/40 text-muted-foreground'
-                                }`}
+                              className={cn(
+                                "text-[9px] font-bold uppercase tracking-wider border-0 px-2.5 py-0.5 rounded-full",
+                                statusBadgeClass(doc.status)
+                              )}
                             >
-                              {doc.status}
+                              {doc.status.replace(/_/g, " ")}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {/* Re-edit / new version */}
+                            <div className="flex items-center justify-end gap-0.5">
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 rounded-lg hover:bg-primary/5 hover:text-primary"
-                                title="Edit / Generate New Version"
+                                className="h-8 w-8 rounded-lg"
+                                title="Edit / new version"
                                 onClick={() => navigate(`/dashboard/hr/generate?editId=${doc.id}`)}
                               >
                                 <RefreshCw className="h-3.5 w-3.5" />
                               </Button>
-
-                              {/* Download PDF */}
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 rounded-lg hover:bg-emerald-500/10 text-emerald-600 disabled:opacity-30"
+                                className="h-8 w-8 rounded-lg text-emerald-600 disabled:opacity-30"
                                 title="Download PDF"
                                 disabled={!isDownloadable || !doc.pdfUrl}
-                                onClick={() => doc.pdfUrl && window.open(`${import.meta.env.VITE_API_URL || ''}${doc.pdfUrl}`, '_blank')}
+                                onClick={() => doc.pdfUrl && window.open(`${import.meta.env.VITE_API_URL || ""}${doc.pdfUrl}`, "_blank")}
                               >
                                 <Download className="h-3.5 w-3.5" />
                               </Button>
-
-                              {/* Email directly to employee */}
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 rounded-lg hover:bg-violet-500/10 text-violet-600 disabled:opacity-30"
-                                title="Email PDF to Employee"
+                                className="h-8 w-8 rounded-lg text-primary disabled:opacity-30"
+                                title="Email PDF"
                                 disabled={!isDownloadable || !doc.pdfUrl}
                                 onClick={() => handleOpenEmailModal(doc)}
                               >
                                 <Mail className="h-3.5 w-3.5" />
                               </Button>
-
-                              {/* View Details */}
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-8 w-8 rounded-lg hover:bg-primary/5 hover:text-primary"
-                                title="View Details"
+                                className="h-8 w-8 rounded-lg"
+                                title="View"
                                 onClick={() => navigate(`/dashboard/hr/generate?viewId=${doc.id}`)}
                               >
                                 <Eye className="h-3.5 w-3.5" />
@@ -558,76 +469,68 @@ export default function HrDocumentsPage() {
           </Card>
         </TabsContent>
 
-        {/* Tab 2: Approvals Queue */}
         <TabsContent value="approvals" className="mt-0 outline-none">
-          <Card className="border-border/50 shadow-sm overflow-hidden bg-card">
+          <Card className="border-border/50 shadow-sm overflow-hidden">
             <CardHeader className="border-b border-border/40 pb-4">
-              <CardTitle className="text-lg font-bold flex items-center gap-2">
-                <ShieldAlert className="h-5 w-5 text-amber-500" /> Pending Approvals Queue
+              <CardTitle className="text-base font-bold flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-amber-500" /> Pending approvals
               </CardTitle>
-              <CardDescription className="text-xs">Warnings certificates awaiting manager review and sign-off.</CardDescription>
+              <CardDescription className="text-xs">Warning notices awaiting manager review.</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               {loading ? (
                 <InlineTableSkeleton rows={3} />
               ) : filteredDocs.length === 0 ? (
-                <div className="p-12 text-center text-xs text-muted-foreground italic">No warning certificates pending approval.</div>
+                <div className="p-12 text-center text-sm text-muted-foreground">Nothing pending approval.</div>
               ) : (
                 <Table>
                   <TableHeader className="bg-muted/10">
                     <TableRow>
-                      <TableHead className="font-bold text-xs">Doc Number</TableHead>
-                      <TableHead className="font-bold text-xs">Employee</TableHead>
-                      <TableHead className="font-bold text-xs">Generated By</TableHead>
-                      <TableHead className="font-bold text-xs">Date Generated</TableHead>
-                      <TableHead className="text-right font-bold text-xs">Actions</TableHead>
+                      <TableHead className="font-semibold text-xs">Reference</TableHead>
+                      <TableHead className="font-semibold text-xs">Employee</TableHead>
+                      <TableHead className="font-semibold text-xs">Generated by</TableHead>
+                      <TableHead className="font-semibold text-xs">Date</TableHead>
+                      <TableHead className="text-right font-semibold text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredDocs.map((doc) => (
                       <TableRow key={doc.id} className="hover:bg-muted/5">
-                        <TableCell className="font-mono text-xs font-bold text-primary">{doc.docNumber}</TableCell>
+                        <TableCell className="font-mono text-xs font-semibold text-primary">{doc.docNumber}</TableCell>
                         <TableCell>
-                          <div>
-                            <p className="font-semibold text-sm text-foreground/80">{doc.employee?.name}</p>
-                            <span className="text-[10px] text-muted-foreground">{doc.employee?.department || 'Staff'}</span>
-                          </div>
+                          <p className="font-medium text-sm">{doc.employee?.name}</p>
+                          <span className="text-[10px] text-muted-foreground">{doc.employee?.department || "Staff"}</span>
                         </TableCell>
-                        <TableCell className="text-xs font-semibold text-muted-foreground">
-                          {doc.generatedBy?.name || 'HR'}
+                        <TableCell className="text-xs text-muted-foreground">
+                          {doc.generatedBy?.name || "HR"}
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {formatDate(doc.generatedAt)}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {/* Review preview */}
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-8 text-xs font-semibold rounded-lg"
+                              className="h-8 text-xs rounded-lg"
                               onClick={() => navigate(`/dashboard/hr/generate?viewId=${doc.id}`)}
                             >
-                              <Eye className="h-3.5 w-3.5 mr-1" /> Review Draft
+                              <Eye className="h-3.5 w-3.5 mr-1" /> Review
                             </Button>
-
-                            {/* Approve */}
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-emerald-600 hover:bg-emerald-500/10 rounded-lg"
-                              title="Approve & Sign"
+                              title="Approve"
                               onClick={() => { setSelectedDocId(doc.id); setIsApproveModalOpen(true); }}
                             >
                               <CheckCircle2 className="h-4 w-4" />
                             </Button>
-
-                            {/* Reject */}
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-red-600 hover:bg-red-500/10 rounded-lg"
-                              title="Reject warning"
+                              title="Reject"
                               onClick={() => { setSelectedDocId(doc.id); setIsRejectModalOpen(true); }}
                             >
                               <XCircle className="h-4 w-4" />
@@ -644,17 +547,16 @@ export default function HrDocumentsPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Approve Modal */}
       <Dialog open={isApproveModalOpen} onOpenChange={setIsApproveModalOpen}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
-            <DialogTitle>Approve Warning Certificate</DialogTitle>
+            <DialogTitle>Approve warning</DialogTitle>
             <DialogDescription>
-              Confirming this document will apply the company signature & stamp, setting its status to APPROVED. The PDF will be saved to the employee profile.
+              This applies the company signature and stamp and marks the document as approved.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-3">
-            <Label htmlFor="approve-comment" className="text-xs font-bold uppercase tracking-wider">Comment (Optional)</Label>
+            <Label htmlFor="approve-comment" className="text-xs font-semibold">Comment (optional)</Label>
             <Textarea
               id="approve-comment"
               placeholder="e.g. Approved after counseling session."
@@ -672,20 +574,19 @@ export default function HrDocumentsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Reject Modal */}
       <Dialog open={isRejectModalOpen} onOpenChange={setIsRejectModalOpen}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
-            <DialogTitle>Reject Warning Certificate</DialogTitle>
+            <DialogTitle>Reject warning</DialogTitle>
             <DialogDescription>
-              Provide feedback explaining why this warning certificate is being rejected. This comment is required.
+              Explain why this warning is being rejected. A comment is required.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-3">
-            <Label htmlFor="reject-comment" className="text-xs font-bold uppercase tracking-wider text-red-500">Rejection Reason (Required)</Label>
+            <Label htmlFor="reject-comment" className="text-xs font-semibold text-red-500">Rejection reason</Label>
             <Textarea
               id="reject-comment"
-              placeholder="e.g. Please correct the incident date; it happened on Tuesday, not Wednesday."
+              placeholder="e.g. Please correct the incident date."
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               className="min-h-[80px]"
@@ -694,41 +595,36 @@ export default function HrDocumentsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsRejectModalOpen(false)} disabled={actionLoading}>Cancel</Button>
             <Button onClick={handleConfirmReject} variant="destructive" disabled={actionLoading} className="gap-1">
-              {actionLoading && <Loader2 className="h-3 w-3 animate-spin" />} Reject Draft
+              {actionLoading && <Loader2 className="h-3 w-3 animate-spin" />} Reject
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ── Premium Email Modal ── */}
       <Dialog open={isEmailModalOpen} onOpenChange={setIsEmailModalOpen}>
         <DialogContent className="sm:max-w-[540px] p-0 overflow-hidden gap-0">
-          {/* Gradient header */}
-          <div className="bg-gradient-to-br from-violet-600 via-primary to-indigo-600 px-6 pt-6 pb-5 text-white">
+          <div className="bg-primary px-6 pt-6 pb-5 text-primary-foreground">
             <div className="flex items-center gap-3 mb-2">
-              <div className="h-9 w-9 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                <Send className="h-4 w-4 text-white" />
+              <div className="h-9 w-9 rounded-xl bg-white/15 flex items-center justify-center">
+                <Send className="h-4 w-4" />
               </div>
               <div>
-                <DialogTitle className="text-white text-base font-bold m-0 p-0">Send Document via Email</DialogTitle>
-                <p className="text-white/70 text-[11px] mt-0.5">Deliver the HR document directly to the employee's inbox</p>
+                <DialogTitle className="text-primary-foreground text-base font-bold m-0 p-0">Send via email</DialogTitle>
+                <p className="text-primary-foreground/70 text-[11px] mt-0.5">PDF will be attached automatically</p>
               </div>
             </div>
-            {/* Attachment badge */}
             {emailDocRef && (
               <div className="mt-3 flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2">
-                <Paperclip className="h-3.5 w-3.5 text-white/80 shrink-0" />
-                <span className="text-white/90 text-[11px] font-mono font-semibold">{emailDocRef.docNumber}.pdf</span>
-                <Badge className="ml-auto text-[9px] bg-white/20 text-white border-0 rounded-full px-2 py-0.5">PDF Attached</Badge>
+                <Paperclip className="h-3.5 w-3.5 opacity-80 shrink-0" />
+                <span className="text-[11px] font-mono font-semibold">{emailDocRef.docNumber}.pdf</span>
               </div>
             )}
           </div>
 
           <div className="p-6 space-y-4">
-            {/* To field */}
             <div className="space-y-1.5">
-              <Label htmlFor="email-to" className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                <AtSign className="h-3 w-3" /> To *
+              <Label htmlFor="email-to" className="text-xs font-semibold flex items-center gap-1.5">
+                <AtSign className="h-3 w-3" /> To
               </Label>
               <Input
                 id="email-to"
@@ -736,27 +632,24 @@ export default function HrDocumentsPage() {
                 placeholder="employee@company.com"
                 value={emailTo}
                 onChange={(e) => { setEmailTo(e.target.value); setEmailToError(""); }}
-                className={`h-10 rounded-xl text-sm ${emailToError ? 'border-destructive focus-visible:ring-destructive/30' : ''}`}
+                className={`h-10 rounded-xl text-sm ${emailToError ? "border-destructive" : ""}`}
               />
-              {emailToError && <p className="text-[11px] text-destructive font-medium">{emailToError}</p>}
+              {emailToError && <p className="text-[11px] text-destructive">{emailToError}</p>}
             </div>
 
-            {/* CC tag input */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Label className="text-xs font-semibold flex items-center gap-1.5">
                 <Users className="h-3 w-3" /> CC
-                <span className="font-normal text-muted-foreground/60 normal-case tracking-normal">— press Enter, comma or Space to add</span>
               </Label>
               <CcTagInput
                 tags={ccTags}
-                onAdd={(v) => setCcTags(prev => [...prev, v])}
-                onRemove={(v) => setCcTags(prev => prev.filter(t => t !== v))}
+                onAdd={(v) => setCcTags((prev) => [...prev, v])}
+                onRemove={(v) => setCcTags((prev) => prev.filter((t) => t !== v))}
               />
             </div>
 
-            {/* Subject */}
             <div className="space-y-1.5">
-              <Label htmlFor="email-subject" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Subject</Label>
+              <Label htmlFor="email-subject" className="text-xs font-semibold">Subject</Label>
               <Input
                 id="email-subject"
                 value={emailSubject}
@@ -765,17 +658,15 @@ export default function HrDocumentsPage() {
               />
             </div>
 
-            {/* Message body */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <Label htmlFor="email-body" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Message</Label>
+                <Label htmlFor="email-body" className="text-xs font-semibold">Message</Label>
                 <button
                   type="button"
-                  onClick={handleResetEmailBody}
+                  onClick={() => emailDocRef && setEmailBody(buildDefaultBody(emailDocRef))}
                   className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
-                  title="Reset to default message"
                 >
-                  <RotateCcw className="h-3 w-3" /> Reset to default
+                  <RotateCcw className="h-3 w-3" /> Reset
                 </button>
               </div>
               <Textarea
@@ -783,17 +674,7 @@ export default function HrDocumentsPage() {
                 value={emailBody}
                 onChange={(e) => setEmailBody(e.target.value)}
                 className="min-h-[150px] text-xs leading-relaxed rounded-xl resize-none"
-                placeholder="Write your custom message here..."
               />
-              <p className="text-[10px] text-muted-foreground text-right">{emailBody.length} characters</p>
-            </div>
-
-            {/* Info note */}
-            <div className="flex items-start gap-2 rounded-xl bg-primary/5 border border-primary/10 px-3 py-2.5">
-              <Mail className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                This email will be sent using the agency's branded HTML template. The document PDF will be automatically attached.
-              </p>
             </div>
           </div>
 
@@ -805,13 +686,12 @@ export default function HrDocumentsPage() {
               {isSendingEmail ? (
                 <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Sending…</>
               ) : (
-                <><Send className="h-3.5 w-3.5" /> Send Email</>
+                <><Send className="h-3.5 w-3.5" /> Send</>
               )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
     </div>
   );
 }

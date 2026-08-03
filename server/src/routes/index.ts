@@ -19,6 +19,7 @@ import usersRoutes from './users.routes.js';
 import aiRoutes from './ai.routes.js';
 import transferRoutes from './transfer.routes.js';
 import notificationsRoutes from './notifications.routes.js';
+import devicesRoutes from './devices.routes.js';
 
 // Social Media Module
 import socialProfilesRoutes from './social-profiles.routes.js';
@@ -61,6 +62,7 @@ router.use('/accounts', authenticate, requireModuleAccess('settings'), accountsR
 router.use('/expenses', authenticate, requireModuleAccess('expenses'), expensesRoutes);
 router.use('/recurring-expenses', authenticate, requireModuleAccess('expenses'), recurringExpensesRoutes);
 router.use('/notifications', notificationsRoutes);
+router.use('/devices', devicesRoutes);
 
 // Social Media Module — nested under existing resource paths
 router.use('/clients', authenticate, requireModuleAccess('clients'), socialProfilesRoutes);

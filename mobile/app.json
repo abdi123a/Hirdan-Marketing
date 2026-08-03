@@ -1,0 +1,91 @@
+{
+  "expo": {
+    "name": "Hirdan Agency",
+    "slug": "hirdan-agency",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "scheme": "hirdan",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#24183D"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hirdanmarketing.agency",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Capture expense receipts and media for posts.",
+        "NSPhotoLibraryUsageDescription": "Attach photos to expenses and social posts.",
+        "NSFaceIDUsageDescription": "Unlock the app quickly with Face ID.",
+        "UIBackgroundModes": ["remote-notification"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#24183D",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "com.hirdanmarketing.agency",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#24183D",
+          "image": "./assets/splash-icon.png"
+        }
+      ],
+      "expo-image",
+      "expo-sharing",
+      [
+        "expo-notifications",
+        {
+          "color": "#4A2F8A"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Hirdan to capture receipts and media."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Hirdan to attach photos."
+        }
+      ],
+      "expo-local-authentication"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "hirdan-agency-mobile"
+      },
+      "router": {}
+    },
+    "owner": "hirdanmarketing"
+  }
+}

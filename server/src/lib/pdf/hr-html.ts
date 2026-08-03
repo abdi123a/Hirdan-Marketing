@@ -54,6 +54,9 @@ export type HrPdfContent = {
   status?: string;
   showSignature?: boolean;
   showStamp?: boolean;
+  sectionTitle?: string;
+  letterText?: string;
+  closingText?: string;
 };
 
 export type HrPdfAgency = {
@@ -177,12 +180,66 @@ function sectionHeading(primary: string, label: string, accentColor?: string): s
     </div>`;
 }
 
+function renderLetterHtml(text: string, paraClass = 'para para--justify'): string {
+  if (!text?.trim()) return '';
+
+  const looksHtml = /<\/?[a-z][\s\S]*>/i.test(text);
+  if (!looksHtml) {
+    return text
+      .replace(/\r\n/g, '\n')
+      .split(/\n{2,}/)
+      .map((block) => block.trim())
+      .filter(Boolean)
+      .map((block) => `<p class="${paraClass}" style="white-space:pre-wrap">${escapeHtml(block)}</p>`)
+      .join('');
+  }
+
+  // Sanitize but keep formatting tags
+  const stripped = text
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+    .replace(/on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+
+  const safe = stripped.replace(/<\/?([a-z0-9]+)([^>]*)>/gi, (match, tag: string, attrs: string) => {
+    const t = tag.toLowerCase();
+    const allowed = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'br', 'p', 'div', 'span', 'ul', 'ol', 'li', 'font']);
+    if (!allowed.has(t)) return '';
+    if (match.startsWith('</')) return `</${t}>`;
+    const styleMatch = attrs.match(/style\s*=\s*("([^"]*)"|'([^']*)')/i);
+    let attrStr = '';
+    if (styleMatch) {
+      const style = (styleMatch[2] || styleMatch[3] || '')
+        .replace(/expression\s*\(/gi, '')
+        .replace(/url\s*\(/gi, '')
+        .replace(/javascript:/gi, '');
+      if (style.trim()) attrStr = ` style="${style}"`;
+    }
+    return `<${t}${attrStr}>`;
+  });
+
+  // Ensure paragraphs get the document class styling
+  return safe
+    .replace(/<p(\s[^>]*)?>/gi, `<p class="${paraClass}"$1>`)
+    .replace(/<p class="[^"]*"\s+class="/gi, `<p class="${paraClass} `);
+}
+
 function buildWorkCertificate(
   data: HrPdfContent,
   agencyName: string,
   primary: string,
   timezone: string
 ): string {
+  const title = data.sectionTitle || 'Certificate of Employment';
+
+  if (data.letterText?.trim()) {
+    return `
+    <div class="body-text body-text--spaced">
+      ${sectionHeading(primary, title)}
+      ${renderLetterHtml(data.letterText)}
+    </div>`;
+  }
+
   const terminated =
     data.employeeStatus === 'TERMINATED' && data.employeeEndDate
       ? `<span> His/Her employment with our organization concluded on <strong>${escapeHtml(formatDate(data.employeeEndDate, timezone))}</strong>.</span>`
@@ -190,10 +247,10 @@ function buildWorkCertificate(
 
   return `
     <div class="body-text body-text--spaced">
-      ${sectionHeading(primary, 'Certificate of Employment')}
+      ${sectionHeading(primary, title)}
       <p class="para">To Whom It May Concern,</p>
       <p class="para para--justify">
-        This is to formally certify that <strong>${escapeHtml(data.employeeName)}</strong> (Employee ID: <strong>${escapeHtml(data.employeeId)}</strong>) is employed with <strong>${escapeHtml(agencyName)}</strong>.
+        This is to formally certify that <strong>${escapeHtml(data.employeeName)}</strong> is employed with <strong>${escapeHtml(agencyName)}</strong>.
         He/She holds the position of <strong>${escapeHtml(data.employeeTitle)}</strong> in the <strong>${escapeHtml(data.employeeDepartment || 'N/A')}</strong> department, and has been part of our team since <strong>${escapeHtml(formatDate(data.employeeHireDate, timezone))}</strong>.
       </p>
       <p class="para para--justify">
@@ -213,6 +270,7 @@ function buildSalaryCertificate(
   timezone: string,
   currency: string
 ): string {
+  const title = data.sectionTitle || 'Compensation Verification';
   const purposeBlock = data.purpose
     ? `<p class="para para--italic">This certificate has been issued at the employee's request for the specific purpose of: <strong>${escapeHtml(data.purpose)}</strong>.</p>`
     : '';
@@ -234,15 +292,26 @@ function buildSalaryCertificate(
     )
     .join('');
 
-  return `
-    <div class="body-text">
-      ${sectionHeading(primary, 'Compensation Verification')}
+  const intro = data.letterText?.trim()
+    ? renderLetterHtml(data.letterText)
+    : `
       <p class="para">To Whom It May Concern,</p>
       <p class="para para--justify">
-        This is to certify that <strong>${escapeHtml(data.employeeName)}</strong> (Employee ID: <strong>${escapeHtml(data.employeeId)}</strong>) is employed with <strong>${escapeHtml(agencyName)}</strong> as a <strong>${escapeHtml(data.employeeTitle)}</strong> since <strong>${escapeHtml(formatDate(data.employeeHireDate, timezone))}</strong>.
+        This is to certify that <strong>${escapeHtml(data.employeeName)}</strong> is employed with <strong>${escapeHtml(agencyName)}</strong> as a <strong>${escapeHtml(data.employeeTitle)}</strong> since <strong>${escapeHtml(formatDate(data.employeeHireDate, timezone))}</strong>.
       </p>
       ${purposeBlock}
-      <p class="para">A detailed breakdown of their gross monthly compensation is provided below:</p>
+      <p class="para">A detailed breakdown of their gross monthly compensation is provided below:</p>`;
+
+  const closing = data.closingText?.trim()
+    ? `<div class="para para--small">${renderLetterHtml(data.closingText, 'para para--small')}</div>`
+    : `<p class="para para--small">
+        * All disbursals are made in <strong>${escapeHtml(data.currency || currency)}</strong> via <strong>${escapeHtml(data.paymentMethod || 'Bank Transfer')}</strong> to Bank: <strong>${escapeHtml(data.bankName || 'N/A')}</strong> (Account: <strong>${escapeHtml(data.accountNumber || 'N/A')}</strong>).
+      </p>`;
+
+  return `
+    <div class="body-text">
+      ${sectionHeading(primary, title)}
+      ${intro}
       <div class="salary-table-wrap">
         <table class="salary-table">
           <thead>
@@ -266,9 +335,7 @@ function buildSalaryCertificate(
           </tbody>
         </table>
       </div>
-      <p class="para para--small">
-        * All disbursals are made in <strong>${escapeHtml(data.currency || currency)}</strong> via <strong>${escapeHtml(data.paymentMethod || 'Bank Transfer')}</strong> to Bank: <strong>${escapeHtml(data.bankName || 'N/A')}</strong> (Account: <strong>${escapeHtml(data.accountNumber || 'N/A')}</strong>).
-      </p>
+      ${closing}
     </div>`;
 }
 
@@ -339,13 +406,28 @@ function buildPayslip(data: HrPdfContent, primary: string, currency: string): st
 }
 
 function buildWarningCertificate(data: HrPdfContent, primary: string, timezone: string): string {
-  const issuedByBlock = data.issuedBy
-    ? `<p class="para">This warning letter is formally issued by: <strong>${escapeHtml(data.issuedBy)}</strong>.</p>`
-    : '';
+  const title = data.sectionTitle || 'Formal Disciplinary Action Letter';
+  const intro = data.letterText?.trim()
+    ? renderLetterHtml(data.letterText)
+    : `
+      <p class="para">Dear <strong>${escapeHtml(data.employeeName)}</strong>,</p>
+      <p class="para para--justify">
+        This letter serves as a formal disciplinary warning regarding documented performance concerns or behavioral policy violations.
+        We hold our employees to the highest professional standards, and it has become necessary to address areas where those standards have not been met.
+      </p>`;
+
+  const closing = data.closingText?.trim()
+    ? renderLetterHtml(data.closingText)
+    : `
+      <p class="para para--justify">
+        Please be advised that immediate and sustained improvement is required.
+        Failure to correct these performance issues or any further violations of company policies will result in additional disciplinary actions, up to and including termination of employment.
+      </p>
+      ${data.issuedBy ? `<p class="para">This warning letter is formally issued by: <strong>${escapeHtml(data.issuedBy)}</strong>.</p>` : ''}`;
 
   return `
     <div class="body-text">
-      ${sectionHeading('#ef4444', 'Formal Disciplinary Action Letter', '#ef4444')}
+      ${sectionHeading('#ef4444', title, '#ef4444')}
       <div class="warning-banner">
         <div>
           <span class="warning-banner__label">Warning Level</span>
@@ -356,20 +438,12 @@ function buildWarningCertificate(data: HrPdfContent, primary: string, timezone: 
           <span class="warning-banner__date">${data.incidentDate ? escapeHtml(formatDate(data.incidentDate, timezone)) : 'N/A'}</span>
         </div>
       </div>
-      <p class="para">Dear <strong>${escapeHtml(data.employeeName)}</strong> (Employee ID: <strong>${escapeHtml(data.employeeId)}</strong>),</p>
-      <p class="para para--justify">
-        This letter serves as a formal disciplinary warning regarding documented performance concerns or behavioral policy violations.
-        We hold our employees to the highest professional standards, and it has become necessary to address areas where those standards have not been met.
-      </p>
+      ${intro}
       <div class="reason-box">
         <h4 class="reason-box__title">Description of Infraction / Concerns</h4>
         <p class="reason-box__text">${escapeHtml(data.reason || 'No description provided.')}</p>
       </div>
-      <p class="para para--justify">
-        Please be advised that immediate and sustained improvement is required.
-        Failure to correct these performance issues or any further violations of company policies will result in additional disciplinary actions, up to and including termination of employment.
-      </p>
-      ${issuedByBlock}
+      ${closing}
     </div>`;
 }
 
@@ -380,9 +454,21 @@ function buildInternshipAccepted(
   timezone: string
 ): string {
   const prefix = genderPrefix(data.gender);
+  const subject =
+    data.sectionTitle ||
+    `Subject: Internship Confirmation for ${prefix} ${data.employeeName}`;
+
+  if (data.letterText?.trim()) {
+    return `
+    <div class="body-text body-text--compact">
+      <div class="internship-subject">${escapeHtml(subject)}</div>
+      ${renderLetterHtml(data.letterText, 'para para--tight')}
+    </div>`;
+  }
+
   return `
     <div class="body-text body-text--compact">
-      <div class="internship-subject">Subject: Internship Confirmation for ${escapeHtml(prefix)} ${escapeHtml(data.employeeName)}</div>
+      <div class="internship-subject">${escapeHtml(subject)}</div>
       <p class="para para--tight">Dear ${escapeHtml(data.coordinatorName || 'Internship Committee')},</p>
       <p class="para para--justify para--tight">
         We are pleased to inform you that <strong>${escapeHtml(prefix)} ${escapeHtml(data.employeeName)}</strong>, a student from your
@@ -422,9 +508,19 @@ function buildInternshipLetter(
   primary: string,
   timezone: string
 ): string {
+  const title = data.sectionTitle || 'Internship Completion Certificate';
+
+  if (data.letterText?.trim()) {
+    return `
+    <div class="body-text body-text--compact">
+      ${sectionHeading(primary, title)}
+      ${renderLetterHtml(data.letterText, 'para para--tight')}
+    </div>`;
+  }
+
   return `
     <div class="body-text body-text--compact">
-      ${sectionHeading(primary, 'Internship Completion Certificate')}
+      ${sectionHeading(primary, title)}
       <div class="completion-header">
         <div class="completion-header__title">TO WHOM IT MAY CONCERN</div>
         <div class="completion-header__line"></div>
@@ -650,6 +746,11 @@ html, body {
 .para--italic { margin-bottom: 24px; font-style: italic; color: ${SECONDARY}; }
 .para--small { margin-bottom: 24px; font-size: 12px; color: ${SECONDARY}; }
 .para--last { margin-bottom: 40px; }
+.body-text ul, .body-text ol { margin: 0 0 12px 20px; padding: 0; }
+.body-text li { margin-bottom: 4px; }
+.body-text strong, .body-text b { font-weight: 700; }
+.body-text em, .body-text i { font-style: italic; }
+.body-text u { text-decoration: underline; }
 .para--tight { margin-bottom: 4px; }
 .salary-table-wrap {
   border: 1px solid ${BORDER};

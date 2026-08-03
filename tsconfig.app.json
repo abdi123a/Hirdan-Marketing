@@ -19,8 +19,15 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@hirdan/shared": [
+        "./shared/src/index.ts"
+      ],
+      "@hirdan/shared/*": [
+        "./shared/src/*"
       ]
     },
+
     "skipLibCheck": true,
     "strict": false,
     "target": "ES2020",
@@ -30,6 +37,8 @@
     "useDefineForClassFields": true
   },
   "include": [
-    "src"
+    "src",
+    "shared/src"
   ]
+
 }

@@ -116,6 +116,34 @@ function setRefreshTokenCookie(res: Response, token: string) {
   });
 }
 
+/** True when the client is the native mobile app (not the web dashboard). */
+function isMobileClient(req: Request): boolean {
+  const platform = String(req.headers['x-client-platform'] || '').toLowerCase();
+  return platform === 'mobile' || platform === 'ios' || platform === 'android';
+}
+
+/** Prefer httpOnly cookie; fall back to JSON body for native clients. */
+function getRefreshTokenFromRequest(req: Request): string | undefined {
+  const fromCookie = req.cookies?.refreshToken;
+  if (typeof fromCookie === 'string' && fromCookie.length > 0) return fromCookie;
+  const fromBody = req.body?.refreshToken;
+  if (typeof fromBody === 'string' && fromBody.length > 0) return fromBody;
+  return undefined;
+}
+
+function authTokenResponse(
+  req: Request,
+  accessToken: string,
+  refreshToken: string,
+  extra: Record<string, unknown> = {}
+) {
+  const payload: Record<string, unknown> = { accessToken, ...extra };
+  if (isMobileClient(req)) {
+    payload.refreshToken = refreshToken;
+  }
+  return payload;
+}
+
 // ─── Helper: Verify reCAPTCHA ────────────────────────────────────
 
 async function verifyRecaptcha(token: string | undefined): Promise<void> {
@@ -197,20 +225,20 @@ router.post(
         (user as any).permissions || null
       );
 
-      res.json({
-        accessToken,
-        // refreshToken is now handled via cookie
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          permissions: (user as any).permissions || null,
-          resolvedPermissions,
-          requiresPasswordChange: !!user.mustChangePassword,
-          mustChangePassword: !!user.mustChangePassword,
-        },
-      });
+      res.json(
+        authTokenResponse(req, accessToken, refreshToken, {
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            permissions: (user as any).permissions || null,
+            resolvedPermissions,
+            requiresPasswordChange: !!user.mustChangePassword,
+            mustChangePassword: !!user.mustChangePassword,
+          },
+        })
+      );
     } catch (error) {
       next(error);
     }
@@ -276,20 +304,20 @@ router.post(
 
       setRefreshTokenCookie(res, refreshToken);
 
-      res.json({
-        accessToken,
-        // refreshToken handled via cookie
-        user: {
-          id: matchedUser.id,
-          email: matchedUser.email,
-          name: matchedUser.name,
-          role: matchedUser.role,
-          clientId: matchedUser.client.id,
-          company: matchedUser.client.company,
-          requiresPasswordChange: !!matchedUser.mustChangePassword,
-          mustChangePassword: !!matchedUser.mustChangePassword,
-        },
-      });
+      res.json(
+        authTokenResponse(req, accessToken, refreshToken, {
+          user: {
+            id: matchedUser.id,
+            email: matchedUser.email,
+            name: matchedUser.name,
+            role: matchedUser.role,
+            clientId: matchedUser.client.id,
+            company: matchedUser.client.company,
+            requiresPasswordChange: !!matchedUser.mustChangePassword,
+            mustChangePassword: !!matchedUser.mustChangePassword,
+          },
+        })
+      );
     } catch (error) {
       next(error);
     }
@@ -360,7 +388,11 @@ router.post(
 
       setRefreshTokenCookie(res, refreshToken);
 
-      res.json({ message: 'Password changed successfully', accessToken });
+      res.json(
+        authTokenResponse(req, accessToken, refreshToken, {
+          message: 'Password changed successfully',
+        })
+      );
     } catch (error) {
       next(error);
     }
@@ -371,7 +403,7 @@ router.post(
 
 router.post('/refresh', refreshLimiter, async (req: Request, res: Response, next) => {
   try {
-    const refreshToken = req.cookies?.refreshToken;
+    const refreshToken = getRefreshTokenFromRequest(req);
     if (!refreshToken) {
       throw AppError.badRequest('Refresh token is required');
     }
@@ -431,10 +463,7 @@ router.post('/refresh', refreshLimiter, async (req: Request, res: Response, next
 
     setRefreshTokenCookie(res, newRefreshToken);
 
-    res.json({
-      accessToken: newAccessToken,
-      // refreshToken handled via cookie
-    });
+    res.json(authTokenResponse(req, newAccessToken, newRefreshToken));
   } catch (error) {
     next(error);
   }
@@ -444,10 +473,20 @@ router.post('/refresh', refreshLimiter, async (req: Request, res: Response, next
 
 router.post('/logout', authenticate, async (req: Request, res: Response, next) => {
   try {
-    // Delete all refresh tokens for this user
-    await prisma.refreshToken.deleteMany({
-      where: { userId: req.user!.userId },
-    });
+    const bodyRefresh = typeof req.body?.refreshToken === 'string' ? req.body.refreshToken : null;
+
+    if (bodyRefresh) {
+      // Mobile: revoke only the presented refresh token (rotation-safe)
+      const refreshTokenHash = sha256Hex(bodyRefresh);
+      await prisma.refreshToken.deleteMany({
+        where: { token: refreshTokenHash, userId: req.user!.userId },
+      });
+    } else {
+      // Web: revoke all sessions for this user
+      await prisma.refreshToken.deleteMany({
+        where: { userId: req.user!.userId },
+      });
+    }
 
     res.clearCookie('refreshToken', {
       httpOnly: true,

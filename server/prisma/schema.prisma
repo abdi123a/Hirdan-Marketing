@@ -32,6 +32,7 @@ model User {
   hrDocumentApprovals   HrDocumentApproval[]   @relation("HrDocumentApprovals")
   sharedFiles           SharedFile[]           @relation("SharedFileUploadedBy")
   notifications         Notification[]
+  deviceTokens          DeviceToken[]
 
   // Email Center
   mailboxPermissions    MailboxPermission[] @relation("UserMailboxPermissions")
@@ -54,6 +55,21 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+model DeviceToken {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  token      String   @unique @db.VarChar(512)
+  platform   String // ios | android | web
+  deviceName String?  @map("device_name") @db.VarChar(255)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("device_tokens")
 }
 
 model Client {

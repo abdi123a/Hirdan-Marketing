@@ -1,0 +1,43 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.hirdanmarketing.com/api",
+        "EXPO_PUBLIC_DASHBOARD_URL": "https://app.hirdanmarketing.com"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.hirdanmarketing.com/api",
+        "EXPO_PUBLIC_DASHBOARD_URL": "https://app.hirdanmarketing.com"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.hirdanmarketing.com/api",
+        "EXPO_PUBLIC_DASHBOARD_URL": "https://app.hirdanmarketing.com"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "REPLACE_ME",
+        "ascAppId": "REPLACE_ME",
+        "appleTeamId": "REPLACE_ME"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./google-service-account.json",
+        "track": "internal"
+      }
+    }
+  }
+}

@@ -7,8 +7,15 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@hirdan/shared": [
+        "./shared/src/index.ts"
+      ],
+      "@hirdan/shared/*": [
+        "./shared/src/*"
       ]
     },
+
     "skipLibCheck": true,
     "strictNullChecks": false
   },
