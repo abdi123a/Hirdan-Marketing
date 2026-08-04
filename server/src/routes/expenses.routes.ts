@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { AppError } from '../lib/errors.js';
 import { z } from 'zod';
@@ -13,7 +13,6 @@ const router = Router();
 
 // Secure all expense endpoints
 router.use(authenticate);
-router.use(requireAdmin);
 
 // ─── Multer for receipt uploads ──────────────────────────────────────
 const receiptStorage = multer.diskStorage({

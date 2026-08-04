@@ -3,14 +3,24 @@ import { StyleSheet, Text, View } from 'react-native';
 import { radius, fontSize } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
 
-export function Avatar({ name, size = 40 }: { name: string; size?: number }) {
+export function Avatar({
+  name,
+  initials: initialsProp,
+  size = 40,
+}: {
+  name?: string | null;
+  initials?: string | null;
+  size?: number;
+}) {
   const t = useTheme();
-  const initials = name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join('');
+  const initials =
+    (initialsProp || '').trim().slice(0, 2).toUpperCase() ||
+    (name || '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase())
+      .join('');
 
   return (
     <View

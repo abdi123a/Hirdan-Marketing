@@ -70,7 +70,7 @@ async function main() {
         address: 'Cite Barwaqo, Republic of Djibouti',
         currency: 'DJF',
         timezone: 'Africa/Djibouti',
-        primaryColor: '#504188',
+        primaryColor: '#5A428A',
         taxRate: 15,
         defaultInvoiceNotes: 'Thank you for your business! Please make payment within 14 days.',
         paymentMethods: JSON.stringify(['Bank Transfer', 'Credit Card', 'PayPal', 'Cash']),

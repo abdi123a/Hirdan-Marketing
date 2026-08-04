@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 import {
   Recaptcha,
   RecaptchaAction,
@@ -16,6 +16,11 @@ export type PublicAuthSettings = {
 
 let clientPromise: Promise<RecaptchaClient> | null = null;
 let clientSiteKey: string | null = null;
+
+/** Application-type reCAPTCHA requires a custom/dev build — unavailable in Expo Go. */
+function isRecaptchaNativeAvailable(): boolean {
+  return Boolean(NativeModules.RecaptchaEnterpriseReactNative);
+}
 
 export async function fetchPublicAuthSettings(): Promise<PublicAuthSettings> {
   try {
@@ -53,7 +58,7 @@ async function getClient(siteKey: string): Promise<RecaptchaClient> {
   return clientPromise;
 }
 
-/** Returns a LOGIN token when Application-type keys are configured; otherwise null. */
+/** Returns a LOGIN token when Application-type keys + native SDK are available; otherwise null. */
 export async function getMobileRecaptchaToken(
   settings?: PublicAuthSettings
 ): Promise<string | null> {
@@ -63,6 +68,13 @@ export async function getMobileRecaptchaToken(
   const siteKey = resolveMobileSiteKey(cfg);
   if (!siteKey) return null;
 
-  const client = await getClient(siteKey);
-  return client.execute(RecaptchaAction.LOGIN());
+  // Don't call the Proxy — it throws a linking error in Expo Go.
+  if (!isRecaptchaNativeAvailable()) return null;
+
+  try {
+    const client = await getClient(siteKey);
+    return await client.execute(RecaptchaAction.LOGIN());
+  } catch {
+    return null;
+  }
 }

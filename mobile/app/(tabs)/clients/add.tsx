@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { endpoints } from '@hirdan/shared';
 import { apiFetch } from '../../../lib/api-client';
-import { Button, Input, useToast } from '../../../components/ui';
+import { ClientForm } from '../../../components/ClientForm';
+import { useToast } from '../../../components/ui';
 import { useTheme } from '../../../hooks/useTheme';
+import {
+  clientPayload,
+  emptyClientForm,
+  validateClientForm,
+  type ClientFormValues,
+} from '../../../lib/clients';
 import { spacing } from '../../../constants/theme';
 
 export default function AddClientScreen() {
@@ -13,57 +20,57 @@ export default function AddClientScreen() {
   const router = useRouter();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [form, setForm] = useState<ClientFormValues>(emptyClientForm());
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const [company, setCompany] = useState('');
-  const [contactName, setContactName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const onChange = <K extends keyof ClientFormValues>(key: K, value: ClientFormValues[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    if (errors[key]) setErrors((prev) => ({ ...prev, [key]: '' }));
+  };
 
   const mutation = useMutation({
     mutationFn: () =>
       apiFetch(endpoints.clients.create, {
         method: 'POST',
-        body: JSON.stringify({
-          company: company.trim(),
-          contactName: contactName.trim() || undefined,
-          name: contactName.trim() || undefined,
-          email: email.trim() || undefined,
-          phone: phone.trim() || undefined,
-        }),
+        body: JSON.stringify(clientPayload(form)),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clients'] });
-      toast('Client created', 'success');
+      toast('Client added', 'success');
       router.back();
     },
     onError: (e: Error) => toast(e.message, 'error'),
   });
 
-  const canSubmit = company.trim().length > 0;
+  const submit = () => {
+    const next = validateClientForm(form);
+    setErrors(next);
+    if (Object.keys(next).length) return;
+    mutation.mutate();
+  };
 
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: t.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-        <Input label="Company *" value={company} onChangeText={setCompany} placeholder="Acme Corp" autoCapitalize="words" />
-        <Input label="Contact name" value={contactName} onChangeText={setContactName} placeholder="Jane Doe" autoCapitalize="words" />
-        <Input label="Email" value={email} onChangeText={setEmail} placeholder="jane@acme.com" keyboardType="email-address" autoCapitalize="none" />
-        <Input label="Phone" value={phone} onChangeText={setPhone} placeholder="+1 555 0100" keyboardType="phone-pad" />
-        <View style={{ marginTop: spacing.md }}>
-          <Button
-            title="Create client"
-            loading={mutation.isPending}
-            disabled={!canSubmit}
-            onPress={() => mutation.mutate()}
-          />
-        </View>
+      <ScrollView
+        contentContainerStyle={styles.form}
+        keyboardShouldPersistTaps="handled"
+      >
+        <ClientForm
+          form={form}
+          errors={errors}
+          onChange={onChange}
+          onSubmit={submit}
+          submitLabel="Create client"
+          loading={mutation.isPending}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  form: { padding: spacing.lg, gap: spacing.md },
+  form: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
 });

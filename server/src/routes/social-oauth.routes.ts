@@ -870,6 +870,90 @@ router.get('/accounts/workspace-summary', authenticate, async (req, res, next) =
   }
 });
 
+// ─── 7a. Profile picture proxy (mobile / CDN-safe) ───────────────────────────
+// Facebook/Instagram CDN URLs often fail in React Native Image while working in
+// browsers. This streams the exact profile photo through our API (and refreshes
+// Meta picture URLs when the stored CDN link has expired).
+router.get('/accounts/:accountId/avatar', authenticate, async (req, res, next) => {
+  try {
+    const accountId = req.params.accountId as string;
+    const account = await prisma.socialAccount.findUnique({ where: { id: accountId } });
+    if (!account) {
+      res.status(404).json({ error: 'Account not found' });
+      return;
+    }
+
+    let imageUrl = account.avatarUrl || null;
+    const platform = account.platform.toLowerCase();
+    const axios = (await import('axios')).default;
+
+    const tryFetchBuffer = async (url: string) => {
+      const upstream = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 15000,
+        maxRedirects: 5,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        },
+        validateStatus: (s) => s >= 200 && s < 400,
+      });
+      return upstream;
+    };
+
+    let upstream: Awaited<ReturnType<typeof tryFetchBuffer>> | null = null;
+    if (imageUrl) {
+      try {
+        upstream = await tryFetchBuffer(imageUrl);
+      } catch {
+        upstream = null;
+      }
+    }
+
+    // Refresh Meta avatars when stored CDN URL is missing or dead.
+    if (!upstream && (platform === 'facebook' || platform === 'instagram' || platform === 'threads')) {
+      try {
+        const token = decryptToken(account.accessTokenEnc);
+        if (token && !token.startsWith('mock_')) {
+          const fresh = await meta.fetchMetaAvatarUrl({
+            platform,
+            accessToken: token,
+            pageId: account.pageId,
+            igAccountId: account.igAccountId,
+            platformUserId: account.platformUserId,
+          });
+          if (fresh) {
+            imageUrl = fresh;
+            if (fresh !== account.avatarUrl) {
+              await prisma.socialAccount.update({
+                where: { id: account.id },
+                data: { avatarUrl: fresh },
+              });
+            }
+            upstream = await tryFetchBuffer(fresh);
+          }
+        }
+      } catch (err) {
+        console.warn('Avatar refresh failed:', (err as Error)?.message || err);
+      }
+    }
+
+    if (!upstream || !imageUrl) {
+      res.status(404).json({ error: 'Avatar not available' });
+      return;
+    }
+
+    const contentType =
+      (upstream.headers['content-type'] as string | undefined)?.split(';')[0] || 'image/jpeg';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.send(Buffer.from(upstream.data));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── 7. Virtual activity feed for an account ──────────────────────────────────
 router.get('/accounts/:accountId/activity', authenticate, async (req, res, next) => {
   try {

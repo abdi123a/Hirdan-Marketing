@@ -302,7 +302,7 @@ interface PlannerTabProps {
 // ─── Helpers ──────────────────────────────────────────────────────
 
 const hexToRgba = (hex: string, alpha: number) => {
-  if (!hex || !hex.startsWith("#") || hex.length < 7) return `rgba(80, 65, 136, ${alpha})`;
+  if (!hex || !hex.startsWith("#") || hex.length < 7) return `rgba(90, 66, 138, ${alpha})`;
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
@@ -310,7 +310,7 @@ const hexToRgba = (hex: string, alpha: number) => {
 };
 
 const shiftHexShade = (hex: string, amount: number) => {
-  const safeHex = /^#[0-9A-Fa-f]{6}$/.test(hex) ? hex : "#504188";
+  const safeHex = /^#[0-9A-Fa-f]{6}$/.test(hex) ? hex : "#5A428A";
   const r = parseInt(safeHex.slice(1, 3), 16);
   const g = parseInt(safeHex.slice(3, 5), 16);
   const b = parseInt(safeHex.slice(5, 7), 16);
@@ -827,7 +827,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
           agency: {
             agencyName: settings.agencyName || 'Hirdan Marketing',
             logo: settings.logo || null,
-            primaryColor: settings.primaryColor || '#504188',
+            primaryColor: settings.primaryColor || '#5A428A',
             phone: settings.phone || null,
             adminEmail: settings.adminEmail || null,
             website: settings.website || null,
@@ -915,7 +915,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
           <div className="min-w-[560px] sm:min-w-[680px]">
             <div
               className="grid grid-cols-7"
-              style={{ backgroundColor: settings.primaryColor || "#504188" }}
+              style={{ backgroundColor: settings.primaryColor || "#5A428A" }}
             >
               {DAYS_OF_WEEK.map(d => (
                 <div key={d} className="py-2 px-1 sm:py-2.5 sm:px-2 text-center text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-white/90">
@@ -958,7 +958,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                             {eventsOnDay.map(ev => {
                               const g = ev.group;
                               const isShoot = ev.type === "SHOOT";
-                              const stStyle = getStatusStyle(g.status, settings.primaryColor || "#504188", "#f6b317");
+                              const stStyle = getStatusStyle(g.status, settings.primaryColor || "#5A428A", "#f6b317");
                               const ct = g.contentType || inferContentType(g.title, g.platforms);
                               const ctAccentColor = CONTENT_TYPE_COLORS[ct] || "#9b8fd4";
                               const ctConfig = CONTENT_TYPE_CONFIG[ct];
@@ -1016,7 +1016,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                                                   style={{
                                                     backgroundColor: getStatusStyle(
                                                       s,
-                                                      settings.primaryColor || "#504188",
+                                                      settings.primaryColor || "#5A428A",
                                                       "#f6b317"
                                                     ).color,
                                                   }}
@@ -1066,7 +1066,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
           }}
         />
         {Object.entries(STATUS_CONFIG).map(([k, v]) => {
-          const st = getStatusStyle(k, settings.primaryColor || "#504188", "#f6b317");
+          const st = getStatusStyle(k, settings.primaryColor || "#5A428A", "#f6b317");
           return (
             <LegendPill
               key={k}
@@ -1109,7 +1109,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                 <tbody className="divide-y divide-border/30">
                   {groupedPosts.map(g => {
                     const sc = STATUS_CONFIG[g.status] || STATUS_CONFIG.DRAFT;
-                    const scStyle = getStatusStyle(g.status, settings.primaryColor || "#504188", "#f6b317");
+                    const scStyle = getStatusStyle(g.status, settings.primaryColor || "#5A428A", "#f6b317");
 
                     return (
                       <tr key={g.id} className="hover:bg-muted/20 transition-colors group">
@@ -1138,7 +1138,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
                             </SelectTrigger>
                             <SelectContent>
                               {ALL_STATUSES.map(s => {
-                                const sStyle = getStatusStyle(s, settings.primaryColor || "#504188", "#f6b317");
+                                const sStyle = getStatusStyle(s, settings.primaryColor || "#5A428A", "#f6b317");
                                 return (
                                   <SelectItem key={s} value={s} className="text-[10px]">
                                     <div className="flex items-center gap-2">
@@ -1370,7 +1370,7 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {ALL_STATUSES.map(s => {
                   const cfg = STATUS_CONFIG[s];
-                  const st = getStatusStyle(s, settings.primaryColor || "#504188", "#f6b317");
+                  const st = getStatusStyle(s, settings.primaryColor || "#5A428A", "#f6b317");
                   const isSelected = form.status === s;
                   const StatusIcon = cfg.icon;
                   return (
@@ -1470,8 +1470,8 @@ export function ClientMonthlyPlannerTab({ clientId, clientName, clientCompany }:
               <span
                 className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
                 style={{
-                  color: getStatusStyle(form.status, settings.primaryColor || "#504188", "#f6b317").color,
-                  backgroundColor: getStatusStyle(form.status, settings.primaryColor || "#504188", "#f6b317").bg,
+                  color: getStatusStyle(form.status, settings.primaryColor || "#5A428A", "#f6b317").color,
+                  backgroundColor: getStatusStyle(form.status, settings.primaryColor || "#5A428A", "#f6b317").bg,
                 }}
               >
                 {STATUS_CONFIG[form.status]?.label || form.status}

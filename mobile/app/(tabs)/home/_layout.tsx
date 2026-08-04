@@ -12,7 +12,7 @@ export default function HomeStack() {
         contentStyle: { backgroundColor: t.background },
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'Overview' }} />
+      <Stack.Screen name="index" options={{ title: 'Overview', headerShown: false }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
     </Stack>
   );

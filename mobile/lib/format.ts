@@ -23,11 +23,45 @@ export function unwrapOne<T>(data: unknown, ...keys: string[]): T | undefined {
 
 export function formatMoney(amount: number, currency = 'USD'): string {
   const value = Number.isFinite(amount) ? amount / 100 : 0;
+  return formatMajorMoney(value, currency);
+}
+
+/** Format an amount already in major currency units (not cents). */
+export function formatMajorMoney(amount: number, currency = 'USD'): string {
+  const value = Number.isFinite(amount) ? amount : 0;
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value);
+    return new Intl.NumberFormat('en-DJ', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(value);
   } catch {
-    return `$${value.toFixed(2)}`;
+    return `${currency} ${value.toLocaleString()}`;
   }
+}
+
+/** Hermes-safe relative time (no `Intl.RelativeTimeFormat`). */
+export function relativeTime(date: Date | string | number): string {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  const seconds = Math.round((Date.now() - d.getTime()) / 1000);
+  const past = seconds >= 0;
+  const abs = Math.abs(seconds);
+  const phrase = (n: number, unit: string) => {
+    const label = `${n} ${unit}${n === 1 ? '' : 's'}`;
+    return past ? `${label} ago` : `in ${label}`;
+  };
+  if (abs < 60) return past ? 'just now' : 'in a moment';
+  const minutes = Math.round(abs / 60);
+  if (minutes < 60) return phrase(minutes, 'min');
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return phrase(hours, 'hour');
+  const days = Math.round(hours / 24);
+  if (days < 30) return phrase(days, 'day');
+  const months = Math.round(days / 30);
+  if (months < 12) return phrase(months, 'month');
+  return phrase(Math.round(months / 12), 'year');
 }
 
 export function formatDate(value?: string | null, options?: Intl.DateTimeFormatOptions): string {

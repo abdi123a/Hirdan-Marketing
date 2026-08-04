@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { sendEmail, generateEmailHtml } from '../lib/email.js';
 import { z } from 'zod';
@@ -168,7 +168,7 @@ function computeInvoiceTotal(input: {
   return total;
 }
 
-router.post('/', requireAdmin, validate({ body: invoiceDtoSchema }), async (req: Request, res: Response, next) => {
+router.post('/', validate({ body: invoiceDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const { items, ...invoiceData } = req.body;
     const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
@@ -356,7 +356,7 @@ router.put('/:id', validate({ body: invoiceDtoSchema.partial() }), async (req: R
 
 // ─── DELETE /api/invoices/:id ─────────────────────────────────────
 
-router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) => {
+router.delete('/:id', async (req: Request, res: Response, next) => {
   try {
     const targetInvoice = await prisma.invoice.findFirst({
       where: {
@@ -384,7 +384,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) =>
   }
 });
 
-router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response, next) => {
+router.post('/:id/send-email', async (req: Request, res: Response, next) => {
   try {
     const targetInvoice = await prisma.invoice.findFirst({
       where: {

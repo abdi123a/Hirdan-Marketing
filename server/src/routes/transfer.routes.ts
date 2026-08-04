@@ -24,6 +24,29 @@ function assertInsideUploadDir(fullPath: string): void {
   }
 }
 
+/**
+ * Content types we are willing to serve with `Content-Disposition: inline` so players and
+ * PDF viewers can render the response directly. Keyed off the stored file extension rather
+ * than the uploader-supplied `mimeType`, so nobody can get markup rendered on our origin.
+ */
+const INLINE_PREVIEW_TYPES: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".mp4": "video/mp4",
+  ".m4v": "video/x-m4v",
+  ".mov": "video/quicktime",
+  ".webm": "video/webm",
+  ".pdf": "application/pdf",
+};
+
+/** Strips characters that would let a filename break out of a header value. */
+function headerSafeFilename(fileName: string): string {
+  return fileName.replace(/[^\w.\- ]+/g, "_").slice(0, 180) || "file";
+}
+
 /** Minimal HTML escaping to prevent injection in email bodies. */
 function escapeHtml(str: string): string {
   return str
@@ -505,8 +528,10 @@ router.get("/:shareId/download", async (req: Request, res: Response, next: NextF
       return next(AppError.notFound("File missing on server."));
     }
 
+    const isPreview = req.query.preview === "true";
+
     // Log the download event only if it's a real download, not just HTML5 preview stream loading
-    if (req.query.preview !== "true") {
+    if (!isPreview) {
       const ipAddress = req.ip || null; // req.ip already honours trust proxy; avoid raw header spoofing
       const userAgent = req.headers["user-agent"] || null;
 
@@ -523,6 +548,23 @@ router.get("/:shareId/download", async (req: Request, res: Response, next: NextF
         where: { id: record.id },
         data: { downloadCount: { increment: 1 } },
       });
+    }
+
+    // Previewable types stream inline so image/video/PDF viewers can render the bytes in
+    // place; `res.download` would force an attachment and defeat every viewer.
+    const inlineType = isPreview
+      ? INLINE_PREVIEW_TYPES[path.extname(record.fileName).toLowerCase()]
+      : undefined;
+
+    if (inlineType) {
+      res.setHeader("Content-Type", inlineType);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${headerSafeFilename(record.fileName)}"`
+      );
+      // sendFile honours Range requests, which video players need in order to seek.
+      return res.sendFile(fullPath);
     }
 
     res.download(fullPath, record.fileName);

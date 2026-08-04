@@ -10,8 +10,12 @@ import { apiFetch, setUnauthorizedHandler } from './api-client';
 import {
   clearTokens,
   getAccessToken,
+  getBiometricPreference,
+  loadCredentials,
   loadUserJson,
+  saveCredentials,
   saveUserJson,
+  setBiometricPreference,
   setTokens,
 } from './secure-storage';
 
@@ -31,6 +35,8 @@ interface AuthState {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isHydrated: boolean;
+  /** When true, a valid session exists but Face ID / biometrics must unlock it. */
+  isLocked: boolean;
   biometricEnabled: boolean;
   login: (
     email: string,
@@ -39,29 +45,38 @@ interface AuthState {
   ) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
   hydrate: () => Promise<void>;
-  setBiometricEnabled: (enabled: boolean) => void;
+  unlock: () => void;
+  setBiometricEnabled: (enabled: boolean) => Promise<void>;
   can: (module: ModuleKey, minimum?: AccessLevel) => boolean;
 }
 
 function normalizeUser(apiUser: any): AuthUser {
-  const role = String(apiUser.role || '').toLowerCase() as UserRole;
-  const upperRole = String(apiUser.role || 'STAFF').toUpperCase() as
+  // Accept either a bare user object or `{ user: {...} }` from /auth/me
+  const raw = apiUser?.user && !apiUser?.role ? apiUser.user : apiUser;
+  const role = String(raw?.role || '').toLowerCase() as UserRole;
+  const upperRole = String(raw?.role || 'STAFF').toUpperCase() as
     | 'ADMIN'
     | 'MANAGER'
     | 'STAFF'
     | 'CLIENT';
   const permissions =
-    apiUser.resolvedPermissions ||
-    resolvePermissions(upperRole, (apiUser.permissions as PermissionMap) || null);
+    raw?.resolvedPermissions ||
+    resolvePermissions(upperRole, (raw?.permissions as PermissionMap) || null);
+
+  const email = String(raw?.email || '').trim();
+  const name =
+    String(raw?.name || '').trim() ||
+    (email ? email.split('@')[0] : '') ||
+    'User';
 
   return {
-    id: apiUser.id,
-    email: apiUser.email,
-    name: apiUser.name,
+    id: raw?.id ? String(raw.id) : undefined,
+    email,
+    name,
     role: (['admin', 'manager', 'staff', 'client'].includes(role) ? role : 'staff') as UserRole,
     permissions,
-    company: apiUser.company,
-    clientId: apiUser.clientId,
+    company: raw?.company || raw?.client?.company,
+    clientId: raw?.clientId || raw?.client?.id,
   };
 }
 
@@ -69,9 +84,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
   isHydrated: false,
+  isLocked: false,
   biometricEnabled: false,
 
-  setBiometricEnabled: (enabled) => set({ biometricEnabled: enabled }),
+  unlock: () => set({ isLocked: false }),
+
+  setBiometricEnabled: async (enabled) => {
+    await setBiometricPreference(enabled);
+    set({ biometricEnabled: enabled, isLocked: enabled ? get().isLocked : false });
+  },
 
   can: (module, minimum = 'READ') => {
     const { user } = get();
@@ -106,7 +127,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await setTokens(data.accessToken, data.refreshToken);
       const user = normalizeUser(data.user);
       await saveUserJson(user);
-      set({ user, isAuthenticated: true });
+      // Always persist credentials so autofill + biometrics work next time.
+      await saveCredentials(email, password).catch(() => undefined);
+      set({ user, isAuthenticated: true, isLocked: false });
       return { success: true };
     } catch (e: any) {
       return { success: false, message: e?.message || 'Login failed' };
@@ -122,36 +145,76 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }).catch(() => undefined);
     } finally {
       await clearTokens();
-      set({ user: null, isAuthenticated: false });
+      set({ user: null, isAuthenticated: false, isLocked: false });
     }
   },
 
   hydrate: async () => {
     setUnauthorizedHandler(() => {
-      set({ user: null, isAuthenticated: false });
+      set({ user: null, isAuthenticated: false, isLocked: false });
     });
 
     try {
-      const token = await getAccessToken();
-      const cached = await loadUserJson<AuthUser>();
+      const [token, cached, biometricEnabled, savedCreds] = await Promise.all([
+        getAccessToken(),
+        loadUserJson<AuthUser>(),
+        getBiometricPreference(),
+        loadCredentials(),
+      ]);
+
+      // Migrate older "remember email" installs into the credentials shape if needed.
+      if (!savedCreds) {
+        try {
+          const legacy = await import('expo-secure-store').then((m) =>
+            m.getItemAsync('hirdan_remember_email'),
+          );
+          if (legacy) {
+            await saveCredentials(legacy, '');
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       if (!token || !cached) {
-        set({ isHydrated: true, isAuthenticated: false, user: null });
+        set({
+          isHydrated: true,
+          isAuthenticated: false,
+          user: null,
+          isLocked: false,
+          biometricEnabled,
+        });
         return;
       }
 
-      set({ user: cached, isAuthenticated: true });
+      const user = normalizeUser(cached);
+      const shouldLock = biometricEnabled;
+      set({
+        user,
+        isAuthenticated: true,
+        isLocked: shouldLock,
+        biometricEnabled,
+      });
 
       try {
-        const me = await apiFetch<any>(endpoints.auth.me);
-        const user = normalizeUser(me);
-        await saveUserJson(user);
-        set({ user, isAuthenticated: true, isHydrated: true });
+        // /auth/me returns `{ user: {...} }` (same nested shape as login)
+        const me = await apiFetch<{ user?: any } & Record<string, unknown>>(
+          endpoints.auth.me
+        );
+        const fresh = normalizeUser(me.user ?? me);
+        await saveUserJson(fresh);
+        set({ user: fresh, isAuthenticated: true, isHydrated: true });
       } catch {
         // Keep cached session; refresh will run on next request
         set({ isHydrated: true });
       }
     } catch {
-      set({ isHydrated: true, isAuthenticated: false, user: null });
+      set({
+        isHydrated: true,
+        isAuthenticated: false,
+        user: null,
+        isLocked: false,
+      });
     }
   },
 }));

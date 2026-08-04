@@ -79,7 +79,7 @@ const Preloader = () => {
           50% {
             transform: scale(1.05);
             opacity: 1;
-            filter: drop-shadow(0 0 15px rgba(80, 65, 136, 0.15));
+            filter: drop-shadow(0 0 15px rgba(90, 66, 138, 0.15));
           }
         }
         .pulsing-logo {

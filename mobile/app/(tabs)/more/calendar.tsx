@@ -5,9 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { endpoints, type CalendarEventSummary } from '@hirdan/shared';
 import { apiFetch } from '../../../lib/api-client';
 import { formatDate, unwrapList } from '../../../lib/format';
-import { EmptyState, ListRow, Skeleton } from '../../../components/ui';
+import { EmptyState, ListRow, ListSkeleton } from '../../../components/ui';
 import { useTheme } from '../../../hooks/useTheme';
-import { spacing } from '../../../constants/theme';
 
 export default function CalendarScreen() {
   const t = useTheme();
@@ -28,10 +27,7 @@ export default function CalendarScreen() {
   return (
     <View style={[styles.container, { backgroundColor: t.background }]}>
       {isLoading ? (
-        <View style={{ padding: spacing.lg, gap: spacing.sm }}>
-          <Skeleton height={56} />
-          <Skeleton height={56} />
-        </View>
+        <ListSkeleton rows={6} padding={0} />
       ) : error || events.length === 0 ? (
         <EmptyState
           title="No upcoming meetings"

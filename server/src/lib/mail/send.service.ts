@@ -83,7 +83,10 @@ export async function sendMailboxEmail(input: SendMailInput): Promise<SendMailRe
   const isScheduled = !!input.scheduledAt && input.scheduledAt.getTime() > now.getTime() + 1000;
 
   let finalHtml = input.html;
-  if (!finalHtml.includes('<!DOCTYPE html>') && !finalHtml.includes('class="wrapper"')) {
+  // Case-insensitive: the mobile WebView editor shell uses lowercase <!doctype>.
+  const alreadyWrapped =
+    /<!doctype html>/i.test(finalHtml) || finalHtml.includes('class="wrapper"');
+  if (!alreadyWrapped) {
     finalHtml = await generateEmailHtml({
       title: subject,
       contentHtml: input.html,

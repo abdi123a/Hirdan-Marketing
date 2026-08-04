@@ -58,7 +58,7 @@ router.use('/leads', authenticate, requireModuleAccess('leads'), leadsRoutes);
 router.use('/users', usersRoutes);
 router.use('/ai', authenticate, requireModuleAccess('ai_assistant'), aiRoutes);
 router.use('/financial', authenticate, requireModuleAccess('financial_reports'), financialRoutes);
-router.use('/accounts', authenticate, requireModuleAccess('settings'), accountsRoutes);
+router.use('/accounts', authenticate, requireModuleAccess('expenses'), accountsRoutes);
 router.use('/expenses', authenticate, requireModuleAccess('expenses'), expensesRoutes);
 router.use('/recurring-expenses', authenticate, requireModuleAccess('expenses'), recurringExpensesRoutes);
 router.use('/notifications', notificationsRoutes);

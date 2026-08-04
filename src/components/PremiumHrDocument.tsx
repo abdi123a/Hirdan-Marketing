@@ -89,7 +89,7 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings, verifi
   const showStamp = data.showStamp ?? true;
 
   // Colors
-  const primaryColor = settings.primaryColor || '#504188';
+  const primaryColor = settings.primaryColor || '#5A428A';
   const accentColor = '#f6b317';
   const secondary = '#64748b';
   const textDark = '#0f172a';
@@ -361,7 +361,7 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings, verifi
                         <td style={{ padding: '12px 16px', textAlign: 'right', color: textDark }}>{formatMoney(Number(item.amount || 0))}</td>
                       </tr>
                     ))}
-                    <tr style={{ background: 'rgba(80, 65, 136, 0.05)', color: primaryColor }}>
+                    <tr style={{ background: 'rgba(90, 66, 138, 0.05)', color: primaryColor }}>
                       <td style={{ padding: '14px 16px', fontWeight: 900, fontSize: '15px' }}>Total Gross Monthly</td>
                       <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 900, fontSize: '15px' }}>{formatMoney(data.grossTotal || 0)}</td>
                     </tr>
@@ -464,7 +464,7 @@ export function PremiumHrDocument({ docType, data, settings: rawSettings, verifi
 
                       <div style={{
                         marginTop: '12px',
-                        background: 'rgba(80, 65, 136, 0.05)',
+                        background: 'rgba(90, 66, 138, 0.05)',
                         padding: '10px 14px',
                         borderRadius: '8px',
                         display: 'flex',

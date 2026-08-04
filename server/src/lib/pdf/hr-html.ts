@@ -774,7 +774,7 @@ html, body {
 .td-secondary { color: ${SECONDARY}; }
 .td-bold { font-weight: 600; }
 .td-right { text-align: right; }
-.salary-table__total { background: rgba(80, 65, 136, 0.05); }
+.salary-table__total { background: rgba(90, 66, 138, 0.05); }
 .td-total { padding: 14px 16px; font-weight: 900; font-size: 15px; }
 .payslip-body { display: flex; flex-direction: column; gap: 32px; }
 .payslip-card {
@@ -845,7 +845,7 @@ html, body {
 .payslip-meta--spaced { margin-top: 8px; }
 .payslip-net {
   margin-top: 12px;
-  background: rgba(80, 65, 136, 0.05);
+  background: rgba(90, 66, 138, 0.05);
   padding: 10px 14px;
   border-radius: 8px;
   display: flex;
@@ -1103,7 +1103,7 @@ html, body {
 export async function buildHrDocumentHtml(input: HrPdfInput): Promise<string> {
   const agency = input.agency || {};
   const data = input.data;
-  const primary = agency.primaryColor || '#504188';
+  const primary = agency.primaryColor || '#5A428A';
   const agencyName = agency.agencyName || 'Hirdan Marketing';
   const currency = data.currency || agency.currency || 'USD';
   const timezone = agency.timezone || 'UTC';

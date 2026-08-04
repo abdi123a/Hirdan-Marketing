@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FlashList } from '@shopify/flash-list';
 import { endpoints, type NotificationDto } from '@hirdan/shared';
 import { apiFetch } from '../../../lib/api-client';
-import { EmptyState, ListRow, Skeleton, Button } from '../../../components/ui';
+import { EmptyState, ListRow, ListSkeleton, Button } from '../../../components/ui';
 import { useTheme } from '../../../hooks/useTheme';
 import { spacing } from '../../../constants/theme';
 
@@ -40,13 +40,7 @@ export default function NotificationsScreen() {
   });
 
   if (query.isLoading) {
-    return (
-      <View style={{ padding: spacing.lg, gap: spacing.md }}>
-        <Skeleton height={56} />
-        <Skeleton height={56} />
-        <Skeleton height={56} />
-      </View>
-    );
+    return <ListSkeleton rows={6} />;
   }
 
   const items = query.data || [];

@@ -5,9 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { endpoints, type HrDocumentSummary } from '@hirdan/shared';
 import { apiFetch, downloadAndSharePdf } from '../../../lib/api-client';
 import { formatDate, unwrapList } from '../../../lib/format';
-import { Badge, EmptyState, ListRow, Skeleton, useToast } from '../../../components/ui';
+import { Badge, EmptyState, ListRow, ListSkeleton, useToast } from '../../../components/ui';
 import { useTheme } from '../../../hooks/useTheme';
-import { spacing } from '../../../constants/theme';
 
 export default function HrScreen() {
   const t = useTheme();
@@ -36,10 +35,7 @@ export default function HrScreen() {
   return (
     <View style={[styles.container, { backgroundColor: t.background }]}>
       {isLoading ? (
-        <View style={{ padding: spacing.lg, gap: spacing.sm }}>
-          <Skeleton height={56} />
-          <Skeleton height={56} />
-        </View>
+        <ListSkeleton rows={6} avatar={false} padding={0} />
       ) : error ? (
         <EmptyState
           title="Could not load HR documents"

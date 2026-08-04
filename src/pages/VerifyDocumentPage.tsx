@@ -50,7 +50,7 @@ export default function VerifyDocumentPage() {
     fetchData();
   }, [token, verifyDocument, fetchSettings, isAuthenticated, user, navigate]);
 
-  const accent = settings.primaryColor || "#504188";
+  const accent = settings.primaryColor || "#5A428A";
   const secondary = "#f6b317";
   const accentDark = "#3a2f64";
 

@@ -1,21 +1,53 @@
+import { isRunningInExpoGo } from 'expo';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { endpoints } from '@hirdan/shared';
 import { apiFetch } from './api-client';
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+type NotificationsModule = typeof import('expo-notifications');
+type Subscription = { remove: () => void };
+
+/**
+ * Remote push was removed from Expo Go on Android in SDK 53.
+ * Importing expo-notifications there throws (DevicePushTokenAutoRegistration side effect),
+ * so we never load the module in that environment.
+ */
+export function arePushNotificationsAvailable(): boolean {
+  return !(isRunningInExpoGo() && Platform.OS === 'android');
+}
+
+let notificationsPromise: Promise<NotificationsModule | null> | null = null;
+let handlerConfigured = false;
+
+async function getNotifications(): Promise<NotificationsModule | null> {
+  if (!arePushNotificationsAvailable()) return null;
+  if (!notificationsPromise) {
+    notificationsPromise = import('expo-notifications')
+      .then((Notifications) => {
+        if (!handlerConfigured) {
+          handlerConfigured = true;
+          Notifications.setNotificationHandler({
+            handleNotification: async () => ({
+              shouldShowAlert: true,
+              shouldPlaySound: true,
+              shouldSetBadge: true,
+              shouldShowBanner: true,
+              shouldShowList: true,
+            }),
+          });
+        }
+        return Notifications;
+      })
+      .catch(() => null);
+  }
+  return notificationsPromise;
+}
 
 export async function registerForPushNotifications(): Promise<string | null> {
   if (!Device.isDevice) return null;
+
+  const Notifications = await getNotifications();
+  if (!Notifications) return null;
 
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;
@@ -45,6 +77,20 @@ export async function registerForPushNotifications(): Promise<string | null> {
   });
 
   return token;
+}
+
+export async function subscribeToNotificationResponses(
+  onResponse: (data: Record<string, unknown>) => void,
+): Promise<Subscription> {
+  const Notifications = await getNotifications();
+  if (!Notifications) {
+    return { remove: () => undefined };
+  }
+
+  return Notifications.addNotificationResponseReceivedListener((response) => {
+    const data = response.notification.request.content.data as Record<string, unknown>;
+    onResponse(data);
+  });
 }
 
 export function getActionPathFromNotification(data: Record<string, unknown> | undefined): string | null {

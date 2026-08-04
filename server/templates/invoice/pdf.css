@@ -127,7 +127,7 @@ body {
 
 .top-bar__primary {
   flex: 1;
-  background: var(--primary, #504188);
+  background: var(--primary, #5A428A);
 }
 
 .top-bar__accent {
@@ -159,7 +159,7 @@ body {
 .header__agency-name {
   font-size: 28px;
   font-weight: 900;
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
   letter-spacing: -1px;
   margin-bottom: 8px;
   line-height: 1;
@@ -179,7 +179,7 @@ body {
 .header__title {
   font-size: 36px;
   font-weight: 900;
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
   letter-spacing: -1.5px;
   text-transform: uppercase;
   line-height: 1;
@@ -210,7 +210,7 @@ body {
 
 .meta-item__value--primary {
   font-weight: 900;
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
 }
 
 /* Billed to */
@@ -259,13 +259,13 @@ body {
 .billed__rule {
   width: 16px;
   height: 2px;
-  background: var(--primary, #504188);
+  background: var(--primary, #5A428A);
 }
 
 .billed__label {
   font-size: 10px;
   font-weight: 800;
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -292,7 +292,7 @@ body {
   margin-top: 4px;
   font-size: 12px;
   font-weight: 700;
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
   line-height: 1.35;
 }
 
@@ -321,7 +321,7 @@ body {
 
 .items th {
   padding: 12px 16px;
-  background: var(--primary, #504188);
+  background: var(--primary, #5A428A);
   color: #ffffff;
   font-size: 10px;
   font-weight: 800;
@@ -380,7 +380,7 @@ body {
 .items td.amount {
   text-align: right;
   font-size: 13px;
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
   font-weight: 900;
 }
 
@@ -401,7 +401,7 @@ body {
   right: 0;
   width: 80px;
   height: 80px;
-  background: var(--primary, #504188);
+  background: var(--primary, #5A428A);
   opacity: 0.03;
   border-radius: 50%;
   transform: translate(20%, -20%);
@@ -422,7 +422,7 @@ body {
 .delivery__title {
   font-size: 10px;
   font-weight: 800;
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -485,7 +485,7 @@ body {
 .notes__title {
   font-size: 11px;
   font-weight: 900;
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
   text-transform: uppercase;
   letter-spacing: 1.5px;
   margin-bottom: 8px;
@@ -515,7 +515,7 @@ body {
 .notes__paid-via {
   margin-top: 6px;
   font-weight: 700;
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
 }
 
 .notes__status {
@@ -523,7 +523,7 @@ body {
   padding-top: 12px;
   border-top: 1px dashed #e2e8f0;
   font-size: 10px;
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
   font-weight: 800;
   text-transform: uppercase;
   line-height: 1.3;
@@ -540,7 +540,7 @@ body {
   width: 300px;
   border-radius: 12px;
   overflow: hidden;
-  border: 2px solid var(--primary, #504188);
+  border: 2px solid var(--primary, #5A428A);
   background: #ffffff;
 }
 
@@ -577,7 +577,7 @@ body {
 
 .totals__due {
   padding: 20px;
-  background: var(--primary, #504188);
+  background: var(--primary, #5A428A);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -682,7 +682,7 @@ body {
   right: 0;
   bottom: 0;
   margin-top: 0;
-  background: var(--primary, #504188);
+  background: var(--primary, #5A428A);
   color: #ffffff;
   padding: 20px 36px;
   z-index: 2;

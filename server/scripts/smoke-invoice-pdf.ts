@@ -15,7 +15,7 @@ const buf = await renderInvoicePdf({
   status: 'PENDING',
   agency: {
     agencyName: 'Hirdan Marketing',
-    primaryColor: '#504188',
+    primaryColor: '#5A428A',
     currency: 'USD',
     timezone: 'UTC',
     phone: '+252 61 0000000',

@@ -9,7 +9,7 @@ import {
 import { isRateLimitError } from './meta.service.js';
 import { decryptToken } from './token-crypto.service.js';
 import { captureDestinationPermalink, resolvePendingPermalinks } from './permalink.service.js';
-import { extractSocialApiError, logSocialError } from './safe-error.js';
+import { extractSocialApiError, isSoftInsightSkip, logSocialError } from './safe-error.js';
 
 export async function processDuePosts(): Promise<void> {
   try {
@@ -380,6 +380,32 @@ export async function syncAccount(accountId: string): Promise<void> {
       console.warn('Failed to update TikTok account details on sync:', err);
     }
   }
+
+  // Refresh Meta profile pictures on sync — stored CDN URLs expire while the
+  // web browser may still show a cached image from an earlier session.
+  if (isRealSync && (platform === 'facebook' || platform === 'instagram' || platform === 'threads')) {
+    try {
+      const decryptedToken = decryptToken(account.accessTokenEnc);
+      if (decryptedToken && !decryptedToken.startsWith('mock_')) {
+        const { fetchMetaAvatarUrl } = await import('./meta.service.js');
+        const fresh = await fetchMetaAvatarUrl({
+          platform,
+          accessToken: decryptedToken,
+          pageId: account.pageId,
+          igAccountId: account.igAccountId,
+          platformUserId: account.platformUserId,
+        });
+        if (fresh && fresh !== account.avatarUrl) {
+          await prisma.socialAccount.update({
+            where: { id: account.id },
+            data: { avatarUrl: fresh },
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to refresh Meta avatar on sync:', err);
+    }
+  }
   
   // NOTE: never delete historical insight rows during live sync. Older code wiped
   // YouTube history when sum(reach) > lifetime views (common with mock seeds),
@@ -704,7 +730,13 @@ export async function collectDailyInsights(clientId?: string): Promise<void> {
             },
           });
         } catch (err: unknown) {
-          logSocialError(`Failed to collect post insights for destination ${dest.id}`, err);
+          if (isSoftInsightSkip(err)) {
+            console.warn(
+              `[insights] Skipping destination ${dest.id}: ${extractSocialApiError(err)}`,
+            );
+          } else {
+            logSocialError(`Failed to collect post insights for destination ${dest.id}`, err);
+          }
         }
       }
     }

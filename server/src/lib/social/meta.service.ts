@@ -214,6 +214,55 @@ export async function getMetaLongLivedToken(shortLivedToken: string): Promise<st
   return data.access_token;
 }
 
+/** Fresh profile/page picture URL for Meta-connected accounts (CDN URLs expire). */
+export async function fetchMetaAvatarUrl(opts: {
+  platform: string;
+  accessToken: string;
+  pageId?: string | null;
+  igAccountId?: string | null;
+  platformUserId?: string | null;
+}): Promise<string | null> {
+  const platform = opts.platform.toLowerCase();
+  try {
+    if (platform === 'facebook') {
+      const id = opts.pageId || opts.platformUserId;
+      if (!id) return null;
+      const { data } = await axios.get(`${GRAPH_URL}/${id}`, {
+        params: {
+          fields: 'picture.width(320).height(320){url}',
+          access_token: opts.accessToken,
+        },
+      });
+      return data?.picture?.data?.url || null;
+    }
+
+    if (platform === 'instagram') {
+      const id = opts.igAccountId || opts.platformUserId;
+      if (!id) return null;
+      const { data } = await axios.get(`${GRAPH_URL}/${id}`, {
+        params: {
+          fields: 'profile_picture_url',
+          access_token: opts.accessToken,
+        },
+      });
+      return data?.profile_picture_url || null;
+    }
+
+    if (platform === 'threads') {
+      const { data } = await axios.get('https://graph.threads.net/v1.0/me', {
+        params: {
+          fields: 'threads_profile_picture_url',
+          access_token: opts.accessToken,
+        },
+      });
+      return data?.threads_profile_picture_url || null;
+    }
+  } catch (err: any) {
+    console.warn('fetchMetaAvatarUrl failed:', err?.message || err);
+  }
+  return null;
+}
+
 export async function getThreadsProfile(accessToken: string): Promise<{ userId: string; username: string; avatarUrl: string | null; followers: number }> {
   const { data } = await axios.get('https://graph.threads.net/v1.0/me', {
     params: { fields: 'id,username,threads_profile_picture_url,threads_biography', access_token: accessToken },
@@ -807,6 +856,45 @@ function metaGraphErrorText(err: any): string {
   return parts.filter(Boolean).join(' ');
 }
 
+function metaGraphErrorCode(err: any): number | null {
+  const code = err?.response?.data?.error?.code;
+  return typeof code === 'number' ? code : null;
+}
+
+/** Page feed posts use `{pageId}_{postId}`; bare video/photo ids do not. */
+function isFacebookPagePostId(id: string): boolean {
+  return /^\d+_\d+$/.test(String(id || '').trim());
+}
+
+/**
+ * Expected Graph misses while collecting post insights — not worth warn spam.
+ * 100 = nonexisting field (e.g. /insights on a video object)
+ * 10 / 190 / 200 = permission / OAuth / cannot impersonate Page
+ */
+function isExpectedMetaInsightMiss(err: any): boolean {
+  const code = metaGraphErrorCode(err);
+  if (code === 100 || code === 10 || code === 190 || code === 200) return true;
+  const msg = String(err?.response?.data?.error?.message || err?.message || '').toLowerCase();
+  return (
+    msg.includes('nonexisting field') ||
+    msg.includes('must be granted before impersonating') ||
+    (msg.includes('permission') && msg.includes('pages_'))
+  );
+}
+
+/** Permission/OAuth failures that will fail every subsequent Graph call the same way. */
+function isMetaPermissionBlocked(err: any): boolean {
+  const code = metaGraphErrorCode(err);
+  if (code === 10 || code === 190 || code === 200) return true;
+  return String(err?.response?.data?.error?.message || '').includes('impersonating');
+}
+
+function softInsightError(message: string): Error {
+  const err = new Error(message) as Error & { softInsightSkip?: boolean };
+  err.softInsightSkip = true;
+  return err;
+}
+
 export async function getMetaPostInsights(
   platformPostId: string,
   token: string,
@@ -826,6 +914,7 @@ export async function getMetaPostInsights(
   // genuinely got no engagement. Track success and throw instead.
   let anyCallSucceeded = false;
   const failures: string[] = [];
+  let permissionBlocked = false;
 
   if (platform === 'facebook') {
     // Posts published as photos were historically stored as the PHOTO id, which
@@ -850,45 +939,55 @@ export async function getMetaPostInsights(
       if (typeof data.views === 'number' && data.views > 0) views = data.views;
     } catch (err: any) {
       failures.push(`video fields: ${metaGraphErrorText(err)}`);
+      if (isMetaPermissionBlocked(err)) permissionBlocked = true;
     }
 
     // Page-post shape: adds reactions/shares and page_story_id. Requires
     // pages_read_user_content, so treat it as best-effort enrichment.
-    try {
-      const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}`, {
-        params: {
-          fields: 'reactions.summary(true),comments.summary(true),shares,page_story_id',
-          access_token: token,
-        },
-      });
-      anyCallSucceeded = true;
-      likes = Math.max(likes, data.reactions?.summary?.total_count ?? data.likes?.summary?.total_count ?? 0);
-      comments = Math.max(comments, data.comments?.summary?.total_count ?? 0);
-      shares = data.shares?.count ?? 0;
-      if (data.page_story_id) insightsId = data.page_story_id;
-    } catch (err: any) {
-      failures.push(`post fields: ${metaGraphErrorText(err)}`);
+    if (!permissionBlocked) {
+      try {
+        const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}`, {
+          params: {
+            fields: 'reactions.summary(true),comments.summary(true),shares,page_story_id',
+            access_token: token,
+          },
+        });
+        anyCallSucceeded = true;
+        likes = Math.max(likes, data.reactions?.summary?.total_count ?? data.likes?.summary?.total_count ?? 0);
+        comments = Math.max(comments, data.comments?.summary?.total_count ?? 0);
+        shares = data.shares?.count ?? 0;
+        if (data.page_story_id) insightsId = data.page_story_id;
+      } catch (err: any) {
+        failures.push(`post fields: ${metaGraphErrorText(err)}`);
+        if (isMetaPermissionBlocked(err)) permissionBlocked = true;
+      }
     }
 
-    // Page-post insights (works for feed posts with pageId_postId)
-    try {
-      const { data } = await axios.get(`${GRAPH_URL}/${insightsId}/insights`, {
-        params: {
-          metric: 'post_impressions,post_impressions_unique,post_video_views,post_reactions_by_type_total',
-          access_token: token,
-        },
-      });
-      anyCallSucceeded = true;
-      for (const item of data.data || []) {
-        const val = metaInsightNumber(item);
-        if (item.name === 'post_impressions') impressions = val;
-        if (item.name === 'post_impressions_unique') reach = val;
-        if (item.name === 'post_video_views' && val > 0) views = val;
-        if (item.name === 'post_reactions_by_type_total' && val > 0) likes = val;
+    // Page-post insights only exist for `{pageId}_{postId}` objects. Bare video
+    // / photo ids return (#100) nonexisting field (insights) — skip that call.
+    if (!permissionBlocked && isFacebookPagePostId(insightsId)) {
+      try {
+        const { data } = await axios.get(`${GRAPH_URL}/${insightsId}/insights`, {
+          params: {
+            metric: 'post_impressions,post_impressions_unique,post_video_views,post_reactions_by_type_total',
+            access_token: token,
+          },
+        });
+        anyCallSucceeded = true;
+        for (const item of data.data || []) {
+          const val = metaInsightNumber(item);
+          if (item.name === 'post_impressions') impressions = val;
+          if (item.name === 'post_impressions_unique') reach = val;
+          if (item.name === 'post_video_views' && val > 0) views = val;
+          if (item.name === 'post_reactions_by_type_total' && val > 0) likes = val;
+        }
+      } catch (err: any) {
+        failures.push(`insights: ${metaGraphErrorText(err)}`);
+        if (!isExpectedMetaInsightMiss(err)) {
+          console.warn(`[Meta] Facebook post /insights failed for ${insightsId}:`, metaGraphErrorText(err));
+        }
+        if (isMetaPermissionBlocked(err)) permissionBlocked = true;
       }
-    } catch (err: any) {
-      failures.push(`insights: ${metaGraphErrorText(err)}`);
-      console.warn(`[Meta] Facebook post /insights failed for ${insightsId}:`, metaGraphErrorText(err));
     }
 
     // Video / Reel insights (works for bare video_id from reels upload).
@@ -896,7 +995,7 @@ export async function getMetaPostInsights(
     // Run whenever ANY of the three is still missing — the video-fields call
     // above often supplies `views` while leaving impressions/reach empty, and
     // the old `&&` guard skipped this block entirely in exactly that case.
-    if (views === 0 || impressions === 0 || reach === 0) {
+    if (!permissionBlocked && (views === 0 || impressions === 0 || reach === 0)) {
       // Order matters: blue_reels_play_count is the metric that still returns
       // data on current Graph versions. The total_video_* set answers 200 with
       // an EMPTY payload for reels, so it can never populate anything — it is
@@ -923,10 +1022,17 @@ export async function getMetaPostInsights(
           }
         } catch (err: any) {
           failures.push(`video_insights[${batch.join(',')}]: ${metaGraphErrorText(err)}`);
-          console.warn(
-            `[Meta] Facebook /video_insights (${batch.join(',')}) failed for ${platformPostId}:`,
-            metaGraphErrorText(err),
-          );
+          if (!isExpectedMetaInsightMiss(err)) {
+            console.warn(
+              `[Meta] Facebook /video_insights (${batch.join(',')}) failed for ${platformPostId}:`,
+              metaGraphErrorText(err),
+            );
+          }
+          // Permission/OAuth failures will fail every batch the same way — stop early.
+          if (isMetaPermissionBlocked(err)) {
+            permissionBlocked = true;
+            break;
+          }
         }
       }
       if (impressions === 0 && views > 0) impressions = views;
@@ -946,7 +1052,10 @@ export async function getMetaPostInsights(
       comments = data.comments_count ?? 0;
     } catch (err: any) {
       failures.push(`fields: ${metaGraphErrorText(err)}`);
-      console.warn(`[Meta] Could not fetch basic Instagram media fields for ${platformPostId}:`, metaGraphErrorText(err));
+      if (!isExpectedMetaInsightMiss(err)) {
+        console.warn(`[Meta] Could not fetch basic Instagram media fields for ${platformPostId}:`, metaGraphErrorText(err));
+      }
+      if (isMetaPermissionBlocked(err)) permissionBlocked = true;
     }
 
     // 2. Fetch Instagram media insights.
@@ -957,30 +1066,11 @@ export async function getMetaPostInsights(
       if (item.total_value?.value != null) return Number(item.total_value.value) || 0;
       return Number(item.values?.[0]?.value) || 0;
     };
-    try {
-      const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/insights`, {
-        params: {
-          metric: 'reach,saved,shares,views',
-          access_token: token,
-        },
-      });
-      anyCallSucceeded = true;
-      for (const item of data.data || []) {
-        const val = readInsight(item);
-        if (item.name === 'reach') reach = val;
-        if (item.name === 'saved') saved = val;
-        if (item.name === 'shares') shares = val;
-        if (item.name === 'views' || item.name === 'plays') {
-          views = val;
-          impressions = val;
-        }
-      }
-    } catch (err: any) {
-      // Older media may still accept the legacy set — try once more.
+    if (!permissionBlocked) {
       try {
         const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/insights`, {
           params: {
-            metric: 'reach,saved,shares',
+            metric: 'reach,saved,shares,views',
             access_token: token,
           },
         });
@@ -990,23 +1080,49 @@ export async function getMetaPostInsights(
           if (item.name === 'reach') reach = val;
           if (item.name === 'saved') saved = val;
           if (item.name === 'shares') shares = val;
+          if (item.name === 'views' || item.name === 'plays') {
+            views = val;
+            impressions = val;
+          }
         }
-      } catch (fallbackErr: any) {
-        failures.push(`insights: ${metaGraphErrorText(fallbackErr)}`);
-        console.warn(
-          `[Meta] Could not fetch Instagram post insights for ${platformPostId}:`,
-          metaGraphErrorText(fallbackErr) || metaGraphErrorText(err),
-        );
+      } catch (err: any) {
+        // Older media may still accept the legacy set — try once more.
+        try {
+          const { data } = await axios.get(`${GRAPH_URL}/${platformPostId}/insights`, {
+            params: {
+              metric: 'reach,saved,shares',
+              access_token: token,
+            },
+          });
+          anyCallSucceeded = true;
+          for (const item of data.data || []) {
+            const val = readInsight(item);
+            if (item.name === 'reach') reach = val;
+            if (item.name === 'saved') saved = val;
+            if (item.name === 'shares') shares = val;
+          }
+        } catch (fallbackErr: any) {
+          failures.push(`insights: ${metaGraphErrorText(fallbackErr)}`);
+          if (!isExpectedMetaInsightMiss(fallbackErr)) {
+            console.warn(
+              `[Meta] Could not fetch Instagram post insights for ${platformPostId}:`,
+              metaGraphErrorText(fallbackErr) || metaGraphErrorText(err),
+            );
+          }
+        }
       }
     }
   }
 
   // Not one Graph call worked. Returning zeros here would be stored and rendered
   // as a real "Live API" result, indistinguishable from a post that genuinely got
-  // no engagement. Fail loudly so the caller skips the write.
+  // no engagement. Soft-skip so the scheduler does not spam error logs.
   if (!anyCallSucceeded) {
-    throw new Error(
-      `No Meta insight endpoint responded for ${platform} post ${platformPostId} — ${failures.join(' | ')}`,
+    const summary = permissionBlocked
+      ? `Meta Page token lacks engagement permissions for ${platform} post ${platformPostId}`
+      : `No Meta insight endpoint responded for ${platform} post ${platformPostId}`;
+    throw softInsightError(
+      failures.length ? `${summary} — ${failures[0]}` : summary,
     );
   }
 

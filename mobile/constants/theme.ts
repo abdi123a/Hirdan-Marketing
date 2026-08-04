@@ -3,8 +3,8 @@
  * purple wordmark / H mark + gold circle accent on black.
  */
 export const brand = {
-  purple: '#584B90',
-  purpleDeep: '#3F3568',
+  purple: '#5A428A',
+  purpleDeep: '#3F2E60',
   gold: '#F5B824',
   black: '#000000',
   ink: '#1A1428',

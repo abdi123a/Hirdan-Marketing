@@ -5,9 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { endpoints, type TeamMemberSummary } from '@hirdan/shared';
 import { apiFetch } from '../../../lib/api-client';
 import { unwrapList } from '../../../lib/format';
-import { Avatar, Badge, EmptyState, ListRow, Skeleton } from '../../../components/ui';
+import { Avatar, Badge, EmptyState, ListRow, ListSkeleton } from '../../../components/ui';
 import { useTheme } from '../../../hooks/useTheme';
-import { spacing } from '../../../constants/theme';
 
 export default function TeamScreen() {
   const t = useTheme();
@@ -22,10 +21,7 @@ export default function TeamScreen() {
   return (
     <View style={[styles.container, { backgroundColor: t.background }]}>
       {isLoading ? (
-        <View style={{ padding: spacing.lg, gap: spacing.sm }}>
-          <Skeleton height={56} />
-          <Skeleton height={56} />
-        </View>
+        <ListSkeleton rows={6} padding={0} />
       ) : error ? (
         <EmptyState
           title="Could not load team"

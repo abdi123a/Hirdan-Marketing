@@ -120,7 +120,7 @@ export async function buildInvoiceHtml(input: InvoicePdfInput): Promise<string> 
   const css = fs.readFileSync(cssPath, 'utf8');
 
   const agency = input.agency || {};
-  const primary = agency.primaryColor || '#504188';
+  const primary = agency.primaryColor || '#5A428A';
   const agencyName = agency.agencyName || 'Hirdan Marketing';
   const currency = agency.currency || 'USD';
   const timezone = agency.timezone || 'UTC';

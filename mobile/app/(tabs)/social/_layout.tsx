@@ -12,9 +12,13 @@ export default function SocialLayout() {
         contentStyle: { backgroundColor: t.background },
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'Social' }} />
-      <Stack.Screen name="planner" options={{ title: 'Planner' }} />
+      <Stack.Screen name="index" options={{ title: 'Publish' }} />
       <Stack.Screen name="compose" options={{ title: 'Compose' }} />
+      <Stack.Screen name="post/[id]" options={{ title: 'Post' }} />
+      <Stack.Screen name="analyze" options={{ title: 'Analyze' }} />
+      <Stack.Screen name="accounts" options={{ title: 'Accounts' }} />
+      <Stack.Screen name="select-account" options={{ title: 'Select account' }} />
+      <Stack.Screen name="planner" options={{ title: 'Posts' }} />
     </Stack>
   );
 }

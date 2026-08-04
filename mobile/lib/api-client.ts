@@ -135,27 +135,102 @@ export async function apiFetch<T>(
   return JSON.parse(text) as T;
 }
 
-export async function apiFetchBlob(endpoint: string): Promise<Blob> {
+export async function apiFetchBlob(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<Blob> {
   const token = await getAccessToken();
   const headers: Record<string, string> = {
     'X-Client-Platform': 'mobile',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...((options.headers as Record<string, string>) || {}),
   };
 
   const url = getFullUrl(endpoint);
-  let response = await fetch(url, { headers });
+  let response = await fetch(url, { ...options, headers });
+
+  if (response.status === 401 && !endpoint.includes('/auth/refresh')) {
+    const newToken = await refreshAccessToken();
+    if (!newToken) throw new Error('Session expired');
+    headers.Authorization = `Bearer ${newToken}`;
+    response = await fetch(url, { ...options, headers });
+  }
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+    const msg =
+      (errorData && (errorData.message || errorData.error)) ||
+      `Download failed: ${response.status}`;
+    throw new Error(typeof msg === 'string' ? msg : `Download failed: ${response.status}`);
+  }
+  return response.blob();
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binary);
+}
+
+/** POST JSON body, save response PDF to cache, then open the share sheet. */
+export async function postAndSharePdf(
+  endpoint: string,
+  filename: string,
+  body: unknown
+): Promise<string> {
+  const FileSystem = await import('expo-file-system/legacy');
+  const Sharing = await import('expo-sharing');
+  const token = await getAccessToken();
+  const url = getFullUrl(endpoint);
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Client-Platform': 'mobile',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  let response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
 
   if (response.status === 401) {
     const newToken = await refreshAccessToken();
     if (!newToken) throw new Error('Session expired');
     headers.Authorization = `Bearer ${newToken}`;
-    response = await fetch(url, { headers });
+    response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
   }
 
   if (!response.ok) {
-    throw new Error(`Download failed: ${response.status}`);
+    const errorData = await response.json().catch(() => null);
+    const msg =
+      (errorData && (errorData.message || errorData.error)) ||
+      `Export failed: ${response.status}`;
+    throw new Error(typeof msg === 'string' ? msg : `Export failed: ${response.status}`);
   }
-  return response.blob();
+
+  const buffer = await response.arrayBuffer();
+  const base64 = arrayBufferToBase64(buffer);
+  const safeName = filename.replace(/[^\w.\-]+/g, '_').slice(0, 180) || 'export.pdf';
+  const dest = `${FileSystem.cacheDirectory}${safeName.endsWith('.pdf') ? safeName : `${safeName}.pdf`}`;
+
+  await FileSystem.writeAsStringAsync(dest, base64, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(dest, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' });
+  }
+  return dest;
 }
 
 export async function apiUpload<T>(
@@ -218,11 +293,20 @@ export async function apiUpload<T>(
 }
 
 export async function downloadAndSharePdf(endpoint: string, filename: string) {
+  return downloadAndShareFile(endpoint, filename, 'application/pdf');
+}
+
+export async function downloadAndShareFile(
+  endpoint: string,
+  filename: string,
+  mimeType = 'application/octet-stream'
+) {
   const FileSystem = await import('expo-file-system/legacy');
   const Sharing = await import('expo-sharing');
   const token = await getAccessToken();
   const url = getFullUrl(endpoint);
-  const dest = `${FileSystem.cacheDirectory}${filename}`;
+  const safeName = filename.replace(/[^\w.\-]+/g, '_').slice(0, 180) || 'download';
+  const dest = `${FileSystem.cacheDirectory}${safeName}`;
 
   const result = await FileSystem.downloadAsync(url, dest, {
     headers: {
@@ -232,10 +316,7 @@ export async function downloadAndSharePdf(endpoint: string, filename: string) {
   });
 
   if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(result.uri, {
-      mimeType: 'application/pdf',
-      UTI: 'com.adobe.pdf',
-    });
+    await Sharing.shareAsync(result.uri, { mimeType });
   }
   return result.uri;
 }

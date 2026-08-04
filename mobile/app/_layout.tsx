@@ -5,13 +5,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AccessibilityInfo, ActivityIndicator, View } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import { AccessibilityInfo, ActivityIndicator, Image, View } from 'react-native';
 import { useAuthStore } from '../lib/auth-store';
 import { ToastProvider } from '../components/ui';
 import { OfflineBanner } from '../components/OfflineBanner';
-import { useTheme } from '../hooks/useTheme';
-import { registerForPushNotifications, getActionPathFromNotification } from '../lib/push';
+import {
+  registerForPushNotifications,
+  getActionPathFromNotification,
+  subscribeToNotificationResponses,
+} from '../lib/push';
+import { brand } from '../constants/theme';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,10 +29,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const hydrate = useAuthStore((s) => s.hydrate);
   const isHydrated = useAuthStore((s) => s.isHydrated);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isLocked = useAuthStore((s) => s.isLocked);
   const segments = useSegments();
   const router = useRouter();
-  const t = useTheme();
-  const responseListener = useRef<Notifications.EventSubscription | null>(null);
+  const responseListener = useRef<{ remove: () => void } | null>(null);
+  const sessionReady = isAuthenticated && !isLocked;
 
   useEffect(() => {
     hydrate();
@@ -38,30 +42,45 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isHydrated) return;
     const inAuth = segments[0] === '(auth)';
-    if (!isAuthenticated && !inAuth) {
+    if (!sessionReady && !inAuth) {
       router.replace('/(auth)/login');
-    } else if (isAuthenticated && inAuth) {
+    } else if (sessionReady && inAuth) {
       router.replace('/(tabs)/home');
       registerForPushNotifications().catch(() => undefined);
     }
-  }, [isHydrated, isAuthenticated, segments, router]);
+  }, [isHydrated, sessionReady, segments, router]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
-    responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as Record<string, unknown>;
+    if (!sessionReady) return;
+    let cancelled = false;
+
+    void subscribeToNotificationResponses((data) => {
       const path = getActionPathFromNotification(data);
       if (path) router.push(path as any);
+    }).then((subscription) => {
+      if (cancelled) {
+        subscription.remove();
+        return;
+      }
+      responseListener.current = subscription;
     });
+
     return () => {
+      cancelled = true;
       responseListener.current?.remove();
+      responseListener.current = null;
     };
-  }, [isAuthenticated, router]);
+  }, [sessionReady, router]);
 
   if (!isHydrated) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.background }}>
-        <ActivityIndicator color={t.primary} size="large" />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' }}>
+        <Image
+          source={require('../assets/hirdan-logo.png')}
+          style={{ width: 220, height: 100 }}
+          resizeMode="contain"
+        />
+        <ActivityIndicator color={brand.purple} size="large" style={{ marginTop: 24 }} />
       </View>
     );
   }

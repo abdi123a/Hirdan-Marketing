@@ -43,6 +43,10 @@ export function isAuthError(err: unknown): boolean {
   const anyErr = err as any;
   const status = anyErr?.response?.status;
   if (status === 401 || status === 403) return true;
+  const code = anyErr?.response?.data?.error?.code;
+  if (typeof code === 'number' && [10, 102, 190, 200, 458, 459, 463, 464, 467].includes(code)) {
+    return true;
+  }
   const msg = extractSocialApiError(err).toLowerCase();
   return (
     msg.includes('invalid authentication') ||
@@ -52,6 +56,28 @@ export function isAuthError(err: unknown): boolean {
     msg.includes('session has expired') ||
     msg.includes('error validating access token') ||
     msg.includes('must be granted before impersonating')
+  );
+}
+
+/**
+ * Expected, non-actionable insight misses: deleted/private YouTube videos,
+ * Meta objects without an /insights edge, or Page tokens missing engagement
+ * permissions. These should not spam error logs every collection cycle.
+ */
+export function isSoftInsightSkip(err: unknown): boolean {
+  if (isAuthError(err)) return true;
+  const anyErr = err as any;
+  if (anyErr?.softInsightSkip === true) return true;
+  const code = anyErr?.response?.data?.error?.code;
+  if (code === 100) return true; // Graph: nonexisting field (e.g. /insights on a video id)
+  const msg = extractSocialApiError(err).toLowerCase();
+  return (
+    msg.includes('not found or statistics unavailable') ||
+    msg.includes('nonexisting field') ||
+    msg.includes('no meta insight endpoint responded') ||
+    msg.includes('meta page token lacks engagement permissions') ||
+    msg.includes('must be granted before impersonating') ||
+    (msg.includes('permission') && msg.includes('pages_read'))
   );
 }
 

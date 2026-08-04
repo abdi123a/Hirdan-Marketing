@@ -122,7 +122,7 @@ function escapeHtml(value: string): string {
 
 function hexToRgba(hex: string, alpha: number): string {
   if (!hex || !hex.startsWith('#') || hex.length < 7) {
-    return `rgba(80, 65, 136, ${alpha})`;
+    return `rgba(90, 66, 138, ${alpha})`;
   }
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -380,7 +380,7 @@ export function buildContentPlanHtml(input: ContentPlanPdfInput): string {
   const cssPath = path.join(CONTENT_PLAN_TEMPLATE_DIR, 'pdf.css');
   const css = fs.readFileSync(cssPath, 'utf8');
 
-  const primary = input.agency.primaryColor || '#504188';
+  const primary = input.agency.primaryColor || '#5A428A';
   const agencyName = input.agency.agencyName || 'Hirdan Marketing';
   const logoUrl = resolveAssetUrl(input.agency.logo);
   const monthLabel = MONTHS[input.month - 1] || String(input.month);

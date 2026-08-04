@@ -153,7 +153,7 @@ export default function MonthlyReportStudioPage() {
     () => report?.sections.find((s) => s.key === selectedSection) ?? null,
     [report, selectedSection]
   );
-  const brandPrimary = settings.primaryColor || "#504188";
+  const brandPrimary = settings.primaryColor || "#5A428A";
   const brandAccent = "#f6b317";
   const brandDark = "#0f172a";
   const brandMuted = "#64748b";
@@ -833,7 +833,7 @@ export default function MonthlyReportStudioPage() {
                   right: -20,
                   width: 120,
                   height: 120,
-                  border: `8px solid ${settings.primaryColor || "#504188"}`,
+                  border: `8px solid ${settings.primaryColor || "#5A428A"}`,
                   borderRadius: "50%",
                   opacity: 0.6,
                   zIndex: 0
@@ -1185,7 +1185,7 @@ export default function MonthlyReportStudioPage() {
                 section.key.startsWith("instagram") ? "#E1306C" :
                 section.key.startsWith("facebook") ? "#1877F2" :
                 section.key.startsWith("tiktok") ? "#111827" :
-                settings.primaryColor || "#504188";
+                settings.primaryColor || "#5A428A";
 
               return (
                 <div

@@ -113,7 +113,13 @@ export async function getYouTubePostInsights(
   });
   const stats = data?.items?.[0]?.statistics;
   if (!stats) {
-    throw new Error(`YouTube video ${videoId} not found or statistics unavailable`);
+    // Deleted, private, or still-processing videos — soft-skip so the daily
+    // collector does not treat this as an actionable failure.
+    const err = new Error(`YouTube video ${videoId} not found or statistics unavailable`) as Error & {
+      softInsightSkip?: boolean;
+    };
+    err.softInsightSkip = true;
+    throw err;
   }
   const views = parseInt(stats.viewCount, 10) || 0;
   const likes = parseInt(stats.likeCount, 10) || 0;

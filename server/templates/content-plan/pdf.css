@@ -75,7 +75,7 @@ body {
 
 .top-bar__primary {
   width: 70%;
-  background: var(--primary, #504188);
+  background: var(--primary, #5A428A);
 }
 
 .top-bar__accent {
@@ -113,7 +113,7 @@ body {
 .header__agency-name {
   font-size: 56px;
   font-weight: 900;
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
   letter-spacing: -1px;
   line-height: 1;
 }
@@ -125,12 +125,12 @@ body {
 .header__title {
   font-size: 54px;
   font-weight: 900;
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
   letter-spacing: -0.6px;
   text-transform: uppercase;
   line-height: 1;
   margin-bottom: 22px;
-  -webkit-text-stroke: 0.45px var(--primary, #504188);
+  -webkit-text-stroke: 0.45px var(--primary, #5A428A);
 }
 
 .meta-grid {
@@ -147,8 +147,8 @@ body {
 }
 
 .meta-card--client {
-  border: 1px solid var(--primary-border, rgba(80, 65, 136, 0.35));
-  background: var(--primary-tint, rgba(80, 65, 136, 0.08));
+  border: 1px solid var(--primary-border, rgba(90, 66, 138, 0.35));
+  background: var(--primary-tint, rgba(90, 66, 138, 0.08));
 }
 
 .meta-card--schedule {
@@ -166,7 +166,7 @@ body {
 }
 
 .meta-card--client .meta-card__label {
-  color: var(--primary, #504188);
+  color: var(--primary, #5A428A);
 }
 
 .meta-card--schedule .meta-card__label {
@@ -193,13 +193,13 @@ body {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 1px;
-  background: var(--primary, #504188);
+  background: var(--primary, #5A428A);
   padding: 0;
 }
 
 .calendar__dow {
   padding: 13px 6px;
-  background: var(--primary, #504188);
+  background: var(--primary, #5A428A);
   color: #ffffff;
   text-align: center;
   font-size: 11px;
@@ -485,7 +485,7 @@ body {
 
 /* Footer */
 .footer {
-  background: var(--primary, #504188);
+  background: var(--primary, #5A428A);
   color: #ffffff;
   padding: 26px 40px;
   position: relative;

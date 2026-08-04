@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { radius, spacing, fontSize } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
@@ -34,7 +34,13 @@ export function Sheet({
         {title ? (
           <Text style={[styles.title, { color: t.foreground }]}>{title}</Text>
         ) : null}
-        {children}
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: spacing.md }}
+        >
+          {children}
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -49,7 +55,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     padding: spacing.lg,
-    maxHeight: '80%',
+    maxHeight: '88%',
   },
   handle: {
     alignSelf: 'center',

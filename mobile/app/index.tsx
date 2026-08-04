@@ -3,11 +3,12 @@ import { useAuthStore } from '../lib/auth-store';
 
 export default function Index() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isLocked = useAuthStore((s) => s.isLocked);
   const isHydrated = useAuthStore((s) => s.isHydrated);
 
   if (!isHydrated) return null;
 
-  if (isAuthenticated) {
+  if (isAuthenticated && !isLocked) {
     return <Redirect href="/(tabs)/home" />;
   }
 

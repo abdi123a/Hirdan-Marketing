@@ -12,9 +12,10 @@ export default function ClientsLayout() {
         contentStyle: { backgroundColor: t.background },
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'Clients' }} />
+      <Stack.Screen name="index" options={{ title: 'Clients', headerShown: false }} />
       <Stack.Screen name="[id]" options={{ title: 'Client' }} />
       <Stack.Screen name="add" options={{ title: 'Add Client', presentation: 'modal' }} />
+      <Stack.Screen name="edit/[id]" options={{ title: 'Edit Client', presentation: 'modal' }} />
     </Stack>
   );
 }

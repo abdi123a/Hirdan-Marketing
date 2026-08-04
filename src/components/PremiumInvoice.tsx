@@ -112,7 +112,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
     : '';
 
   // Brand Colors
-  const primaryColor = settings.primaryColor || '#504188'; // Default Deep Purple
+  const primaryColor = settings.primaryColor || '#5A428A'; // Default Deep Purple
   const accentColor = '#f6b317';  // Gold/Yellow
 
   const secondary = '#64748b';

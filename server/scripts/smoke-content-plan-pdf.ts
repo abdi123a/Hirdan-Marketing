@@ -17,7 +17,7 @@ async function main() {
     agency: {
       agencyName: 'Hirdan Marketing',
       logo,
-      primaryColor: '#504188',
+      primaryColor: '#5A428A',
       phone: '+253 77646159',
       adminEmail: 'info@hirdanmarketing.com',
       website: 'hirdanmarketing.com',
@@ -50,7 +50,7 @@ async function main() {
     clientName: 'Tokka Coffee',
     month: 8,
     year: 2026,
-    agency: { agencyName: 'Hirdan', logo, primaryColor: '#504188' },
+    agency: { agencyName: 'Hirdan', logo, primaryColor: '#5A428A' },
     posts: [
       {
         id: '1',

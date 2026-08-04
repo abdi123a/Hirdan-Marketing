@@ -153,7 +153,7 @@ interface UploadProgressFile {
 
 // Helpers
 const hexToRgba = (hex: string, alpha: number) => {
-  if (!hex || !hex.startsWith("#") || hex.length < 7) return `rgba(80, 65, 136, ${alpha})`;
+  if (!hex || !hex.startsWith("#") || hex.length < 7) return `rgba(90, 66, 138, ${alpha})`;
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);

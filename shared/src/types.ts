@@ -36,13 +36,35 @@ export interface RefreshResponse {
 
 export interface ClientSummary {
   id: string;
+  name: string;
   company: string;
+  /** @deprecated Prefer `name` — kept for older payloads */
   contactName?: string | null;
   email?: string | null;
   phone?: string | null;
-  status: string;
+  website?: string | null;
+  address?: string | null;
+  city?: string | null;
+  country?: string | null;
   industry?: string | null;
+  notes?: string | null;
+  type?: string | null;
+  status: string;
+  initials?: string | null;
   logoUrl?: string | null;
+  revenue?: number | null;
+  invoiceGenerationDay?: number | null;
+  paymentReminderDelay?: number | null;
+  overdueNoticeDelay?: number | null;
+  portalAccess?: Record<string, unknown> | null;
+  /** Linked portal user id when client login is provisioned */
+  userId?: string | null;
+  _count?: {
+    projects?: number;
+    invoices?: number;
+    subscriptions?: number;
+    socialAccounts?: number;
+  };
   createdAt: string;
   updatedAt?: string;
 }
@@ -120,11 +142,38 @@ export interface HrDocumentSummary {
 export interface TransferSummary {
   id: string;
   shareId: string;
-  filename: string;
-  size: number;
-  expiresAt?: string | null;
+  /** Original file name (API: fileName). */
+  fileName: string;
+  /** Byte size (API: fileSize). */
+  fileSize: number;
+  client?: { id: string; name: string; email?: string | null } | null;
+  expiresAt: string;
   createdAt: string;
-  downloadCount?: number;
+  downloadCount: number;
+  viewCount: number;
+  isExpired: boolean;
+  isDeleted: boolean;
+  emailSentTo?: string | null;
+  emailSentAt?: string | null;
+  message?: string | null;
+}
+
+export interface TransferUploadResult {
+  id: string;
+  shareId: string;
+  shareUrl: string;
+  fileName: string;
+  fileCount: number;
+  expiresAt: string;
+}
+
+export interface TransferEvent {
+  id: string;
+  fileId: string;
+  eventType: 'VIEW' | 'DOWNLOAD' | string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  createdAt: string;
 }
 
 export interface SocialAccountSummary {

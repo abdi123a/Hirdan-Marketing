@@ -280,7 +280,7 @@ export function SocialStrategyPresentationStudioPage() {
   const { clients, settings } = useAgencyStore();
 
   // Brand Design Tokens (Matching Premium Invoice standard)
-  const primaryColor = settings.primaryColor || "#504188"; // Hirdan Deep Purple
+  const primaryColor = settings.primaryColor || "#5A428A"; // Hirdan Deep Purple
   const accentColor = "#f6b317"; // Hirdan Gold Accent
   const darkTextColor = "#0f172a";
 

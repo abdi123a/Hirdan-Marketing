@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 import { sendEmail, generateEmailHtml, generateProformaFollowUpEmailHtml } from '../lib/email.js';
 import { createNotification } from '../lib/notifications.js';
@@ -137,7 +137,7 @@ router.get('/:id/export-pdf', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/proformas ─────────────────────────────────────────
 
-router.post('/', requireAdmin, validate({ body: proformaDtoSchema }), async (req: Request, res: Response, next) => {
+router.post('/', validate({ body: proformaDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const { items, ...proformaData } = req.body;
     const itemsWithPosition = items?.map((item: any, index: number) => ({
@@ -350,7 +350,7 @@ router.put('/:id', validate({ body: proformaDtoSchema.partial() }), async (req: 
 
 // ─── DELETE /api/proformas/:id ───────────────────────────────────
 
-router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) => {
+router.delete('/:id', async (req: Request, res: Response, next) => {
   try {
     const targetProforma = await prisma.proforma.findFirst({
       where: {
@@ -369,7 +369,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) =>
   }
 });
 
-router.post('/:id/send-email', requireAdmin, async (req: Request, res: Response, next) => {
+router.post('/:id/send-email', async (req: Request, res: Response, next) => {
   try {
     const targetProforma = await prisma.proforma.findFirst({
       where: {

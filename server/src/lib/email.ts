@@ -54,7 +54,10 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
   }
 
   let finalHtml = options.html;
-  if (!finalHtml.includes('<!DOCTYPE html>') && !finalHtml.includes('class="wrapper"')) {
+  // Case-insensitive: some clients emit lowercase <!doctype html>.
+  const alreadyWrapped =
+    /<!doctype html>/i.test(finalHtml) || finalHtml.includes('class="wrapper"');
+  if (!alreadyWrapped) {
     finalHtml = await generateEmailHtml({
       title: options.subject,
       contentHtml: options.html,

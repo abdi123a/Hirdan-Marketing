@@ -9,6 +9,7 @@ export function ListRow({
   subtitle,
   right,
   onPress,
+  onLongPress,
   left,
 }: {
   title: string;
@@ -16,12 +17,14 @@ export function ListRow({
   right?: React.ReactNode;
   left?: React.ReactNode;
   onPress?: () => void;
+  onLongPress?: () => void;
 }) {
   const t = useTheme();
   return (
     <Pressable
       onPress={onPress}
-      disabled={!onPress}
+      onLongPress={onLongPress}
+      disabled={!onPress && !onLongPress}
       style={({ pressed }) => [
         styles.row,
         {

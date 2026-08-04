@@ -1,8 +1,9 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { radius, spacing, fontSize } from '../../constants/theme';
 import { useTheme } from '../../hooks/useTheme';
+import { setToastHandler } from '../../lib/toast';
 
 type ToastItem = { id: string; message: string; tone?: 'default' | 'success' | 'error' };
 
@@ -26,6 +27,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       setItems((prev) => prev.filter((i) => i.id !== id));
     }, 2800);
   }, []);
+
+  // Let plain modules (query hooks, API layers) raise toasts too.
+  useEffect(() => {
+    setToastHandler(toast);
+    return () => setToastHandler(null);
+  }, [toast]);
 
   const value = useMemo(() => ({ toast }), [toast]);
 

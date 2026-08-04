@@ -9,6 +9,10 @@ import sanitizeHtml from 'sanitize-html';
 export function sanitizeEmailHtml(html: string | null | undefined): string {
   if (!html) return '';
   return sanitizeHtml(html, {
+    // Email HTML routinely embeds <style> blocks. We keep the tag intentionally
+    // for layout fidelity; XSS risk is mitigated by the sandboxed iframe that
+    // renders this HTML in the frontend.
+    allowVulnerableTags: true,
     allowedTags: sanitizeHtml.defaults.allowedTags.concat([
       'img', 'style', 'center', 'font', 'span', 'section', 'header', 'footer',
       'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr',
