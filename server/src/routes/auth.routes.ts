@@ -195,7 +195,8 @@ async function verifyRecaptcha(
     const data = (await response.json()) as any;
     const valid = data?.tokenProperties?.valid === true;
     const score = typeof data?.riskAnalysis?.score === 'number' ? data.riskAnalysis.score : 0;
-    if (!valid || score < 0.5) {
+    console.log('[reCAPTCHA Enterprise] valid=%s score=%s invalidReason=%s', valid, score, data?.tokenProperties?.invalidReason);
+    if (!valid || score < 0.3) {
       throw AppError.unauthorized('reCAPTCHA verification failed or score too low');
     }
     return;
