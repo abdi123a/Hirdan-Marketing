@@ -32,7 +32,11 @@ interface AuthState {
   isAuthenticated: boolean;
   isHydrated: boolean;
   biometricEnabled: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
+  login: (
+    email: string,
+    password: string,
+    recaptchaToken?: string
+  ) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
   hydrate: () => Promise<void>;
   setBiometricEnabled: (enabled: boolean) => void;
@@ -78,7 +82,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return rank[level] >= rank[minimum];
   },
 
-  login: async (email, password) => {
+  login: async (email, password, recaptchaToken) => {
     try {
       const data = await apiFetch<{
         accessToken: string;
@@ -87,7 +91,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         message?: string;
       }>(endpoints.auth.login, {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, recaptchaToken }),
       });
 
       if (!data.accessToken) {

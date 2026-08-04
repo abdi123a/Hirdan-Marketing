@@ -372,6 +372,9 @@ export interface AgencySettings {
   enableRecaptcha: boolean;
   recaptchaSiteKey: string;
   recaptchaSecretKey: string;
+  recaptchaAndroidSiteKey: string;
+  recaptchaIosSiteKey: string;
+  recaptchaEnterpriseProjectId: string;
   googleAnalyticsEnabled: boolean;
   googleAnalyticsMeasurementId: string;
   developmentMode: boolean;
@@ -555,6 +558,9 @@ const createDefaultSettings = (): AgencySettings => ({
   enableRecaptcha: false,
   recaptchaSiteKey: "",
   recaptchaSecretKey: "",
+  recaptchaAndroidSiteKey: "",
+  recaptchaIosSiteKey: "",
+  recaptchaEnterpriseProjectId: "",
   googleAnalyticsEnabled: false,
   googleAnalyticsMeasurementId: "",
   developmentMode: false,
@@ -592,7 +598,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.31.44",
+  appVersion: "2.31.45",
   versionHistory: [
     {
       version: "2.23.0",

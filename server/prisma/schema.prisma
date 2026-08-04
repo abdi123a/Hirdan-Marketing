@@ -486,6 +486,12 @@ model AgencySettings {
   enableRecaptcha               Boolean @default(false) @map("enable_recaptcha")
   recaptchaSiteKey              String? @map("recaptcha_site_key")
   recaptchaSecretKey            String? @map("recaptcha_secret_key") @db.Text
+  /// Application-type key for the Android app (package-bound).
+  recaptchaAndroidSiteKey       String? @map("recaptcha_android_site_key")
+  /// Application-type key for the iOS app (bundle-id-bound).
+  recaptchaIosSiteKey           String? @map("recaptcha_ios_site_key")
+  /// Google Cloud project id for reCAPTCHA Enterprise assessments (mobile).
+  recaptchaEnterpriseProjectId  String? @map("recaptcha_enterprise_project_id")
   googleAnalyticsEnabled        Boolean @default(false) @map("google_analytics_enabled")
   googleAnalyticsMeasurementId  String? @map("google_analytics_measurement_id")
   developmentMode               Boolean @default(false) @map("development_mode")

@@ -146,12 +146,62 @@ function authTokenResponse(
 
 // ─── Helper: Verify reCAPTCHA ────────────────────────────────────
 
-async function verifyRecaptcha(token: string | undefined): Promise<void> {
+async function verifyRecaptcha(
+  token: string | undefined,
+  options?: { mobile?: boolean }
+): Promise<void> {
   const settings = await prisma.agencySettings.findFirst();
   if (!settings?.enableRecaptcha) return;
 
+  const isMobile = Boolean(options?.mobile);
+  const mobileKeyConfigured = Boolean(
+    settings.recaptchaAndroidSiteKey || settings.recaptchaIosSiteKey
+  );
+
+  // Website keys do not work inside the native app. Until Application-type
+  // keys are configured, allow mobile logins without a web v3 token.
+  if (isMobile && !mobileKeyConfigured) return;
+
   if (!token) throw AppError.badRequest('reCAPTCHA validation required');
-  
+
+  // Application-type tokens must use Enterprise assessments (website secret won't verify them).
+  if (isMobile && mobileKeyConfigured) {
+    if (!settings.recaptchaEnterpriseProjectId || !env.RECAPTCHA_ENTERPRISE_API_KEY) {
+      throw AppError.badRequest(
+        'Mobile reCAPTCHA requires GCP project ID and RECAPTCHA_ENTERPRISE_API_KEY'
+      );
+    }
+
+    const siteKey = settings.recaptchaAndroidSiteKey || settings.recaptchaIosSiteKey;
+    if (!siteKey) throw AppError.badRequest('reCAPTCHA mobile site key is not configured');
+
+    const url =
+      `https://recaptchaenterprise.googleapis.com/v1/projects/` +
+      `${encodeURIComponent(settings.recaptchaEnterpriseProjectId)}/assessments` +
+      `?key=${encodeURIComponent(env.RECAPTCHA_ENTERPRISE_API_KEY)}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: {
+          token,
+          siteKey,
+          expectedAction: 'LOGIN',
+        },
+      }),
+    });
+
+    const data = (await response.json()) as any;
+    const valid = data?.tokenProperties?.valid === true;
+    const score = typeof data?.riskAnalysis?.score === 'number' ? data.riskAnalysis.score : 0;
+    if (!valid || score < 0.5) {
+      throw AppError.unauthorized('reCAPTCHA verification failed or score too low');
+    }
+    return;
+  }
+
+  // Classic siteverify for website v3 keys
   if (!settings.recaptchaSecretKey) return;
 
   const params = new URLSearchParams();
@@ -161,11 +211,11 @@ async function verifyRecaptcha(token: string | undefined): Promise<void> {
   const response = await fetch('https://www.google.com/recaptcha/api/siteverify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString()
+    body: params.toString(),
   });
 
-  const data = await response.json() as any;
-  if (!data.success || data.score < 0.5) {
+  const data = (await response.json()) as any;
+  if (!data.success || (typeof data.score === 'number' && data.score < 0.5)) {
     throw AppError.unauthorized('reCAPTCHA verification failed or score too low');
   }
 }
@@ -181,7 +231,7 @@ router.post(
       const { email, password, recaptchaToken } = req.body;
       const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
 
-      await verifyRecaptcha(recaptchaToken);
+      await verifyRecaptcha(recaptchaToken, { mobile: isMobileClient(req) });
 
       const user = await prisma.user.findUnique({ 
         where: { email },
@@ -256,7 +306,7 @@ router.post(
       const { email, password, recaptchaToken } = req.body;
       const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
 
-      await verifyRecaptcha(recaptchaToken);
+      await verifyRecaptcha(recaptchaToken, { mobile: isMobileClient(req) });
 
       // Find the specific client user by email
       const matchedUser = await prisma.user.findFirst({

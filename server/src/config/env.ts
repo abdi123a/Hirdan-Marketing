@@ -99,6 +99,9 @@ const envSchema = z.object({
   PINTEREST_APP_ID: z.string().optional(),
   PINTEREST_APP_SECRET: z.string().optional(),
   PINTEREST_REDIRECT_URI: z.string().optional(),
+
+  // reCAPTCHA Enterprise (Application-type Android/iOS verification)
+  RECAPTCHA_ENTERPRISE_API_KEY: z.string().optional(),
 }).refine((v) => isNonRootMysqlUrl(v.DATABASE_URL, v.NODE_ENV), {
   message: 'DATABASE_URL must not use the root MySQL user',
   path: ['DATABASE_URL'],

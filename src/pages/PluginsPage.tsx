@@ -133,6 +133,9 @@ export default function PluginsPage() {
   // Modal form states
   const [recaptchaSiteKey, setRecaptchaSiteKey] = useState(settings.recaptchaSiteKey || "");
   const [recaptchaSecretKey, setRecaptchaSecretKey] = useState(settings.recaptchaSecretKey || "");
+  const [recaptchaAndroidSiteKey, setRecaptchaAndroidSiteKey] = useState(settings.recaptchaAndroidSiteKey || "");
+  const [recaptchaIosSiteKey, setRecaptchaIosSiteKey] = useState(settings.recaptchaIosSiteKey || "");
+  const [recaptchaEnterpriseProjectId, setRecaptchaEnterpriseProjectId] = useState(settings.recaptchaEnterpriseProjectId || "");
   const [analyticsId, setAnalyticsId] = useState(settings.googleAnalyticsMeasurementId || "");
   const [googleDriveFolderId, setGoogleDriveFolderId] = useState(settings.googleDriveFolderId || "");
   const [googleDriveServiceAccountJson, setGoogleDriveServiceAccountJson] = useState(settings.googleDriveServiceAccountJson || "");
@@ -286,11 +289,14 @@ export default function PluginsPage() {
       if (editingPlugin === "recaptcha") {
         await updateSettings({
           recaptchaSiteKey,
-          recaptchaSecretKey
+          recaptchaSecretKey,
+          recaptchaAndroidSiteKey,
+          recaptchaIosSiteKey,
+          recaptchaEnterpriseProjectId,
         });
         toast({
           title: "reCAPTCHA Settings Saved",
-          description: "Google reCAPTCHA v3 keys have been updated successfully."
+          description: "Website and Application (Android/iOS) reCAPTCHA keys have been updated."
         });
       } else if (editingPlugin === "analytics") {
         await updateSettings({
@@ -384,6 +390,9 @@ export default function PluginsPage() {
     if (plugin === "recaptcha") {
       setRecaptchaSiteKey(settings.recaptchaSiteKey || "");
       setRecaptchaSecretKey(settings.recaptchaSecretKey || "");
+      setRecaptchaAndroidSiteKey(settings.recaptchaAndroidSiteKey || "");
+      setRecaptchaIosSiteKey(settings.recaptchaIosSiteKey || "");
+      setRecaptchaEnterpriseProjectId(settings.recaptchaEnterpriseProjectId || "");
     } else if (plugin === "analytics") {
       setAnalyticsId(settings.googleAnalyticsMeasurementId || "");
     } else if (plugin === "gdrive") {
@@ -962,7 +971,7 @@ export default function PluginsPage() {
               )}
             </DialogTitle>
             <DialogDescription>
-              {editingPlugin === "recaptcha" && "Enter your Google reCAPTCHA v3 keys. These protect your login screens from bots."}
+              {editingPlugin === "recaptcha" && "Website keys protect the dashboard login. Application keys (Android/iOS) are required for the native mobile app."}
               {editingPlugin === "analytics" && "Enter your Google Analytics 4 Measurement ID. Format is usually G-XXXXXXXXXX."}
               {editingPlugin === "gdrive" && "Configure your Google Service Account credentials to upload backups automatically to Google Drive."}
               {editingPlugin === "onesignal" && "Configure your OneSignal credentials to send browser push notifications directly to your clients."}
@@ -970,27 +979,74 @@ export default function PluginsPage() {
           </DialogHeader>
 
           {editingPlugin === "recaptcha" && (
-            <div className="space-y-4 py-3">
-              <div className="space-y-2">
-                <Label htmlFor="site-key" className="font-semibold text-sm">Site Key</Label>
-                <Input
-                  id="site-key"
-                  value={recaptchaSiteKey}
-                  onChange={(e) => setRecaptchaSiteKey(e.target.value)}
-                  placeholder="Enter reCAPTCHA site key"
-                  className="rounded-xl h-11 focus-visible:ring-primary"
-                />
+            <div className="space-y-5 py-3">
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Website (v3)</p>
+                <div className="space-y-2">
+                  <Label htmlFor="site-key" className="font-semibold text-sm">Web Site Key</Label>
+                  <Input
+                    id="site-key"
+                    value={recaptchaSiteKey}
+                    onChange={(e) => setRecaptchaSiteKey(e.target.value)}
+                    placeholder="Web score-based site key"
+                    className="rounded-xl h-11 focus-visible:ring-primary"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="secret-key" className="font-semibold text-sm">Web Secret Key</Label>
+                  <Input
+                    id="secret-key"
+                    type="password"
+                    value={recaptchaSecretKey}
+                    onChange={(e) => setRecaptchaSecretKey(e.target.value)}
+                    placeholder="Web secret key"
+                    className="rounded-xl h-11 focus-visible:ring-primary"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="secret-key" className="font-semibold text-sm">Secret Key</Label>
-                <Input
-                  id="secret-key"
-                  type="password"
-                  value={recaptchaSecretKey}
-                  onChange={(e) => setRecaptchaSecretKey(e.target.value)}
-                  placeholder="Enter reCAPTCHA secret key"
-                  className="rounded-xl h-11 focus-visible:ring-primary"
-                />
+
+              <div className="space-y-3 border-t border-border pt-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Mobile app (Application type)</p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Create keys in Google Cloud → reCAPTCHA → Application type Android/iOS.
+                  Package: <code className="text-foreground">com.hirdanmarketing.agency</code>.
+                  For emulator/sideload, enable “Support apps outside Play Store”.
+                  Debug SHA-1 (if Google asks):{' '}
+                  <code className="text-foreground break-all">
+                    5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25
+                  </code>
+                  . Also set <code className="text-foreground">RECAPTCHA_ENTERPRISE_API_KEY</code> on the API server.
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="android-site-key" className="font-semibold text-sm">Android Site Key</Label>
+                  <Input
+                    id="android-site-key"
+                    value={recaptchaAndroidSiteKey}
+                    onChange={(e) => setRecaptchaAndroidSiteKey(e.target.value)}
+                    placeholder="Android Application site key"
+                    className="rounded-xl h-11 focus-visible:ring-primary"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ios-site-key" className="font-semibold text-sm">iOS Site Key</Label>
+                  <Input
+                    id="ios-site-key"
+                    value={recaptchaIosSiteKey}
+                    onChange={(e) => setRecaptchaIosSiteKey(e.target.value)}
+                    placeholder="iOS Application site key (optional for now)"
+                    className="rounded-xl h-11 focus-visible:ring-primary"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="enterprise-project" className="font-semibold text-sm">GCP Project ID</Label>
+                  <Input
+                    id="enterprise-project"
+                    value={recaptchaEnterpriseProjectId}
+                    onChange={(e) => setRecaptchaEnterpriseProjectId(e.target.value)}
+                    placeholder="Google Cloud project id (for assessments)"
+                    className="rounded-xl h-11 focus-visible:ring-primary"
+                  />
+                </div>
               </div>
             </div>
           )}
