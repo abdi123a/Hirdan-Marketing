@@ -55,7 +55,7 @@ router.post(
  */
 router.delete('/:token', async (req: Request, res: Response, next) => {
   try {
-    const token = decodeURIComponent(req.params.token || '');
+    const token = decodeURIComponent((req.params.token as string) || '');
     if (!token) throw AppError.badRequest('Token is required');
 
     await prisma.deviceToken.deleteMany({
