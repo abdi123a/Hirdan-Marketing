@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../../../components/ui/Text';
 import { useRouter } from 'expo-router';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Ionicons } from '@expo/vector-icons';
@@ -118,9 +119,32 @@ export default function MoreScreen() {
           onPress={() => router.push('/(tabs)/more/email')}
           badge={unread}
         />
+        <MenuItem
+          icon="briefcase-outline"
+          title="Projects"
+          onPress={() => router.push('/(tabs)/more/projects')}
+        />
         <MenuItem icon="calendar-outline" title="Calendar" onPress={() => router.push('/(tabs)/more/calendar')} />
+        <MenuItem
+          icon="layers-outline"
+          title="Subscriptions"
+          onPress={() => router.push('/(tabs)/more/subscriptions')}
+        />
+        <MenuItem
+          icon="checkbox-outline"
+          title="Deliverable tasks"
+          onPress={() => router.push('/(tabs)/more/tasks')}
+        />
         <MenuItem icon="people-outline" title="Team" onPress={() => router.push('/(tabs)/more/team')} />
         <MenuItem icon="document-text-outline" title="HR Docs" onPress={() => router.push('/(tabs)/more/hr')} />
+        <MenuItem icon="grid-outline" title="Catalog" onPress={() => router.push('/(tabs)/more/catalog')} />
+        <MenuItem icon="mail-open-outline" title="Leads" onPress={() => router.push('/(tabs)/more/leads')} />
+        <MenuItem
+          icon="stats-chart-outline"
+          title="Financial reports"
+          onPress={() => router.push('/(tabs)/more/reports')}
+        />
+        <MenuItem icon="sparkles-outline" title="AI Assistant" onPress={() => router.push('/(tabs)/more/ai')} />
         <MenuItem icon="cloud-upload-outline" title="File Transfer" onPress={() => router.push('/(tabs)/more/transfers')} />
       </View>
 

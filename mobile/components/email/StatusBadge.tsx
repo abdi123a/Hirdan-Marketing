@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from '../ui/Text';
 import { radius } from '../../constants/theme';
 import { statusStyle } from '../../lib/email/status';
 import type { EmailStatus } from '../../lib/email/types';

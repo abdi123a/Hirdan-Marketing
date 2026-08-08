@@ -4,9 +4,9 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { Text } from '../../../../components/ui/Text';
 import { FlashList } from '@shopify/flash-list';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,7 +38,7 @@ import type {
   EmailMessage,
   SearchFilters,
 } from '../../../../lib/email/types';
-import { fontSize, radius, spacing } from '../../../../constants/theme';
+import { elevation, fontSize, radius, spacing } from '../../../../constants/theme';
 import { useTheme } from '../../../../hooks/useTheme';
 
 const CONVERSATION_FOLDERS: EmailFolder[] = [
@@ -644,10 +644,6 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    ...elevation.lg,
   },
 });

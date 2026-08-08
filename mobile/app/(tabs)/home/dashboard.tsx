@@ -5,12 +5,11 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   View,
   useWindowDimensions,
 } from 'react-native';
+import { Text } from '../../../components/ui/Text';
 import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, {
   Circle,
@@ -24,6 +23,7 @@ import Svg, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Badge,
+  Button,
   Card,
   ProgressBar,
   SegmentedControl,
@@ -34,6 +34,9 @@ import { useDashboardData } from '../../../hooks/useDashboardData';
 import { dueLabel, parseLocalDate, type TrajectoryView } from '../../../lib/dashboard-math';
 import { formatDate, formatMajorMoney, relativeTime } from '../../../lib/format';
 import { brand, fontSize, radius, spacing } from '../../../constants/theme';
+import { pressScale } from '../../../constants/motion';
+import { type } from '../../../constants/typography';
+import { PressableScale } from '../../../components/ui/PressableScale';
 
 export default function HomeScreen() {
   const t = useTheme();
@@ -94,7 +97,7 @@ export default function HomeScreen() {
           todayLabel={dash.todayLabel}
           roleLabel={dash.roleLabel}
           unread={dash.unread}
-          onBell={() => router.push('/(tabs)/home/notifications')}
+          onBell={() => router.navigate('/(tabs)/home/notifications')}
           topInset={insets.top}
         />
 
@@ -143,37 +146,37 @@ export default function HomeScreen() {
             dash.permissions.canReadProjects && {
               label: 'Projects',
               icon: 'folder-outline' as const,
-              onPress: () => router.push('/(tabs)/more'),
+              onPress: () => router.navigate('/(tabs)/more/projects'),
             },
             dash.permissions.canReadCalendar && {
               label: 'Calendar',
               icon: 'calendar-outline' as const,
-              onPress: () => router.push('/(tabs)/more/calendar'),
+              onPress: () => router.navigate('/(tabs)/more/calendar'),
             },
             dash.permissions.canWriteEmail && {
               label: 'Email',
               icon: 'mail-outline' as const,
-              onPress: () => router.push('/(tabs)/more/email'),
+              onPress: () => router.navigate('/(tabs)/more/email'),
             },
             dash.permissions.canWriteSocial && {
               label: 'Social',
               icon: 'share-social-outline' as const,
-              onPress: () => router.push('/(tabs)/social'),
+              onPress: () => router.navigate('/(tabs)/social'),
             },
             dash.permissions.canWriteTransfer && {
               label: 'Files',
               icon: 'cloud-upload-outline' as const,
-              onPress: () => router.push('/(tabs)/more/transfers'),
+              onPress: () => router.navigate('/(tabs)/more/transfers'),
             },
             dash.permissions.canWriteExpense && {
               label: 'Add Expense',
               icon: 'wallet-outline' as const,
-              onPress: () => router.push('/(tabs)/money/expense-add'),
+              onPress: () => router.push('/expense/add'),
             },
             dash.permissions.canReadClients && {
               label: 'Clients',
               icon: 'people-outline' as const,
-              onPress: () => router.push('/(tabs)/clients'),
+              onPress: () => router.navigate('/(tabs)/clients'),
             },
           ].filter(Boolean) as ActionItem[]}
         />
@@ -184,7 +187,7 @@ export default function HomeScreen() {
           warnings={[]}
           quarterly={null}
           money={money}
-          onInvoice={(id) => router.push(`/(tabs)/money/invoice/${id}`)}
+          onInvoice={(id) => router.push(`/invoice/${id}`)}
         />
 
         {dash.permissions.canReadTeam ? (
@@ -219,7 +222,7 @@ export default function HomeScreen() {
           </Section>
         ) : null}
 
-        <ActivityFeed activities={m.activities} onInvoice={(id) => router.push(`/(tabs)/money/invoice/${id}`)} />
+        <ActivityFeed activities={m.activities} onInvoice={(id) => router.push(`/invoice/${id}`)} />
       </ScrollView>
     );
   }
@@ -240,13 +243,13 @@ export default function HomeScreen() {
         todayLabel={dash.todayLabel}
         roleLabel={dash.roleLabel}
         unread={dash.unread}
-        onBell={() => router.push('/(tabs)/home/notifications')}
+        onBell={() => router.navigate('/(tabs)/home/notifications')}
         topInset={insets.top}
         primaryAction={
           dash.permissions.canWriteInvoice
             ? {
                 label: 'New Invoice',
-                onPress: () => router.push('/(tabs)/money/invoice-add'),
+                onPress: () => router.push('/invoice/add'),
               }
             : undefined
         }
@@ -262,7 +265,7 @@ export default function HomeScreen() {
               : `${m.growthRate >= 0 ? '+' : ''}${m.growthRate}% vs last month`
           }
           hintTone={m.growthRate >= 0 ? 'success' : 'destructive'}
-          onPress={() => router.push('/(tabs)/money')}
+          onPress={() => router.navigate('/(tabs)/money')}
         />
         <View style={styles.kpiGrid}>
           {dash.expensesAvailable ? (
@@ -272,7 +275,7 @@ export default function HomeScreen() {
               hint={`${money(m.last3MonthsExpenses)}/mo avg`}
               icon="trending-down-outline"
               tone="danger"
-              onPress={() => router.push('/(tabs)/money/expenses')}
+              onPress={() => router.navigate('/(tabs)/money')}
             />
           ) : (
             <KpiCard
@@ -294,7 +297,7 @@ export default function HomeScreen() {
             hintTone={m.netProfitValue >= 0 ? 'success' : 'destructive'}
             icon="cash-outline"
             tone={m.netProfitValue >= 0 ? 'success' : 'danger'}
-            onPress={() => router.push('/(tabs)/money')}
+            onPress={() => router.navigate('/(tabs)/money')}
           />
           <KpiCard
             label="Outstanding"
@@ -303,7 +306,7 @@ export default function HomeScreen() {
             hintTone={m.unpaidCount > 0 ? 'warning' : 'success'}
             icon="time-outline"
             tone="gold"
-            onPress={() => router.push('/(tabs)/money')}
+            onPress={() => router.navigate('/(tabs)/money')}
           />
           {dash.expensesAvailable ? (
             <KpiCard
@@ -320,7 +323,7 @@ export default function HomeScreen() {
               hint="Active"
               icon="people-outline"
               tone="purple"
-              onPress={() => router.push('/(tabs)/clients')}
+              onPress={() => router.navigate('/(tabs)/clients')}
             />
           )}
         </View>
@@ -333,7 +336,7 @@ export default function HomeScreen() {
           <StatChip
             label="Clients"
             value={String(m.activeClientsCount)}
-            onPress={() => router.push('/(tabs)/clients')}
+            onPress={() => router.navigate('/(tabs)/clients')}
           />
           <StatChip label="Projects" value={String(m.activeProjectsCount)} />
           <StatChip label="Subs" value={String(m.activeSubsCount)} />
@@ -341,7 +344,7 @@ export default function HomeScreen() {
             <StatChip
               label="Team"
               value={String(m.activeTeamCount)}
-              onPress={() => router.push('/(tabs)/more/team')}
+              onPress={() => router.navigate('/(tabs)/more/team')}
             />
           ) : null}
           {dash.showLeadsStat ? (
@@ -356,56 +359,56 @@ export default function HomeScreen() {
             label: 'New Invoice',
             icon: 'document-text-outline' as const,
             tone: 'gold' as const,
-            onPress: () => router.push('/(tabs)/money/invoice-add'),
+            onPress: () => router.push('/invoice/add'),
             enabled: dash.permissions.canWriteInvoice,
           },
           {
             label: 'New Proforma',
             icon: 'create-outline' as const,
             tone: 'orange' as const,
-            onPress: () => router.push('/(tabs)/money/proforma-add'),
+            onPress: () => router.push('/proforma/add'),
             enabled: dash.permissions.canWriteProforma,
           },
           {
             label: 'Add Client',
             icon: 'person-add-outline' as const,
             tone: 'purple' as const,
-            onPress: () => router.push('/(tabs)/clients/add'),
+            onPress: () => router.push('/client/add'),
             enabled: dash.permissions.canWriteClient,
           },
           {
             label: 'New Project',
             icon: 'folder-outline' as const,
             tone: 'purple' as const,
-            onPress: () => router.push('/(tabs)/more/projects/add'),
+            onPress: () => router.push('/project/add'),
             enabled: dash.permissions.canWriteProject,
           },
           {
             label: 'Add Expense',
             icon: 'wallet-outline' as const,
             tone: 'red' as const,
-            onPress: () => router.push('/(tabs)/money/expense-add'),
+            onPress: () => router.push('/expense/add'),
             enabled: dash.permissions.canWriteExpense,
           },
           {
             label: 'Schedule Post',
             icon: 'share-social-outline' as const,
             tone: 'purple' as const,
-            onPress: () => router.push('/(tabs)/social/compose'),
+            onPress: () => router.push('/compose'),
             enabled: dash.permissions.canWriteSocial,
           },
           {
             label: 'Analytics',
             icon: 'stats-chart-outline' as const,
             tone: 'gold' as const,
-            onPress: () => router.push('/(tabs)/social/analyze'),
+            onPress: () => router.navigate('/(tabs)/social/analyze'),
             enabled: dash.canRead('social_media'),
           },
           {
             label: 'Reports',
             icon: 'bar-chart-outline' as const,
             tone: 'gold' as const,
-            onPress: () => router.push('/(tabs)/money'),
+            onPress: () => router.navigate('/(tabs)/money'),
             enabled: dash.permissions.canReadReports,
           },
         ].filter((a) => a.enabled)}
@@ -416,7 +419,7 @@ export default function HomeScreen() {
         pad
         action={
           dash.permissions.canReadReports ? (
-            <Pressable onPress={() => router.push('/(tabs)/money')} hitSlop={8}>
+            <Pressable onPress={() => router.navigate('/(tabs)/money')} hitSlop={8}>
               <Text style={styles.linkAction}>See all</Text>
             </Pressable>
           ) : undefined
@@ -469,7 +472,7 @@ export default function HomeScreen() {
                 return (
                   <Pressable
                     key={inv.id}
-                    onPress={() => router.push(`/(tabs)/money/invoice/${inv.id}`)}
+                    onPress={() => router.push(`/invoice/${inv.id}`)}
                     style={[
                       styles.listRow,
                       index < m.receivables.length - 1 && styles.listRowBorder,
@@ -511,7 +514,7 @@ export default function HomeScreen() {
             </View>
           )}
           <Pressable
-            onPress={() => router.push('/(tabs)/money')}
+            onPress={() => router.navigate('/(tabs)/money')}
             style={[styles.cardFooter, { borderTopColor: t.border }]}
           >
             <Text style={styles.linkAction}>View all invoices</Text>
@@ -528,14 +531,14 @@ export default function HomeScreen() {
         money={money}
         onInvoice={(id) => {
           const invId = id.replace(/^inv-/, '');
-          if (id.startsWith('inv-')) router.push(`/(tabs)/money/invoice/${invId}`);
+          if (id.startsWith('inv-')) router.push(`/invoice/${invId}`);
         }}
       />
 
       <ActivityFeed
         activities={m.activities}
-        onInvoice={(id) => router.push(`/(tabs)/money/invoice/${id}`)}
-        onClient={(id) => router.push(`/(tabs)/clients/${id}`)}
+        onInvoice={(id) => router.push(`/invoice/${id}`)}
+        onClient={(id) => router.push(`/client/${id}`)}
       />
     </ScrollView>
   );
@@ -562,53 +565,54 @@ function Hero({
   topInset: number;
   primaryAction?: { label: string; onPress: () => void };
 }) {
+  const t = useTheme();
+
+  /*
+   * Plain header on the page background rather than a full-bleed gradient
+   * panel. The gradient was the loudest thing on a screen whose job is to
+   * report numbers, and it pushed the first real content most of a
+   * screenful down. Hierarchy now comes from type size, and the brand colour
+   * is spent on the action instead of the backdrop.
+   */
   return (
     <View style={[styles.hero, { paddingTop: topInset + spacing.lg }]}>
-      <LinearGradient
-        colors={[brand.purple, brand.purpleDeep]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-
       <View style={styles.heroBar}>
-        <Text style={styles.heroDate} numberOfLines={1}>
-          {todayLabel}
-        </Text>
+        <View style={styles.heroGreetingBlock}>
+          <Text variant="subtext" color="muted" numberOfLines={1}>
+            {greeting} · {todayLabel}
+          </Text>
+          <Text variant="h1" numberOfLines={1}>
+            {firstName}
+          </Text>
+          <Text variant="caption" color="subtle" numberOfLines={1}>
+            {roleLabel}
+          </Text>
+        </View>
+
         <Pressable
           onPress={onBell}
-          style={styles.bell}
+          style={[styles.bell, { backgroundColor: t.card, borderColor: t.borderSubtle }]}
           hitSlop={10}
           accessibilityRole="button"
           accessibilityLabel={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
         >
-          <Ionicons name="notifications-outline" size={20} color="#fff" />
+          <Ionicons name="notifications-outline" size={20} color={t.foreground} />
           {unread > 0 ? (
-            <View style={styles.dot}>
+            <View style={[styles.dot, { borderColor: t.background }]}>
               <Text style={styles.dotText}>{unread > 99 ? '99+' : unread}</Text>
             </View>
           ) : null}
         </Pressable>
       </View>
 
-      <View style={styles.heroGreetingBlock}>
-        <Text style={styles.heroGreeting}>{greeting}</Text>
-        <Text style={styles.heroName} numberOfLines={2}>
-          {firstName}
-        </Text>
-        <Text style={styles.heroRole}>{roleLabel}</Text>
-      </View>
-
       {primaryAction ? (
-        <Pressable
+        <Button
+          title={primaryAction.label}
+          icon="add"
+          size="sm"
           onPress={primaryAction.onPress}
-          style={({ pressed }) => [styles.heroCta, pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] }]}
-          accessibilityRole="button"
-          accessibilityLabel={primaryAction.label}
-        >
-          <Ionicons name="add" size={18} color={brand.purple} />
-          <Text style={styles.heroCtaText}>{primaryAction.label}</Text>
-        </Pressable>
+          style={styles.heroCta}
+        />
       ) : null}
     </View>
   );
@@ -676,36 +680,33 @@ function FeaturedMetric({
         ? t.destructive
         : hintTone === 'warning'
           ? t.warning
-          : 'rgba(255,255,255,0.72)';
+          : t.subtleForeground;
 
+  /*
+   * A card like any other, with the figure carrying the emphasis. The purple
+   * fill made this the loudest element on screen regardless of what the number
+   * said — a headline metric should stand out by being larger, not by being
+   * painted a different colour from everything around it.
+   */
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={!onPress}
-      style={({ pressed }) => [pressed && { opacity: 0.94 }]}
-    >
-      <LinearGradient
-        colors={[brand.purple, brand.purpleDeep]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.featuredMetric}
-      >
-        <View style={styles.featuredTop}>
-          <Text style={styles.featuredLabel}>{label}</Text>
-          <View style={styles.featuredBadge}>
-            <Ionicons name="wallet-outline" size={14} color={brand.gold} />
-          </View>
-        </View>
-        <Text style={styles.featuredValue} numberOfLines={1}>
-          {value}
+    <Card onPress={onPress} style={styles.featuredMetric}>
+      <View style={styles.featuredTop}>
+        <Text variant="label" color="muted">
+          {label}
         </Text>
-        {hint ? (
-          <Text style={[styles.featuredHint, { color: hintColor }]} numberOfLines={1}>
-            {hint}
-          </Text>
-        ) : null}
-      </LinearGradient>
-    </Pressable>
+        <View style={[styles.featuredBadge, { backgroundColor: t.accent }]}>
+          <Ionicons name="wallet-outline" size={14} color={t.accentForeground} />
+        </View>
+      </View>
+      <Text style={styles.featuredValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+        {value}
+      </Text>
+      {hint ? (
+        <Text variant="caption" style={{ color: hintColor }} numberOfLines={1}>
+          {hint}
+        </Text>
+      ) : null}
+    </Card>
   );
 }
 
@@ -1012,30 +1013,22 @@ function NeedsAttention({
       </Card>
 
       {quarterly ? (
-        <LinearGradient
-          colors={[brand.purple, brand.purpleDeep]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.targetCard, { marginTop: spacing.md }]}
-        >
+        <Card style={[styles.targetCard, { marginTop: spacing.md }]}>
           <View style={styles.rowBetween}>
-            <Text style={{ color: '#fff', fontWeight: '800', fontSize: fontSize.md }}>
-              Revenue target
-            </Text>
-            <Text style={styles.targetPill}>{quarterly.label}</Text>
+            <Text variant="h3">Revenue target</Text>
+            <Badge label={quarterly.label} tone="default" size="sm" />
           </View>
           <View style={styles.targetValueRow}>
             <Text style={styles.targetPct}>{quarterly.progress}%</Text>
-            <Text style={styles.targetOf}>of {money(quarterly.target)}</Text>
+            <Text variant="caption" color="muted" style={styles.targetOf}>
+              of {money(quarterly.target)}
+            </Text>
           </View>
-          <ProgressBar
-            progress={quarterly.progress}
-            color={brand.gold}
-            trackColor="rgba(255,255,255,0.18)"
-            height={6}
-          />
-          <Text style={styles.targetHint}>{quarterly.trendText}</Text>
-        </LinearGradient>
+          <ProgressBar progress={quarterly.progress} height={7} />
+          <Text variant="caption" color="muted">
+            {quarterly.trendText}
+          </Text>
+        </Card>
       ) : null}
     </Section>
   );
@@ -1270,69 +1263,30 @@ function TrendChart({
 
 const styles = StyleSheet.create({
   hero: {
-    marginBottom: spacing.sm,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xxl + spacing.sm,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    overflow: 'hidden',
-    gap: spacing.xl,
+    paddingHorizontal: spacing.gutter,
+    paddingBottom: spacing.md,
+    gap: spacing.lg,
   },
   heroBar: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: spacing.md,
     minHeight: 44,
   },
-  heroDate: {
-    flex: 1,
-    color: 'rgba(255,255,255,0.72)',
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-  },
   heroGreetingBlock: {
-    gap: 6,
+    flex: 1,
+    gap: 2,
     paddingRight: spacing.md,
-  },
-  heroGreeting: {
-    color: 'rgba(255,255,255,0.78)',
-    fontSize: fontSize.md,
-    fontWeight: '600',
-  },
-  heroName: {
-    color: '#FFFFFF',
-    fontSize: fontSize.hero,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-    lineHeight: 38,
-  },
-  heroRole: {
-    marginTop: 4,
-    color: 'rgba(255,255,255,0.62)',
-    fontSize: fontSize.sm,
-    fontWeight: '500',
   },
   heroCta: {
     alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 12,
-    borderRadius: radius.full,
-  },
-  heroCtaText: {
-    color: brand.purple,
-    fontWeight: '700',
-    fontSize: fontSize.sm,
   },
   bell: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -1348,16 +1302,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
+    // Ringed in the page colour so the badge reads as sitting on the bell.
     borderWidth: 2,
-    borderColor: brand.purpleDeep,
   },
   dotText: {
+    ...type.overline,
     color: brand.ink,
     fontSize: 10,
-    fontWeight: '800',
+    letterSpacing: 0,
   },
   section: { gap: spacing.md },
-  sectionPad: { paddingHorizontal: spacing.lg },
+  sectionPad: { paddingHorizontal: spacing.gutter },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1365,49 +1320,29 @@ const styles = StyleSheet.create({
     minHeight: 28,
   },
   sectionTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: '800',
-    letterSpacing: -0.2,
+    ...type.h3,
   },
   linkAction: {
+    ...type.label,
     color: brand.purple,
-    fontWeight: '700',
-    fontSize: fontSize.sm,
   },
   featuredMetric: {
-    borderRadius: 20,
-    padding: spacing.xl,
     gap: 8,
-    overflow: 'hidden',
   },
   featuredTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  featuredLabel: {
-    color: 'rgba(255,255,255,0.72)',
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-  },
   featuredBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    width: 30,
+    height: 30,
+    borderRadius: radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
   featuredValue: {
-    color: '#FFFFFF',
-    fontSize: 34,
-    fontWeight: '800',
-    letterSpacing: -0.8,
-    lineHeight: 40,
-  },
-  featuredHint: {
-    fontSize: fontSize.sm,
-    fontWeight: '600',
+    ...type.display,
   },
   kpiGrid: {
     flexDirection: 'row',
@@ -1582,20 +1517,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   targetCard: {
-    borderRadius: 20,
-    padding: spacing.xl,
     gap: spacing.md,
-    overflow: 'hidden',
-  },
-  targetPill: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-    backgroundColor: 'rgba(255,255,255,0.16)',
-    overflow: 'hidden',
-    borderRadius: radius.full,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
   },
   targetValueRow: {
     flexDirection: 'row',
@@ -1603,21 +1525,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   targetPct: {
-    color: '#fff',
-    fontSize: 34,
-    fontWeight: '900',
-    letterSpacing: -0.8,
+    ...type.display,
   },
   targetOf: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  targetHint: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: fontSize.xs,
-    lineHeight: 18,
+    marginBottom: 7,
   },
   activityRow: {
     flexDirection: 'row',

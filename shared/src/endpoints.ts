@@ -60,12 +60,6 @@ export const endpoints = {
   accounts: {
     list: '/accounts',
   },
-  services: {
-    list: '/services',
-  },
-  packages: {
-    list: '/packages',
-  },
   projects: {
     list: '/projects',
     byId: (id: string) => `/projects/${id}`,
@@ -76,11 +70,26 @@ export const endpoints = {
   subscriptions: {
     list: '/subscriptions',
     byId: (id: string) => `/subscriptions/${id}`,
+    create: '/subscriptions',
+    update: (id: string) => `/subscriptions/${id}`,
+    delete: (id: string) => `/subscriptions/${id}`,
+    runBillingCycle: '/subscriptions/run-billing-cycle',
   },
   leads: {
     list: '/leads',
+    byId: (id: string) => `/leads/${id}`,
+    update: (id: string) => `/leads/${id}`,
+    delete: (id: string) => `/leads/${id}`,
   },
   tasks: {
+    list: '/tasks',
+    byId: (id: string) => `/tasks/${id}`,
+    update: (id: string) => `/tasks/${id}`,
+    complete: (id: string) => `/tasks/${id}/complete`,
+    delete: (id: string) => `/tasks/${id}`,
+    generate: '/tasks/generate',
+    cyclesList: '/tasks/cycles/list',
+    deleteCycle: (id: string) => `/tasks/cycles/${id}`,
     analyticsDashboard: '/tasks/analytics/dashboard',
   },
   notifications: {
@@ -92,11 +101,49 @@ export const endpoints = {
   team: {
     list: '/team',
     byId: (id: string) => `/team/${id}`,
+    create: '/team',
+    update: (id: string) => `/team/${id}`,
+    delete: (id: string) => `/team/${id}`,
+    files: (id: string) => `/team/${id}/files`,
+    fileById: (id: string, fileId: string) => `/team/${id}/files/${fileId}`,
+    activity: (id: string) => `/team/${id}/activity`,
+    provisionAccess: (id: string) => `/team/${id}/provision-access`,
   },
   hr: {
     list: '/hr/documents',
     byId: (id: string) => `/hr/documents/${id}`,
+    create: '/hr/documents',
     exportPdf: (id: string) => `/hr/documents/${id}/export-pdf`,
+    approve: (id: string) => `/hr/documents/${id}/approve`,
+    reject: (id: string) => `/hr/documents/${id}/reject`,
+    sendEmail: (id: string) => `/hr/documents/${id}/send-email`,
+    byEmployee: (employeeId: string) => `/hr/documents/employee/${employeeId}`,
+  },
+  packages: {
+    list: '/packages',
+    byId: (id: string) => `/packages/${id}`,
+    create: '/packages',
+    update: (id: string) => `/packages/${id}`,
+    delete: (id: string) => `/packages/${id}`,
+  },
+  services: {
+    list: '/services',
+    byId: (id: string) => `/services/${id}`,
+    create: '/services',
+    update: (id: string) => `/services/${id}`,
+    delete: (id: string) => `/services/${id}`,
+  },
+  financial: {
+    incomeStatement: '/financial/income-statement',
+    balanceSheet: '/financial/balance-sheet',
+    cashFlow: '/financial/cash-flow',
+    monthlyCommitments: '/financial/monthly-commitments',
+  },
+  ai: {
+    status: '/ai/status',
+    chat: '/ai/chat',
+    generatePlan: '/ai/generate-plan',
+    testConnection: '/ai/test-connection',
   },
   transfer: {
     list: '/transfer',
@@ -138,9 +185,19 @@ export const endpoints = {
     analyticsRefresh: (clientId: string) => `/social/analytics/${clientId}/refresh`,
     analyticsPost: (id: string) => `/social/analytics/post/${id}`,
     importTiktok: (accountId: string) => `/social/import/tiktok/${accountId}`,
+    importPlatform: (platform: string, accountId: string) => `/social/import/${platform}/${accountId}`,
+    importStatus: (accountId: string) => `/social/import/${accountId}/status`,
+    adSpend: '/social/ad-spend',
+    adSpendItem: (id: string) => `/social/ad-spend/${id}`,
   },
-  ai: {
-    generatePlan: '/ai/generate-plan',
+  socialPerformanceReport: {
+    generate: '/social-performance-reports/generate',
+    get: (clientId: string, month: number, year: number) =>
+      `/social-performance-reports/${clientId}/${month}/${year}`,
+    update: (reportId: string) => `/social-performance-reports/${reportId}`,
+    preview: (reportId: string) => `/social-performance-reports/${reportId}/preview`,
+    exportPdf: (reportId: string) => `/social-performance-reports/${reportId}/export-pdf`,
+    sendEmail: (reportId: string) => `/social-performance-reports/${reportId}/send-email`,
   },
   reports: {
     contentPlan: '/reports/content-plan',

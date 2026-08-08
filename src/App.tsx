@@ -71,7 +71,8 @@ const SocialPublishPage = lazy(() => import('./pages/SocialPublishPage.tsx'));
 const SocialAccountsPage = lazy(() => import('./pages/SocialAccountsPage.tsx'));
 const SocialAccountPickerPage = lazy(() => import('./pages/SocialAccountPickerPage.tsx'));
 const SocialStrategyPresentationStudioPage = lazy(() => import('./pages/SocialStrategyPresentationStudioPage.tsx'));
-const MonthlyReportStudioPage = lazy(() => import("./pages/MonthlyReportStudioPage.tsx"));
+const SocialPerformanceReportPage = lazy(() => import("./pages/SocialPerformanceReportPage.tsx"));
+const SocialAdSpendPage = lazy(() => import("./pages/SocialAdSpendPage.tsx"));
 const FinancialReportPage = lazy(() => import("./pages/FinancialReportPage.tsx"));
 const ExpensesPage = lazy(() => import("./pages/ExpensesPage.tsx"));
 const HrDocumentsPage = lazy(() => import("@/pages/HrDocumentsPage.tsx"));
@@ -252,7 +253,8 @@ function AppRoutes() {
         <Route path="social-media/accounts" element={<PermissionGate module="social_media"><SocialAccountsPage /></PermissionGate>} />
         <Route path="social-media/select-account" element={<PermissionGate module="social_media"><SocialAccountPickerPage /></PermissionGate>} />
         <Route path="social-media/presentation" element={<PermissionGate module="strategy_decks"><SocialStrategyPresentationStudioPage /></PermissionGate>} />
-        <Route path="reports/monthly" element={<PermissionGate module="monthly_reports"><MonthlyReportStudioPage /></PermissionGate>} />
+        <Route path="reports/social-performance" element={<PermissionGate module="social_media"><SocialPerformanceReportPage /></PermissionGate>} />
+        <Route path="social-media/ad-spend" element={<PermissionGate module="social_media"><SocialAdSpendPage /></PermissionGate>} />
         <Route path="reports/financial" element={<PermissionGate module="financial_reports"><FinancialReportPage /></PermissionGate>} />
         <Route path="expenses" element={<PermissionGate module="expenses"><ExpensesPage /></PermissionGate>} />
         <Route path="calendar" element={<PermissionGate module="calendar"><CalendarPage /></PermissionGate>} />

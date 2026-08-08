@@ -6,9 +6,9 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { Text } from '../../../components/ui/Text';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -56,6 +56,7 @@ import {
   Button,
   Card,
   Chip,
+  DatePickerField,
   EmptyState,
   Input,
   ProgressBar,
@@ -370,20 +371,10 @@ export default function SocialAnalyzeScreen() {
             {useCustom ? (
               <View style={styles.row2}>
                 <View style={{ flex: 1 }}>
-                  <Input
-                    label="Start (YYYY-MM-DD)"
-                    value={customStart}
-                    onChangeText={setCustomStart}
-                    autoCapitalize="none"
-                  />
+                  <DatePickerField label="Start" value={customStart} onChange={setCustomStart} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Input
-                    label="End (YYYY-MM-DD)"
-                    value={customEnd}
-                    onChangeText={setCustomEnd}
-                    autoCapitalize="none"
-                  />
+                  <DatePickerField label="End" value={customEnd} onChange={setCustomEnd} />
                 </View>
               </View>
             ) : null}

@@ -577,10 +577,11 @@ export function SocialStrategyPresentationStudioPage() {
 
       {/* ─── 16:9 MASTER PRESENTATION CANVAS (STRICT AGENCY BRANDING) ────────────────────────────── */}
       <div className="flex flex-col items-center">
-        <div 
-          className={`w-full max-w-[1400px] aspect-[16/9] border rounded-3xl shadow-2xl overflow-hidden relative transition-all duration-300 flex flex-col ${
-            canvasTheme === "dark" 
-              ? "bg-[#090d16] border-slate-800 text-white" 
+        <div className="w-full max-w-[1400px] overflow-x-auto">
+        <div
+          className={`w-full min-w-[960px] aspect-[16/9] border rounded-3xl shadow-2xl overflow-hidden relative transition-all duration-300 flex flex-col ${
+            canvasTheme === "dark"
+              ? "bg-[#090d16] border-slate-800 text-white"
               : "bg-white border-slate-200 text-slate-900"
           }`}
           ref={slideRef}
@@ -1116,6 +1117,7 @@ export function SocialStrategyPresentationStudioPage() {
             <span>Page {currentSlideIndex + 1} of 7</span>
           </div>
         </div>
+        </div>
 
         {/* Slide Navigation Controls */}
         <div className="w-full max-w-[1400px] mt-4 bg-card/60 backdrop-blur-xl border border-border/60 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
@@ -1177,7 +1179,7 @@ export function SocialStrategyPresentationStudioPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-2 gap-4 py-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-3">
             <div className="space-y-2">
               <Label>Company Name</Label>
               <Input value={deck.companyName} onChange={e => setDeck({ ...deck, companyName: e.target.value })} />

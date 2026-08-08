@@ -35,8 +35,8 @@ export function EmailChipsInput({ value, onChange, placeholder, className }: Pro
   return (
     <div className={cn('flex flex-wrap items-center gap-1 rounded-md border bg-background px-2 py-1', className)}>
       {value.map((email) => (
-        <span key={email} className="flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs">
-          {email}
+        <span key={email} className="flex max-w-full items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-xs">
+          <span className="max-w-[200px] truncate">{email}</span>
           <button type="button" onClick={() => onChange(value.filter((v) => v !== email))}>
             <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
           </button>

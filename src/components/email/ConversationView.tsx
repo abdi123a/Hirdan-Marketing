@@ -69,116 +69,120 @@ export function ConversationView({ conversationId, onBack, onForward }: Props) {
   return (
     <div className="flex h-full min-w-0 flex-col bg-muted/20">
       {/* Header */}
-      <div className="flex items-center gap-2 border-b bg-background px-4 py-2.5">
-        {onBack && (
-          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={onBack} title="Back to conversation list">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        )}
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold">{conversation.subject || '(no subject)'}</h2>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span
-              className="inline-flex items-center gap-1"
-              style={{ color: conversation.mailbox.color || undefined }}
-            >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: conversation.mailbox.color || '#6366f1' }} />
-              {conversation.mailbox.displayName}
-            </span>
-            {conversation.client && (
-              <>
-                <span>·</span>
-                <Link
-                  to={`/dashboard/clients/view/${conversation.client.id}`}
-                  className="inline-flex items-center gap-1 hover:text-primary hover:underline"
-                >
-                  {conversation.client.name}
-                  <ExternalLink className="h-3 w-3" />
-                </Link>
-              </>
-            )}
-            {conversation.labels.map((l) => (
+      <div className="flex flex-col gap-2 border-b bg-background px-4 py-2.5 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 items-center gap-2 sm:flex-1">
+          {onBack && (
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={onBack} title="Back to conversation list">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-sm font-semibold">{conversation.subject || '(no subject)'}</h2>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <span
-                key={l.labelId}
-                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
-                style={{ backgroundColor: l.label.color + '22', color: l.label.color }}
+                className="inline-flex items-center gap-1"
+                style={{ color: conversation.mailbox.color || undefined }}
               >
-                {l.label.name}
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: conversation.mailbox.color || '#6366f1' }} />
+                {conversation.mailbox.displayName}
               </span>
-            ))}
+              {conversation.client && (
+                <>
+                  <span>·</span>
+                  <Link
+                    to={`/dashboard/clients/view/${conversation.client.id}`}
+                    className="inline-flex items-center gap-1 hover:text-primary hover:underline"
+                  >
+                    {conversation.client.name}
+                    <ExternalLink className="h-3 w-3" />
+                  </Link>
+                </>
+              )}
+              {conversation.labels.map((l) => (
+                <span
+                  key={l.labelId}
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
+                  style={{ backgroundColor: l.label.color + '22', color: l.label.color }}
+                >
+                  {l.label.name}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
 
-        <Select
-          value={conversation.status}
-          onValueChange={(v) => patch.mutate({ id: conversation.id, data: { status: v } })}
-        >
-          <SelectTrigger className="h-8 w-[150px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {(Object.keys(STATUS_LABELS) as ConversationStatus[]).map((s) => (
-              <SelectItem key={s} value={s} className="text-xs">{STATUS_LABELS[s]}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+          <Select
+            value={conversation.status}
+            onValueChange={(v) => patch.mutate({ id: conversation.id, data: { status: v } })}
+          >
+            <SelectTrigger className="h-8 w-[150px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(STATUS_LABELS) as ConversationStatus[]).map((s) => (
+                <SelectItem key={s} value={s} className="text-xs">{STATUS_LABELS[s]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        <Button
-          variant="ghost" size="icon" className="h-8 w-8"
-          title={conversation.isStarred ? 'Unstar' : 'Star'}
-          onClick={() => patch.mutate({ id: conversation.id, data: { isStarred: !conversation.isStarred } })}
-        >
-          <Star className={cn('h-4 w-4', conversation.isStarred && 'fill-amber-400 text-amber-400')} />
-        </Button>
-
-        <LabelPicker
-          conversationId={conversation.id}
-          appliedLabelIds={conversation.labels.map((l) => l.labelId)}
-        />
-
-        <Button
-          variant="ghost" size="icon" className="h-8 w-8"
-          title="Customer details"
-          onClick={() => setCustomerOpen(true)}
-        >
-          <User className="h-4 w-4" />
-        </Button>
-
-        {lastEmail && onForward && (
-          <Button variant="ghost" size="icon" className="h-8 w-8" title="Forward" onClick={() => onForward(lastEmail)}>
-            <Forward className="h-4 w-4" />
+          <Button
+            variant="ghost" size="icon" className="h-8 w-8"
+            title={conversation.isStarred ? 'Unstar' : 'Star'}
+            onClick={() => patch.mutate({ id: conversation.id, data: { isStarred: !conversation.isStarred } })}
+          >
+            <Star className={cn('h-4 w-4', conversation.isStarred && 'fill-amber-400 text-amber-400')} />
           </Button>
-        )}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <MoreVertical className="h-4 w-4" />
+          <LabelPicker
+            conversationId={conversation.id}
+            appliedLabelIds={conversation.labels.map((l) => l.labelId)}
+          />
+
+          <Button
+            variant="ghost" size="icon" className="h-8 w-8"
+            title="Customer details"
+            onClick={() => setCustomerOpen(true)}
+          >
+            <User className="h-4 w-4" />
+          </Button>
+
+          {lastEmail && onForward && (
+            <Button variant="ghost" size="icon" className="h-8 w-8" title="Forward" onClick={() => onForward(lastEmail)}>
+              <Forward className="h-4 w-4" />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {inTrash ? (
-              <DropdownMenuItem onClick={() => action.mutate({ id: conversation.id, action: 'restore' })}>
-                <RotateCcw className="mr-2 h-4 w-4" /> Restore
-              </DropdownMenuItem>
-            ) : (
-              <>
-                <DropdownMenuItem onClick={() => action.mutate({ id: conversation.id, action: conversation.isArchived ? 'unarchive' : 'archive' })}>
-                  <Archive className="mr-2 h-4 w-4" /> {conversation.isArchived ? 'Unarchive' : 'Archive'}
+          )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {inTrash ? (
+                <DropdownMenuItem onClick={() => action.mutate({ id: conversation.id, action: 'restore' })}>
+                  <RotateCcw className="mr-2 h-4 w-4" /> Restore
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => action.mutate({ id: conversation.id, action: conversation.isSpam ? 'not-spam' : 'spam' })}>
-                  <ShieldAlert className="mr-2 h-4 w-4" /> {conversation.isSpam ? 'Not spam' : 'Mark as spam'}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-red-600"
-                  onClick={() => { action.mutate({ id: conversation.id, action: 'trash' }); onBack?.(); }}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" /> Delete
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              ) : (
+                <>
+                  <DropdownMenuItem onClick={() => action.mutate({ id: conversation.id, action: conversation.isArchived ? 'unarchive' : 'archive' })}>
+                    <Archive className="mr-2 h-4 w-4" /> {conversation.isArchived ? 'Unarchive' : 'Archive'}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => action.mutate({ id: conversation.id, action: conversation.isSpam ? 'not-spam' : 'spam' })}>
+                    <ShieldAlert className="mr-2 h-4 w-4" /> {conversation.isSpam ? 'Not spam' : 'Mark as spam'}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-red-600"
+                    onClick={() => { action.mutate({ id: conversation.id, action: 'trash' }); onBack?.(); }}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Thread */}

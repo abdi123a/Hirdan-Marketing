@@ -4,9 +4,9 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { Text } from '../../../components/ui/Text';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -99,7 +99,7 @@ export default function ClientsScreen() {
 
   const openClient = (id: string) => {
     if (isTablet) setSelectedId(id);
-    else router.push(`/(tabs)/clients/${id}`);
+    else router.push(`/client/${id}`);
   };
 
   const selected = clients.find((c) => c.id === selectedId);
@@ -115,7 +115,7 @@ export default function ClientsScreen() {
         </View>
         {canWrite('clients') ? (
           <Pressable
-            onPress={() => router.push('/(tabs)/clients/add')}
+            onPress={() => router.push('/client/add')}
             style={[styles.addBtn, { backgroundColor: t.primary }]}
           >
             <Ionicons name="add" size={18} color={t.primaryForeground} />
@@ -128,12 +128,14 @@ export default function ClientsScreen() {
 
       {isLoading ? (
         <View style={{ flex: 1 }}>
-          <KpiGrid style={styles.statsRow}>
-            <KpiCard label="Total" value="—" icon="people-outline" tone="purple" />
-            <KpiCard label="Active" value="—" icon="checkmark-circle-outline" tone="success" />
-            <KpiCard label="Paused" value="—" icon="pause-circle-outline" tone="warning" />
-            <KpiCard label="Churned" value="—" icon="close-circle-outline" tone="danger" />
-          </KpiGrid>
+          <View style={styles.statsRow}>
+            <KpiGrid>
+              <KpiCard label="Total" value="—" icon="people-outline" tone="purple" />
+              <KpiCard label="Active" value="—" icon="checkmark-circle-outline" tone="success" />
+              <KpiCard label="Paused" value="—" icon="pause-circle-outline" tone="warning" />
+              <KpiCard label="Churned" value="—" icon="close-circle-outline" tone="danger" />
+            </KpiGrid>
+          </View>
           <View style={styles.searchWrap}>
             <SearchBar value={query} onChangeText={setQuery} placeholder="Search clients…" />
           </View>
@@ -156,43 +158,45 @@ export default function ClientsScreen() {
           }
           ListHeaderComponent={
             <View>
-              <KpiGrid style={styles.statsRow}>
-                <KpiCard
-                  label="Total"
-                  value={String(stats.total)}
-                  hint="In your book"
-                  icon="people-outline"
-                  tone="purple"
-                />
-                <KpiCard
-                  label="Active"
-                  value={String(stats.active)}
-                  hint={
-                    stats.total
-                      ? `${Math.round((stats.active / stats.total) * 100)}% of book`
-                      : 'None yet'
-                  }
-                  hintTone="success"
-                  icon="checkmark-circle-outline"
-                  tone="success"
-                />
-                <KpiCard
-                  label="Paused"
-                  value={String(stats.paused)}
-                  hint="On hold"
-                  hintTone="warning"
-                  icon="pause-circle-outline"
-                  tone="warning"
-                />
-                <KpiCard
-                  label="Churned"
-                  value={String(stats.churned)}
-                  hint="Left the book"
-                  hintTone="destructive"
-                  icon="close-circle-outline"
-                  tone="danger"
-                />
-              </KpiGrid>
+              <View style={styles.statsRow}>
+                <KpiGrid>
+                  <KpiCard
+                    label="Total"
+                    value={String(stats.total)}
+                    hint="In your book"
+                    icon="people-outline"
+                    tone="purple"
+                  />
+                  <KpiCard
+                    label="Active"
+                    value={String(stats.active)}
+                    hint={
+                      stats.total
+                        ? `${Math.round((stats.active / stats.total) * 100)}% of book`
+                        : 'None yet'
+                    }
+                    hintTone="success"
+                    icon="checkmark-circle-outline"
+                    tone="success"
+                  />
+                  <KpiCard
+                    label="Paused"
+                    value={String(stats.paused)}
+                    hint="On hold"
+                    hintTone="warning"
+                    icon="pause-circle-outline"
+                    tone="warning"
+                  />
+                  <KpiCard
+                    label="Churned"
+                    value={String(stats.churned)}
+                    hint="Left the book"
+                    hintTone="destructive"
+                    icon="close-circle-outline"
+                    tone="danger"
+                  />
+                </KpiGrid>
+              </View>
               <View style={styles.searchWrap}>
                 <View style={styles.listTitleRow}>
                   <Text style={{ color: t.foreground, fontWeight: '800', fontSize: fontSize.md }}>
@@ -210,7 +214,7 @@ export default function ClientsScreen() {
               actionLabel={canWrite('clients') && !query ? 'Add client' : undefined}
               onAction={
                 canWrite('clients') && !query
-                  ? () => router.push('/(tabs)/clients/add')
+                  ? () => router.push('/client/add')
                   : undefined
               }
               icon="people-outline"
@@ -286,7 +290,7 @@ export default function ClientsScreen() {
                 {formatMoney(selected.revenue || 0)} revenue
               </Text>
               <Pressable
-                onPress={() => router.push(`/(tabs)/clients/${selected.id}`)}
+                onPress={() => router.push(`/client/${selected.id}`)}
                 style={{ marginTop: spacing.lg }}
               >
                 <Text style={{ color: t.primary, fontWeight: '700' }}>Open full profile →</Text>
@@ -321,7 +325,7 @@ export default function ClientsScreen() {
             onPress={() => {
               const id = actionClient!.id;
               setActionClient(null);
-              router.push(`/(tabs)/clients/edit/${id}`);
+              router.push(`/client/edit/${id}`);
             }}
           />
         ) : null}
@@ -345,7 +349,7 @@ export default function ClientsScreen() {
           onPress={() => {
             const id = actionClient!.id;
             setActionClient(null);
-            router.push(`/(tabs)/clients/${id}?tab=projects`);
+            router.push(`/client/${id}?tab=projects`);
           }}
         />
         {canManage('clients') ? (
@@ -424,7 +428,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
   },
-  searchWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm, gap: spacing.sm },  listTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  searchWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  listTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

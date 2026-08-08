@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { collectDailyInsights } from '../lib/social/social-scheduler.js';
 import { computeCapabilities, METRIC_AVAILABILITY, type MetricKey } from '../lib/social/metric-availability.js';
+import { buildCapabilityGate, engagementRate, pctChange, sumField } from '../lib/social/analytics-core.js';
 import { unifyPosts, destinationLink, type AccountMeta } from '../lib/social/post-merge.js';
 import { derivePermalink, tiktokVideoIdOf } from '../lib/social/permalink.service.js';
 import { enrichTikTokVideosBatch } from '../lib/social/tiktok-enrich.service.js';
@@ -10,11 +11,10 @@ import { enrichTikTokVideosBatch } from '../lib/social/tiktok-enrich.service.js'
 const router = Router();
 
 // ── helpers ────────────────────────────────────────────────────────────────
-const sum = (arr: any[], field: string) =>
-  arr.reduce((s: number, i: any) => s + (Number(i[field]) || 0), 0);
-
-const pct = (curr: number, prev: number) =>
-  prev > 0 ? parseFloat(((curr - prev) / prev * 100).toFixed(2)) : 0;
+// Definitions shared with the monthly report live in analytics-core so the two
+// can't drift apart on what a metric means.
+const sum = sumField;
+const pct = pctChange;
 
 // FIX (analytics/platform mismatch): a cross-posted SocialPost has one PostInsight
 // row per platform destination. Every aggregate below used to sum ALL of a post's
@@ -100,30 +100,10 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     const prevMetrics = rawPrevMetrics;
 
     // ── Capabilities: the single source of truth for what's real in this view ──
-    const activePlatforms = platformFilter !== 'ALL'
-      ? [platformFilter.toLowerCase()]
-      : Array.from(new Set(accounts.map(a => a.platform.toLowerCase())));
-    const importedPlatforms = new Set(
-      accounts.filter(a => a.lastImportedAt).map(a => a.platform.toLowerCase()),
-    );
-    const caps = computeCapabilities(activePlatforms, importedPlatforms);
-    const can = (key: MetricKey) => caps.metrics[key]?.status === 'available';
+    const { caps, importedPlatforms, can, metricPlatformOk, sumMetric } =
+      buildCapabilityGate(accounts, platformFilter);
     // Gate a value behind availability so unavailable metrics serialize as null.
     const gate = <T,>(key: MetricKey, value: T): T | null => (can(key) ? value : null);
-
-    // A metric only counts toward an aggregate for platforms that can genuinely
-    // report it (live now, or import with data present). Without this, seed/demo
-    // or unsupported-platform values (e.g. LinkedIn/YouTube reach, which those
-    // APIs don't provide) inflate the totals and make the report disagree with
-    // the truthful per-account cards.
-    const metricPlatformOk = (platform: string, key: MetricKey): boolean => {
-      const decl = METRIC_AVAILABILITY[platform]?.[key];
-      if (decl === 'live') return true;
-      if (decl === 'import') return importedPlatforms.has(platform);
-      return false;
-    };
-    const sumMetric = (rows: any[], field: string, key: MetricKey) =>
-      rows.reduce((s, r) => s + (metricPlatformOk((r.account?.platform || '').toLowerCase(), key) ? (Number(r[field]) || 0) : 0), 0);
 
     // ── Posts (bounded — avoid loading entire history into memory) ──
     const postWhere: any = {

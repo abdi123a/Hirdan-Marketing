@@ -1,16 +1,13 @@
-import React, { useState } from 'react';
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  type LayoutChangeEvent,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import React from 'react';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { brand, fontSize, spacing } from '../../constants/theme';
-import { useTheme } from '../../hooks/useTheme';
+import { brand, radius, spacing } from '../../constants/theme';
+import { pressScale } from '../../constants/motion';
+import { type } from '../../constants/typography';
+import { useElevation, useIsDark, useTheme } from '../../hooks/useTheme';
+import { withAlpha } from './Badge';
+import { PressableScale } from './PressableScale';
+import { Text } from './Text';
 
 export type MetricTone = 'purple' | 'gold' | 'success' | 'danger' | 'warning' | 'neutral';
 
@@ -19,18 +16,18 @@ const GAP = 12;
 export function toneColors(tone: MetricTone) {
   switch (tone) {
     case 'gold':
-      return { fg: brand.gold, bg: 'rgba(245, 184, 36, 0.16)' };
+      return { fg: brand.gold, bg: withAlpha(brand.gold, 0.16) };
     case 'success':
-      return { fg: '#16A34A', bg: 'rgba(22, 163, 74, 0.12)' };
+      return { fg: '#12A150', bg: withAlpha('#12A150', 0.12) };
     case 'danger':
-      return { fg: '#E53E3E', bg: 'rgba(229, 62, 62, 0.12)' };
+      return { fg: '#DC2F3E', bg: withAlpha('#DC2F3E', 0.12) };
     case 'warning':
-      return { fg: '#D97706', bg: 'rgba(217, 119, 6, 0.14)' };
+      return { fg: '#D97706', bg: withAlpha('#D97706', 0.14) };
     case 'neutral':
-      return { fg: brand.ink, bg: 'rgba(26, 20, 40, 0.06)' };
+      return { fg: brand.ink, bg: withAlpha(brand.ink, 0.06) };
     case 'purple':
     default:
-      return { fg: brand.purple, bg: 'rgba(90, 66, 138, 0.12)' };
+      return { fg: brand.purple, bg: withAlpha(brand.purple, 0.12) };
   }
 }
 
@@ -47,6 +44,14 @@ export type KpiCardProps = {
   style?: StyleProp<ViewStyle>;
 };
 
+/**
+ * A single metric.
+ *
+ * The number is the point, so it gets the display face and tabular figures —
+ * without them a refreshing value visibly jitters as digit widths change. The
+ * tinted icon carries the tone; the card itself stays neutral so a grid of
+ * these reads as one system rather than a row of coloured boxes.
+ */
 export function KpiCard({
   label,
   value,
@@ -58,10 +63,18 @@ export function KpiCard({
   style,
 }: KpiCardProps) {
   const t = useTheme();
-  const colors =
+  const shadows = useElevation();
+  const isDark = useIsDark();
+
+  // Brand purple is too dark to read on a dark card, so dark mode lifts the
+  // tone to its accent instead of using the raw brand value.
+  const palette =
     tone === 'neutral'
       ? { fg: t.mutedForeground, bg: t.muted }
-      : toneColors(tone);
+      : isDark && tone === 'purple'
+        ? { fg: brand.purpleSoft, bg: withAlpha(brand.purpleSoft, 0.16) }
+        : toneColors(tone);
+
   const hintColor =
     hintTone === 'success'
       ? t.success
@@ -69,41 +82,67 @@ export function KpiCard({
         ? t.destructive
         : hintTone === 'warning'
           ? t.warning
-          : t.mutedForeground;
+          : t.subtleForeground;
+
+  const body = (
+    <>
+      <View style={[styles.icon, { backgroundColor: palette.bg }]}>
+        <Ionicons name={icon} size={17} color={palette.fg} />
+      </View>
+
+      <Text
+        style={[type.metricSm, { color: t.foreground }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+      >
+        {value}
+      </Text>
+
+      <Text variant="label" color="muted" numberOfLines={1}>
+        {label}
+      </Text>
+
+      {hint ? (
+        <Text variant="caption" style={{ color: hintColor }} numberOfLines={1}>
+          {hint}
+        </Text>
+      ) : null}
+    </>
+  );
+
+  const surface: StyleProp<ViewStyle> = [
+    styles.card,
+    { backgroundColor: t.card, borderColor: t.borderSubtle },
+    shadows.sm,
+    style,
+  ];
+
+  if (!onPress) {
+    return <View style={surface}>{body}</View>;
+  }
 
   return (
-    <Pressable
+    <PressableScale
+      scaleTo={pressScale.card}
+      haptic="none"
       onPress={onPress}
-      disabled={!onPress}
-      style={({ pressed }) => [
-        styles.press,
-        pressed && onPress ? { opacity: 0.92 } : null,
-        style,
-      ]}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}: ${value}`}
+      style={surface}
     >
-      <View style={[styles.card, { backgroundColor: t.card, borderColor: t.border }]}>
-        <View style={[styles.icon, { backgroundColor: colors.bg }]}>
-          <Ionicons name={icon} size={16} color={colors.fg} />
-        </View>
-        <Text style={[styles.value, { color: t.foreground }]} numberOfLines={1} adjustsFontSizeToFit>
-          {value}
-        </Text>
-        <Text style={[styles.label, { color: t.mutedForeground }]} numberOfLines={1}>
-          {label}
-        </Text>
-        {hint ? (
-          <Text style={[styles.hint, { color: hintColor }]} numberOfLines={1}>
-            {hint}
-          </Text>
-        ) : null}
-      </View>
-    </Pressable>
+      {body}
+    </PressableScale>
   );
 }
 
+function isFullWidth(child: React.ReactNode) {
+  return React.isValidElement(child) && Boolean((child.props as KpiCardProps).fullWidth);
+}
+
 /**
- * Measured 2-column grid. Avoids percentage + flexGrow wrap bugs that leave
- * cards overlapping / stuck on the same row.
+ * Reliable 2-column grid using flex rows — no percentage widths or
+ * onLayout measurement (both break inside FlashList headers / padded parents).
  */
 export function KpiGrid({
   children,
@@ -112,73 +151,66 @@ export function KpiGrid({
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
-  const [width, setWidth] = useState(0);
-
-  const onLayout = (e: LayoutChangeEvent) => {
-    const next = e.nativeEvent.layout.width;
-    if (next > 0 && Math.abs(next - width) > 0.5) setWidth(next);
-  };
-
   const items = React.Children.toArray(children).filter(Boolean);
-  const half = width > 0 ? (width - GAP) / 2 : undefined;
+  const rows: React.ReactNode[][] = [];
+
+  for (let i = 0; i < items.length; ) {
+    const cur = items[i];
+    if (isFullWidth(cur)) {
+      rows.push([cur]);
+      i += 1;
+      continue;
+    }
+    const next = items[i + 1];
+    if (next != null && !isFullWidth(next)) {
+      rows.push([cur, next]);
+      i += 2;
+    } else {
+      rows.push([cur]);
+      i += 1;
+    }
+  }
 
   return (
-    <View style={[styles.grid, style]} onLayout={onLayout}>
-      {items.map((child, index) => {
-        const full =
-          React.isValidElement(child) &&
-          Boolean((child.props as KpiCardProps).fullWidth);
-        const cellWidth = width > 0 ? (full ? width : half) : undefined;
-        return (
-          <View key={index} style={cellWidth != null ? { width: cellWidth } : styles.cellFallback}>
-            {child}
-          </View>
-        );
-      })}
+    <View style={[styles.grid, style]}>
+      {rows.map((row, rowIndex) => (
+        <View key={rowIndex} style={styles.row}>
+          {row.map((child, colIndex) => (
+            <View key={colIndex} style={styles.cell}>
+              {child}
+            </View>
+          ))}
+        </View>
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: GAP,
   },
-  /** Before first layout pass — approximate half width so nothing collapses. */
-  cellFallback: {
-    width: '47%',
-    flexGrow: 1,
+  row: {
+    flexDirection: 'row',
+    gap: GAP,
   },
-  press: {
-    width: '100%',
+  cell: {
+    flex: 1,
+    minWidth: 0,
   },
   card: {
-    borderRadius: 16,
+    borderRadius: radius.lg,
     borderWidth: StyleSheet.hairlineWidth,
     padding: spacing.lg,
-    gap: 6,
-    minHeight: 118,
+    gap: 5,
+    minHeight: 126,
   },
   icon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
-  },
-  value: {
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-  },
-  label: {
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-  },
-  hint: {
-    fontSize: 11,
-    fontWeight: '600',
+    marginBottom: spacing.sm,
   },
 });

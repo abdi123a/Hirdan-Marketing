@@ -189,25 +189,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       const user = normalizeUser(cached);
       const shouldLock = biometricEnabled;
+
+      // Hydrated as soon as the cached session is restored. Awaiting /auth/me
+      // here held the splash up for a full network round-trip on every cold
+      // start — on a slow connection, seconds — even though everything needed
+      // to render was already on disk.
       set({
         user,
         isAuthenticated: true,
         isLocked: shouldLock,
         biometricEnabled,
+        isHydrated: true,
       });
 
-      try {
-        // /auth/me returns `{ user: {...} }` (same nested shape as login)
-        const me = await apiFetch<{ user?: any } & Record<string, unknown>>(
-          endpoints.auth.me
-        );
-        const fresh = normalizeUser(me.user ?? me);
-        await saveUserJson(fresh);
-        set({ user: fresh, isAuthenticated: true, isHydrated: true });
-      } catch {
-        // Keep cached session; refresh will run on next request
-        set({ isHydrated: true });
-      }
+      // Refresh in the background. A 401 is handled by the unauthorized
+      // handler registered above, which clears the session.
+      void apiFetch<{ user?: any } & Record<string, unknown>>(endpoints.auth.me)
+        .then(async (me) => {
+          const fresh = normalizeUser(me.user ?? me);
+          await saveUserJson(fresh);
+          set({ user: fresh, isAuthenticated: true });
+        })
+        .catch(() => {
+          // Keep the cached session; refresh runs again on the next request.
+        });
     } catch {
       set({
         isHydrated: true,

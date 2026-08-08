@@ -1753,7 +1753,7 @@ export default function SettingsPage() {
                         value={link.icon}
                         onValueChange={(val) => updateSocialLink(link.id, 'icon', val)}
                       >
-                        <SelectTrigger className="h-10 w-[155px] shrink-0 text-xs font-semibold focus:ring-primary">
+                        <SelectTrigger className="h-10 w-[110px] sm:w-[155px] shrink-0 text-xs font-semibold focus:ring-primary">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="max-h-64">
@@ -1773,7 +1773,7 @@ export default function SettingsPage() {
                         value={link.url}
                         onChange={(e) => updateSocialLink(link.id, 'url', e.target.value)}
                         placeholder={`https://${link.platform.toLowerCase()}.com/your-page`}
-                        className="flex-1 h-10 focus-visible:ring-primary text-sm"
+                        className="flex-1 min-w-0 h-10 focus-visible:ring-primary text-sm"
                       />
 
                       {/* Remove button */}
@@ -2456,10 +2456,10 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="flex min-h-[520px]">
+              <div className="flex flex-col lg:flex-row min-h-[520px]">
 
                 {/* ── Left: template list ── */}
-                <div className="w-64 shrink-0 border-r border-border flex flex-col">
+                <div className="w-full lg:w-64 lg:shrink-0 border-b lg:border-b-0 lg:border-r border-border flex flex-col">
                   <div className="px-3 py-3 border-b border-border">
                     <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">
                       Templates

@@ -720,6 +720,7 @@ export default function SocialMediaTasksPage() {
         /* List View */
         <Card className="border-border/50 overflow-hidden">
           <CardContent className="p-0">
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-muted/30 border-b border-border/40">
                 <tr>
@@ -814,6 +815,7 @@ export default function SocialMediaTasksPage() {
                 })}
               </tbody>
             </table>
+            </div>
           </CardContent>
         </Card>
       )}

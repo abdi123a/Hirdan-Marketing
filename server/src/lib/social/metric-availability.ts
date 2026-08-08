@@ -80,15 +80,16 @@ export const METRIC_AVAILABILITY: Record<string, PlatformMatrix> = {
     shares: 'live',
     saved: 'none',
     views: 'live',
-    demoGender: 'scope',
-    demoCountry: 'scope',
-    demoAge: 'scope',
+    demoGender: 'import',
+    demoCountry: 'import',
+    demoAge: 'import',
     activity: 'live',
     story: 'none',
   },
   instagram: {
     // Live once the account is connected with instagram_manage_insights
-    // (requested in Meta OAuth). Demographics still need advanced access.
+    // (requested in Meta OAuth). Demographics come from the Insights export
+    // instead — the live API needs advanced access we don't have.
     followers: 'live',
     reach: 'live',
     impressions: 'live',
@@ -100,9 +101,9 @@ export const METRIC_AVAILABILITY: Record<string, PlatformMatrix> = {
     shares: 'live',
     saved: 'live',
     views: 'live',
-    demoGender: 'scope',
-    demoCountry: 'scope',
-    demoAge: 'scope',
+    demoGender: 'import',
+    demoCountry: 'import',
+    demoAge: 'import',
     activity: 'live',
     story: 'live',
   },
@@ -133,6 +134,9 @@ export const METRIC_AVAILABILITY: Record<string, PlatformMatrix> = {
     views: 'live',
     likes: 'live',
     comments: 'live',
+    demoGender: 'import',
+    demoCountry: 'import',
+    demoAge: 'import',
     activity: 'live',
   },
   linkedin: {
@@ -172,13 +176,23 @@ export interface Capabilities {
   metrics: Partial<Record<MetricKey, MetricCapability>>;
 }
 
+const IMPORT_SOURCE_LABELS: Record<string, string> = {
+  tiktok: 'TikTok Studio',
+  instagram: 'Instagram Insights',
+  facebook: 'Meta Business Suite',
+  youtube: 'YouTube Studio',
+};
+
 function noteFor(platform: string, key: MetricKey, decl: MetricStatus): string | undefined {
   if (decl === 'scope') {
     if (platform === 'instagram') return 'Reconnect Instagram with insights enabled to view';
     if (platform === 'facebook') return 'Requires advanced Page insights access';
     return 'Requires additional platform access';
   }
-  if (decl === 'import') return 'Import your TikTok Studio export to view';
+  if (decl === 'import') {
+    const label = IMPORT_SOURCE_LABELS[platform] || 'analytics';
+    return `Import your ${label} export to view`;
+  }
   return undefined;
 }
 

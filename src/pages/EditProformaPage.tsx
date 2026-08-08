@@ -261,9 +261,9 @@ export default function EditProformaPage() {
 
           <Card className="shadow-card border-border text-foreground">
             <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <CardTitle className="text-base font-semibold">Line Items</CardTitle>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button size="sm" variant="outline" className="gap-1.5 h-8">
@@ -298,6 +298,8 @@ export default function EditProformaPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {errors.items && <p className="text-xs text-destructive">{errors.items}</p>}
+              <div className="overflow-x-auto">
+              <div className="min-w-[640px] space-y-3">
               <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1">
                 <span className="col-span-1" />
                 <span className="col-span-4">Description</span>
@@ -351,6 +353,8 @@ export default function EditProformaPage() {
                   </div>
                 </div>
               ))}
+              </div>
+              </div>
 
               <div className="border-t border-border pt-3 mt-2 space-y-1.5">
                 <div className="flex justify-between text-sm text-muted-foreground">

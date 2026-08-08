@@ -275,7 +275,7 @@ export default function EmployeeProfilePage() {
       </Card>
 
       {/* Tab Navigation Menu */}
-      <div className="flex border-b border-border gap-6">
+      <div className="flex border-b border-border gap-6 overflow-x-auto scrollbar-none">
         {[
           { key: "overview", label: "Overview", icon: User },
           { key: "documents", label: "Documents & Files", icon: FileText },
@@ -285,7 +285,7 @@ export default function EmployeeProfilePage() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key as any)}
-            className={`flex items-center gap-2 pb-3.5 text-sm font-semibold transition-all relative border-b-2 -mb-[2px] ${
+            className={`flex items-center gap-2 pb-3.5 text-sm font-semibold transition-all relative border-b-2 -mb-[2px] shrink-0 whitespace-nowrap ${
               activeTab === tab.key
                 ? "border-secondary text-foreground font-bold"
                 : "border-transparent text-muted-foreground hover:text-foreground"

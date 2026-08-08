@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../ui/Text';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { fontSize, radius, spacing } from '../../constants/theme';
@@ -60,7 +61,7 @@ export function CustomerSheet({
 
   const openClient = (id: string) => {
     onClose();
-    router.push(`/(tabs)/clients/${id}`);
+    router.push(`/client/${id}`);
   };
 
   return (
@@ -144,7 +145,7 @@ export function CustomerSheet({
                   key={invoice.id}
                   onPress={() => {
                     onClose();
-                    router.push(`/(tabs)/money/invoice/${invoice.id}`);
+                    router.push(`/invoice/${invoice.id}`);
                   }}
                   style={({ pressed }) => [
                     styles.miniRow,

@@ -268,7 +268,7 @@ export default function InvoiceDetailsPage() {
 
       <div className="grid lg:grid-cols-4 gap-8">
         {/* Main Document Section */}
-        <div className="lg:col-span-3" ref={printRef}>
+        <div className="lg:col-span-3 overflow-x-auto" ref={printRef}>
           <PremiumInvoice
             type="Invoice"
             data={{

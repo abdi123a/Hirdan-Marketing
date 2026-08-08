@@ -5,10 +5,10 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
+import { Text } from '../../../../components/ui/Text';
 import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, EmptyState, Input, Select, Sheet, SkeletonCard } from '../../../../components/ui';

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../../../../components/ui/Text';
 import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SegmentedControl, Select, GridSkeleton } from '../../../../components/ui';

@@ -1054,7 +1054,7 @@ export default function ClientPortalPage() {
                               <p className="text-xs text-muted-foreground">Due: {formatDate(inv.dueDate)} · Status: <span className="text-red-500 font-medium">{inv.status}</span></p>
                             </div>
                           </div>
-                          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0">
+                          <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 shrink-0 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0">
                             <span className="text-base font-display font-black text-foreground mr-1 sm:mr-3">{formatCurrency(inv.amount)}</span>
                             <div className="flex items-center gap-2">
                               <Button
@@ -1092,7 +1092,7 @@ export default function ClientPortalPage() {
                               <p className="text-xs text-muted-foreground">Requires spend authorization · {formatDate(pro.date)}</p>
                             </div>
                           </div>
-                          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0">
+                          <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 shrink-0 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0">
                             <span className="text-base font-display font-black text-foreground mr-1 sm:mr-3">{formatCurrency(pro.amount)}</span>
                             <div className="flex items-center gap-2">
                               <Button
@@ -2554,7 +2554,7 @@ export default function ClientPortalPage() {
                 >
                   Close
                 </Button>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                   <Button
                     variant="outline"
                     size="sm"

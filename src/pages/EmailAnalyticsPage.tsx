@@ -141,7 +141,7 @@ export default function EmailAnalyticsPage() {
                       <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold text-white ${avatarColor(s.email)}`}>
                         {initials(null, s.email)}
                       </div>
-                      <span className="flex-1 truncate text-sm">{s.email}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm">{s.email}</span>
                       <span className="text-xs font-medium text-muted-foreground">{s.count}</span>
                     </div>
                   ))}
@@ -164,7 +164,7 @@ export default function EmailAnalyticsPage() {
                       <div className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold text-white ${a.automated ? 'bg-slate-400' : avatarColor(a.name)}`}>
                         {a.automated ? <Bot className="h-3.5 w-3.5" /> : initials(a.name)}
                       </div>
-                      <span className="flex-1 truncate text-sm">{a.name}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm">{a.name}</span>
                       <span className="text-xs text-muted-foreground">{a.openRate}% open</span>
                       <span className="w-10 text-right text-sm font-semibold">{a.sent}</span>
                     </div>

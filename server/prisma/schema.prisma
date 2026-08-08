@@ -108,6 +108,8 @@ model Client {
   socialAccounts       SocialAccount[]
   socialPosts          SocialPost[]
   socialCampaigns      SocialCampaign[]
+  socialAdSpend        SocialAdSpend[]
+  socialPerformanceReports SocialPerformanceReport[]
   emailConversations   Conversation[]
 
   portalAccess Json? @map("portal_access")
@@ -1416,6 +1418,10 @@ model AccountInsightDaily {
   shares           Int?
   newViewers       Int?   @map("new_viewers")
   returningViewers Int?   @map("returning_viewers")
+  // Follows/unfollows on this day. Distinct from `followers`, which is a running
+  // total snapshot — summing these is the only way to get true period growth.
+  newFollows       Int?   @map("new_follows")
+  unfollows        Int?
   // Provenance: 'api' = fetched live from the platform, 'import' = uploaded export.
   source           String @default("api")
 
@@ -1528,6 +1534,84 @@ model SocialCampaign {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@map("social_campaigns")
+}
+
+// Paid-ad figures entered by hand each month. No connected platform exposes ad
+// spend through the organic insights APIs this app uses, so there is nothing to
+// sync — these rows are the only source for the report's Paid & Organic section.
+model SocialAdSpend {
+  id              String   @id @default(uuid())
+  clientId        String   @map("client_id")
+  platform        String
+  month           Int
+  year            Int
+  spendCents      Int      @map("spend_cents")
+  currency        String   @default("USD")
+  paidReach       Int?     @map("paid_reach")
+  linkClicks      Int?     @map("link_clicks")
+  paidEngagement  Int?     @map("paid_engagement")
+  messagesStarted Int?     @map("messages_started")
+  notes           String?  @db.Text
+  createdById     String?  @map("created_by_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, platform, month, year])
+  @@index([clientId])
+  @@map("social_ad_spend")
+}
+
+// Client-facing monthly performance report. Separate from MonthlyReport (the
+// strategy/SWOT deck) — different template, different sections, own uniqueness.
+model SocialPerformanceReport {
+  id          String              @id @default(uuid())
+  clientId    String              @map("client_id")
+  month       Int
+  year        Int
+  title       String
+  status      MonthlyReportStatus @default(DRAFT)
+  createdById String?             @map("created_by_id")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  client   Client                          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sections SocialPerformanceReportSection[]
+  versions SocialPerformanceReportVersion[]
+
+  @@unique([clientId, month, year])
+  @@index([clientId])
+  @@map("social_performance_reports")
+}
+
+model SocialPerformanceReportSection {
+  id        String   @id @default(uuid())
+  reportId  String   @map("report_id")
+  key       String
+  order     Int
+  content   Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  report SocialPerformanceReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, key])
+  @@index([reportId, order])
+  @@map("social_performance_report_sections")
+}
+
+model SocialPerformanceReportVersion {
+  id           String   @id @default(uuid())
+  reportId     String   @map("report_id")
+  snapshotJson Json     @map("snapshot_json")
+  createdById  String?  @map("created_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  report SocialPerformanceReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId, createdAt])
+  @@map("social_performance_report_versions")
 }
 
 // ─────────────────────────────────────────────────────────────

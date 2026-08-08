@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './ui/Text';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { endpoints } from '@hirdan/shared';
@@ -9,6 +10,7 @@ import {
   Badge,
   Button,
   Card,
+  DatePickerField,
   Dialog,
   EmptyState,
   Input,
@@ -212,12 +214,10 @@ export function ClientMeetingsSection({
             value={form.title}
             onChangeText={(v) => setForm((p) => ({ ...p, title: v }))}
           />
-          <Input
-            label="Date (YYYY-MM-DD)"
-            placeholder="2026-08-15"
+          <DatePickerField
+            label="Date"
             value={form.date}
-            onChangeText={(v) => setForm((p) => ({ ...p, date: v }))}
-            autoCapitalize="none"
+            onChange={(v) => setForm((p) => ({ ...p, date: v }))}
           />
           <Input
             label="Time (HH:MM)"

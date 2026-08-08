@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Image as RNImage, StyleSheet, Text, View } from 'react-native';
+import { Image as RNImage, StyleSheet, View } from 'react-native';
+import { Text } from '../ui/Text';
 import { Image, type ImageSource } from 'expo-image';
 import { endpoints } from '@hirdan/shared';
 import { getFullUrl } from '../../lib/api-client';

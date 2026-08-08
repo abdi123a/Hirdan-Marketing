@@ -1,7 +1,8 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './ui/Text';
 import { Ionicons } from '@expo/vector-icons';
-import { Button, Card, Input, Select } from './ui';
+import { Button, Card, DatePickerField, Input, Select } from './ui';
 import { useTheme } from '../hooks/useTheme';
 import {
   INVOICE_STATUSES,
@@ -101,20 +102,16 @@ export function DocumentForm({
           placeholder="Select a client"
         />
         {errors.clientId ? <Text style={styles.error}>{errors.clientId}</Text> : null}
-        <Input
-          label="Date (YYYY-MM-DD) *"
+        <DatePickerField
+          label="Date *"
           value={form.date}
-          onChangeText={(v) => set('date', v)}
-          placeholder="2026-08-04"
-          autoCapitalize="none"
+          onChange={(v) => set('date', v)}
           error={errors.date}
         />
-        <Input
+        <DatePickerField
           label={kind === 'invoice' ? 'Due date *' : 'Valid until *'}
           value={form.dueDate}
-          onChangeText={(v) => set('dueDate', v)}
-          placeholder="2026-08-18"
-          autoCapitalize="none"
+          onChange={(v) => set('dueDate', v)}
           error={errors.dueDate}
         />
         <Select

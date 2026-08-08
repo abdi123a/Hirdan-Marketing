@@ -352,14 +352,14 @@ export default function AddUserPage() {
         </Card>
 
         {/* Final Actions */}
-        <div className="flex items-center justify-between gap-4 pt-4 border-t border-border/50">
-           <Button variant="outline" onClick={() => navigate(-1)} className="rounded-xl px-6 border-muted-foreground/20 font-heading">
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 pt-4 border-t border-border/50">
+           <Button variant="outline" onClick={() => navigate(-1)} className="rounded-xl px-6 border-muted-foreground/20 font-heading w-full sm:w-auto">
              Back to Users
            </Button>
            <Button
              onClick={handleSubmit}
              disabled={(!!conflictUser && !isEdit) || saving}
-             className="rounded-xl px-8 gap-2 shadow-hero transition-all hover:scale-[1.02] active:scale-[0.98] font-heading"
+             className="rounded-xl px-8 gap-2 shadow-hero transition-all hover:scale-[1.02] active:scale-[0.98] font-heading w-full sm:w-auto"
              variant="hero"
            >
              <Save className="h-4 w-4" /> {isEdit ? "Save Access" : "Grant Access"}

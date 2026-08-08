@@ -57,8 +57,16 @@ const PLATFORMS = [
 ];
 
 // Platforms whose analytics can be imported from an official XLSX export.
-// TikTok Studio today; extend as we add Meta Business Suite / YouTube exporters.
-const IMPORTABLE_PLATFORMS = ["tiktok"];
+const IMPORTABLE_PLATFORMS = ["tiktok", "instagram", "facebook", "youtube"];
+
+// Where each platform's export comes from, shown in the upload dialog so the
+// user knows which download to reach for.
+const IMPORT_SOURCE_LABELS: Record<string, string> = {
+  tiktok: "TikTok Studio",
+  instagram: "Instagram Insights",
+  facebook: "Meta Business Suite",
+  youtube: "YouTube Studio",
+};
 
 const CAPABILITIES: Record<string, Record<string, boolean>> = {
   facebook:  { Publishing: true, Analytics: true, Comments: true, Messages: true, Reels: true, Stories: true },
@@ -314,7 +322,8 @@ export default function SocialAccountsPage() {
       importFiles.forEach(f => formData.append("files", f));
       // 'SKIP' lets the browser set the multipart boundary; apiFetch attaches the
       // in-memory auth token (deliberately not stored in localStorage).
-      const res = await apiFetch<any>(`/social/import/tiktok/${importAccountId}`, {
+      const platform = (selectedImportAccount?.platform || "tiktok").toLowerCase();
+      const res = await apiFetch<any>(`/social/import/${platform}/${importAccountId}`, {
         method: "POST",
         headers: { "Content-Type": "SKIP" },
         body: formData,
@@ -886,7 +895,7 @@ export default function SocialAccountsPage() {
             {wizardStep === 1 && (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">Choose the client (brand workspace) to connect an account to.</p>
-                <div className="grid grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
                   {clients.map(c => (
                     <button
                       key={c.id}
@@ -996,7 +1005,7 @@ export default function SocialAccountsPage() {
         <DialogContent className="sm:max-w-lg rounded-2xl p-0 overflow-hidden">
           <DialogHeader className="border-b border-border/40 bg-muted/5 px-7 py-5">
             <DialogTitle className="font-black text-lg flex items-center gap-2"><Upload className="h-5 w-5 text-violet-600" /> Import Analytics Data</DialogTitle>
-            <p className="text-xs text-muted-foreground mt-1">Upload an official analytics export (TikTok Studio) to enrich an account with reach, demographics, and per-video metrics the API can't provide.</p>
+            <p className="text-xs text-muted-foreground mt-1">Upload an official analytics export (TikTok Studio, Instagram Insights, Meta Business Suite, YouTube Studio) to enrich an account with reach, demographics, and per-post metrics the API can't provide.</p>
           </DialogHeader>
 
           <div className="space-y-5 p-4 sm:p-6">
@@ -1069,7 +1078,9 @@ export default function SocialAccountsPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">3 · Upload TikTok Studio Files</label>
+                  <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
+                    3 · Upload {IMPORT_SOURCE_LABELS[(selectedImportAccount?.platform || "").toLowerCase()] || "Analytics"} Files
+                  </label>
                   <label className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-7 transition-all ${importAccountId ? 'border-border/70 hover:border-violet-300 hover:bg-violet-50/40 cursor-pointer' : 'border-border/30 opacity-50 pointer-events-none'}`}>
                     <input type="file" multiple accept=".xlsx,.xls,.csv" className="hidden" disabled={!importAccountId}
                       onChange={e => setImportFiles(prev => [...prev, ...Array.from(e.target.files || [])])} />

@@ -230,11 +230,11 @@ export default function SubscriptionDetailsPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleRunBillingCycle} 
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRunBillingCycle}
             disabled={runningBilling}
             className="h-9 gap-2 text-xs font-semibold border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-50"
           >
@@ -252,7 +252,7 @@ export default function SubscriptionDetailsPage() {
         <div className="lg:col-span-2 space-y-6">
           {/* Linked Item Banner */}
           {(linkedPackage || linkedService) && (
-            <div className="p-6 rounded-3xl bg-gradient-to-br from-primary/5 via-primary/5 to-transparent border border-primary/10 flex items-center justify-between relative overflow-hidden group">
+            <div className="p-6 rounded-3xl bg-gradient-to-br from-primary/5 via-primary/5 to-transparent border border-primary/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:scale-110 transition-transform">
                 {linkedPackage ? <PackageIcon className="w-24 h-24" /> : <ShieldCheck className="w-24 h-24" />}
               </div>
@@ -354,7 +354,7 @@ export default function SubscriptionDetailsPage() {
 
           {/* Cycle Progress Widget */}
           <Card className="border-border/50 shadow-sm overflow-hidden border-t-2 border-t-amber-500/20">
-            <CardHeader className="bg-muted/10 pb-3 border-b border-border/40 flex flex-row items-center justify-between">
+            <CardHeader className="bg-muted/10 pb-3 border-b border-border/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <CardTitle className="text-lg font-display flex items-center gap-2">
                 <ListFilter className="h-4 w-4 text-amber-500" /> Billing Cycles & Deliverables
               </CardTitle>

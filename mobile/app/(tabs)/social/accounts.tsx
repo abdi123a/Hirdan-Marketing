@@ -5,9 +5,9 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { Text } from '../../../components/ui/Text';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -257,8 +257,19 @@ export default function SocialAccountsScreen() {
 
         {canWrite('social_media') ? (
           <View style={styles.actions}>
-            <Button title="Import data" variant="outline" style={{ flex: 1 }} onPress={() => setShowImport(true)} />
-            <Button title="Connect account" style={{ flex: 1 }} onPress={() => openConnect()} />
+            <Button
+              title="Import data"
+              variant="tonal"
+              icon="cloud-download-outline"
+              style={styles.headerAction}
+              onPress={() => setShowImport(true)}
+            />
+            <Button
+              title="Connect account"
+              icon="add"
+              style={styles.headerAction}
+              onPress={() => openConnect()}
+            />
           </View>
         ) : null}
 
@@ -396,7 +407,7 @@ export default function SocialAccountsScreen() {
                   onSync={(id) => syncM.mutate(id)}
                   onLogs={(acc) => setActivityAccount(acc)}
                   onDisconnect={(acc) => setDisconnectTarget(acc)}
-                  onOpenClient={() => router.push(`/(tabs)/clients/${ws.clientId}`)}
+                  onOpenClient={() => router.push(`/client/${ws.clientId}`)}
                 />
               ))
             )}
@@ -638,11 +649,27 @@ function WorkspaceCard({
         </ScrollView>
       ) : null}
 
-      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+      <View style={styles.cardActions}>
         {canWrite ? (
-          <Button title="Connect" size="sm" variant="outline" style={{ flex: 1 }} onPress={() => onConnect()} />
+          <Button
+            title="Connect"
+            size="sm"
+            variant="tonal"
+            icon="add-circle-outline"
+            style={styles.cardAction}
+            onPress={() => onConnect()}
+          />
         ) : null}
-        <Button title="Client" size="sm" variant="ghost" style={{ flex: 1 }} onPress={onOpenClient} />
+        {/* "Client" named the noun, not the action. */}
+        <Button
+          title="Open client"
+          size="sm"
+          variant="ghost"
+          icon="arrow-forward"
+          iconTrailing
+          style={styles.cardAction}
+          onPress={onOpenClient}
+        />
       </View>
 
       {expanded ? (
@@ -806,6 +833,9 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
   header: { flexDirection: 'row', alignItems: 'center' },
   actions: { flexDirection: 'row', gap: spacing.sm },
+  headerAction: { flex: 1 },
+  cardActions: { flexDirection: 'row', gap: spacing.sm },
+  cardAction: { flex: 1 },
   cardTitle: { fontWeight: '700' },
   platformGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   platformTile: {

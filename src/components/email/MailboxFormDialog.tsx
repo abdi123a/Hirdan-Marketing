@@ -156,7 +156,7 @@ export function MailboxFormDialog({ open, onClose, mailbox }: Props) {
                   onChange={(e) => set('color', e.target.value)}
                   className="h-9 w-10 cursor-pointer rounded border bg-background"
                 />
-                <Input value={form.color} onChange={(e) => set('color', e.target.value)} className="flex-1" />
+                <Input value={form.color} onChange={(e) => set('color', e.target.value)} className="min-w-0 flex-1" />
               </div>
             </div>
           </div>

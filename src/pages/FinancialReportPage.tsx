@@ -476,7 +476,7 @@ export default function FinancialReportPage() {
 
           {/* Main Statement Tabs */}
           <Tabs defaultValue="income-statement" className="w-full" onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-4 bg-muted/50 p-1 rounded-xl h-11 print:hidden max-w-2xl">
+            <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 bg-muted/50 p-1 rounded-xl h-auto lg:h-11 print:hidden max-w-2xl">
               <TabsTrigger value="income-statement" className="rounded-lg text-[13px] font-medium transition-all">
                 Income Statement
               </TabsTrigger>
@@ -954,30 +954,32 @@ export default function FinancialReportPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="p-0">
-                      <div className="divide-y divide-border/60 text-xs">
-                        <div className="grid grid-cols-5 p-3 bg-muted/20 font-bold text-muted-foreground">
-                          <div>Invoice ID</div>
-                          <div>Client</div>
-                          <div>Date</div>
-                          <div>Gateway</div>
-                          <div className="text-right">Paid Amount</div>
-                        </div>
-                        {rangeInvoices.map((inv) => {
-                          const amt = inv.status === 'Paid' ? parseAmountNumber(inv.amount) : (inv.deposit || 0);
-                          return (
-                            <div key={inv.id} className="grid grid-cols-5 p-3 items-center text-foreground hover:bg-muted/10 transition-colors">
-                              <div className="font-semibold text-primary">{inv.id}</div>
-                              <div className="truncate pr-2 font-medium">{inv.client}</div>
-                              <div className="text-muted-foreground">{new Date(inv.date).toLocaleDateString()}</div>
-                              <div>
-                                <Badge variant="outline" className="text-[10px] py-0 px-2 font-medium capitalize">
-                                  {inv.paymentMethod || 'Unspecified'}
-                                </Badge>
+                      <div className="overflow-x-auto">
+                        <div className="min-w-[560px] divide-y divide-border/60 text-xs">
+                          <div className="grid grid-cols-5 p-3 bg-muted/20 font-bold text-muted-foreground">
+                            <div>Invoice ID</div>
+                            <div>Client</div>
+                            <div>Date</div>
+                            <div>Gateway</div>
+                            <div className="text-right">Paid Amount</div>
+                          </div>
+                          {rangeInvoices.map((inv) => {
+                            const amt = inv.status === 'Paid' ? parseAmountNumber(inv.amount) : (inv.deposit || 0);
+                            return (
+                              <div key={inv.id} className="grid grid-cols-5 p-3 items-center text-foreground hover:bg-muted/10 transition-colors">
+                                <div className="font-semibold text-primary">{inv.id}</div>
+                                <div className="truncate pr-2 font-medium">{inv.client}</div>
+                                <div className="text-muted-foreground">{new Date(inv.date).toLocaleDateString()}</div>
+                                <div>
+                                  <Badge variant="outline" className="text-[10px] py-0 px-2 font-medium capitalize">
+                                    {inv.paymentMethod || 'Unspecified'}
+                                  </Badge>
+                                </div>
+                                <div className="text-right font-black">{formatCurrency(amt)}</div>
                               </div>
-                              <div className="text-right font-black">{formatCurrency(amt)}</div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>

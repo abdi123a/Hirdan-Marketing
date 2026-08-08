@@ -39,7 +39,7 @@ export function CustomerPanel({ conversationId, open, onClose }: { conversationI
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent side="right" className="w-[360px] overflow-y-auto p-0 sm:max-w-none">
+      <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:w-[360px] sm:max-w-none">
         <SheetHeader className="border-b px-4 py-3">
           <SheetTitle className="text-base">Customer</SheetTitle>
         </SheetHeader>

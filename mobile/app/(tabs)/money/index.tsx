@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { Text } from '../../../components/ui/Text';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -32,7 +33,7 @@ import {
 import { useAccounts } from '../../../hooks/useAccounts';
 import { usePermissions } from '../../../hooks/usePermissions';
 import { useTheme } from '../../../hooks/useTheme';
-import { spacing, radius } from '../../../constants/theme';
+import { elevation, radius, spacing } from '../../../constants/theme';
 
 type TabKey = 'invoices' | 'proformas' | 'expenses';
 
@@ -182,11 +183,11 @@ export default function MoneyScreen() {
 
   const fab =
     tab === 'invoices' && canMutateInvoices
-      ? { label: 'New invoice', href: '/(tabs)/money/invoice-add' as const }
+      ? { label: 'New invoice', href: '/invoice/add' as const }
       : tab === 'proformas' && canMutateProformas
-        ? { label: 'New proforma', href: '/(tabs)/money/proforma-add' as const }
+        ? { label: 'New proforma', href: '/proforma/add' as const }
         : tab === 'expenses' && canMutateExpenses
-          ? { label: 'Add expense', href: '/(tabs)/money/expense-add' as const }
+          ? { label: 'Add expense', href: '/expense/add' as const }
           : null;
 
   const searchPlaceholder =
@@ -268,7 +269,7 @@ export default function MoneyScreen() {
               title="No invoices"
               description="Create your first invoice to get paid."
               actionLabel={canMutateInvoices ? 'New invoice' : undefined}
-              onAction={canMutateInvoices ? () => router.push('/(tabs)/money/invoice-add') : undefined}
+              onAction={canMutateInvoices ? () => router.push('/invoice/add') : undefined}
               icon="document-text-outline"
             />
           }
@@ -287,7 +288,7 @@ export default function MoneyScreen() {
                     </Text>
                   </View>
                 }
-                onPress={() => router.push(`/(tabs)/money/invoice/${item.id}`)}
+                onPress={() => router.push(`/invoice/${item.id}`)}
                 onLongPress={
                   canMutateInvoices
                     ? () =>
@@ -315,7 +316,7 @@ export default function MoneyScreen() {
               title="No proformas"
               description="Create a proforma quote for a client."
               actionLabel={canMutateProformas ? 'New proforma' : undefined}
-              onAction={canMutateProformas ? () => router.push('/(tabs)/money/proforma-add') : undefined}
+              onAction={canMutateProformas ? () => router.push('/proforma/add') : undefined}
               icon="document-outline"
             />
           }
@@ -331,7 +332,7 @@ export default function MoneyScreen() {
                   </Text>
                 </View>
               }
-              onPress={() => router.push(`/(tabs)/money/proforma/${item.id}`)}
+              onPress={() => router.push(`/proforma/${item.id}`)}
               onLongPress={
                 canMutateProformas
                   ? () =>
@@ -378,7 +379,7 @@ export default function MoneyScreen() {
             <EmptyState
               title="No expenses"
               actionLabel={canMutateExpenses ? 'Add expense' : undefined}
-              onAction={canMutateExpenses ? () => router.push('/(tabs)/money/expense-add') : undefined}
+              onAction={canMutateExpenses ? () => router.push('/expense/add') : undefined}
               icon="receipt-outline"
             />
           }
@@ -393,7 +394,7 @@ export default function MoneyScreen() {
                   {formatMoney(item.amount, item.currency || item.account?.currency || currency)}
                 </Text>
               }
-              onPress={() => router.push(`/(tabs)/money/expense/${item.id}`)}
+              onPress={() => router.push(`/expense/${item.id}`)}
               onLongPress={
                 canMutateExpenses
                   ? () =>
@@ -446,10 +447,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
+    ...elevation.lg,
   },
 });

@@ -8,11 +8,6 @@
     "scheme": "hirdan",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.hirdanmarketing.agency",
@@ -20,7 +15,9 @@
         "NSCameraUsageDescription": "Capture expense receipts and media for posts.",
         "NSPhotoLibraryUsageDescription": "Attach photos to expenses and social posts.",
         "NSFaceIDUsageDescription": "Unlock the app quickly with Face ID.",
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -47,7 +44,34 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-font",
+      [
+        "expo-font",
+        {
+          "android": {
+            "fonts": [
+              {
+                "fontFamily": "Inter",
+                "fontDefinitions": [
+                  { "path": "./assets/fonts/Inter-Regular.ttf", "weight": 400 },
+                  { "path": "./assets/fonts/Inter-Medium.ttf", "weight": 500 },
+                  { "path": "./assets/fonts/Inter-SemiBold.ttf", "weight": 600 },
+                  { "path": "./assets/fonts/Inter-Bold.ttf", "weight": 700 },
+                  { "path": "./assets/fonts/Inter-ExtraBold.ttf", "weight": 800 }
+                ]
+              }
+            ]
+          },
+          "ios": {
+            "fonts": [
+              "./assets/fonts/Inter-Regular.ttf",
+              "./assets/fonts/Inter-Medium.ttf",
+              "./assets/fonts/Inter-SemiBold.ttf",
+              "./assets/fonts/Inter-Bold.ttf",
+              "./assets/fonts/Inter-ExtraBold.ttf"
+            ]
+          }
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -75,7 +99,9 @@
           "photosPermission": "Allow Hirdan to attach photos."
         }
       ],
-      "expo-local-authentication"
+      "expo-local-authentication",
+      "@react-native-community/datetimepicker",
+      "./plugins/withCoreLibraryDesugaring"
     ],
     "experiments": {
       "typedRoutes": true

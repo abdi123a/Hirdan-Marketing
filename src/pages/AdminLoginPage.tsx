@@ -104,17 +104,15 @@ function AdminLoginForm() {
       >
         <div className="bg-card rounded-3xl border border-border/50 p-8 md:p-10">
           {/* Header */}
-          <div className="flex flex-col items-center text-center mb-8">
+          <div className="flex flex-col items-center text-center mb-2">
             {/* Logo in a white pill — hides the PNG white background on dark hero */}
-            <div className="bg-white rounded-2xl px-5 py-3 mb-6 inline-flex items-center justify-center">
+            <div className="bg-white rounded-2xl px-6 py-4 mb-2 inline-flex items-center justify-center">
               <img
                 src={settings.logo || hirdanLogo}
                 alt={settings.agencyName}
-                className="h-10 w-auto"
+                className="h-16 w-auto"
               />
             </div>
-            <h2 className="text-2xl font-display font-bold text-foreground">Admin Login</h2>
-            <p className="text-muted-foreground mt-2 text-sm">Sign in to your dashboard</p>
           </div>
 
           {/* Form */}

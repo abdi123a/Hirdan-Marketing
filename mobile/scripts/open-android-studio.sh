@@ -1,16 +1,17 @@
-#!/bin/bash
-export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:$PATH"
-export NODE_BINARY="/opt/homebrew/bin/node"
-export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
-export JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+#!/usr/bin/env bash
+# Open Android Studio with Homebrew Node on PATH.
+# Use this if Gradle sync fails with: Cannot run program "node"
+set -euo pipefail
 
-# Prefer the real no-space project path
-PROJECT_ROOT="/Users/abdihakim/Documents/Hirdanmarketing/hirdanmarketing"
-if [ ! -d "$PROJECT_ROOT/mobile/android" ]; then
-  PROJECT_ROOT="${HOME}/hirdanmarketing"
+export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin}"
+export NODE_BINARY="${NODE_BINARY:-$(command -v node)}"
+
+# Prefer the Google Android Studio app name; fall back to JetBrains Toolbox naming.
+if [[ -d "/Applications/Android Studio.app" ]]; then
+  open -a "Android Studio" "$@"
+elif [[ -d "/Applications/Android Studio Preview.app" ]]; then
+  open -a "Android Studio Preview" "$@"
+else
+  echo "Android Studio.app not found in /Applications" >&2
+  exit 1
 fi
-
-osascript -e 'quit app "Android Studio"' 2>/dev/null || true
-sleep 2
-open -a "Android Studio" "$PROJECT_ROOT/mobile/android"
-echo "Opened Android Studio at: $PROJECT_ROOT/mobile/android"

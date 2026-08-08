@@ -206,7 +206,7 @@ export default function SocialAccountPickerPage() {
       <div className="w-full max-w-2xl space-y-6">
 
         {/* Step indicator */}
-        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-sm text-muted-foreground">
           {["Choose Client", "Choose Platform", "Authenticate", "Select Account", "Review", "Success"].map((step, i) => (
             <div key={step} className="flex items-center gap-2">
               {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground/40" />}
@@ -308,90 +308,94 @@ export default function SocialAccountPickerPage() {
                       <div
                         key={acc.id}
                         onClick={() => toggleSelect(acc.id)}
-                        className={`flex items-center gap-4 p-5 transition-all cursor-pointer hover:bg-muted/5 ${
+                        className={`flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-5 transition-all cursor-pointer hover:bg-muted/5 ${
                           isSelected ? "bg-primary/3 border-l-2 border-l-primary" : ""
                         }`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelect(acc.id)}
-                          className="rounded accent-primary h-4 w-4 shrink-0"
-                          onClick={e => e.stopPropagation()}
-                        />
+                        <div className="flex items-center gap-4 min-w-0 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelect(acc.id)}
+                            className="rounded accent-primary h-4 w-4 shrink-0"
+                            onClick={e => e.stopPropagation()}
+                          />
 
-                        {/* Avatar */}
-                        <div className="relative shrink-0">
-                          {acc.avatarUrl ? (
-                            <img src={acc.avatarUrl} className="h-12 w-12 rounded-full border border-border object-cover" alt="" />
-                          ) : (
-                            <div className="h-12 w-12 rounded-full bg-primary/10 border border-border flex items-center justify-center text-primary font-black text-lg">
-                              {acc.name.charAt(0).toUpperCase()}
+                          {/* Avatar */}
+                          <div className="relative shrink-0">
+                            {acc.avatarUrl ? (
+                              <img src={acc.avatarUrl} className="h-12 w-12 rounded-full border border-border object-cover" alt="" />
+                            ) : (
+                              <div className="h-12 w-12 rounded-full bg-primary/10 border border-border flex items-center justify-center text-primary font-black text-lg">
+                                {acc.name.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div className="absolute -bottom-0.5 -right-0.5 h-5 w-5 rounded-full bg-background border border-border flex items-center justify-center shadow-sm">
+                              {getPlatformIcon(acc.platform, "h-3 w-3 object-contain")}
                             </div>
-                          )}
-                          <div className="absolute -bottom-0.5 -right-0.5 h-5 w-5 rounded-full bg-background border border-border flex items-center justify-center shadow-sm">
-                            {getPlatformIcon(acc.platform, "h-3 w-3 object-contain")}
+                          </div>
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-sm text-foreground truncate">{acc.name}</p>
+                            {acc.username && (
+                              <p className="text-xs text-muted-foreground font-mono mt-0.5">@{acc.username}</p>
+                            )}
+                            <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                              {acc.followers > 0 && (
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
+                                  <Users className="h-3 w-3" />
+                                  {fmtNum(acc.followers)} {acc.platform?.toLowerCase() === 'youtube' ? 'subscribers' : 'followers'}
+                                </span>
+                              )}
+                              <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
+                                <Shield className="h-2.5 w-2.5" />
+                                {acc.platform}
+                              </span>
+                              {pinned && (
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">
+                                  <Lock className="h-2.5 w-2.5" />
+                                  Already {pinned.clientName}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
-                        {/* Info */}
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-sm text-foreground truncate">{acc.name}</p>
-                          {acc.username && (
-                            <p className="text-xs text-muted-foreground font-mono mt-0.5">@{acc.username}</p>
-                          )}
-                          <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                            {acc.followers > 0 && (
-                              <span className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
-                                <Users className="h-3 w-3" />
-                                {fmtNum(acc.followers)} {acc.platform?.toLowerCase() === 'youtube' ? 'subscribers' : 'followers'}
-                              </span>
-                            )}
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
-                              <Shield className="h-2.5 w-2.5" />
-                              {acc.platform}
-                            </span>
-                            {pinned && (
-                              <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">
-                                <Lock className="h-2.5 w-2.5" />
-                                Already {pinned.clientName}
-                              </span>
+                        <div className="flex items-center gap-3 pl-8 sm:pl-0 shrink-0">
+                          {/* Client assignment — a Page already attached stays with its
+                              client, so that row shows the owner instead of a picker. */}
+                          <div className="w-full sm:w-48" onClick={(e) => e.stopPropagation()}>
+                            {pinned ? (
+                              <div className="text-xs font-semibold text-muted-foreground text-right pr-1">
+                                {pinned.clientName}
+                                <span className="block text-[10px] font-normal opacity-70">
+                                  reconnect only
+                                </span>
+                              </div>
+                            ) : (
+                              <select
+                                value={assignedClient[acc.id] || ""}
+                                onChange={(e) => setClientFor(acc.id, e.target.value)}
+                                className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                aria-label={`Client for ${acc.name}`}
+                              >
+                                <option value="">Choose client…</option>
+                                {clients.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {clientLabel(c)}
+                                  </option>
+                                ))}
+                              </select>
                             )}
                           </div>
-                        </div>
 
-                        {/* Client assignment — a Page already attached stays with its
-                            client, so that row shows the owner instead of a picker. */}
-                        <div className="shrink-0 w-48" onClick={(e) => e.stopPropagation()}>
-                          {pinned ? (
-                            <div className="text-xs font-semibold text-muted-foreground text-right pr-1">
-                              {pinned.clientName}
-                              <span className="block text-[10px] font-normal opacity-70">
-                                reconnect only
-                              </span>
-                            </div>
+                          {isSelected ? (
+                            <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
                           ) : (
-                            <select
-                              value={assignedClient[acc.id] || ""}
-                              onChange={(e) => setClientFor(acc.id, e.target.value)}
-                              className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30"
-                              aria-label={`Client for ${acc.name}`}
-                            >
-                              <option value="">Choose client…</option>
-                              {clients.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  {clientLabel(c)}
-                                </option>
-                              ))}
-                            </select>
+                            <span className="h-5 w-5 shrink-0" />
                           )}
                         </div>
-
-                        {isSelected ? (
-                          <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
-                        ) : (
-                          <span className="h-5 w-5 shrink-0" />
-                        )}
                       </div>
                     );
                   })}

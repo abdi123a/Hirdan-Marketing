@@ -530,7 +530,7 @@ export default function ExpensesPage() {
 
       {/* Tabs Layout */}
       <Tabs defaultValue="recorded" className="w-full space-y-4">
-        <TabsList className="grid w-full grid-cols-3 max-w-[480px]">
+        <TabsList className="grid w-full grid-cols-1 md:grid-cols-3 max-w-[480px] h-auto md:h-10">
           <TabsTrigger value="recorded">Recorded Expenses</TabsTrigger>
           <TabsTrigger value="recurring">Monthly Recurring</TabsTrigger>
           <TabsTrigger value="payroll">Employee Payroll</TabsTrigger>
@@ -794,7 +794,7 @@ export default function ExpensesPage() {
 
         {/* Tab 2: Monthly Recurring Expenses */}
         <TabsContent value="recurring" className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="space-y-0.5">
               <h2 className="text-lg font-semibold text-foreground">Monthly Standing Commitments</h2>
               <p className="text-xs text-muted-foreground">
@@ -984,14 +984,14 @@ export default function ExpensesPage() {
           </div>
 
           <Card className="border bg-gradient-to-br from-emerald-50/20 to-emerald-50/0 dark:from-emerald-950/10 dark:to-transparent">
-            <CardContent className="p-4 flex items-center justify-between">
+            <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Active Monthly Payroll Total</p>
                 <p className="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">
                   {formatCurrency(centsToAmount(commitments.payrollTotal))}
                 </p>
               </div>
-              <div className="text-xs text-muted-foreground text-right max-w-xs">
+              <div className="text-xs text-muted-foreground text-left sm:text-right max-w-xs">
                 Includes basic salary, housing allowance, and transport allowance for all active staff.
               </div>
             </CardContent>

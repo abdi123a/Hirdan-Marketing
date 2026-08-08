@@ -83,12 +83,21 @@ import socialOAuthRoutes from './social-oauth.routes.js';
 import socialPostsRoutes from './social-posts.routes.js';
 import socialAnalyticsRoutes from './social-analytics.routes.js';
 import socialImportRoutes from './social-import.routes.js';
+import socialAdSpendRoutes from './social-ad-spend.routes.js';
+import socialPerformanceReportRoutes from './social-performance-report.routes.js';
 
 // OAuth callback is public (provider redirect) — auth is enforced per-route inside
 router.use('/social', socialOAuthRoutes);
 router.use('/social', authenticate, requireModuleAccess('social_media'), socialPostsRoutes);
 router.use('/social', authenticate, requireModuleAccess('social_media'), socialAnalyticsRoutes);
 router.use('/social', authenticate, requireModuleAccess('social_media'), socialImportRoutes);
+router.use('/social', authenticate, requireModuleAccess('social_media'), socialAdSpendRoutes);
+router.use(
+  '/social-performance-reports',
+  authenticate,
+  requireModuleAccess('social_media'),
+  socialPerformanceReportRoutes,
+);
 
 // Email Center
 import emailMailboxesRoutes from './email-mailboxes.routes.js';

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../../../../components/ui/Text';
 import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { EmptyState, SkeletonCard } from '../../../../components/ui';

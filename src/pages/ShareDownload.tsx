@@ -260,7 +260,7 @@ export default function ShareDownload() {
                     )}
 
                     {/* Detailed Metadata Grid */}
-                    <div className="w-full grid grid-cols-2 gap-4 text-left p-4 bg-white/5 border border-white/5 rounded-2xl">
+                    <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4 text-left p-4 bg-white/5 border border-white/5 rounded-2xl">
                       <div className="min-w-0">
                         <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">File Name</span>
                         <p className="text-xs font-bold text-white mt-0.5 truncate pr-2" title={file.fileName}>{file.fileName}</p>

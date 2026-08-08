@@ -221,7 +221,7 @@ export default function AddPackagePage() {
                         className="h-8 text-xs font-semibold"
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-[10px] font-bold uppercase tracking-widest">Type</Label>
                         <Select value={del.type} onValueChange={(v: any) => updateDeliverable(idx, { type: v })}>

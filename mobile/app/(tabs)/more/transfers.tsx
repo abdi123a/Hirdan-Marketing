@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../../../components/ui/Text';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,7 +26,7 @@ import {
   ListSkeleton,
 } from '../../../components/ui';
 import { useTheme } from '../../../hooks/useTheme';
-import { spacing, fontSize, radius } from '../../../constants/theme';
+import { elevation, fontSize, radius, spacing } from '../../../constants/theme';
 
 type StatusFilter = 'all' | TransferStatus;
 
@@ -116,7 +117,7 @@ export default function TransfersScreen() {
               onAction={
                 search || statusFilter !== 'all'
                   ? undefined
-                  : () => router.push('/(tabs)/more/transfer-add')
+                  : () => router.push('/transfer/add')
               }
               icon="cloud-upload-outline"
             />
@@ -129,7 +130,7 @@ export default function TransfersScreen() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Upload file"
-        onPress={() => router.push('/(tabs)/more/transfer-add')}
+        onPress={() => router.push('/transfer/add')}
         style={[styles.fab, { backgroundColor: t.primary }]}
       >
         <Ionicons name="add" size={28} color={t.primaryForeground} />
@@ -150,7 +151,7 @@ function TransferRow({ item }: { item: TransferSummary }) {
       subtitle={`${formatBytes(item.fileSize)} · ${formatDate(item.createdAt)}${
         item.client?.name ? ` · ${item.client.name}` : ''
       }`}
-      onPress={() => router.push(`/(tabs)/more/transfer/${item.id}`)}
+      onPress={() => router.push(`/transfer/${item.id}`)}
       left={
         <View style={[styles.iconWrap, { backgroundColor: t.accent }]}>
           <Ionicons name={icon} size={20} color={t.accentForeground} />
@@ -195,10 +196,6 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    ...elevation.lg,
   },
 });

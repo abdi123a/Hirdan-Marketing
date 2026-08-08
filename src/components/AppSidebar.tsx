@@ -3,6 +3,7 @@ import {
   LayoutDashboard, Users, Briefcase, UserCircle, Receipt, CreditCard, CalendarDays,
   Settings, LogOut, PanelLeftClose, PanelLeft, FileText, Package, Zap, Mail, Share2,
   Presentation, BarChart3, Wallet, FolderHeart, UploadCloud, Sparkles, Inbox, ChevronDown,
+  FileBarChart,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
@@ -85,7 +86,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { title: "Social Media", url: "/dashboard/social-media", icon: Share2, module: "social_media" },
       { title: "Strategy Decks", url: "/dashboard/social-media/presentation", icon: Presentation, module: "strategy_decks" },
-      { title: "Monthly Reports", url: "/dashboard/reports/monthly", icon: Presentation, module: "monthly_reports" },
+      { title: "Performance Reports", url: "/dashboard/reports/social-performance", icon: FileBarChart, module: "social_media" },
+      { title: "Ad Spend", url: "/dashboard/social-media/ad-spend", icon: Wallet, module: "social_media" },
     ],
   },
   {

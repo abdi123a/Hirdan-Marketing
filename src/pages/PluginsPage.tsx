@@ -1084,7 +1084,7 @@ export default function PluginsPage() {
 
               <div className="space-y-2">
                 <Label className="font-semibold text-sm">Authentication Method</Label>
-                <div className="flex gap-6 pt-1">
+                <div className="flex flex-wrap gap-x-6 gap-y-2 pt-1">
                   <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-foreground">
                     <input
                       type="radio"

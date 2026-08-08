@@ -1632,17 +1632,17 @@ export default function SocialAnalyzePage() {
                         const ap = t.hour<12?"AM":"PM";
                         const maxE = heatmapGrid.topSlots[0]?.value||1;
                         return (
-                          <div key={i} className="flex items-center gap-4 px-6 py-4 border-b border-border/40 last:border-0 hover:bg-muted/5">
+                          <div key={i} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-4 border-b border-border/40 last:border-0 hover:bg-muted/5">
                             <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-black text-primary shrink-0">#{i+1}</div>
-                            <div className="flex-1 min-w-0">
+                            <div className="flex-1">
                               <p className="font-bold text-sm">{DAYS_FULL[t.day]}</p>
                               <p className="text-xs text-muted-foreground">{hr}:00 {ap}</p>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <div className="w-32 h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div className="flex items-center gap-2 shrink-0 sm:gap-3">
+                              <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden sm:w-32">
                                 <div className="h-full bg-primary rounded-full" style={{width:`${(t.value/maxE)*100}%`}}/>
                               </div>
-                              <span className="text-xs font-bold text-primary w-20 text-right">{fmtN(t.value)} {heatmapGrid.source === 'import' ? "active" : "eng."}</span>
+                              <span className="text-xs font-bold text-primary w-16 text-right sm:w-20">{fmtN(t.value)} {heatmapGrid.source === 'import' ? "active" : "eng."}</span>
                             </div>
                           </div>
                         );

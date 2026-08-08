@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../ui/Text';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
@@ -14,13 +15,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { brand, radius, spacing } from '../../constants/theme';
 import { duration, ease, spring } from '../../constants/motion';
-import { useTheme } from '../../hooks/useTheme';
+import { type } from '../../constants/typography';
+import { useElevation, useTheme } from '../../hooks/useTheme';
 import { usePermissions } from '../../hooks/usePermissions';
 import { TAB_ITEMS, type TabItem } from './tabs';
 
-const ICON_SIZE = 21;
-const PILL_WIDTH = 58;
-const PILL_HEIGHT = 34;
+const ICON_SIZE = 22;
+const PILL_WIDTH = 62;
+const PILL_HEIGHT = 36;
 
 /**
  * Bottom navigation for the `(tabs)` group.
@@ -33,6 +35,7 @@ const PILL_HEIGHT = 34;
  */
 export function BottomTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
   const t = useTheme();
+  const shadows = useElevation();
   const { canRead } = usePermissions();
   const reduceMotion = useReducedMotion();
   const [rowWidth, setRowWidth] = useState(0);
@@ -71,9 +74,10 @@ export function BottomTabBar({ state, descriptors, navigation, insets }: BottomT
     <View
       style={[
         styles.bar,
+        shadows.lg,
         {
           backgroundColor: t.card,
-          borderTopColor: t.border,
+          borderTopColor: t.borderSubtle,
           paddingBottom: Math.max(insets.bottom, spacing.md),
           paddingLeft: insets.left,
           paddingRight: insets.right,
@@ -206,12 +210,7 @@ function TabButton({
 const styles = StyleSheet.create({
   bar: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: spacing.sm,
-    shadowColor: '#4A2F8A',
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: -4 },
-    elevation: 8,
+    paddingTop: spacing.sm + 2,
   },
   row: {
     flexDirection: 'row',
@@ -262,15 +261,16 @@ const styles = StyleSheet.create({
     backgroundColor: brand.gold,
   },
   badgeText: {
+    ...type.overline,
     color: brand.ink,
     fontSize: 10,
-    fontWeight: '800',
+    letterSpacing: 0,
   },
   label: {
-    marginTop: 2,
+    ...type.caption,
+    marginTop: 3,
     fontSize: 11,
     // Small type reads better with a touch of extra tracking.
     letterSpacing: 0.2,
-    fontWeight: '600',
   },
 });

@@ -15,11 +15,23 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createHash } from 'crypto';
-import { Readable } from 'stream';
-import ExcelJS from 'exceljs';
 import { prisma } from '../../prisma.js';
 import { enrichTikTokVideosBatch } from '../tiktok-enrich.service.js';
 import { videoIdFromLink } from '../permalink.service.js';
+import {
+  type ParsedSheet,
+  type DailyAcc,
+  buildDailyData,
+  cellValue,
+  dateKey,
+  has,
+  parseMonthDay,
+  parseWorkbook,
+  safeFloat,
+  safeInt,
+} from './import-utils.js';
+
+export { parseMonthDay, parseWorkbook };
 
 export type TikTokFileType =
   | 'followerHistory'
@@ -51,32 +63,6 @@ export interface ImportSummary {
 
 // ── low-level helpers ────────────────────────────────────────────────────────
 
-const MONTHS: Record<string, number> = {
-  january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
-  july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
-};
-
-/** Parse a year-less "June 24" against a reference date (most recent past occurrence). */
-export function parseMonthDay(input: unknown, ref: Date): Date | null {
-  if (input == null) return null;
-  const s = String(input).trim();
-  const m = s.match(/^([A-Za-z]+)\s+(\d{1,2})$/);
-  if (!m) {
-    const d = new Date(s);
-    return isNaN(d.getTime()) ? null : new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  }
-  const mon = MONTHS[m[1].toLowerCase()];
-  if (mon == null) return null;
-  const day = parseInt(m[2], 10);
-  let year = ref.getUTCFullYear();
-  let cand = new Date(Date.UTC(year, mon, day));
-  // If that lands in the future (more than a day ahead of ref), it must be last year.
-  if (cand.getTime() > ref.getTime() + 86400000) {
-    cand = new Date(Date.UTC(year - 1, mon, day));
-  }
-  return cand;
-}
-
 // Canonical implementation lives with the other permalink helpers; re-exported
 // here so this module's existing importers keep working.
 export { videoIdFromLink };
@@ -105,102 +91,7 @@ function fallbackExternalId(link: string | null, title: string | null, rowIndex:
   return `unlinked-${createHash('sha1').update(basis).digest('hex').slice(0, 16)}`;
 }
 
-function safeInt(v: unknown): number | null {
-  if (v == null) return null;
-  const s = String(v).trim();
-  if (!s || s.toLowerCase() === 'undefined' || s.toLowerCase() === 'null') return null;
-  const n = parseInt(s.replace(/[, ]/g, ''), 10);
-  return isNaN(n) ? null : n;
-}
-
-function safeFloat(v: unknown): number | null {
-  if (v == null) return null;
-  const s = String(v).trim();
-  if (!s || s.toLowerCase() === 'undefined') return null;
-  const n = parseFloat(s.replace(/[, %]/g, ''));
-  return isNaN(n) ? null : n;
-}
-
 // ── parsing + detection ──────────────────────────────────────────────────────
-
-interface ParsedSheet {
-  sheetName: string;
-  header: string[];
-  rows: any[][];
-}
-
-/**
- * Flatten one ExcelJS cell to the plain string/null the row mappers expect.
- *
- * The previous `xlsx` reader was called with `raw: false`, so every cell arrived
- * pre-stringified. ExcelJS instead returns typed values, including a few shapes
- * that would stringify to "[object Object]" and silently break parsing:
- *   - hyperlink cells  → { text, hyperlink }  (the "Video link" column)
- *   - rich text        → { richText: [{ text }] }
- *   - formula cells    → { formula, result }
- *   - error cells      → { error: '#N/A' }
- * Dates and numbers are passed through as-is; the downstream safeInt/safeFloat/
- * parseMonthDay helpers already coerce via String().
- */
-function cellValue(v: unknown): unknown {
-  if (v == null) return null;
-  if (v instanceof Date) return v;
-  if (typeof v === 'object') {
-    const o = v as Record<string, any>;
-    if (Array.isArray(o.richText)) return o.richText.map((t: any) => t?.text ?? '').join('');
-    if ('hyperlink' in o) {
-      // Prefer whichever side actually carries a URL. TikTok Studio sometimes puts
-      // a truncated display label in `text`, and taking it blindly loses the video
-      // id that the whole content import keys on.
-      const text = typeof o.text === 'string' ? o.text.trim() : '';
-      if (/^https?:\/\//i.test(text)) return text;
-      return o.hyperlink ?? (text || null);
-    }
-    if ('result' in o) return cellValue(o.result);
-    if ('error' in o) return null;
-    if ('text' in o) return o.text;
-  }
-  return v;
-}
-
-/** Read the first worksheet of an .xlsx or .csv export into header + rows. */
-export async function parseWorkbook(buffer: Buffer, filename = ''): Promise<ParsedSheet> {
-  // ExcelJS covers .xlsx and .csv but not the legacy binary .xls (BIFF) format.
-  // Fail with an actionable message rather than a parser stack trace — the caller
-  // turns this into a per-file warning so the rest of the upload still imports.
-  if (/\.xls$/i.test(filename)) {
-    throw new Error('Legacy .xls files are not supported — re-export from TikTok Studio as .xlsx or .csv');
-  }
-
-  const wb = new ExcelJS.Workbook();
-  if (/\.csv$/i.test(filename)) {
-    // `map: v => v` disables ExcelJS's value coercion so cells stay raw strings,
-    // matching the old reader. Without it "+12" becomes the number 12 and
-    // date-like columns get reinterpreted, which the row mappers don't expect.
-    await wb.csv.read(Readable.from(buffer), { map: (value: string) => value } as any);
-  } else {
-    await wb.xlsx.load(buffer as unknown as ArrayBuffer);
-  }
-
-  const ws = wb.worksheets[0];
-  if (!ws) throw new Error('File contains no worksheets');
-
-  // getSheetValues() is 1-indexed and leaves a hole at [0]; same for each row.
-  const sheetRows: unknown[][] = [];
-  ws.eachRow({ includeEmpty: true }, (row) => {
-    const values = row.values as unknown[];
-    sheetRows.push((Array.isArray(values) ? values.slice(1) : []).map(cellValue));
-  });
-
-  const header = (sheetRows[0] || []).map((c) => String(c ?? '').trim());
-  const rows = sheetRows.slice(1) as any[][];
-  return { sheetName: ws.name, header, rows };
-}
-
-function has(header: string[], ...cols: string[]): boolean {
-  const lower = header.map(h => h.toLowerCase());
-  return cols.every(c => lower.some(h => h.includes(c.toLowerCase())));
-}
 
 export function detectType(sheet: ParsedSheet): TikTokFileType {
   const name = sheet.sheetName.toLowerCase().replace(/\s+/g, '');
@@ -222,26 +113,6 @@ export function detectType(sheet: ParsedSheet): TikTokFileType {
   if (name.includes('content')) return 'content';
   if (name.includes('viewer')) return 'viewers';
   return 'unknown';
-}
-
-// ── daily-metric accumulator ─────────────────────────────────────────────────
-
-interface DailyAcc {
-  date: Date;
-  followers?: number | null;
-  reach?: number | null;
-  impressions?: number | null;
-  videoViews?: number | null;
-  profileVisits?: number | null;
-  likes?: number | null;
-  comments?: number | null;
-  shares?: number | null;
-  newViewers?: number | null;
-  returningViewers?: number | null;
-}
-
-function dateKey(d: Date): string {
-  return d.toISOString().split('T')[0];
 }
 
 // ── main entry ───────────────────────────────────────────────────────────────
@@ -409,19 +280,7 @@ export async function importTikTokStudioFiles(
 
   // Daily metrics: upsert per date, computing a consistent engagement rate.
   for (const acc of daily.values()) {
-    const engBase = acc.reach ?? acc.impressions ?? null;
-    const engSum = (acc.likes ?? 0) + (acc.comments ?? 0) + (acc.shares ?? 0);
-    const engagementRate =
-      engBase && engBase > 0 && (acc.likes != null || acc.comments != null || acc.shares != null)
-        ? Number(((engSum / engBase) * 100).toFixed(2))
-        : null;
-
-    // Only set columns this import actually provided (don't null out existing data).
-    const data: any = { source: 'import' };
-    for (const key of ['followers', 'reach', 'impressions', 'videoViews', 'profileVisits', 'likes', 'comments', 'shares', 'newViewers', 'returningViewers'] as const) {
-      if (acc[key] != null) data[key] = acc[key];
-    }
-    if (engagementRate != null) data.engagementRate = engagementRate;
+    const data = buildDailyData(acc);
 
     await prisma.accountInsightDaily.upsert({
       where: { socialAccountId_date: { socialAccountId: accountId, date: acc.date } },

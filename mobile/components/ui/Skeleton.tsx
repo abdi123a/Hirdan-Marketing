@@ -1,17 +1,37 @@
-import React, { useEffect, useRef } from 'react';
-import { AccessibilityInfo, Animated, StyleSheet, View, type ViewStyle } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, View, type ViewStyle } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { radius, spacing } from '../../constants/theme';
-import { useTheme } from '../../hooks/useTheme';
+import { useIsDark, useTheme } from '../../hooks/useTheme';
+import { withAlpha } from './Badge';
 
 type SkeletonProps = {
   height?: number;
   width?: number | `${number}%`;
   radius?: number;
   style?: ViewStyle;
-  /** Override pulse color (e.g. dark media stages). */
+  /** Override the base color (e.g. dark media stages). */
   color?: string;
 };
 
+const SHIMMER_DURATION = 1150;
+
+/**
+ * Loading placeholder with a highlight that sweeps across it.
+ *
+ * A sweep reads as "content is on its way" where a pulsing block reads as an
+ * element that failed to load — the direction of travel is what carries the
+ * sense of progress. The whole placeholder is hidden from screen readers, which
+ * announce the real content once it arrives.
+ */
 export function Skeleton({
   height = 16,
   width = '100%',
@@ -20,49 +40,58 @@ export function Skeleton({
   color,
 }: SkeletonProps) {
   const t = useTheme();
-  const opacity = useRef(new Animated.Value(0.45)).current;
+  const isDark = useIsDark();
+  const reduceMotion = useReducedMotion();
+  const progress = useSharedValue(0);
+  const [boxWidth, setBoxWidth] = useState(0);
 
   useEffect(() => {
-    let loop: Animated.CompositeAnimation | null = null;
-    let cancelled = false;
+    if (reduceMotion) return;
+    progress.value = withRepeat(
+      withTiming(1, { duration: SHIMMER_DURATION, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      false,
+    );
+  }, [progress, reduceMotion]);
 
-    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (cancelled) return;
-      if (enabled) {
-        opacity.setValue(0.55);
-        return;
-      }
-      loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(opacity, { toValue: 1, duration: 750, useNativeDriver: true }),
-          Animated.timing(opacity, { toValue: 0.4, duration: 750, useNativeDriver: true }),
-        ])
-      );
-      loop.start();
-    });
+  const sweepStyle = useAnimatedStyle(() => ({
+    transform: [
+      // Travels a full width past each edge so the highlight enters and
+      // leaves cleanly instead of appearing mid-block.
+      { translateX: -boxWidth + progress.value * (boxWidth * 2) },
+    ],
+  }));
 
-    return () => {
-      cancelled = true;
-      loop?.stop();
-    };
-  }, [opacity]);
+  const base = color ?? t.muted;
+  const highlight = withAlpha(isDark ? '#FFFFFF' : '#FFFFFF', isDark ? 0.05 : 0.55);
 
   return (
-    <Animated.View
+    <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
+      onLayout={(e) => setBoxWidth(e.nativeEvent.layout.width)}
       style={[
         styles.box,
         {
           height,
           width,
           borderRadius: cornerRadius,
-          backgroundColor: color ?? t.muted,
-          opacity,
+          backgroundColor: base,
         },
         style,
       ]}
-    />
+    >
+      {!reduceMotion && boxWidth > 0 ? (
+        <Animated.View style={[StyleSheet.absoluteFill, sweepStyle]}>
+          <LinearGradient
+            colors={['transparent', highlight, 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+      ) : null}
+    </View>
   );
 }
 
@@ -310,7 +339,8 @@ export function MediaSkeleton({ labelWidth = '48%' }: { labelWidth?: number | `$
 }
 
 const styles = StyleSheet.create({
-  box: {},
+  // Keeps the sweeping highlight inside the rounded corners.
+  box: { overflow: 'hidden' },
   listRow: {
     flexDirection: 'row',
     alignItems: 'center',

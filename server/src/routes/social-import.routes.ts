@@ -3,6 +3,7 @@ import multer from 'multer';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { importTikTokStudioFiles } from '../lib/social/import/tiktok-import.service.js';
+import { importMetaAudienceFiles } from '../lib/social/import/meta-audience-import.service.js';
 import { enrichTikTokVideosBatch } from '../lib/social/tiktok-enrich.service.js';
 
 const router = Router();
@@ -93,6 +94,57 @@ router.post('/import/tiktok/:accountId/enrich', authenticate, async (req, res, n
 
     const result = await enrichTikTokVideosBatch(accountId, undefined, { force: true });
     res.json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Import analytics exports for Instagram / Facebook / YouTube ──────────────
+// Registered after the TikTok routes above so their literal paths win; TikTok
+// keeps its own endpoint because its export is a different format entirely.
+const META_IMPORT_PLATFORMS = new Set(['instagram', 'facebook', 'youtube']);
+
+router.post('/import/:platform/:accountId', authenticate, upload.array('files', 12), async (req, res, next) => {
+  try {
+    const { platform, accountId } = req.params as { platform: string; accountId: string };
+    const target = platform.toLowerCase();
+
+    if (!META_IMPORT_PLATFORMS.has(target)) {
+      res.status(400).json({ error: `No importer available for "${platform}"` });
+      return;
+    }
+
+    const files = (req.files as Express.Multer.File[]) || [];
+    if (files.length === 0) {
+      res.status(400).json({ error: 'No files uploaded' });
+      return;
+    }
+
+    const account = await prisma.socialAccount.findUnique({ where: { id: accountId } });
+    if (!account) {
+      res.status(404).json({ error: 'Account not found' });
+      return;
+    }
+    if (account.platform.toLowerCase() !== target) {
+      res.status(400).json({ error: `This account is not a ${platform} account` });
+      return;
+    }
+
+    const summary = await importMetaAudienceFiles(
+      accountId,
+      files.map(f => ({ originalname: f.originalname, buffer: f.buffer })),
+    );
+
+    const recognized = summary.files.some(f => f.sections.length > 0 && f.rows > 0);
+    if (!recognized) {
+      res.status(422).json({
+        error: 'None of the uploaded files looked like an analytics export.',
+        summary,
+      });
+      return;
+    }
+
+    res.json({ success: true, summary });
   } catch (err) {
     next(err);
   }

@@ -86,7 +86,7 @@ export function derivePermalink(
       const [left, right] = id.split('_');
       if (left && right) return `https://www.facebook.com/${left}/posts/${right}`;
       if (ctx.pageId) {
-        return `https://www.facebook.com/${ctx.pageId}/videos/${id}`;
+        return `https://www.facebook.com/${ctx.pageId}/posts/${id}`;
       }
       return `https://www.facebook.com/watch/?v=${encodeURIComponent(id)}`;
     }

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './ui/Text';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { endpoints } from '@hirdan/shared';
@@ -9,6 +10,7 @@ import {
   Badge,
   Button,
   Card,
+  DatePickerField,
   Dialog,
   EmptyState,
   Input,
@@ -570,18 +572,16 @@ export function ClientPlannerSection({
               );
             })}
           </View>
-          <Input
-            label="Goes live (YYYY-MM-DD)"
+          <DatePickerField
+            label="Goes live"
             value={form.publishDate}
-            onChangeText={(v) => setForm((p) => ({ ...p, publishDate: v }))}
-            autoCapitalize="none"
+            onChange={(v) => setForm((p) => ({ ...p, publishDate: v }))}
           />
           {needsShootDay(form.contentType) ? (
-            <Input
-              label="Shoot day (YYYY-MM-DD)"
+            <DatePickerField
+              label="Shoot day"
               value={form.shootingDate}
-              onChangeText={(v) => setForm((p) => ({ ...p, shootingDate: v }))}
-              autoCapitalize="none"
+              onChange={(v) => setForm((p) => ({ ...p, shootingDate: v }))}
             />
           ) : null}
           <Input

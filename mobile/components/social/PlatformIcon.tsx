@@ -1,5 +1,6 @@
 import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
+import { Text } from '../ui/Text';
 import { platformColor, platformIconSource, platformLabel } from '../../lib/social';
 import { useTheme } from '../../hooks/useTheme';
 

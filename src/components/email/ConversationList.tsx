@@ -172,11 +172,11 @@ export function ConversationList({ folder, mailboxId, labelId, onClearLabel, sel
         {activeLabel && (
           <div className="mt-2 flex items-center gap-1">
             <span
-              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+              className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
               style={{ backgroundColor: activeLabel.color + '22', color: activeLabel.color }}
             >
-              <Tag className="h-3 w-3" /> {activeLabel.name}
-              <button onClick={() => onClearLabel?.()} title="Clear label filter"><X className="h-3 w-3" /></button>
+              <Tag className="h-3 w-3 shrink-0" /> <span className="truncate">{activeLabel.name}</span>
+              <button onClick={() => onClearLabel?.()} title="Clear label filter" className="shrink-0"><X className="h-3 w-3" /></button>
             </span>
           </div>
         )}

@@ -263,7 +263,7 @@ export default function TeamPage() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex border-b border-border gap-6">
+      <div className="flex border-b border-border gap-6 overflow-x-auto scrollbar-none">
         {[
           { key: "active" as Tab, label: "Active Employees", icon: UserCheck, count: activeMembers.length },
           { key: "old" as Tab, label: "Old Employees", icon: Archive, count: oldMembers.length },
@@ -272,7 +272,7 @@ export default function TeamPage() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-2 pb-3.5 text-sm font-semibold transition-all relative border-b-2 -mb-[2px] ${
+            className={`flex items-center gap-2 pb-3.5 text-sm font-semibold transition-all relative border-b-2 -mb-[2px] shrink-0 whitespace-nowrap ${
               activeTab === tab.key
                 ? "border-secondary text-foreground font-bold"
                 : "border-transparent text-muted-foreground hover:text-foreground"

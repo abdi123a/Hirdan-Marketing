@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './ui/Text';
 import * as DocumentPicker from 'expo-document-picker';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +11,7 @@ import {
   Badge,
   Button,
   Card,
+  DatePickerField,
   Dialog,
   EmptyState,
   Input,
@@ -274,12 +276,11 @@ export function ClientDocumentsSection({ clientId }: { clientId: string }) {
             options={DOC_TYPES}
             onChange={(v) => setForm((p) => ({ ...p, type: v }))}
           />
-          <Input
-            label="Expiry (YYYY-MM-DD)"
+          <DatePickerField
+            label="Expiry"
             value={form.expiryDate}
-            onChangeText={(v) => setForm((p) => ({ ...p, expiryDate: v }))}
-            autoCapitalize="none"
-            placeholder="Optional"
+            onChange={(v) => setForm((p) => ({ ...p, expiryDate: v }))}
+            optional
           />
           <Input
             label="Internal notes"

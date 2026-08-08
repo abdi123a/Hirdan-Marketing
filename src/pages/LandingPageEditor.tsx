@@ -671,9 +671,9 @@ export default function LandingPageEditor() {
                     onClear={() => setStaticContent((prev: any) => ({ ...prev, heroImageUrl: "" }))}
                   />
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <UploadZone 
-                      label="Shape Overlay Graphics" 
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <UploadZone
+                      label="Shape Overlay Graphics"
                       imageUrl={staticContent.heroShapeImageUrl} 
                       isUploading={staticUploading === "heroShapeImageUrl"}
                       onUpload={e => handleStaticImageUpload(e, "heroShapeImageUrl")}
@@ -723,7 +723,7 @@ export default function LandingPageEditor() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-muted-foreground">Primary CTA Text</label>
                         <Input 
@@ -744,7 +744,7 @@ export default function LandingPageEditor() {
                       </div>
                     </div>
 
-                    <div className="border-t border-border pt-4 mt-2 grid grid-cols-2 gap-4">
+                    <div className="border-t border-border pt-4 mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-muted-foreground">Award Number</label>
                         <Input 
@@ -804,7 +804,7 @@ export default function LandingPageEditor() {
                   />
 
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-muted-foreground">Section Subtitle</label>
                         <Input 
@@ -847,7 +847,7 @@ export default function LandingPageEditor() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-muted-foreground">Campaigns Stat Count</label>
                         <Input 
@@ -953,7 +953,7 @@ export default function LandingPageEditor() {
                           </button>
                         </div>
                         <div className="space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div className="space-y-1">
                               <label className="text-[10px] font-bold text-muted-foreground uppercase">Service Title</label>
                               <Input
@@ -1032,11 +1032,11 @@ export default function LandingPageEditor() {
                   <CardDescription>Setup the step-by-step roadmap items and the lead capture backdrop.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
                       <label className="text-xs font-semibold text-muted-foreground">Section Subtitle</label>
-                      <Input 
-                        value={staticContent.processSubtitle} 
+                      <Input
+                        value={staticContent.processSubtitle}
                         onChange={e => setStaticContent(prev => ({ ...prev, processSubtitle: e.target.value }))}
                         required
                         className="rounded-xl"
@@ -1092,7 +1092,7 @@ export default function LandingPageEditor() {
                       onClear={() => setStaticContent((prev: any) => ({ ...prev, contactImageUrl: "" }))}
                     />
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-muted-foreground">CTA Subtitle</label>
                         <Input 
@@ -1194,7 +1194,7 @@ export default function LandingPageEditor() {
                   )}
 
                   {Array.isArray(staticContent.clientLogos) && staticContent.clientLogos.length > 0 ? (
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                       {staticContent.clientLogos.map((url: string, index: number) => (
                         <div key={index} className="border border-border p-3 rounded-xl bg-card relative group flex items-center justify-center min-h-[70px]">
                           <img src={url} alt={`Client ${index + 1}`} className="max-h-8 max-w-full object-contain" />
@@ -1258,7 +1258,7 @@ export default function LandingPageEditor() {
                           </button>
                         </div>
                         <div className="space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div className="space-y-1">
                               <label className="text-[10px] font-bold text-muted-foreground uppercase">Package Name</label>
                               <Input
@@ -1344,7 +1344,7 @@ export default function LandingPageEditor() {
           {/* TAB CONTENT: CASE STUDIES */}
           {activeTab === "casestudies" && (
             <Card className="border border-border shadow-sm rounded-2xl">
-              <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
+              <CardHeader className="flex flex-col items-start sm:flex-row sm:items-center justify-between gap-4 pb-4">
                 <div>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
                     <FileText className="w-5 h-5 text-[#504289]" /> Case Studies Portfolio
@@ -1392,7 +1392,7 @@ export default function LandingPageEditor() {
           {/* TAB CONTENT: PROJECTS */}
           {activeTab === "projects" && (
             <Card className="border border-border shadow-sm rounded-2xl">
-              <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
+              <CardHeader className="flex flex-col items-start sm:flex-row sm:items-center justify-between gap-4 pb-4">
                 <div>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
                     <Folder className="w-5 h-5 text-[#504289]" /> Portfolio Projects
@@ -1440,7 +1440,7 @@ export default function LandingPageEditor() {
           {/* TAB CONTENT: TESTIMONIALS */}
           {activeTab === "testimonials" && (
             <Card className="border border-border shadow-sm rounded-2xl">
-              <CardHeader className="flex flex-row items-center justify-between gap-4 pb-4">
+              <CardHeader className="flex flex-col items-start sm:flex-row sm:items-center justify-between gap-4 pb-4">
                 <div>
                   <CardTitle className="text-lg font-bold font-display flex items-center gap-2">
                     <ThumbsUp className="w-5 h-5 text-[#504289]" /> Client Reviews
@@ -2209,7 +2209,7 @@ export default function LandingPageEditor() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4 text-left">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground">Client Name</label>
                 <Input 
@@ -2241,7 +2241,7 @@ export default function LandingPageEditor() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground">Rating Star Count (1-5)</label>
                 <Input 
@@ -2337,7 +2337,7 @@ export default function LandingPageEditor() {
 
             <div className="border-t border-border pt-4 space-y-4">
               <h4 className="text-xs font-bold uppercase tracking-wider text-primary">Project Showcase Images (Up to 4)</h4>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
                   { field: "imageUrl", label: "Image 1 (Primary Header)" },
                   { field: "imageUrl2", label: "Image 2 (Grid Right)" },
@@ -2382,12 +2382,12 @@ export default function LandingPageEditor() {
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                     
-                    <div className="grid grid-cols-3 gap-3 pt-2">
-                      <div className="col-span-1 space-y-1">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                      <div className="md:col-span-1 space-y-1">
                         <label className="text-[9px] font-semibold uppercase text-muted-foreground">Section Title</label>
                         <Input value={section.title} onChange={e => updateSection(index, "title", e.target.value)} className="h-8 text-xs rounded-lg" />
                       </div>
-                      <div className="col-span-2 space-y-1">
+                      <div className="md:col-span-2 space-y-1">
                         <label className="text-[9px] font-semibold uppercase text-muted-foreground">Short Content</label>
                         <Input value={section.content} onChange={e => updateSection(index, "content", e.target.value)} className="h-8 text-xs rounded-lg" />
                       </div>

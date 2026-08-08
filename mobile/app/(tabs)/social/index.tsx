@@ -5,9 +5,9 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { Text } from '../../../components/ui/Text';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,20 +25,31 @@ import {
 } from '../../../lib/social';
 import { PlatformIconStack } from '../../../components/social/PlatformIcon';
 import {
+  ActionBar,
   Badge,
   Button,
   Chip,
   EmptyState,
+  PressableScale,
   SearchBar,
   SegmentedControl,
   Select,
   PostFeedSkeleton,
   useToast,
+  withAlpha,
 } from '../../../components/ui';
 import { useTheme } from '../../../hooks/useTheme';
 import { usePermissions } from '../../../hooks/usePermissions';
 import { useClientsWithSocialAccounts } from '../../../hooks/useClientsWithSocialAccounts';
 import { fontSize, radius, spacing } from '../../../constants/theme';
+import { pressScale } from '../../../constants/motion';
+
+/** Relative nudges for a batch of scheduled posts. */
+const SHIFTS = [
+  { label: '−1 day', days: -1 },
+  { label: '+1 day', days: 1 },
+  { label: '+7 days', days: 7 },
+] as const;
 
 type ViewMode = 'posts' | 'calendar';
 
@@ -247,35 +258,37 @@ export default function SocialPublishScreen() {
           />
         }
       >
+        {/* Four across a phone leaves ~80pt per tile, which an icon and label
+            side by side overrun — "Accounts" alone is wider than the space
+            left beside the glyph. Stacking them gives the label the tile's
+            full width. */}
         <View style={styles.topNav}>
-          <Pressable
+          <NavTile
+            icon="stats-chart-outline"
+            label="Analyze"
             onPress={() => router.push('/(tabs)/social/analyze')}
-            style={[styles.navBtn, { backgroundColor: t.card, borderColor: t.border }]}
-          >
-            <Ionicons name="stats-chart-outline" size={18} color={t.primary} />
-            <Text style={[styles.navLabel, { color: t.foreground }]}>Analyze</Text>
-          </Pressable>
-          <Pressable
+          />
+          <NavTile
+            icon="checkbox-outline"
+            label="Tasks"
+            onPress={() => router.push('/(tabs)/more/tasks')}
+          />
+          <NavTile
+            icon="link-outline"
+            label="Accounts"
             onPress={() => router.push('/(tabs)/social/accounts')}
-            style={[styles.navBtn, { backgroundColor: t.card, borderColor: t.border }]}
-          >
-            <Ionicons name="link-outline" size={18} color={t.primary} />
-            <Text style={[styles.navLabel, { color: t.foreground }]}>Accounts</Text>
-          </Pressable>
+          />
           {canCompose ? (
-            <Pressable
-              onPress={() => router.push('/(tabs)/social/compose')}
-              style={[styles.navBtn, { backgroundColor: t.primary, borderColor: t.primary }]}
-            >
-              <Ionicons name="add" size={18} color={t.primaryForeground} />
-              <Text style={[styles.navLabel, { color: t.primaryForeground }]}>Compose</Text>
-            </Pressable>
+            <NavTile
+              icon="add"
+              label="Compose"
+              primary
+              onPress={() => router.push('/compose')}
+            />
           ) : null}
         </View>
 
-        <Text style={{ color: t.foreground, fontWeight: '800', fontSize: fontSize.lg }}>
-          Content Publisher
-        </Text>
+        <Text variant="h2">Content Publisher</Text>
 
         <SegmentedControl
           options={[
@@ -361,7 +374,7 @@ export default function SocialPublishScreen() {
               {drafts.slice(0, 12).map((p) => (
                 <Pressable
                   key={p.id}
-                  onPress={() => router.push(`/(tabs)/social/post/${p.id}`)}
+                  onPress={() => router.push(`/post/${p.id}`)}
                   style={[styles.draftChip, { backgroundColor: t.muted }]}
                 >
                   <PlatformIconStack platforms={postPlatforms(p)} size={12} />
@@ -395,7 +408,7 @@ export default function SocialPublishScreen() {
             }}
             groups={calendarGroups}
             clientMap={clientMap}
-            onOpen={(id) => router.push(`/(tabs)/social/post/${id}`)}
+            onOpen={(id) => router.push(`/post/${id}`)}
           />
         ) : posts.length === 0 ? (
           <EmptyState
@@ -406,7 +419,7 @@ export default function SocialPublishScreen() {
                 : 'No posts match your filters.'
             }
             actionLabel={canCompose ? 'Compose' : undefined}
-            onAction={canCompose ? () => router.push('/(tabs)/social/compose') : undefined}
+            onAction={canCompose ? () => router.push('/compose') : undefined}
             icon="share-social-outline"
           />
         ) : (
@@ -420,10 +433,10 @@ export default function SocialPublishScreen() {
                 selected={selected.includes(post.id)}
                 selectable={canCompose}
                 onToggleSelect={() => toggleSelect(post.id)}
-                onPress={() => router.push(`/(tabs)/social/post/${post.id}`)}
+                onPress={() => router.push(`/post/${post.id}`)}
                 onEdit={() =>
                   router.push({
-                    pathname: '/(tabs)/social/compose',
+                    pathname: '/compose',
                     params: { editId: post.id },
                   })
                 }
@@ -434,26 +447,126 @@ export default function SocialPublishScreen() {
       </ScrollView>
 
       {selected.length > 0 ? (
-        <View style={[styles.bulkBar, { backgroundColor: t.card, borderTopColor: t.border }]}>
-          <Text style={{ color: t.foreground, fontWeight: '700' }}>{selected.length} selected</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
-            <Button title="Draft" size="sm" variant="outline" onPress={() => bulkStatusM.mutate('DRAFT')} />
-            <Button title="Schedule" size="sm" variant="outline" onPress={() => bulkStatusM.mutate('SCHEDULED')} />
-            <Button title="+1d" size="sm" variant="outline" onPress={() => bulkShiftM.mutate(1)} />
-            <Button title="+7d" size="sm" variant="outline" onPress={() => bulkShiftM.mutate(7)} />
-            <Button title="-1d" size="sm" variant="outline" onPress={() => bulkShiftM.mutate(-1)} />
+        <View style={styles.bulkBar} pointerEvents="box-none">
+          <View style={styles.shiftRow} pointerEvents="box-none">
+            <Text variant="caption" color="muted" style={styles.shiftLabel}>
+              Shift date
+            </Text>
+            {SHIFTS.map((s) => (
+              <Chip
+                key={s.days}
+                label={s.label}
+                disabled={bulkShiftM.isPending}
+                onPress={() => bulkShiftM.mutate(s.days)}
+              />
+            ))}
+          </View>
+
+          <ActionBar
+            variant="floating"
+            caption={
+              <>
+                <Text variant="bodyStrong">
+                  {selected.length} {selected.length === 1 ? 'post' : 'posts'} selected
+                </Text>
+                <Pressable onPress={() => setSelected([])} hitSlop={8}>
+                  <Text variant="label" color="primary">
+                    Clear
+                  </Text>
+                </Pressable>
+              </>
+            }
+          >
+            {/* Status changes are the common case, so they get real buttons.
+                Date nudges are modifiers and read better as chips. */}
             <Button
-              title="Delete"
+              title="Draft"
               size="sm"
-              variant="destructive"
-              loading={bulkDeleteM.isPending}
-              onPress={() => bulkDeleteM.mutate()}
+              variant="tonal"
+              loading={bulkStatusM.isPending}
+              onPress={() => bulkStatusM.mutate('DRAFT')}
+              style={styles.bulkAction}
             />
-            <Button title="Clear" size="sm" variant="ghost" onPress={() => setSelected([])} />
-          </ScrollView>
+            <Button
+              title="Schedule"
+              size="sm"
+              variant="primary"
+              loading={bulkStatusM.isPending}
+              onPress={() => bulkStatusM.mutate('SCHEDULED')}
+              style={styles.bulkAction}
+            />
+            <PressableScale
+              accessibilityRole="button"
+              accessibilityLabel={`Delete ${selected.length} selected posts`}
+              scaleTo={pressScale.icon}
+              haptic="medium"
+              onPress={() => bulkDeleteM.mutate()}
+              disabled={bulkDeleteM.isPending}
+              style={[styles.bulkIcon, { backgroundColor: withAlpha(t.destructive, 0.12) }]}
+            >
+              <Ionicons name="trash-outline" size={18} color={t.destructive} />
+            </PressableScale>
+          </ActionBar>
         </View>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * One tile in the quick-nav row.
+ *
+ * `adjustsFontSizeToFit` is the safety net rather than the layout: the label
+ * is sized to fit at rest, but a user running a large display scale would
+ * otherwise clip it, and truncating "Accounts" to "Acco…" reads as a bug.
+ */
+function NavTile({
+  icon,
+  label,
+  primary,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  primary?: boolean;
+  onPress: () => void;
+}) {
+  const t = useTheme();
+  const fg = primary ? t.primaryForeground : t.foreground;
+
+  return (
+    <PressableScale
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      scaleTo={pressScale.card}
+      haptic="none"
+      onPress={onPress}
+      style={[
+        styles.navBtn,
+        {
+          backgroundColor: primary ? t.primary : t.card,
+          borderColor: primary ? t.primary : t.borderSubtle,
+        },
+      ]}
+    >
+      <View
+        style={[
+          styles.navIcon,
+          { backgroundColor: primary ? 'rgba(255,255,255,0.2)' : t.accent },
+        ]}
+      >
+        <Ionicons name={icon} size={17} color={primary ? fg : t.accentForeground} />
+      </View>
+      <Text
+        variant="caption"
+        style={[styles.navLabel, { color: fg }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.85}
+      >
+        {label}
+      </Text>
+    </PressableScale>
   );
 }
 
@@ -545,9 +658,17 @@ function PostCard({
             })}
           </Text>
         </View>
-        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-          <Button title="Open" size="sm" variant="outline" onPress={onPress} style={{ flex: 1 }} />
-          <Button title="Edit" size="sm" variant="ghost" onPress={onEdit} style={{ flex: 1 }} />
+        {/* Tapping the card already opens the post, so a second "Open"
+            button was only competing with it. Edit is the one action that
+            isn't reachable any other way. */}
+        <View style={styles.cardActions}>
+          <Button
+            title="Edit"
+            size="sm"
+            variant="tonal"
+            icon="create-outline"
+            onPress={onEdit}
+          />
         </View>
       </View>
     </Pressable>
@@ -632,19 +753,33 @@ function CalendarView({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: spacing.lg, gap: spacing.md, paddingBottom: 120 },
+  // Bottom padding clears the bulk-action bar, which overlays the list
+  // whenever a selection is active.
+  content: { padding: spacing.gutter, gap: spacing.md, paddingBottom: 190 },
   topNav: { flexDirection: 'row', gap: spacing.sm },
   navBtn: {
     flex: 1,
-    flexDirection: 'row',
+    // Column, not row: the label sits under the glyph and gets the whole
+    // tile width instead of competing with it.
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: spacing.sm + 2,
+    gap: 7,
+    paddingVertical: spacing.md,
+    paddingHorizontal: 4,
     borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 74,
   },
-  navLabel: { fontSize: fontSize.sm, fontWeight: '700' },
+  navIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navLabel: {
+    textAlign: 'center',
+  },
   filterToggle: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -701,16 +836,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cardBody: { padding: spacing.md, gap: spacing.sm },
+  cardBody: { padding: spacing.lg, gap: spacing.sm },
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: spacing.xs,
+  },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   bulkBar: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    padding: spacing.md,
     gap: spacing.sm,
+  },
+  bulkAction: {
+    flex: 1,
+  },
+  bulkIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shiftRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.gutter + spacing.lg,
+  },
+  shiftLabel: {
+    marginRight: spacing.xs,
   },
   dayBlock: {
     borderWidth: StyleSheet.hairlineWidth,
