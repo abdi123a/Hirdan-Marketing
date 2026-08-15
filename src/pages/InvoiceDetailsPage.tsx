@@ -42,7 +42,7 @@ import { printInvoicePdf } from "@/lib/document-pdf";
 export default function InvoiceDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { invoices, clients, settings, getVerificationToken, fetchInvoices, fetchClients } = useAgencyStore();
+  const { invoices, clients, settings, getVerificationToken, fetchInvoiceById, fetchClients } = useAgencyStore();
   const { toast } = useToast();
   const [verificationToken, setVerificationToken] = useState<string>("");
   const [loadingToken, setLoadingToken] = useState(false);
@@ -60,13 +60,14 @@ export default function InvoiceDetailsPage() {
   const client = useMemo(() => clients.find((c) => c.company === invoice?.client || c.name === invoice?.client), [clients, invoice]);
 
   useEffect(() => {
+    // Fetch this invoice directly — the paginated list may not contain it.
     Promise.all([
-      fetchInvoices(),
+      id ? fetchInvoiceById(id) : Promise.resolve(null),
       fetchClients()
     ]).finally(() => {
       setIsInitialLoading(false);
     });
-  }, [fetchInvoices, fetchClients]);
+  }, [id, fetchInvoiceById, fetchClients]);
 
   useEffect(() => {
     if (invoice?.id) {

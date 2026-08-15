@@ -16,6 +16,7 @@ import { QuickAddExpenseModal } from "@/components/QuickAddExpenseModal";
 import { AdminFinanceDashboard } from "@/components/dashboard/AdminFinanceDashboard";
 import { StaffWorkDashboard } from "@/components/dashboard/StaffWorkDashboard";
 import type { ToneKey } from "@/components/dashboard/shared";
+import { computeDocTotals } from "@/lib/money";
 import {
   isAfter,
   isBefore,
@@ -215,18 +216,19 @@ export default function DashboardOverview() {
   );
 
   const outstandingAmount = useMemo(() => {
-    return unpaidInvoices.reduce((sum, i) => {
-      if (i.items?.length) {
-        const subtotal = i.items.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
-        const rate = i.taxRate ?? 0;
-        const tax = (subtotal * rate) / 100;
-        const discountAmt =
-          i.discountType === "percentage" ? (subtotal * (i.discount || 0)) / 100 : i.discount || 0;
-        const total = subtotal + tax - discountAmt;
-        return sum + (total - (i.deposit || 0));
-      }
-      return sum + (parseCurrency(i.amount) - (i.deposit || 0));
-    }, 0);
+    return unpaidInvoices.reduce(
+      (sum, i) =>
+        sum +
+        computeDocTotals({
+          items: i.items,
+          amount: i.amount,
+          taxRate: i.taxRate ?? 0,
+          discount: i.discount,
+          discountType: i.discountType,
+          deposit: i.deposit,
+        }).balanceDue,
+      0
+    );
   }, [unpaidInvoices]);
 
   const revenueTrend = useMemo(() => {

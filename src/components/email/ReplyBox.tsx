@@ -1,25 +1,42 @@
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Send, Paperclip, X, Loader2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import RichTextEditor from '@/components/RichTextEditor';
 import { TemplatePicker } from './TemplatePicker';
 import { useReply } from '@/lib/email/hooks';
 import { fileToAttachment, type PreparedAttachment } from '@/lib/email/attachments';
 import { applyTemplateVars } from '@/lib/email/templateVars';
 import { formatBytes } from '@/lib/email/format';
+import type { Mailbox } from '@/lib/email/types';
 
 interface Props {
   conversationId: string;
-  signature?: string | null;
+  mailboxes?: Mailbox[];
+  /** The conversation's own mailbox — preselected, but any writable mailbox can override it. */
+  defaultMailboxId?: string;
   onSent?: () => void;
 }
 
-export function ReplyBox({ conversationId, signature, onSent }: Props) {
+export function ReplyBox({ conversationId, mailboxes = [], defaultMailboxId, onSent }: Props) {
   const editorRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [replyAll, setReplyAll] = useState(false);
   const [attachments, setAttachments] = useState<PreparedAttachment[]>([]);
   const reply = useReply(conversationId);
+
+  const writable = useMemo(
+    () => mailboxes.filter((m) => m.isActive && (m.accessLevel === 'ADMIN' || m.accessLevel === 'WRITE' || m.accessLevel === 'MANAGE')),
+    [mailboxes]
+  );
+  const [mailboxId, setMailboxId] = useState(defaultMailboxId || '');
+  useEffect(() => {
+    setMailboxId(defaultMailboxId || '');
+  }, [conversationId, defaultMailboxId]);
+  const selectedMailbox = writable.find((m) => m.id === mailboxId);
+  const signature = selectedMailbox?.signature;
 
   const handleFiles = async (files: FileList | null) => {
     if (!files) return;
@@ -33,6 +50,7 @@ export function ReplyBox({ conversationId, signature, onSent }: Props) {
     const body = signature ? `${html}<br/><br/>${signature}` : html;
     await reply.mutateAsync({
       html: body,
+      mailboxId: mailboxId || undefined,
       replyAll,
       attachments: attachments.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType })),
     });
@@ -43,6 +61,27 @@ export function ReplyBox({ conversationId, signature, onSent }: Props) {
 
   return (
     <div className="rounded-xl border bg-card shadow-sm">
+      {writable.length > 1 && (
+        <div className="flex items-center gap-2 border-b px-3 py-1.5">
+          <span className="w-10 shrink-0 text-[13px] text-muted-foreground">From</span>
+          <Select value={mailboxId} onValueChange={setMailboxId}>
+            <SelectTrigger className="h-8 flex-1 border-0 px-1 text-[13px] shadow-none focus:ring-0">
+              <SelectValue placeholder="Select a mailbox" />
+            </SelectTrigger>
+            <SelectContent>
+              {writable.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  <span className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: m.color || '#6366f1' }} />
+                    {m.displayName} &lt;{m.email}&gt;
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <div className="border-b px-3 py-2">
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <input type="checkbox" checked={replyAll} onChange={(e) => setReplyAll(e.target.checked)} className="accent-primary" />

@@ -18,7 +18,7 @@ import { ReplyBox } from './ReplyBox';
 import { LabelPicker } from './LabelPicker';
 import { NotesPanel } from './NotesPanel';
 import { CustomerPanel } from './CustomerPanel';
-import type { ConversationStatus, EmailMessage } from '@/lib/email/types';
+import type { ConversationStatus, EmailMessage, Mailbox } from '@/lib/email/types';
 
 const STATUS_LABELS: Record<ConversationStatus, string> = {
   OPEN: 'Open',
@@ -30,11 +30,12 @@ const STATUS_LABELS: Record<ConversationStatus, string> = {
 
 interface Props {
   conversationId: string;
+  mailboxes?: Mailbox[];
   onBack?: () => void;
   onForward?: (email: EmailMessage) => void;
 }
 
-export function ConversationView({ conversationId, onBack, onForward }: Props) {
+export function ConversationView({ conversationId, mailboxes = [], onBack, onForward }: Props) {
   const { data: conversation, isLoading, refetch } = useConversation(conversationId);
   const { markRead, patch, action } = useConversationActions();
   const [customerOpen, setCustomerOpen] = useState(false);
@@ -197,7 +198,8 @@ export function ConversationView({ conversationId, onBack, onForward }: Props) {
           {!inTrash && (
             <ReplyBox
               conversationId={conversation.id}
-              signature={conversation.mailbox.signature}
+              mailboxes={mailboxes}
+              defaultMailboxId={conversation.mailboxId}
               onSent={() => refetch()}
             />
           )}

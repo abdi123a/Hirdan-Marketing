@@ -124,6 +124,8 @@ export interface InvoiceItem {
   quantity: number;
   unitPrice: number;
   position?: number;
+  /** When false the invoice-level discount does not apply to this line (default true). */
+  discountable?: boolean;
 }
 
 export interface Invoice {
@@ -495,6 +497,8 @@ interface AgencyStore {
   addInvoice: (invoice: Omit<Invoice, 'id'> & { id?: string }) => Promise<void>;
   updateInvoice: (id: string, invoice: Partial<Invoice>) => Promise<void>;
   deleteInvoice: (id: string) => Promise<void>;
+  fetchInvoiceById: (id: string) => Promise<Invoice | null>;
+  fetchProformaById: (id: string) => Promise<Proforma | null>;
 
   addSubscription: (subscription: Omit<Subscription, 'id'>) => Promise<void>;
   updateSubscription: (id: string, subscription: Partial<Subscription>) => Promise<void>;
@@ -598,7 +602,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.31.52",
+  appVersion: "2.31.53",
   versionHistory: [
     {
       version: "2.23.0",
@@ -736,6 +740,65 @@ const createDefaultSettings = (): AgencySettings => ({
   updatedAt: "2026-07-15T01:48:00.000Z",
 });
 
+const mapApiInvoiceItem = (item: any): InvoiceItem => ({
+  description: item.description,
+  quantity: item.quantity,
+  unitPrice: (item.unitPrice || 0) / 100,
+  discountable: item.discountable !== false,
+});
+
+/** Map a raw API invoice row into the UI shape (money in major units). */
+const mapApiInvoice = (i: any): Invoice => ({
+  id: i.invoiceNumber || i.id,
+  client: i.client?.company || i.client?.name || 'Unknown',
+  clientEmail: i.client?.email || '',
+  amount: formatCurrency((i.amount || 0) / 100),
+  status: i.status.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ') as any,
+  date: i.date.split('T')[0],
+  dueDate: i.dueDate.split('T')[0],
+  items: (i.items || []).map(mapApiInvoiceItem),
+  taxRate: i.taxRate,
+  discount: i.discount,
+  discountType: i.discountType ? i.discountType.toLowerCase() as any : undefined,
+  deposit: i.deposit ? i.deposit / 100 : undefined,
+  paymentMethod: i.paymentMethod,
+  notes: i.notes,
+  clientId: i.clientId || i.client?.id,
+  _dbId: i.id,
+  showSignature: i.showSignature,
+  showStamp: i.showStamp,
+  deliveryNoteEnabled: i.deliveryNoteEnabled,
+  deliveryNoteTitle: i.deliveryNoteTitle,
+  deliveryNoteContent: i.deliveryNoteContent,
+  createdAt: i.createdAt
+});
+
+/** Map a raw API proforma row into the UI shape (money in major units). */
+const mapApiProforma = (p: any): Proforma => ({
+  id: p.proformaNumber || p.id,
+  proformaNumber: p.proformaNumber,
+  client: p.client?.company || p.client?.name || 'Unknown',
+  clientEmail: p.client?.email || '',
+  amount: formatCurrency((p.amount || 0) / 100),
+  status: p.status.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ') as any,
+  date: p.date.split('T')[0],
+  dueDate: p.dueDate?.split('T')[0] || '',
+  items: (p.items || []).map(mapApiInvoiceItem),
+  taxRate: p.taxRate,
+  discount: p.discount,
+  discountType: p.discountType ? p.discountType.toLowerCase() as any : undefined,
+  deposit: p.deposit ? p.deposit / 100 : undefined,
+  notes: p.notes,
+  clientId: p.clientId || p.client?.id,
+  _dbId: p.id,
+  showSignature: p.showSignature,
+  showStamp: p.showStamp,
+  deliveryNoteEnabled: p.deliveryNoteEnabled,
+  deliveryNoteTitle: p.deliveryNoteTitle,
+  deliveryNoteContent: p.deliveryNoteContent,
+  createdAt: p.createdAt
+});
+
 export const useAgencyStore = create<AgencyStore>()(
   persist(
     (set, get): AgencyStore => ({
@@ -815,37 +878,25 @@ export const useAgencyStore = create<AgencyStore>()(
       fetchInvoices: async () => {
         try {
           const res = await apiFetch<{ invoices: any[] }>('/invoices');
-          const mapped = res.invoices.map(i => ({
-            id: i.invoiceNumber || i.id,
-            client: i.client?.company || i.client?.name || 'Unknown',
-            clientEmail: i.client?.email || '',
-            amount: formatCurrency((i.amount || 0) / 100),
-            status: i.status.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ') as any,
-            date: i.date.split('T')[0],
-            dueDate: i.dueDate.split('T')[0],
-            items: (i.items || []).map((item: any) => ({
-              description: item.description,
-              quantity: item.quantity,
-              unitPrice: (item.unitPrice || 0) / 100,
-            })),
-            taxRate: i.taxRate,
-            discount: i.discount,
-            discountType: i.discountType ? i.discountType.toLowerCase() as any : undefined,
-            deposit: i.deposit ? i.deposit / 100 : undefined,
-            paymentMethod: i.paymentMethod,
-            notes: i.notes,
-            clientId: i.clientId || i.client?.id,
-            _dbId: i.id,
-            showSignature: i.showSignature,
-            showStamp: i.showStamp,
-            deliveryNoteEnabled: i.deliveryNoteEnabled,
-            deliveryNoteTitle: i.deliveryNoteTitle,
-            deliveryNoteContent: i.deliveryNoteContent,
-            createdAt: i.createdAt
-          }));
-          set({ invoices: mapped });
+          set({ invoices: res.invoices.map(mapApiInvoice) });
         } catch (error) {
           console.error("Failed to fetch invoices:", error);
+        }
+      },
+
+      // The list endpoint is paginated (default 50), so pages that need one
+      // specific document must fetch it directly instead of scanning the list.
+      fetchInvoiceById: async (id) => {
+        try {
+          const res = await apiFetch<{ invoice: any }>(`/invoices/${encodeURIComponent(id)}`);
+          const mapped = mapApiInvoice(res.invoice);
+          set((state) => ({
+            invoices: [mapped, ...state.invoices.filter((inv) => inv._dbId !== mapped._dbId)],
+          }));
+          return mapped;
+        } catch (error) {
+          console.error("Failed to fetch invoice:", error);
+          return null;
         }
       },
 
@@ -886,37 +937,23 @@ export const useAgencyStore = create<AgencyStore>()(
       fetchProformas: async () => {
         try {
           const res = await apiFetch<{ proformas: any[] }>('/proformas');
-          const mapped = res.proformas.map(p => ({
-            id: p.proformaNumber || p.id,
-            proformaNumber: p.proformaNumber,
-            client: p.client?.company || p.client?.name || 'Unknown',
-            clientEmail: p.client?.email || '',
-            amount: formatCurrency((p.amount || 0) / 100),
-            status: p.status.split('_').map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ') as any,
-            date: p.date.split('T')[0],
-            dueDate: p.dueDate?.split('T')[0] || '',
-            items: (p.items || []).map((item: any) => ({
-              description: item.description,
-              quantity: item.quantity,
-              unitPrice: (item.unitPrice || 0) / 100,
-            })),
-            taxRate: p.taxRate,
-            discount: p.discount,
-            discountType: p.discountType ? p.discountType.toLowerCase() as any : undefined,
-            deposit: p.deposit ? p.deposit / 100 : undefined,
-            notes: p.notes,
-            clientId: p.clientId || p.client?.id,
-            _dbId: p.id,
-            showSignature: p.showSignature,
-            showStamp: p.showStamp,
-            deliveryNoteEnabled: p.deliveryNoteEnabled,
-            deliveryNoteTitle: p.deliveryNoteTitle,
-            deliveryNoteContent: p.deliveryNoteContent,
-            createdAt: p.createdAt
-          }));
-          set({ proformas: mapped });
+          set({ proformas: res.proformas.map(mapApiProforma) });
         } catch (error) {
           console.error("Failed to fetch proformas:", error);
+        }
+      },
+
+      fetchProformaById: async (id) => {
+        try {
+          const res = await apiFetch<{ proforma: any }>(`/proformas/${encodeURIComponent(id)}`);
+          const mapped = mapApiProforma(res.proforma);
+          set((state) => ({
+            proformas: [mapped, ...state.proformas.filter((p) => p._dbId !== mapped._dbId)],
+          }));
+          return mapped;
+        } catch (error) {
+          console.error("Failed to fetch proforma:", error);
+          return null;
         }
       },
 
@@ -1634,6 +1671,7 @@ export const useAgencyStore = create<AgencyStore>()(
             quantity: item.quantity,
             unitPrice: Math.round(Number(item.unitPrice) * 100),
             position: item.position !== undefined ? item.position : index,
+            discountable: item.discountable !== false,
           }));
           await apiFetch('/invoices', {
             method: 'POST',
@@ -1687,7 +1725,10 @@ export const useAgencyStore = create<AgencyStore>()(
             const matched = clients.find((c: any) => c.company === invoice.client || c.name === invoice.client);
             if (matched) payload.clientId = matched.id;
           }
-          if (invoice.amount) {
+          // Only send an explicit amount when there are no line items — with
+          // items present the server computes the total authoritatively, so a
+          // client-side rounding difference can never make the save fail.
+          if (invoice.amount && !invoice.items) {
             payload.amount = Math.round(parseFloat(String(invoice.amount).replace(/[^0-9.]/g, '')) * 100);
           }
           if (invoice.items) {
@@ -1696,6 +1737,7 @@ export const useAgencyStore = create<AgencyStore>()(
               quantity: item.quantity,
               unitPrice: Math.round(Number(item.unitPrice) * 100),
               position: item.position !== undefined ? item.position : index,
+              discountable: item.discountable !== false,
             }));
           }
           if (invoice.id && invoice.id.startsWith('INV-')) {
@@ -1704,7 +1746,7 @@ export const useAgencyStore = create<AgencyStore>()(
           // Resolve _dbId if the display-id (invoiceNumber) was used
           const allInvoices = get().invoices;
           const found = allInvoices.find((inv: any) => inv.id === id || inv._dbId === id);
-          const dbId = (found as any)?._dbId || id;
+          const dbId = (found as any)?._dbId || (invoice as any)._dbId || id;
           await apiFetch(`/invoices/${dbId}`, {
             method: 'PUT',
             body: JSON.stringify(payload),
@@ -1817,6 +1859,7 @@ export const useAgencyStore = create<AgencyStore>()(
             quantity: item.quantity,
             unitPrice: Math.round(Number(item.unitPrice) * 100),
             position: item.position !== undefined ? item.position : index,
+            discountable: item.discountable !== false,
           }));
           await apiFetch('/proformas', {
             method: 'POST',
@@ -1868,7 +1911,8 @@ export const useAgencyStore = create<AgencyStore>()(
             const matched = clients.find((c: any) => c.company === proforma.client || c.name === proforma.client);
             if (matched) payload.clientId = matched.id;
           }
-          if (proforma.amount) {
+          // With line items the server computes the total authoritatively.
+          if (proforma.amount && !proforma.items) {
             payload.amount = Math.round(parseFloat(String(proforma.amount).replace(/[^0-9.]/g, '')) * 100);
           }
           if (proforma.items) {
@@ -1877,6 +1921,7 @@ export const useAgencyStore = create<AgencyStore>()(
               quantity: item.quantity,
               unitPrice: Math.round(Number(item.unitPrice) * 100),
               position: item.position !== undefined ? item.position : index,
+              discountable: item.discountable !== false,
             }));
           }
           if (proforma.id && proforma.id.startsWith('PRO-')) {
@@ -1884,7 +1929,7 @@ export const useAgencyStore = create<AgencyStore>()(
           }
           const allProformas = get().proformas;
           const found = allProformas.find((p: any) => p.id === id || p._dbId === id);
-          const dbId = (found as any)?._dbId || id;
+          const dbId = (found as any)?._dbId || (proforma as any)._dbId || id;
           const res = await apiFetch<any>(`/proformas/${dbId}`, {
             method: 'PUT',
             body: JSON.stringify(payload),

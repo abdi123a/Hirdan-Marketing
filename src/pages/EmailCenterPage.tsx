@@ -170,6 +170,7 @@ export default function EmailCenterPage() {
             {selectedId ? (
               <ConversationView
                 conversationId={selectedId}
+                mailboxes={mailboxes}
                 onBack={() => setSelectedId(null)}
                 onForward={(e) =>
                   openCompose({ mailboxId: e.mailboxId, subject: `Fwd: ${e.subject || ''}`, html: forwardHtml(e) })
@@ -223,6 +224,7 @@ export default function EmailCenterPage() {
             {selectedId ? (
               <ConversationView
                 conversationId={selectedId}
+                mailboxes={mailboxes}
                 onBack={() => setSelectedId(null)}
                 onForward={(e) =>
                   openCompose({ mailboxId: e.mailboxId, subject: `Fwd: ${e.subject || ''}`, html: forwardHtml(e) })

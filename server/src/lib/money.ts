@@ -62,6 +62,13 @@ export function sumItemCents(
   return items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
 }
 
+export type TotalsItem = {
+  quantity: number;
+  unitPrice: number;
+  /** When false the discount does not apply to this line. Defaults to true. */
+  discountable?: boolean | null;
+};
+
 /** Derive pre-tax subtotal (cents) from a tax-inclusive total (cents). */
 export function deriveSubtotalCentsFromTotal(totalCents: number, taxRatePercent: number): number {
   if (!taxRatePercent) return totalCents;
@@ -70,7 +77,7 @@ export function deriveSubtotalCentsFromTotal(totalCents: number, taxRatePercent:
 }
 
 export function computeInvoiceTotalsCents(input: {
-  items?: Array<{ quantity: number; unitPrice: number }> | null;
+  items?: TotalsItem[] | null;
   amountCents?: number | null;
   taxRate?: number | null;
   /** Fixed discount is in major units (dollars); percentage is 0–100. */
@@ -91,12 +98,18 @@ export function computeInvoiceTotalsCents(input: {
   const subtotalCents = fromItems
     ? fromItems
     : deriveSubtotalCentsFromTotal(input.amountCents ?? 0, taxRate);
+  // The discount may be restricted to a subset of line items (discountable
+  // defaults to true). Without items the base is the whole subtotal.
+  const discountBaseCents = input.items?.length
+    ? sumItemCents(input.items.filter((it) => it.discountable !== false))
+    : subtotalCents;
   const taxCents = Math.round((subtotalCents * taxRate) / 100);
   const isPct = String(input.discountType || '').toUpperCase() === 'PERCENTAGE';
-  const discountCents = isPct
-    ? Math.round((subtotalCents * discount) / 100)
-    : dollarsToCents(discount);
-  const totalCents = subtotalCents + taxCents - discountCents;
+  const discountCents = Math.min(
+    isPct ? Math.round((discountBaseCents * discount) / 100) : dollarsToCents(discount),
+    discountBaseCents
+  );
+  const totalCents = Math.max(0, subtotalCents + taxCents - discountCents);
   return {
     subtotalCents,
     taxCents,

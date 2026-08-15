@@ -9,6 +9,7 @@ import { auditLog } from '../lib/audit.js';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { parsePagination } from '../lib/pagination.js';
+import { computeInvoiceTotalsCents } from '../lib/money.js';
 import { renderProformaPdfById } from '../lib/pdf/document-pdf.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -19,7 +20,19 @@ const proformaItemSchema = z.object({
   quantity: z.number().int().positive(),
   unitPrice: z.number().int().nonnegative(),
   position: z.number().int().optional(),
+  discountable: z.boolean().optional(),
 });
+
+/** Normalize incoming items: positions follow array order, discountable defaults to true. */
+function normalizeItems(items: any[] | undefined) {
+  return items?.map((item: any, index: number) => ({
+    description: item.description,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    position: item.position !== undefined ? item.position : index,
+    discountable: item.discountable !== false,
+  }));
+}
 
 const proformaDtoSchema = z.object({
   proformaNumber: z.string().min(1),
@@ -140,15 +153,20 @@ router.get('/:id/export-pdf', async (req: Request, res: Response, next) => {
 router.post('/', validate({ body: proformaDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const { items, ...proformaData } = req.body;
-    const itemsWithPosition = items?.map((item: any, index: number) => ({
-      description: item.description,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      position: item.position !== undefined ? item.position : index,
-    }));
+    const itemsWithPosition = normalizeItems(items);
+    // Server-authoritative total when line items exist (see invoices.routes.ts).
+    const computedAmount = itemsWithPosition?.length
+      ? computeInvoiceTotalsCents({
+          items: itemsWithPosition,
+          taxRate: proformaData.taxRate ?? null,
+          discount: proformaData.discount ?? null,
+          discountType: proformaData.discountType ?? null,
+        }).totalCents
+      : undefined;
     const proforma = await prisma.proforma.create({
       data: {
         ...proformaData,
+        ...(computedAmount !== undefined ? { amount: computedAmount } : {}),
         items: itemsWithPosition ? { create: itemsWithPosition } : undefined,
       },
       include: { items: { orderBy: { position: 'asc' } } },
@@ -194,21 +212,38 @@ router.put('/:id', validate({ body: proformaDtoSchema.partial() }), async (req: 
     }
 
     const { items, ...proformaData } = req.body;
-    const itemsWithPosition = items?.map((item: any, index: number) => ({
-      description: item.description,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      position: item.position !== undefined ? item.position : index,
-    }));
-    if (items) {
-      await prisma.proformaItem.deleteMany({ where: { proformaId: targetProforma.id } });
-    }
+    const itemsWithPosition = normalizeItems(items);
+
+    // Server-authoritative total (see invoices.routes.ts PUT for rationale).
+    const affectsTotal =
+      itemsWithPosition !== undefined ||
+      proformaData.taxRate !== undefined ||
+      proformaData.discount !== undefined ||
+      proformaData.discountType !== undefined;
+    const computedAmount = affectsTotal
+      ? computeInvoiceTotalsCents({
+          items:
+            itemsWithPosition ??
+            (await prisma.proformaItem.findMany({
+              where: { proformaId: targetProforma.id },
+              orderBy: { position: 'asc' },
+            })),
+          taxRate: proformaData.taxRate !== undefined ? proformaData.taxRate : targetProforma.taxRate,
+          discount: proformaData.discount !== undefined ? proformaData.discount : targetProforma.discount,
+          discountType:
+            proformaData.discountType !== undefined ? proformaData.discountType : targetProforma.discountType,
+        }).totalCents
+      : undefined;
+
     const statusChangedToAccepted = targetProforma.status !== 'ACCEPTED' && proformaData.status === 'ACCEPTED';
+    // Nested writes run in one transaction — items can no longer be lost if
+    // the update fails partway.
     const proforma = await prisma.proforma.update({
       where: { id: targetProforma.id },
       data: {
         ...proformaData,
-        items: itemsWithPosition ? { create: itemsWithPosition } : undefined,
+        ...(computedAmount !== undefined ? { amount: computedAmount } : {}),
+        items: itemsWithPosition ? { deleteMany: {}, create: itemsWithPosition } : undefined,
       },
       include: {
         client: { select: { name: true, company: true } },
@@ -248,26 +283,20 @@ router.put('/:id', validate({ body: proformaDtoSchema.partial() }), async (req: 
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         position: item.position,
+        discountable: item.discountable,
       }));
 
       const finalItems = invoiceItems.length > 0
         ? invoiceItems
-        : [{ description: "Services rendered", quantity: 1, unitPrice: proforma.amount, position: 0 }];
+        : [{ description: "Services rendered", quantity: 1, unitPrice: proforma.amount, position: 0, discountable: true }];
 
-      // Compute total invoice amount
-      const subtotal = finalItems.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
-      let computedAmount = subtotal;
-      if (proforma.discount != null && proforma.discountType) {
-        if (proforma.discountType === 'FIXED') {
-          computedAmount -= Math.round(proforma.discount);
-        } else {
-          computedAmount -= Math.round(computedAmount * (proforma.discount / 100));
-        }
-      }
-      if (proforma.taxRate != null) {
-        computedAmount += Math.round(computedAmount * (proforma.taxRate / 100));
-      }
-      if (computedAmount < 0) computedAmount = 0;
+      // Compute total invoice amount with the shared formula (matches UI + PDF)
+      const computedAmount = computeInvoiceTotalsCents({
+        items: finalItems,
+        taxRate: proforma.taxRate,
+        discount: proforma.discount,
+        discountType: proforma.discountType,
+      }).totalCents;
 
       // Set due date to 14 days from now if not specified
       const dueDate = proforma.dueDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);

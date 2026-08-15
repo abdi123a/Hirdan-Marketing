@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
-import { deriveSubtotalFromTotal, parseAmountNumber, sumItems } from "@/lib/money";
+import { computeDocTotals } from "@/lib/money";
 import { downloadInvoicePdf } from "@/lib/document-pdf";
 
 const statusColor = (s: string) =>
@@ -44,20 +44,14 @@ export default function InvoicesPage() {
   );
 
   const stats = useMemo(() => {
-    const getInvoiceTotal = (i: Invoice) => {
-      let subtotal = 0;
-      if (i.items?.length) {
-        subtotal = sumItems(i.items);
-      } else {
-        return parseAmountNumber(i.amount);
-      }
-      const rate = i.taxRate ?? settings.taxRate ?? 0;
-      const tax = (subtotal * rate) / 100;
-      const discountAmount = i.discountType === 'percentage'
-        ? (subtotal * (i.discount || 0) / 100)
-        : (i.discount || 0);
-      return subtotal + tax - discountAmount;
-    };
+    const getInvoiceTotal = (i: Invoice) =>
+      computeDocTotals({
+        items: i.items,
+        amount: i.amount,
+        taxRate: i.taxRate ?? settings.taxRate ?? 0,
+        discount: i.discount,
+        discountType: i.discountType,
+      }).total;
 
     const totalPaidVal = invoices.reduce((sum, i) => {
       const total = getInvoiceTotal(i);
@@ -190,21 +184,14 @@ export default function InvoicesPage() {
                   <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{inv.dueDate}</TableCell>
                   <TableCell className="text-right font-semibold text-foreground">
                     {formatCurrency(
-                      (() => {
-                        let subtotal = 0;
-                        if (inv.items?.length) {
-                          subtotal = sumItems(inv.items);
-                        } else {
-                          return parseAmountNumber(inv.amount) - (inv.deposit || 0);
-                        }
-                        const rate = inv.taxRate ?? settings.taxRate ?? 0;
-                        const tax = (subtotal * rate) / 100;
-                        const discountAmt = inv.discountType === 'percentage'
-                          ? (subtotal * (inv.discount || 0) / 100)
-                          : (inv.discount || 0);
-                        const total = subtotal + tax - discountAmt;
-                        return total - (inv.deposit || 0);
-                      })()
+                      computeDocTotals({
+                        items: inv.items,
+                        amount: inv.amount,
+                        taxRate: inv.taxRate ?? settings.taxRate ?? 0,
+                        discount: inv.discount,
+                        discountType: inv.discountType,
+                        deposit: inv.deposit,
+                      }).balanceDue
                     )}
                   </TableCell>
                   <TableCell>

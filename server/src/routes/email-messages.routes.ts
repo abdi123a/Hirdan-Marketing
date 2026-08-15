@@ -81,6 +81,8 @@ router.post(
 // ─── POST /api/email/conversations/:conversationId/reply ─────────
 const replySchema = z.object({
   html: z.string().min(1, 'Message body is required'),
+  /** Optional From override — reply from another mailbox the user can send from. */
+  mailboxId: z.string().optional(),
   to: emailList.optional(),
   cc: emailList.optional(),
   bcc: emailList.optional(),
@@ -102,7 +104,11 @@ router.post('/conversations/:conversationId/reply', async (req: Request, res: Re
       },
     });
     if (!conversation) throw AppError.notFound('Conversation not found');
-    await assertMailboxAccess(req.user!, conversation.mailboxId, 'WRITE');
+    const sendMailboxId = input.mailboxId || conversation.mailboxId;
+    await assertMailboxAccess(req.user!, sendMailboxId, 'WRITE');
+    if (sendMailboxId !== conversation.mailboxId) {
+      await assertMailboxAccess(req.user!, conversation.mailboxId, 'READ');
+    }
 
     const last = conversation.emails[0];
     const mailboxEmail = conversation.mailbox.email.toLowerCase();
@@ -137,7 +143,7 @@ router.post('/conversations/:conversationId/reply', async (req: Request, res: Re
 
     const result = await sendMailboxEmail({
       user: req.user!,
-      mailboxId: conversation.mailboxId,
+      mailboxId: sendMailboxId,
       conversationId: conversation.id,
       to,
       cc,

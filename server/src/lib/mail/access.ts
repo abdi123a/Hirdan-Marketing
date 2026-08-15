@@ -25,6 +25,16 @@ export function isSuperAdmin(role?: string): boolean {
   return role === 'ADMIN';
 }
 
+/**
+ * JWT role claims can go stale (e.g. an account promoted to ADMIN after the
+ * token was issued). Before denying access to someone without permission
+ * rows, double-check the live role in the DB.
+ */
+async function isDbAdmin(userId: string): Promise<boolean> {
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  return u?.role === 'ADMIN';
+}
+
 /** Returns 'ALL' for super admins, otherwise the mailbox IDs the user can access. */
 export async function accessibleMailboxIds(user: AuthUser): Promise<'ALL' | string[]> {
   if (isSuperAdmin(user.role)) return 'ALL';
@@ -32,6 +42,7 @@ export async function accessibleMailboxIds(user: AuthUser): Promise<'ALL' | stri
     where: { userId: user.userId },
     select: { mailboxId: true },
   });
+  if (!perms.length && (await isDbAdmin(user.userId))) return 'ALL';
   return perms.map((p) => p.mailboxId);
 }
 
@@ -61,6 +72,7 @@ export async function assertMailboxAccess(
     select: { accessLevel: true },
   });
   if (!perm || LEVEL_RANK[perm.accessLevel] < LEVEL_RANK[level]) {
+    if (await isDbAdmin(user.userId)) return;
     throw AppError.forbidden('You do not have access to this mailbox');
   }
 }
@@ -75,6 +87,7 @@ export async function mailboxAccessLevel(
     where: { mailboxId_userId: { mailboxId, userId: user.userId } },
     select: { accessLevel: true },
   });
+  if (!perm && (await isDbAdmin(user.userId))) return 'ADMIN';
   return perm?.accessLevel ?? null;
 }
 

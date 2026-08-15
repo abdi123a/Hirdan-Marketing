@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
-import { parseAmountNumber, sumItems } from "@/lib/money";
+import { parseAmountNumber, sumItems, computeDocTotals } from "@/lib/money";
 import { downloadProformaPdf } from "@/lib/document-pdf";
 
 const statusColor = (s: string) =>
@@ -45,17 +45,15 @@ export default function ProformaPage() {
 
   const stats = useMemo(() => {
     const taxRate = settings.taxRate ?? 0;
-    const getProformaBalanceDue = (p: Proforma) => {
-      let subtotal = 0;
-      if (p.items?.length) {
-        subtotal = sumItems(p.items);
-      } else {
-        return parseAmountNumber(p.amount) - (p.deposit || 0);
-      }
-      const tax = (subtotal * taxRate) / 100;
-      const discount = p.discountType === 'percentage' ? (subtotal * (p.discount || 0) / 100) : (p.discount || 0);
-      return subtotal + tax - discount - (p.deposit || 0);
-    };
+    const getProformaBalanceDue = (p: Proforma) =>
+      computeDocTotals({
+        items: p.items,
+        amount: p.amount,
+        taxRate: p.taxRate ?? taxRate,
+        discount: p.discount,
+        discountType: p.discountType,
+        deposit: p.deposit,
+      }).balanceDue;
 
     const totalAccepted = proformas.filter(p => p.status === 'Accepted').reduce((sum, p) => sum + getProformaBalanceDue(p), 0);
     const totalSent = proformas.filter(p => p.status === 'Sent').reduce((sum, p) => sum + getProformaBalanceDue(p), 0);
@@ -76,18 +74,15 @@ export default function ProformaPage() {
     }
   };
 
-  const getProformaTotalDue = (pro: Proforma) => {
-    let subtotal = 0;
-    if (pro.items?.length) {
-      subtotal = sumItems(pro.items);
-    } else {
-      return parseAmountNumber(pro.amount) - (pro.deposit || 0);
-    }
-    const taxRate = settings.taxRate ?? 0;
-    const tax = (subtotal * taxRate) / 100;
-    const discount = pro.discountType === 'percentage' ? (subtotal * (pro.discount || 0) / 100) : (pro.discount || 0);
-    return subtotal + tax - discount - (pro.deposit || 0);
-  };
+  const getProformaTotalDue = (pro: Proforma) =>
+    computeDocTotals({
+      items: pro.items,
+      amount: pro.amount,
+      taxRate: pro.taxRate ?? settings.taxRate ?? 0,
+      discount: pro.discount,
+      discountType: pro.discountType,
+      deposit: pro.deposit,
+    }).balanceDue;
 
   const getProformaSubtotal = (pro: Proforma) => {
     return pro.items?.length ? sumItems(pro.items) : parseAmountNumber(pro.amount);

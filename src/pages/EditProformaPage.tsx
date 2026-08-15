@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Save, Plus, Trash2, FileText, Loader2, GripVertical } from "lucide-react";
 import { useAgencyStore, Proforma, InvoiceItem } from "@/lib/store";
-import { upsertInventoryLineItem } from "@/lib/money";
+import { upsertInventoryLineItem, computeDocTotals } from "@/lib/money";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, parseCurrency } from "@/lib/utils";
 import { ClientSelector } from "@/components/ClientSelector";
@@ -22,40 +22,41 @@ import { FormPageSkeleton } from "@/components/ui/PageSkeleton";
 export default function EditProformaPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { clients, proformas, updateProforma, services, packages, fetchServices, fetchPackages, fetchProformas, fetchClients } = useAgencyStore();
+  const { clients, updateProforma, services, packages, fetchServices, fetchPackages, fetchProformaById, fetchClients } = useAgencyStore();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    Promise.all([
-      fetchServices(),
-      fetchPackages(),
-      fetchProformas(),
-      fetchClients()
-    ]).finally(() => {
-      setIsLoading(false);
-    });
-  }, [fetchServices, fetchPackages, fetchProformas, fetchClients]);
 
   const [form, setForm] = useState<Partial<Proforma>>({});
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isLoaded, setIsLoaded] = useState(false);
 
+  // Fetch the proforma directly by id — the paginated list may not contain it.
   useEffect(() => {
-    if (isLoading || isLoaded) return;
-    const prof = proformas.find((p) => p.id === id || p._dbId === id);
-    if (prof) {
-      setForm(prof);
-      setItems(prof.items && prof.items.length > 0 ? prof.items : [{ description: "", quantity: 1, unitPrice: 0 }]);
-      setIsLoaded(true);
-    }
-  }, [id, proformas, isLoaded, isLoading]);
+    let cancelled = false;
+    setIsLoading(true);
+    Promise.all([
+      id ? fetchProformaById(id) : Promise.resolve(null),
+      fetchServices(),
+      fetchPackages(),
+      fetchClients(),
+    ])
+      .then(([prof]) => {
+        if (cancelled || !prof) return;
+        setForm(prof);
+        setItems(prof.items && prof.items.length > 0 ? prof.items : [{ description: "", quantity: 1, unitPrice: 0 }]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, fetchProformaById, fetchServices, fetchPackages, fetchClients]);
 
   const setField = <K extends keyof Proforma>(field: K, value: Proforma[K]) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
-  const updateItem = (index: number, field: keyof InvoiceItem, value: string | number) => {
+  const updateItem = <K extends keyof InvoiceItem>(index: number, field: K, value: InvoiceItem[K]) => {
     setItems((prev) => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
   };
 
@@ -98,13 +99,18 @@ export default function EditProformaPage() {
     setDragOverIndex(null);
   }, []);
 
-  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-  const tax = subtotal * ((form.taxRate ?? 0) / 100);
-  const discount = form.discountType === 'percentage' 
-    ? (subtotal * (form.discount || 0) / 100) 
-    : (form.discount || 0);
-  const total = subtotal + tax - discount;
-  const balanceDue = total - (form.deposit || 0);
+  const totals = computeDocTotals({
+    items,
+    taxRate: form.taxRate,
+    discount: form.discount,
+    discountType: form.discountType,
+    deposit: form.deposit,
+  });
+  const { subtotal, tax, discountAmount: discount, total, balanceDue, discountableCount } = totals;
+  const partialDiscountLabel =
+    (form.discount ?? 0) > 0 && discountableCount < items.length
+      ? ` · ${discountableCount}/${items.length} items`
+      : '';
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -299,13 +305,14 @@ export default function EditProformaPage() {
             <CardContent className="space-y-3">
               {errors.items && <p className="text-xs text-destructive">{errors.items}</p>}
               <div className="overflow-x-auto">
-              <div className="min-w-[640px] space-y-3">
+              <div className="min-w-[700px] space-y-3">
               <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1">
                 <span className="col-span-1" />
                 <span className="col-span-4">Description</span>
-                <span className="col-span-2 text-center">Qty</span>
+                <span className="col-span-1 text-center">Qty</span>
                 <span className="col-span-2 text-right">Unit Price</span>
                 <span className="col-span-2 text-right">Total</span>
+                <span className="col-span-1 text-center" title="Apply the discount to this item">Disc.</span>
                 <span className="col-span-1 text-right" />
               </div>
               {items.map((item, i) => (
@@ -335,14 +342,23 @@ export default function EditProformaPage() {
                        placeholder="Service description"
                      />
                   </div>
-                  <div className="col-span-2 pt-1">
-                    <Input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(i, "quantity", parseInt(e.target.value) || 1)} className="text-center" />
+                  <div className="col-span-1 pt-1">
+                    <Input type="number" min="1" value={item.quantity} onChange={(e) => updateItem(i, "quantity", parseInt(e.target.value) || 1)} className="text-center px-1" />
                   </div>
                   <div className="col-span-2 pt-1">
                     <Input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(e) => updateItem(i, "unitPrice", parseFloat(e.target.value) || 0)} className="text-right" />
                   </div>
                   <div className="col-span-2 text-right text-sm font-medium text-foreground pt-2">
                     {formatCurrency(item.quantity * item.unitPrice)}
+                  </div>
+                  <div className="col-span-1 flex justify-center pt-3">
+                    <input
+                      type="checkbox"
+                      checked={item.discountable !== false}
+                      onChange={(e) => updateItem(i, "discountable", e.target.checked)}
+                      className="h-4 w-4 accent-primary cursor-pointer"
+                      title="Apply the discount to this item"
+                    />
                   </div>
                   <div className="col-span-1 flex justify-end pt-1">
                     {items.length > 1 && (
@@ -369,7 +385,7 @@ export default function EditProformaPage() {
                 )}
                 {(form.discount ?? 0) > 0 && (
                   <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>Discount {form.discountType === 'percentage' ? `(${form.discount}%)` : ''}</span>
+                    <span>Discount {form.discountType === 'percentage' ? `(${form.discount}%)` : ''}{partialDiscountLabel}</span>
                     <span className="font-medium text-destructive">-{formatCurrency(discount)}</span>
                   </div>
                 )}

@@ -30,12 +30,13 @@ async function loadAgencySettings(): Promise<InvoicePdfAgency> {
 }
 
 function mapItems(
-  items: Array<{ description: string; quantity: number; unitPrice: number }> | undefined
+  items: Array<{ description: string; quantity: number; unitPrice: number; discountable?: boolean }> | undefined
 ): InvoicePdfItem[] {
   return (items || []).map((it) => ({
     description: it.description,
     quantity: it.quantity,
     unitPrice: it.unitPrice,
+    discountable: it.discountable,
   }));
 }
 

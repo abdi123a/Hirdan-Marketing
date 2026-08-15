@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ClientPortalTour } from '@/components/ClientPortalTour';
 import { useToast } from "@/hooks/use-toast";
+import { computeDocTotals } from "@/lib/money";
 
 const fadeIn = {
   hidden: { opacity: 0, y: 20 },
@@ -223,6 +224,19 @@ export default function ClientPortalPage() {
   const [nextMeeting, setNextMeeting] = useState<{ id: string; title: string; date: string; location?: string | null; notes?: string | null } | null>(null);
 
   const [viewingDoc, setViewingDoc] = useState<{ type: 'Invoice' | 'Proforma'; data: any } | null>(null);
+  // Single source of truth for the modal's totals — mirrors the server's
+  // computeInvoiceTotalsCents exactly, including per-item discount eligibility.
+  const viewingDocTotals = useMemo(() => {
+    if (!viewingDoc) return null;
+    return computeDocTotals({
+      items: viewingDoc.data.items,
+      amount: viewingDoc.data.amount,
+      taxRate: viewingDoc.data.taxRate,
+      discount: viewingDoc.data.discount,
+      discountType: viewingDoc.data.discountType,
+      deposit: viewingDoc.data.deposit,
+    });
+  }, [viewingDoc]);
   const [actionType, setActionType] = useState<'accept' | 'reject' | null>(null);
   const [actionComment, setActionComment] = useState('');
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
@@ -2467,19 +2481,18 @@ export default function ClientPortalPage() {
                 <div className="w-full sm:w-80 space-y-2">
                   <div className="flex justify-between text-muted-foreground">
                     <span>Subtotal</span>
-                    <span className="tabular-nums font-medium text-foreground">{formatCurrency(
-                      (viewingDoc.data.items || []).reduce((sum: number, i: any) => sum + (i.quantity * i.unitPrice), 0) || parseFloat(viewingDoc.data.amount || '0')
-                    )}</span>
+                    <span className="tabular-nums font-medium text-foreground">{formatCurrency(viewingDocTotals?.subtotal ?? 0)}</span>
                   </div>
                   {viewingDoc.data.discount > 0 && (
                     <div className="flex justify-between text-muted-foreground">
-                      <span>Discount ({viewingDoc.data.discountType === 'percentage' ? `${viewingDoc.data.discount}%` : 'Fixed'})</span>
+                      <span>
+                        Discount ({viewingDoc.data.discountType === 'percentage' ? `${viewingDoc.data.discount}%` : 'Fixed'})
+                        {viewingDocTotals && viewingDocTotals.discountableCount < viewingDocTotals.itemCount
+                          ? ` · ${viewingDocTotals.discountableCount}/${viewingDocTotals.itemCount} items`
+                          : ''}
+                      </span>
                       <span className="tabular-nums font-medium text-destructive">
-                        -{formatCurrency(
-                          viewingDoc.data.discountType === 'percentage'
-                            ? (((viewingDoc.data.items || []).reduce((sum: number, i: any) => sum + (i.quantity * i.unitPrice), 0) || parseFloat(viewingDoc.data.amount || '0')) * viewingDoc.data.discount) / 100
-                            : viewingDoc.data.discount
-                        )}
+                        -{formatCurrency(viewingDocTotals?.discountAmount ?? 0)}
                       </span>
                     </div>
                   )}
@@ -2487,26 +2500,14 @@ export default function ClientPortalPage() {
                     <div className="flex justify-between text-muted-foreground">
                       <span>Tax ({viewingDoc.data.taxRate}%)</span>
                       <span className="tabular-nums font-medium text-foreground">
-                        {formatCurrency(
-                          (((viewingDoc.data.items || []).reduce((sum: number, i: any) => sum + (i.quantity * i.unitPrice), 0) || parseFloat(viewingDoc.data.amount || '0')) * viewingDoc.data.taxRate) / 100
-                        )}
+                        {formatCurrency(viewingDocTotals?.tax ?? 0)}
                       </span>
                     </div>
                   )}
                   <div className="flex justify-between font-bold text-foreground border-t border-border/60 pt-2 text-base">
                     <span>Total</span>
                     <span className="tabular-nums text-primary">
-                      {formatCurrency(
-                        // Calculated total
-                        (() => {
-                          const sub = (viewingDoc.data.items || []).reduce((sum: number, i: any) => sum + (i.quantity * i.unitPrice), 0) || parseFloat(viewingDoc.data.amount || '0');
-                          const disc = viewingDoc.data.discount > 0
-                            ? (viewingDoc.data.discountType === 'percentage' ? (sub * viewingDoc.data.discount) / 100 : viewingDoc.data.discount)
-                            : 0;
-                          const tax = viewingDoc.data.taxRate > 0 ? (sub * viewingDoc.data.taxRate) / 100 : 0;
-                          return sub - disc + tax;
-                        })()
-                      )}
+                      {formatCurrency(viewingDocTotals?.total ?? 0)}
                     </span>
                   </div>
                   {viewingDoc.data.deposit > 0 && (
@@ -2518,16 +2519,7 @@ export default function ClientPortalPage() {
                       <div className="flex justify-between font-bold text-foreground border-t border-border/60 pt-2 text-base">
                         <span>Balance Due</span>
                         <span className="tabular-nums text-primary">
-                          {formatCurrency(
-                            (() => {
-                              const sub = (viewingDoc.data.items || []).reduce((sum: number, i: any) => sum + (i.quantity * i.unitPrice), 0) || parseFloat(viewingDoc.data.amount || '0');
-                              const disc = viewingDoc.data.discount > 0
-                                ? (viewingDoc.data.discountType === 'percentage' ? (sub * viewingDoc.data.discount) / 100 : viewingDoc.data.discount)
-                                : 0;
-                              const tax = viewingDoc.data.taxRate > 0 ? (sub * viewingDoc.data.taxRate) / 100 : 0;
-                              return sub - disc + tax - viewingDoc.data.deposit;
-                            })()
-                          )}
+                          {formatCurrency(viewingDocTotals?.balanceDue ?? 0)}
                         </span>
                       </div>
                     </>

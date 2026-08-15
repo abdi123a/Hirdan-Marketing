@@ -1,16 +1,17 @@
 import { QRCodeSVG } from "qrcode.react";
 import { useAgencyStore } from "@/lib/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { deriveSubtotalFromTotal, parseAmountNumber, sumItems } from "@/lib/money";
+import { computeDocTotals } from "@/lib/money";
 import { useState, useEffect, useRef } from "react";
 import { getShortVerificationUrl } from "@/lib/short-url";
 
 import { ProtectedBrandingImage } from "./ProtectedBrandingImage";
- 
+
 interface InvoiceItem {
   description: string;
   quantity: number;
   unitPrice: number;
+  discountable?: boolean;
 }
 
 interface PremiumInvoiceProps {
@@ -65,20 +66,18 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
 
   const originalItemCount = data.items?.length ?? 0;
 
-  // If line items are missing, fall back to `data.amount`
-  const subtotalFromItems = sumItems(data.items);
-  const subtotal = originalItemCount
-    ? subtotalFromItems
-    : deriveSubtotalFromTotal(parseAmountNumber(data.amount ?? 0), taxRate);
-
-  const tax = subtotal * taxRate / 100;
-
-  const discountAmount = data.discountType === 'percentage'
-    ? (subtotal * (data.discount || 0) / 100)
-    : (data.discount || 0);
-
-  const total = subtotal + tax - discountAmount;
-  const balanceDue = total - (data.deposit ?? 0);
+  const { subtotal, tax, discountAmount, total, balanceDue, discountableCount } = computeDocTotals({
+    items: data.items,
+    amount: data.amount,
+    taxRate: data.taxRate,
+    discount: data.discount,
+    discountType: data.discountType,
+    deposit: data.deposit,
+  });
+  const partialDiscountLabel =
+    discount > 0 && originalItemCount && discountableCount < originalItemCount
+      ? ` · ${discountableCount}/${originalItemCount} items`
+      : '';
 
   const itemsForTable = data.items?.length
     ? data.items
@@ -389,7 +388,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
                 )}
                 {discountAmount > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                    <span style={{ color: secondary, fontWeight: 600 }}>Discount {data.discountType === 'percentage' ? `(${data.discount}%)` : ''}</span>
+                    <span style={{ color: secondary, fontWeight: 600 }}>Discount {data.discountType === 'percentage' ? `(${data.discount}%)` : ''}{partialDiscountLabel}</span>
                     <span style={{ color: '#ef4444', fontWeight: 800 }}>-{formatCurrency(discountAmount)}</span>
                   </div>
                 )}

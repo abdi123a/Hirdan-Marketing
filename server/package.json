@@ -1,6 +1,6 @@
 {
   "name": "hirdan-marketing-server",
-  "version": "2.31.52",
+  "version": "2.31.53",
   "private": true,
   "type": "module",
   "scripts": {

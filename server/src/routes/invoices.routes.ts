@@ -14,7 +14,7 @@ import fsSync from 'fs';
 import path from 'path';
 import { PATHS } from '../lib/paths.js';
 import { renderInvoicePdfById } from '../lib/pdf/document-pdf.js';
-import { formatCents } from '../lib/money.js';
+import { formatCents, computeInvoiceTotalsCents } from '../lib/money.js';
 
 const router = Router();
 router.use(authenticate);
@@ -121,6 +121,7 @@ const invoiceItemSchema = z.object({
   quantity: z.number().int().positive(),
   unitPrice: z.number().int().nonnegative(),
   position: z.number().int().optional(),
+  discountable: z.boolean().optional(),
 });
 
 const invoiceDtoSchema = z.object({
@@ -144,53 +145,36 @@ const invoiceDtoSchema = z.object({
   items: z.array(invoiceItemSchema).optional(),
 });
 
-function computeInvoiceTotal(input: {
-  items?: Array<{ quantity: number; unitPrice: number }>;
-  taxRate?: number | null;
-  discount?: number | null;
-  discountType?: 'PERCENTAGE' | 'FIXED' | null;
-}): number {
-  const items = input.items ?? [];
-  const subtotal = items.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
-
-  let total = subtotal;
-  if (input.discount != null && input.discountType) {
-    if (input.discountType === 'FIXED') {
-      total -= input.discount;
-    } else {
-      total -= Math.round(total * (input.discount / 100));
-    }
-  }
-  if (input.taxRate != null) {
-    total += Math.round(total * (input.taxRate / 100));
-  }
-  if (total < 0) total = 0;
-  return total;
+/** Normalize incoming items: positions follow array order, discountable defaults to true. */
+function normalizeItems(items: any[] | undefined) {
+  return items?.map((item: any, index: number) => ({
+    description: item.description,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    position: item.position !== undefined ? item.position : index,
+    discountable: item.discountable !== false,
+  }));
 }
 
 router.post('/', validate({ body: invoiceDtoSchema }), async (req: Request, res: Response, next) => {
   try {
     const { items, ...invoiceData } = req.body;
     const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
-    const itemsWithPosition = items?.map((item: any, index: number) => ({
-      description: item.description,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      position: item.position !== undefined ? item.position : index,
-    }));
-    const computedAmount = computeInvoiceTotal({
-      items,
-      taxRate: invoiceData.taxRate ?? null,
-      discount: invoiceData.discount ?? null,
-      discountType: invoiceData.discountType ?? null,
-    });
-    if (invoiceData.amount !== undefined && invoiceData.amount !== computedAmount) {
-      throw AppError.badRequest('Invoice amount mismatch');
-    }
+    const itemsWithPosition = normalizeItems(items);
+    // The server is authoritative for the total whenever line items exist —
+    // client-side rounding differences must never reject a save.
+    const computedAmount = itemsWithPosition?.length
+      ? computeInvoiceTotalsCents({
+          items: itemsWithPosition,
+          taxRate: invoiceData.taxRate ?? null,
+          discount: invoiceData.discount ?? null,
+          discountType: invoiceData.discountType ?? null,
+        }).totalCents
+      : undefined;
     const invoice = await prisma.invoice.create({
       data: {
         ...invoiceData,
-        amount: computedAmount,
+        amount: computedAmount ?? invoiceData.amount ?? 0,
         items: itemsWithPosition ? { create: itemsWithPosition } : undefined,
       },
       include: {
@@ -268,40 +252,43 @@ router.put('/:id', validate({ body: invoiceDtoSchema.partial() }), async (req: R
     }
 
     const { items, ...invoiceData } = req.body;
-    const itemsWithPosition = items?.map((item: any, index: number) => ({
-      description: item.description,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      position: item.position !== undefined ? item.position : index,
-    }));
+    const itemsWithPosition = normalizeItems(items);
 
-    // If items are provided, delete existing and recreate
-    if (items) {
-      await prisma.invoiceItem.deleteMany({ where: { invoiceId: targetInvoice.id } });
-    }
-
-    const computedAmount =
-      items || invoiceData.taxRate !== undefined || invoiceData.discount !== undefined || invoiceData.discountType !== undefined
-        ? computeInvoiceTotal({
-            items: items ?? (await prisma.invoiceItem.findMany({ where: { invoiceId: targetInvoice.id } })),
-            taxRate: invoiceData.taxRate ?? targetInvoice.taxRate ?? null,
-            discount: invoiceData.discount ?? targetInvoice.discount ?? null,
-            discountType: invoiceData.discountType ?? (targetInvoice.discountType as any) ?? null,
-          })
-        : undefined;
-
-    if (computedAmount !== undefined && invoiceData.amount !== undefined && invoiceData.amount !== computedAmount) {
-      throw AppError.badRequest('Invoice amount mismatch');
-    }
+    // Recompute the stored total whenever anything affecting it changes. The
+    // server is authoritative — a client-sent `amount` is never compared or
+    // trusted, so rounding drift can no longer reject the save. (The old
+    // "Invoice amount mismatch" check threw AFTER items were deleted, which
+    // wiped the invoice's line items without saving anything.)
+    const affectsTotal =
+      itemsWithPosition !== undefined ||
+      invoiceData.taxRate !== undefined ||
+      invoiceData.discount !== undefined ||
+      invoiceData.discountType !== undefined;
+    const computedAmount = affectsTotal
+      ? computeInvoiceTotalsCents({
+          items:
+            itemsWithPosition ??
+            (await prisma.invoiceItem.findMany({
+              where: { invoiceId: targetInvoice.id },
+              orderBy: { position: 'asc' },
+            })),
+          taxRate: invoiceData.taxRate !== undefined ? invoiceData.taxRate : targetInvoice.taxRate,
+          discount: invoiceData.discount !== undefined ? invoiceData.discount : targetInvoice.discount,
+          discountType:
+            invoiceData.discountType !== undefined ? invoiceData.discountType : targetInvoice.discountType,
+        }).totalCents
+      : undefined;
 
     const statusChangedToPaid = targetInvoice.status !== 'PAID' && invoiceData.status === 'PAID';
 
+    // Nested writes run in a single transaction: existing items are only
+    // deleted if the replacement items and invoice update succeed together.
     const invoice = await prisma.invoice.update({
       where: { id: targetInvoice.id },
       data: {
         ...invoiceData,
         ...(computedAmount !== undefined ? { amount: computedAmount } : {}),
-        items: itemsWithPosition ? { create: itemsWithPosition } : undefined,
+        items: itemsWithPosition ? { deleteMany: {}, create: itemsWithPosition } : undefined,
       },
       include: { items: { orderBy: { position: 'asc' } } },
     });

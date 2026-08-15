@@ -152,6 +152,8 @@ export const emailApi = {
     conversationId: string,
     payload: {
       html: string;
+      /** Optional From override — reply from another mailbox the user can send from. */
+      mailboxId?: string;
       to?: string[];
       cc?: string[];
       bcc?: string[];

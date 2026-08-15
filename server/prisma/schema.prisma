@@ -319,13 +319,14 @@ model Invoice {
 }
 
 model InvoiceItem {
-  id          String  @id @default(uuid())
-  invoiceId   String  @map("invoice_id")
-  description String  @db.Text
-  quantity    Int
-  unitPrice   Int     @map("unit_price")
-  position    Int     @default(0)
-  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  id           String  @id @default(uuid())
+  invoiceId    String  @map("invoice_id")
+  description  String  @db.Text
+  quantity     Int
+  unitPrice    Int     @map("unit_price")
+  position     Int     @default(0)
+  discountable Boolean @default(true)
+  invoice      Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
   @@map("invoice_items")
@@ -360,13 +361,14 @@ model Proforma {
 }
 
 model ProformaItem {
-  id          String   @id @default(uuid())
-  proformaId  String   @map("proforma_id")
-  description String   @db.Text
-  quantity    Int
-  unitPrice   Int      @map("unit_price")
-  position    Int      @default(0)
-  proforma    Proforma @relation(fields: [proformaId], references: [id], onDelete: Cascade)
+  id           String   @id @default(uuid())
+  proformaId   String   @map("proforma_id")
+  description  String   @db.Text
+  quantity     Int
+  unitPrice    Int      @map("unit_price")
+  position     Int      @default(0)
+  discountable Boolean  @default(true)
+  proforma     Proforma @relation(fields: [proformaId], references: [id], onDelete: Cascade)
 
   @@index([proformaId])
   @@map("proforma_items")

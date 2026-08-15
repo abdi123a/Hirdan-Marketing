@@ -46,7 +46,7 @@ import RichTextEditor from "@/components/RichTextEditor";
 export default function ProformaDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { proformas, clients, settings, updateProforma, getVerificationToken, fetchProformas, fetchClients } = useAgencyStore();
+  const { proformas, clients, settings, updateProforma, getVerificationToken, fetchProformaById, fetchClients } = useAgencyStore();
   const { toast } = useToast();
   const [verificationToken, setVerificationToken] = useState<string>("");
   const [loadingToken, setLoadingToken] = useState(false);
@@ -67,13 +67,14 @@ export default function ProformaDetailsPage() {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   useEffect(() => {
+    // Fetch this proforma directly — the paginated list may not contain it.
     Promise.all([
-      fetchProformas(),
+      id ? fetchProformaById(id) : Promise.resolve(null),
       fetchClients()
     ]).finally(() => {
       setIsInitialLoading(false);
     });
-  }, [fetchProformas, fetchClients]);
+  }, [id, fetchProformaById, fetchClients]);
 
   const proforma = useMemo(() => proformas.find((p) => p.id === id || (p as any)._dbId === id || p.proformaNumber === id), [proformas, id]);
   const client = useMemo(() => clients.find((c) => c.company === proforma?.client || c.name === proforma?.client), [clients, proforma]);

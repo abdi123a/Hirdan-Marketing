@@ -20,6 +20,8 @@ export type InvoicePdfItem = {
   description: string;
   quantity: number;
   unitPrice: number;
+  /** When false the discount does not apply to this line (defaults to true). */
+  discountable?: boolean;
 };
 
 export type InvoicePdfAgency = {
