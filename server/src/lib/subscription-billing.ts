@@ -4,11 +4,23 @@ import { createNotification } from './notifications.js';
 import { formatCents } from './money.js';
 
 const INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+// Held back until the server is up. This is the heaviest thing that used to run
+// at boot — it generates invoices, writes notifications and sends reminder
+// email — and it ran before app.listen(), delaying the first health response.
+// A daily job does not care about the first minute of uptime.
+const STARTUP_DELAY_MS = 60 * 1000;
 
 export function startSubscriptionBillingJob(): void {
-  // Run once immediately on startup, then every 24 hours
-  runBillingCycle();
-  setInterval(runBillingCycle, INTERVAL_MS);
+  // runBillingCycle() swallows its own errors, but it is called here as a
+  // floating promise: anything that ever escapes it would reach the
+  // unhandledRejection handler in index.ts, which shuts the whole API down.
+  const safeRun = () =>
+    runBillingCycle().catch(error =>
+      console.error('❌ [SubscriptionBilling] Error running billing cycle:', error)
+    );
+
+  setTimeout(safeRun, STARTUP_DELAY_MS);
+  setInterval(safeRun, INTERVAL_MS);
   console.log('🔄 [SubscriptionBilling] Daily billing job started.');
 }
 

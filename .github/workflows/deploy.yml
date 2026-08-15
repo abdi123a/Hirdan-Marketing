@@ -15,11 +15,14 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
+          # Pinned to match the VPS (node v20.20.2) so CI builds on the same
+          # runtime that runs the code. Bumping this alone would only hide the
+          # EBADENGINE warnings puppeteer emits, not fix them on the server.
           node-version: 20
           cache: 'npm'
 

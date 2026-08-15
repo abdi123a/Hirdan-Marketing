@@ -16,11 +16,23 @@ import { prisma } from './prisma.js';
 import { PATHS } from './paths.js';
 
 const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+// Hold the first run back until after the server is listening. This job used to
+// fire during module load — i.e. before app.listen() — so its disk walk and
+// Prisma queries competed with startup for the connection pool and pushed out
+// the moment the API could answer /api/health.
+const STARTUP_DELAY_MS = 30 * 1000;
 
 export function startTransferCleanupJob(): void {
-  // Run once immediately on startup, then every hour thereafter.
-  runCleanup();
-  setInterval(runCleanup, INTERVAL_MS);
+  // runCleanup() already swallows its own errors, but it is called here as a
+  // floating promise: anything that ever escapes it would reach the
+  // unhandledRejection handler in index.ts, which shuts the whole API down.
+  const safeRun = () =>
+    runCleanup().catch(err =>
+      console.error('🗑️  [TransferCleanup] Cleanup run failed:', err)
+    );
+
+  setTimeout(safeRun, STARTUP_DELAY_MS);
+  setInterval(safeRun, INTERVAL_MS);
   console.log('🗑️  [TransferCleanup] Hourly cleanup job started.');
 }
 
