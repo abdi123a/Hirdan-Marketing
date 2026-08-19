@@ -159,14 +159,11 @@ export default function SocialPostDetailScreen() {
       const [y, m, d] = rescheduleDate.split('-').map(Number);
       const [hh, mm] = (rescheduleTime || '10:00').split(':').map(Number);
       const dt = new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
+      // Send only what changes. Resending accountIds used to make the server
+      // rebuild every destination, wiping retry state and re-queueing FAILED ones.
       return updateSocialPost(post.id, {
-        caption: post.caption,
-        accountIds: post.destinations.map((x) => x.socialAccountId),
         status: 'SCHEDULED',
         scheduledFor: dt.toISOString(),
-        mediaUrls: Array.isArray(post.mediaUrls) ? post.mediaUrls : [],
-        mediaType: post.mediaType || undefined,
-        campaignId: post.campaignId,
       });
     },
     onSuccess: () => {
@@ -181,13 +178,8 @@ export default function SocialPostDetailScreen() {
     mutationFn: async () => {
       if (!post) throw new Error('Post not loaded');
       return updateSocialPost(post.id, {
-        caption: post.caption,
-        accountIds: post.destinations.map((x) => x.socialAccountId),
         status: 'DRAFT',
         scheduledFor: null,
-        mediaUrls: Array.isArray(post.mediaUrls) ? post.mediaUrls : [],
-        mediaType: post.mediaType || undefined,
-        campaignId: post.campaignId,
       });
     },
     onSuccess: () => {

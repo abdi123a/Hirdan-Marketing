@@ -38,35 +38,69 @@ export async function refreshPinterestToken(refreshToken: string): Promise<{ acc
   return { access_token: data.access_token, refresh_token: data.refresh_token, expires_in: data.expires_in };
 }
 
+export interface PinterestBoard {
+  id: string;
+  name: string;
+  privacy: string | null;
+}
+
+/** Boards the connected account can pin to, for the composer's board picker. */
+export async function listPinterestBoards(accessToken: string): Promise<PinterestBoard[]> {
+  const { data } = await axios.get('https://api.pinterest.com/v5/boards', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params: { page_size: 250 },
+  });
+  return (data?.items || []).map((b: any) => ({
+    id: String(b.id),
+    name: b.name || '(untitled board)',
+    privacy: b.privacy ?? null,
+  }));
+}
+
 export async function publishToPinterest({
   accessToken,
   caption,
   mediaUrls,
   mediaType = 'image',
+  boardId,
+  title,
+  link,
 }: {
   accessToken: string;
   caption: string;
   mediaUrls?: string[];
   mediaType?: string;
+  /** Chosen in the composer. Falls back to the account's first board when absent. */
+  boardId?: string;
+  title?: string;
+  link?: string;
 }): Promise<string> {
   const imageUrl = mediaUrls && mediaUrls.length > 0 ? mediaUrls[0] : '';
   if (!imageUrl) throw new Error('Pinterest requires a media URL to publish a pin');
 
-  const boardsResponse = await axios.get('https://api.pinterest.com/v5/boards', {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  const board = boardsResponse.data?.items?.[0];
-  if (!board) throw new Error('No Pinterest boards found. Please create a board first.');
+  let targetBoardId = boardId;
+  if (!targetBoardId) {
+    // Fallback for posts created before the board picker existed, and for the
+    // mobile composer, which does not write a pinterest block at all. Pinning to
+    // an arbitrary board is bad, but failing an already-scheduled post is worse.
+    const boardsResponse = await axios.get('https://api.pinterest.com/v5/boards', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const board = boardsResponse.data?.items?.[0];
+    if (!board) throw new Error('No Pinterest boards found. Please create a board first.');
+    targetBoardId = String(board.id);
+  }
 
   const isVideo = mediaType === 'video';
   const payload: any = {
-    title: caption.substring(0, 100),
+    title: (title || caption).substring(0, 100),
     description: caption,
-    board_id: board.id,
+    board_id: targetBoardId,
     media_source: isVideo
       ? { source_type: 'video_url', url: imageUrl }
       : { source_type: 'image_url', url: imageUrl },
   };
+  if (link) payload.link = link;
 
   const { data } = await axios.post('https://api.pinterest.com/v5/pins', payload, {
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },

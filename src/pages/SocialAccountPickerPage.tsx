@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { apiFetch } from "@/lib/api-client";
+import { compactNumber } from "@/lib/social/format";
 import {
   CheckCircle2, RefreshCw, AlertCircle, ArrowLeft, Users,
   Shield, ChevronRight, Sparkles, Lock,
@@ -44,11 +45,6 @@ const getPlatformIcon = (platform: string, cls = "h-5 w-5 rounded-sm object-cont
   return src ? <img src={src} className={cls} alt={platform} /> : null;
 };
 
-const fmtNum = (n: number) => {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
-  return n.toLocaleString();
-};
 
 export default function SocialAccountPickerPage() {
   const [params] = useSearchParams();
@@ -345,7 +341,7 @@ export default function SocialAccountPickerPage() {
                               {acc.followers > 0 && (
                                 <span className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
                                   <Users className="h-3 w-3" />
-                                  {fmtNum(acc.followers)} {acc.platform?.toLowerCase() === 'youtube' ? 'subscribers' : 'followers'}
+                                  {compactNumber(acc.followers)} {acc.platform?.toLowerCase() === 'youtube' ? 'subscribers' : 'followers'}
                                 </span>
                               )}
                               <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">

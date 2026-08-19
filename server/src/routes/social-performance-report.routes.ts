@@ -80,7 +80,7 @@ router.post('/generate', async (req: Request, res: Response, next) => {
     const client = await prisma.client.findUnique({ where: { id: clientId } });
     if (!client) throw AppError.notFound('Client not found');
 
-    const result = await generateReport(clientId, month, year, (req as any).user?.id ?? null);
+    const result = await generateReport(clientId, month, year, req.user?.userId ?? null);
 
     // The facts drive the UI's data-coverage warnings, so return them alongside
     // the report — the point of the preview is seeing what's missing.
@@ -169,7 +169,7 @@ router.put('/:id', async (req: Request, res: Response, next) => {
           status: report.status,
           sections: report.sections.map(s => ({ key: s.key, order: s.order, content: s.content })),
         } as any,
-        createdById: (req as any).user?.id ?? null,
+        createdById: req.user?.userId ?? null,
       },
     });
 

@@ -47,7 +47,8 @@ export function TemplatePicker({ onSelect, compact, className }: Props) {
           </Button>
         )}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-0">
+      {/* z-[90] keeps the popover above the compose window (z-[80]) it can open from. */}
+      <PopoverContent align="start" className="z-[90] w-80 p-0">
         <Command>
           <CommandInput placeholder="Search templates…" />
           <CommandList>

@@ -198,15 +198,10 @@ export default function SocialPublishScreen() {
         selected.map((id) => {
           const post = posts.find((p) => p.id === id);
           if (!post) return Promise.resolve(null);
-          return updateSocialPost(id, {
-            caption: post.caption,
-            accountIds: post.destinations.map((d) => d.socialAccountId),
-            status: next,
-            scheduledFor: post.scheduledFor,
-            mediaUrls: Array.isArray(post.mediaUrls) ? post.mediaUrls : [],
-            mediaType: post.mediaType || undefined,
-            campaignId: post.campaignId,
-          });
+          // Only the status changes here. Resending the rest let a stale copy of
+          // the post overwrite fields, and resending accountIds made the server
+          // rebuild every destination from scratch.
+          return updateSocialPost(id, { status: next });
         })
       );
     },
@@ -226,15 +221,7 @@ export default function SocialPublishScreen() {
           if (!post?.scheduledFor) return Promise.resolve(null);
           const d = new Date(post.scheduledFor);
           d.setDate(d.getDate() + daysDelta);
-          return updateSocialPost(id, {
-            caption: post.caption,
-            accountIds: post.destinations.map((x) => x.socialAccountId),
-            status: post.status,
-            scheduledFor: d.toISOString(),
-            mediaUrls: Array.isArray(post.mediaUrls) ? post.mediaUrls : [],
-            mediaType: post.mediaType || undefined,
-            campaignId: post.campaignId,
-          });
+          return updateSocialPost(id, { scheduledFor: d.toISOString() });
         })
       );
     },

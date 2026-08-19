@@ -1,18 +1,50 @@
 import cron from 'node-cron';
 import { prisma } from '../prisma.js';
 import {
-  publishPostToPlatform,
   refreshAccountToken,
   fetchPlatformInsights,
   ensureFreshAccessToken,
 } from './platform-router.service.js';
-import { isRateLimitError } from './meta.service.js';
 import { decryptToken } from './token-crypto.service.js';
-import { captureDestinationPermalink, resolvePendingPermalinks } from './permalink.service.js';
+import { resolvePendingPermalinks } from './permalink.service.js';
 import { extractSocialApiError, isSoftInsightSkip, logSocialError } from './safe-error.js';
+import { publishDestination } from './publish-destination.service.js';
 
 export async function processDuePosts(): Promise<void> {
   try {
+    // 0. Reclaim destinations abandoned mid-publish (server crash/restart while
+    // PUBLISHING). Nothing legitimate holds a lock this long — the slowest known
+    // step (Meta video container polling) tops out around 100s. A stuck
+    // destination never re-matches the claim query below on its own, since that
+    // only looks at status='QUEUED': without this, it would sit in PUBLISHING
+    // forever with no error and no retry path. This also covers destinations
+    // claimed by the publish-now/retry routes, whose post status is 'PUBLISHING'
+    // rather than 'SCHEDULED' — reclaiming pushes the post back to SCHEDULED (due
+    // now) so the claim step below picks it back up the normal way.
+    const staleCutoff = new Date(Date.now() - 15 * 60 * 1000);
+    const stalePublishing = await prisma.socialPostDestination.findMany({
+      where: { status: 'PUBLISHING', lockedAt: { lt: staleCutoff } },
+    });
+    for (const dest of stalePublishing) {
+      const nextAttempts = dest.attempts + 1;
+      const failedPermanently = nextAttempts >= 3;
+      await prisma.socialPostDestination.update({
+        where: { id: dest.id },
+        data: {
+          status: failedPermanently ? 'FAILED' : 'QUEUED',
+          attempts: nextAttempts,
+          lockedAt: null,
+          lastError: 'Recovered after being stuck in PUBLISHING (likely a server restart mid-publish).',
+        },
+      });
+      if (!failedPermanently) {
+        await prisma.socialPost.updateMany({
+          where: { id: dest.postId, status: { not: 'SCHEDULED' } },
+          data: { status: 'SCHEDULED', scheduledFor: new Date(Date.now() - 60 * 1000) },
+        });
+      }
+    }
+
     // 1. Atomically claim destinations that are QUEUED and whose post is scheduled for <= now.
     // FIX (rate-limit retry race): previously this claimed a destination even if its
     // account was currently rate_limited, then immediately threw it back with an
@@ -20,103 +52,56 @@ export async function processDuePosts(): Promise<void> {
     // exhaust the retry budget and permanently FAIL a post before the rate-limit
     // cooldown even finished. Now the claim query itself excludes accounts that are
     // still within their rateLimitedUntil window.
-    await prisma.$executeRawUnsafe(`
-      UPDATE social_post_destinations spd
-      JOIN social_posts sp ON sp.id = spd.post_id
-      JOIN social_accounts sa ON sa.id = spd.social_account_id
-      SET spd.status = 'PUBLISHING', spd.locked_at = NOW(), spd.last_attempt_at = NOW()
-      WHERE spd.status = 'QUEUED'
-        AND spd.locked_at IS NULL
-        AND sp.status = 'SCHEDULED'
-        AND sp.scheduled_for <= NOW()
-        AND (sa.rate_limited_until IS NULL OR sa.rate_limited_until <= NOW())
-    `);
+    //
+    // FIX (double-publish on overlapping ticks): this used to UPDATE then re-SELECT
+    // by status='PUBLISHING', which also picked up destinations a STILL-RUNNING
+    // previous tick had claimed (easy to outlast the 5-min interval while waiting on
+    // video container processing) — publishing them a second time. SELECT ... FOR
+    // UPDATE inside a transaction locks the candidate rows first: a concurrent tick's
+    // own FOR UPDATE query blocks on those rows until this transaction commits, then
+    // re-evaluates its WHERE clause against the now-committed data and correctly
+    // excludes them. Step 2 then fetches exactly the IDs this run claimed, nothing else.
+    const claimedIds = await prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRawUnsafe<Array<{ id: string }>>(`
+        SELECT spd.id
+        FROM social_post_destinations spd
+        JOIN social_posts sp ON sp.id = spd.post_id
+        JOIN social_accounts sa ON sa.id = spd.social_account_id
+        WHERE spd.status = 'QUEUED'
+          AND spd.locked_at IS NULL
+          AND sp.status = 'SCHEDULED'
+          AND sp.scheduled_for <= UTC_TIMESTAMP()
+          AND (sa.rate_limited_until IS NULL OR sa.rate_limited_until <= UTC_TIMESTAMP())
+        FOR UPDATE
+      `);
+      const ids = rows.map((r) => r.id);
+      if (ids.length === 0) return ids;
 
-    // 2. Fetch destinations claimed for scheduled publishing only.
-    // Exclude publish-now in-flight work (post status PUBLISHING) so the cron
-    // cannot double-publish the same destination.
+      await tx.socialPostDestination.updateMany({
+        where: { id: { in: ids } },
+        data: { status: 'PUBLISHING', lockedAt: new Date(), lastAttemptAt: new Date() },
+      });
+      return ids;
+    });
+
+    if (claimedIds.length === 0) return;
+
+    // 2. Fetch exactly the destinations this run claimed.
     const destinations = await prisma.socialPostDestination.findMany({
-      where: {
-        status: 'PUBLISHING',
-        lockedAt: { not: null },
-        post: {
-          status: 'SCHEDULED',
-        },
-      },
+      where: { id: { in: claimedIds } },
       include: {
         post: true,
         socialAccount: true,
       },
     });
 
-    if (destinations.length === 0) return;
-
-    // 3. Process each destination
+    // 3. Process each destination.
+    // The claim query above already excludes rate-limited accounts, but an
+    // account can become rate-limited in the window between claiming and
+    // processing — publishDestination() re-checks and releases it back to QUEUED
+    // without counting a failed attempt, since it never actually tried.
     for (const dest of destinations) {
-      try {
-        // Race-condition safety net: the claim query already excludes rate-limited
-        // accounts, but an account could become rate-limited in the brief window
-        // between claiming and processing. If so, release it WITHOUT counting
-        // this as a failed attempt — it never actually tried to publish.
-        if (dest.socialAccount.rateLimitedUntil && dest.socialAccount.rateLimitedUntil > new Date()) {
-          await prisma.socialPostDestination.update({
-            where: { id: dest.id },
-            data: {
-              status: 'QUEUED',
-              lockedAt: null,
-              lastError: `Skipped: rate limited until ${dest.socialAccount.rateLimitedUntil.toISOString()}`,
-            },
-          });
-          continue;
-        }
-
-        const platformPostId = await publishPostToPlatform(dest.post, dest.socialAccount);
-
-        await prisma.socialPostDestination.update({
-          where: { id: dest.id },
-          data: {
-            status: 'PUBLISHED',
-            platformPostId,
-            publishedAt: new Date(),
-            lockedAt: null,
-            lastError: null,
-          },
-        });
-
-        // Capture the public URL so the dashboard can link straight to the live
-        // post. Best-effort and non-fatal: platforms that need processing time
-        // (TikTok) get picked up later by resolvePendingPermalinks().
-        await captureDestinationPermalink(dest.id, dest.socialAccount, platformPostId);
-      } catch (err: unknown) {
-        const errorMsg = extractSocialApiError(err);
-        logSocialError(`Error publishing post destination ${dest.id}`, err);
-
-        const nextAttempts = dest.attempts + 1;
-        const failedPermanently = nextAttempts >= 3;
-
-        // Check if rate limited
-        if (isRateLimitError(err)) {
-          const rateLimitedUntil = new Date(Date.now() + 15 * 60 * 1000); // 15 min cooldown
-          await prisma.socialAccount.update({
-            where: { id: dest.socialAccountId },
-            data: {
-              healthStatus: 'rate_limited',
-              healthMessage: `Rate limit hit: ${errorMsg}`,
-              rateLimitedUntil,
-            },
-          });
-        }
-
-        await prisma.socialPostDestination.update({
-          where: { id: dest.id },
-          data: {
-            status: failedPermanently ? 'FAILED' : 'QUEUED',
-            attempts: nextAttempts,
-            lockedAt: null,
-            lastError: errorMsg,
-          },
-        });
-      }
+      await publishDestination(dest, dest.post, { maxAttempts: 3, skippedStatus: 'QUEUED' });
     }
 
     // 4. Update the main SocialPost status based on destinations results
@@ -190,6 +175,17 @@ export async function refreshExpiringTokens(): Promise<void> {
       const platform = account.platform.toLowerCase();
       // Skip YouTube tokens that are still fresh (>20 min left) to avoid hammering Google.
       if (platform === 'youtube' && account.tokenExpiresAt) {
+        const msLeft = new Date(account.tokenExpiresAt).getTime() - Date.now();
+        if (msLeft > 20 * 60 * 1000) continue;
+      }
+
+      // X rotates its refresh token on every use (one-time-use) — refreshing on
+      // every tick regardless of freshness burns a fresh rotation ~32x/day for
+      // no reason, and a crash between the API call succeeding and the DB write
+      // strands an already-invalidated refresh token, killing the account until
+      // manual reconnect. Only refresh once the access token is actually close
+      // to expiring, same skip pattern as YouTube above.
+      if (platform === 'x' && account.tokenExpiresAt) {
         const msLeft = new Date(account.tokenExpiresAt).getTime() - Date.now();
         if (msLeft > 20 * 60 * 1000) continue;
       }
@@ -347,7 +343,7 @@ export async function syncAccount(accountId: string): Promise<void> {
           avatarUrl = user.avatar_url || avatarUrl;
         }
       } catch (err) {
-        console.warn('Failed to fetch TikTok user info during sync:', err);
+        logSocialError('Failed to fetch TikTok user info during sync', err);
       }
 
       // Try creator_info
@@ -362,7 +358,7 @@ export async function syncAccount(accountId: string): Promise<void> {
           }
         }
       } catch (err) {
-        console.warn('Failed to fetch TikTok creator info during sync:', err);
+        logSocialError('Failed to fetch TikTok creator info during sync', err);
       }
 
       // Update the account details if changed
@@ -602,7 +598,14 @@ export async function syncAccount(accountId: string): Promise<void> {
   }
 }
 
-export async function collectDailyInsights(clientId?: string): Promise<void> {
+export interface CollectDailyInsightsResult {
+  accountsTotal: number;
+  accountErrors: number;
+  postInsightErrors: number;
+}
+
+export async function collectDailyInsights(clientId?: string): Promise<CollectDailyInsightsResult> {
+  const result: CollectDailyInsightsResult = { accountsTotal: 0, accountErrors: 0, postInsightErrors: 0 };
   try {
     const accounts = await prisma.socialAccount.findMany({
       where: {
@@ -611,11 +614,13 @@ export async function collectDailyInsights(clientId?: string): Promise<void> {
         ...(clientId ? { clientId } : {}),
       },
     });
+    result.accountsTotal = accounts.length;
 
     for (const account of accounts) {
       try {
         await syncAccount(account.id);
       } catch (err: unknown) {
+        result.accountErrors++;
         logSocialError(`Failed to collect daily insights for account ${account.id}`, err);
       }
     }
@@ -653,7 +658,15 @@ export async function collectDailyInsights(clientId?: string): Promise<void> {
             socialAccount = await ensureFreshAccessToken(socialAccount);
           }
           const token = socialAccount?.accessTokenEnc ? decryptToken(socialAccount.accessTokenEnc) : '';
-          const isMock = !token || token === 'mock_access_token_data' || token.startsWith('mock_');
+          if (!token) {
+            // No token at all (missing account credentials, or decryption
+            // failed) — a real error, not a demo account. Skip rather than
+            // fabricate engagement numbers into this client's real analytics.
+            result.postInsightErrors++;
+            console.warn(`[insights] No usable access token for destination ${dest.id} — skipping instead of fabricating metrics.`);
+            continue;
+          }
+          const isMock = token === 'mock_access_token_data' || token.startsWith('mock_');
 
           if (isMock) {
             // For mock or test accounts, generate deterministic non-zero mock metrics if missing
@@ -735,6 +748,7 @@ export async function collectDailyInsights(clientId?: string): Promise<void> {
               `[insights] Skipping destination ${dest.id}: ${extractSocialApiError(err)}`,
             );
           } else {
+            result.postInsightErrors++;
             logSocialError(`Failed to collect post insights for destination ${dest.id}`, err);
           }
         }
@@ -743,6 +757,7 @@ export async function collectDailyInsights(clientId?: string): Promise<void> {
   } catch (err: unknown) {
     logSocialError('Error in collectDailyInsights job', err);
   }
+  return result;
 }
 
 export function startSocialScheduler(): void {

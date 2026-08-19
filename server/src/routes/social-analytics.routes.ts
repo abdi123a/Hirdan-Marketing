@@ -7,6 +7,8 @@ import { buildCapabilityGate, engagementRate, pctChange, sumField } from '../lib
 import { unifyPosts, destinationLink, type AccountMeta } from '../lib/social/post-merge.js';
 import { derivePermalink, tiktokVideoIdOf } from '../lib/social/permalink.service.js';
 import { enrichTikTokVideosBatch } from '../lib/social/tiktok-enrich.service.js';
+import { logSocialError } from '../lib/social/safe-error.js';
+import { callAI, resolveProviderKey } from '../lib/ai-provider.js';
 
 const router = Router();
 
@@ -32,6 +34,14 @@ const scopedInsights = (insights: any[] | undefined, platformFilter: string) => 
 // posts that actually went out to that platform — otherwise a Twitter-only post
 // still shows up (with zero matching insights) while the user is looking at
 // "Instagram", inflating post counts / content-type counts for the wrong platform.
+/**
+ * Most posts a single date window will rank before we report truncation.
+ * Ranking spans two tables and a computed engagement score, so the window has to
+ * be held in memory; this bounds that. It is a safety valve, not a page size —
+ * exceeding it is surfaced to the client, never silently dropped.
+ */
+const WINDOW_ROW_CAP = 2000;
+
 const matchesPlatform = (destinations: any[] | undefined, platformFilter: string) => {
   if (!platformFilter || platformFilter === 'ALL') return true;
   return (destinations || []).some((d: any) => (d.platform || '').toUpperCase() === platformFilter);
@@ -54,7 +64,9 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     if (startDateParam && endDateParam) {
       since = new Date(startDateParam);
       until = new Date(endDateParam);
-      until.setHours(23, 59, 59, 999);
+      // UTC, not server-local time — daily rows are stored in UTC, and the
+      // default (non-custom) branch below already computes `until` in UTC.
+      until.setUTCHours(23, 59, 59, 999);
       const diffMs = until.getTime() - since.getTime();
       days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
       prevSince = new Date(since.getTime() - diffMs);
@@ -106,11 +118,15 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     const gate = <T,>(key: MetricKey, value: T): T | null => (can(key) ? value : null);
 
     // ── Posts (bounded — avoid loading entire history into memory) ──
+    // Upper-bounded at `until` too — otherwise a custom historical range (e.g.
+    // "last month") kept counting posts published AFTER the range into the
+    // KPIs below, while the daily-metrics query above is correctly bounded
+    // both ways, so the two disagreed on the same response.
     const postWhere: any = {
       clientId,
       OR: [
-        { publishedAt: { gte: prevSince } },
-        { publishedAt: null, createdAt: { gte: prevSince } },
+        { publishedAt: { gte: prevSince, lte: until } },
+        { publishedAt: null, createdAt: { gte: prevSince, lte: until } },
       ],
     };
     if (contentTypeFilter && contentTypeFilter !== 'ALL') postWhere.mediaType = contentTypeFilter;
@@ -137,10 +153,22 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     const platformScopedPosts = allPosts.filter(p => matchesPlatform(p.destinations, platformFilter));
 
     const publishedPosts = platformScopedPosts.filter(p => p.status === 'PUBLISHED' && p.publishedAt);
-    const recentPosts = publishedPosts.filter(p => new Date(p.publishedAt!) >= since);
+    const recentPosts = publishedPosts.filter(p => {
+      const d = new Date(p.publishedAt!);
+      return d >= since && d <= until;
+    });
     const prevPeriodPosts = publishedPosts.filter(p => {
       const d = new Date(p.publishedAt!);
       return d >= prevSince && d < since;
+    });
+
+    // Same since..until window as recentPosts, but for ALL statuses — used only
+    // by the "Publishing" stats block below, which must reflect the selected
+    // period, not the 2x-wide prevSince..until range platformScopedPosts covers
+    // (that wider range exists so prevPeriodPosts/prevInsights have data).
+    const currentWindowPosts = platformScopedPosts.filter(p => {
+      const d = p.publishedAt || p.createdAt;
+      return d && new Date(d) >= since && new Date(d) <= until;
     });
 
     // ── Per-account latest ──
@@ -218,26 +246,40 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     const currER = currReach > 0 ? parseFloat(((currEngagement / currReach) * 100).toFixed(2)) : 0;
     const prevER = prevReach > 0 ? parseFloat(((prevEngagement / prevReach) * 100).toFixed(2)) : 0;
 
-    // ── Publishing stats ──
+    // ── Publishing stats (scoped to the selected since..until window, not the
+    // wider prevSince..until range platformScopedPosts covers) ──
     const publishing = {
-      published: platformScopedPosts.filter(p => p.status === 'PUBLISHED').length,
-      scheduled: platformScopedPosts.filter(p => p.status === 'SCHEDULED').length,
-      draft: platformScopedPosts.filter(p => p.status === 'DRAFT').length,
-      failed: platformScopedPosts.filter(p => p.status === 'FAILED').length,
-      pendingApproval: platformScopedPosts.filter(p => p.status === 'AWAITING_APPROVAL').length,
+      published: currentWindowPosts.filter(p => p.status === 'PUBLISHED').length,
+      scheduled: currentWindowPosts.filter(p => p.status === 'SCHEDULED').length,
+      draft: currentWindowPosts.filter(p => p.status === 'DRAFT').length,
+      failed: currentWindowPosts.filter(p => p.status === 'FAILED').length,
+      pendingApproval: currentWindowPosts.filter(p => p.status === 'AWAITING_APPROVAL').length,
     };
     const totalAttempted = publishing.published + publishing.failed;
     const successRate = totalAttempted > 0 ? parseFloat(((publishing.published / totalAttempted) * 100).toFixed(1)) : 0;
 
-    // Weekly activity
-    const weeklyMap: Record<string, number> = {};
+    // Weekly activity.
+    // Keyed by year+month+week-of-month, not just week-of-month: bucketing on
+    // `W${ceil(day/7)}` alone collapsed "week 1 of July" and "week 1 of August"
+    // into a single bar, so any range wider than one month silently summed
+    // unrelated weeks together. The sort key keeps the bars chronological, and
+    // the label carries the month so two W1s are distinguishable on the chart.
+    const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const weeklyMap = new Map<string, { week: string; posts: number }>();
     for (const p of publishedPosts) {
-      if (!p.publishedAt || new Date(p.publishedAt) < since) continue;
+      if (!p.publishedAt) continue;
       const d = new Date(p.publishedAt);
-      const wk = `W${Math.ceil(d.getDate() / 7)}`;
-      weeklyMap[wk] = (weeklyMap[wk] || 0) + 1;
+      if (d < since || d > until) continue;
+      const weekOfMonth = Math.ceil(d.getDate() / 7);
+      const sortKey = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}-${weekOfMonth}`;
+      const label = `${MONTH_ABBR[d.getMonth()]} W${weekOfMonth}`;
+      const bucket = weeklyMap.get(sortKey) || { week: label, posts: 0 };
+      bucket.posts += 1;
+      weeklyMap.set(sortKey, bucket);
     }
-    const weeklyActivity = Object.entries(weeklyMap).map(([week, posts]) => ({ week, posts }));
+    const weeklyActivity = [...weeklyMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, v]) => v);
 
     // ── Chart data (by date, aggregated) ──
     const dateMap: Record<string, any> = {};
@@ -399,7 +441,11 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
     // ── Monthly comparison ──
     const monthlyComparison = {
       current: { followers: currFollowers, reach: currReach, impressions: currImpressions, engagement: currEngagement, posts: recentPosts.length, views: currViews },
-      previous: { followers: prevFollowers, reach: prevReach, impressions: prevImpressions, engagement: prevEngagement, posts: prevPeriodPosts.length, views: sum(prevInsights, 'views') },
+      // views mirrors currViews' formula (per-post insights + imported daily
+      // video views) — it was missing the daily-row term, so previous-period
+      // views (and therefore the growth %) were understated for any client
+      // with TikTok import data.
+      previous: { followers: prevFollowers, reach: prevReach, impressions: prevImpressions, engagement: prevEngagement, posts: prevPeriodPosts.length, views: sum(prevInsights, 'views') + sum(prevMetrics, 'videoViews') },
     };
 
     // ── Platform breakdown for pie ──
@@ -579,7 +625,9 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
     if (startDateParam && endDateParam) {
       since = new Date(startDateParam);
       until = new Date(endDateParam);
-      until.setHours(23, 59, 59, 999);
+      // UTC, not server-local time — matches the /full endpoint and the UTC
+      // storage of daily rows, so the same range returns the same posts.
+      until.setUTCHours(23, 59, 59, 999);
     } else {
       const days = parseInt(req.query.days as string) || 30;
       const now = new Date();
@@ -590,7 +638,18 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
 
     const where: any = { clientId, status: 'PUBLISHED' };
     if (contentType && contentType !== 'ALL') where.mediaType = contentType;
-    if (search) where.caption = { contains: search, mode: 'insensitive' };
+    // `mode: 'insensitive'` is a PostgreSQL-only Prisma filter option — passing
+    // it on this MySQL connection throws PrismaClientValidationError, so ANY
+    // non-empty search term 500'd. MySQL's default collation is already
+    // case-insensitive, so `contains` alone behaves the same way.
+    if (search) where.caption = { contains: search };
+    // The date window belongs in the query, not in a post-hoc JS filter. It used
+    // to take the 500 most recent posts and only THEN drop the ones outside the
+    // window — so a client with more than 500 published posts got an empty or
+    // partial result for any older range, with no indication anything was
+    // missing. With the window in SQL, the cap below only ever bites on a single
+    // window that genuinely holds more posts than the cap.
+    where.publishedAt = { gte: since, lte: until };
 
     const posts = await prisma.socialPost.findMany({
       where,
@@ -604,13 +663,18 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
         },
       },
       orderBy: { publishedAt: 'desc' },
-      take: 500, // fetch all then sort
+      // Ranking is by computed engagement across two tables (scheduled posts and
+      // imported rows), so the window has to be materialised before it can be
+      // sorted and sliced — it cannot be paged in SQL. Fetch one row past the cap
+      // purely to detect truncation and report it instead of silently dropping.
+      take: WINDOW_ROW_CAP + 1,
     });
 
+    const truncated = posts.length > WINDOW_ROW_CAP;
+    if (truncated) posts.length = WINDOW_ROW_CAP;
+
     const platformFilter = (platform || 'ALL').toUpperCase();
-    const inWindow = posts
-      .filter(p => p.publishedAt && new Date(p.publishedAt) >= since && new Date(p.publishedAt) <= until)
-      .filter(p => matchesPlatform(p.destinations, platformFilter));
+    const inWindow = posts.filter(p => matchesPlatform(p.destinations, platformFilter));
 
     // Imported native videos (TikTok Studio). A curated top set — included
     // regardless of the day window, but honoring platform / content-type / search.
@@ -655,7 +719,9 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
 
     const total = withScores.length;
     const paged = withScores.slice(skip, skip + limit);
-    res.json({ posts: paged, total, page, limit });
+    // `truncated` tells the client the window held more posts than we ranked, so
+    // the UI can say so rather than presenting a short list as if it were whole.
+    res.json({ posts: paged, total, page, limit, truncated, rowCap: WINDOW_ROW_CAP });
   } catch (err) {
     next(err);
   }
@@ -807,7 +873,7 @@ router.post('/analytics/:clientId/refresh', authenticate, async (req, res, next)
     const { clientId } = req.params as { clientId: string };
     // Scope sync to this client — previously refreshed every account in the DB,
     // which was slow and made client-specific failures hard to see.
-    await collectDailyInsights(clientId);
+    const insightsResult = await collectDailyInsights(clientId);
 
     // Enrich thumbnails & verify TikTok imported posts for this client
     const tiktokAccounts = await prisma.socialAccount.findMany({
@@ -817,11 +883,110 @@ router.post('/analytics/:clientId/refresh', authenticate, async (req, res, next)
 
     for (const acc of tiktokAccounts) {
       await enrichTikTokVideosBatch(acc.id).catch((err) => {
-        console.warn(`TikTok video enrichment error for account ${acc.id}:`, err);
+        logSocialError(`TikTok video enrichment error for account ${acc.id}`, err);
       });
     }
 
+    // Every account sync failed — this used to still answer "successfully
+    // refreshed" even when nothing was actually fetched, so a totally stale
+    // dashboard looked freshly synced.
+    if (insightsResult.accountsTotal > 0 && insightsResult.accountErrors === insightsResult.accountsTotal) {
+      res.status(502).json({
+        success: false,
+        message: `Sync failed for all ${insightsResult.accountsTotal} connected account(s) — check account connections and try again.`,
+      });
+      return;
+    }
+
+    if (insightsResult.accountErrors > 0 || insightsResult.postInsightErrors > 0) {
+      res.json({
+        success: true,
+        partial: true,
+        message: `Synced with some failures: ${insightsResult.accountErrors} of ${insightsResult.accountsTotal} account(s) and ${insightsResult.postInsightErrors} post(s) could not be refreshed.`,
+      });
+      return;
+    }
+
     res.json({ success: true, message: 'Analytics and video thumbnails successfully refreshed' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── AI insights ────────────────────────────────────────────────────────────
+// The panel used to be called "AI Insights" while rendering hand-written
+// template sentences. Those sentences are still computed in /full and returned
+// as `aiInsights` — they are real, data-driven analysis and make a good
+// fallback — but this endpoint is what actually puts a model behind the label.
+//
+// On-demand (only when the tab is opened) and cached, because running an LLM on
+// every analytics page load would be slow and expensive for no added insight.
+const insightsCache = new Map<string, { at: number; insights: string[] }>();
+const INSIGHTS_TTL_MS = 24 * 60 * 60 * 1000;
+const INSIGHTS_CACHE_MAX = 200;
+
+router.post('/analytics/:clientId/insights', authenticate, async (req, res, next) => {
+  try {
+    const { clientId } = req.params;
+    const { facts, days, platform } = req.body ?? {};
+    if (!facts || typeof facts !== 'object') {
+      res.status(400).json({ error: 'Missing analytics facts' });
+      return;
+    }
+
+    const client = await prisma.client.findUnique({ where: { id: clientId as string }, select: { name: true, company: true } });
+    if (!client) { res.status(404).json({ error: 'Client not found' }); return; }
+
+    const cacheKey = `${clientId}:${days ?? ''}:${platform ?? ''}:${new Date().toISOString().slice(0, 10)}`;
+    const hit = insightsCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < INSIGHTS_TTL_MS) {
+      res.json({ insights: hit.insights, cached: true, source: 'ai' });
+      return;
+    }
+
+    const settings = await prisma.agencySettings.findFirst();
+    const { provider, apiKey } = settings
+      ? resolveProviderKey(settings)
+      : { provider: 'openai' as const, apiKey: '' };
+    if (!apiKey) {
+      // Not an error state for the user — the deterministic insights already on
+      // screen stay, and we say plainly why nothing smarter appeared.
+      res.json({ insights: [], source: 'unavailable', reason: 'No AI provider API key is configured in Agency Settings.' });
+      return;
+    }
+
+    const aiRes = await callAI(provider, apiKey, [
+      {
+        role: 'system',
+        content:
+          'You are a social media analyst at a marketing agency. You will be given a JSON summary of one ' +
+          'client\'s social performance. Write 4-6 short, specific observations and recommendations. ' +
+          'Rules: cite the actual numbers you were given; never invent a metric that is not present; ' +
+          'lead with what changed and what to do about it; no preamble, no headings, no markdown. ' +
+          'Return one observation per line, each starting with "- ".',
+      },
+      {
+        role: 'user',
+        content: `Client: ${client.company || client.name}\nWindow: last ${days ?? 30} days\nPlatform filter: ${platform ?? 'ALL'}\n\nAnalytics summary:\n${JSON.stringify(facts).slice(0, 12000)}`,
+      },
+    ]);
+
+    const insights = String(aiRes.content || '')
+      .split('\n')
+      .map(l => l.replace(/^[-•*]\s*/, '').trim())
+      .filter(Boolean)
+      .slice(0, 8);
+
+    if (insights.length > 0) {
+      // Bound the cache so a long-running server cannot grow it without limit.
+      if (insightsCache.size >= INSIGHTS_CACHE_MAX) {
+        const oldest = [...insightsCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+        if (oldest) insightsCache.delete(oldest[0]);
+      }
+      insightsCache.set(cacheKey, { at: Date.now(), insights });
+    }
+
+    res.json({ insights, cached: false, source: 'ai' });
   } catch (err) {
     next(err);
   }

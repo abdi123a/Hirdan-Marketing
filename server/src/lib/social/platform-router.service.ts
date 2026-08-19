@@ -256,14 +256,27 @@ export async function publishPostToPlatform(post: SocialPost, account: SocialAcc
         mediaType,
       });
 
-    case 'pinterest':
-      // ✅ Pass mediaType to support video pins
+    case 'pinterest': {
+      const pin = (post.platformContent as any)?.pinterest || {};
+      // Board ids are scoped to the Pinterest account that owns them, so the
+      // composer stores one per account. A flat boardId would send account B a
+      // board id belonging to account A and 404 on publish.
+      const rawBoardId = pin.boards?.[account.id]?.id;
+      // platformContent is stored verbatim from the client, so validate the shape
+      // before it reaches the Pinterest API.
+      const boardId = typeof rawBoardId === 'string' && /^[\w-]{1,64}$/.test(rawBoardId)
+        ? rawBoardId
+        : undefined;
       return await pinterest.publishToPinterest({
         accessToken,
         caption,
         mediaUrls,
         mediaType,
+        boardId,
+        title: typeof pin.title === 'string' ? pin.title : undefined,
+        link: typeof pin.link === 'string' ? pin.link : undefined,
       });
+    }
 
     default:
       throw new Error(`Unsupported platform: ${account.platform}`);

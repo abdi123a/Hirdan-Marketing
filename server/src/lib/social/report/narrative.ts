@@ -10,6 +10,7 @@
 import { prisma } from '../../prisma.js';
 import { callAI, resolveProviderKey } from '../../ai-provider.js';
 import type { ReportFacts } from './report-facts.js';
+import { logSocialError } from '../safe-error.js';
 
 export interface Narrative {
   executiveSummary: string;
@@ -168,7 +169,7 @@ export async function composeNarrative(facts: ReportFacts): Promise<Narrative> {
       recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations.slice(0, 3) : [],
     };
   } catch (err) {
-    console.error('[SocialReport] Narrative composition failed, using computed fallback:', err);
+    logSocialError('[SocialReport] Narrative composition failed, using computed fallback', err);
     return base;
   }
 }

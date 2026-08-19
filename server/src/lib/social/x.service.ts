@@ -2,7 +2,8 @@ import { createHash, randomBytes } from 'crypto';
 import axios from 'axios';
 import FormData from 'form-data';
 import { createOAuthState } from './oauth-state.service.js';
-import { getMediaBuffer } from './storage.service.js';
+import { getMediaSource, readMediaRange } from './storage.service.js';
+import { xMediaMime, xMediaCategory, xMediaId, planXChunks } from './x-media.js';
 
 export function getXAuthorizationUrl(clientIdStr: string, groupId: string, existingCodeVerifier?: string): string {
   const clientId = process.env.X_CLIENT_ID;
@@ -22,7 +23,10 @@ export function getXAuthorizationUrl(clientIdStr: string, groupId: string, exist
     state,
     code_challenge: codeChallenge,
     code_challenge_method: 's256',
-    scope: 'tweet.read tweet.write users.read offline.access',
+    // media.write is required by the v2 media upload endpoints. A refresh token
+    // cannot acquire a scope it was never granted, so any X account connected
+    // before this line changed must be reconnected before it can post media.
+    scope: 'tweet.read tweet.write users.read offline.access media.write',
   });
 
   return `https://twitter.com/i/oauth2/authorize?${params.toString()}`;
@@ -93,55 +97,105 @@ export async function refreshXToken(refreshToken: string): Promise<{ access_toke
   };
 }
 
-async function uploadXMedia(accessToken: string, mediaUrl: string, mediaType: string): Promise<string> {
-  const buffer = await getMediaBuffer(mediaUrl);
-  const isVideo = mediaType === 'video';
+const X_API_BASE = 'https://api.x.com/2';
+/** Stays under the scheduler's 15-minute stale-destination cutoff. */
+const X_MEDIA_POLL_MAX_MS = 5 * 60 * 1000;
+const X_MAX_VIDEO_BYTES = 512 * 1024 * 1024;
 
-  if (isVideo) {
-    // 1. INIT
-    const initRes = await axios.post('https://upload.twitter.com/1.1/media/upload.json', null, {
-      params: {
-        command: 'INIT',
-        media_type: 'video/mp4',
-        total_bytes: buffer.length,
-      },
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const mediaId = initRes.data.media_id_string;
+/**
+ * Wait for X to finish transcoding before the media id is usable in a post.
+ * Attaching an id that is still processing produces a tweet with no media.
+ */
+async function waitForXMediaProcessing(mediaId: string, accessToken: string, initialInfo: any): Promise<void> {
+  let info = initialInfo;
+  const deadline = Date.now() + X_MEDIA_POLL_MAX_MS;
 
-    // 2. APPEND
-    await axios.post('https://upload.twitter.com/1.1/media/upload.json', buffer, {
-      params: { command: 'APPEND', media_id: mediaId, segment_index: 0 },
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/octet-stream',
-      },
-    });
-
-    // 3. FINALIZE
-    const finalRes = await axios.post('https://upload.twitter.com/1.1/media/upload.json', null, {
-      params: { command: 'FINALIZE', media_id: mediaId },
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    // Optional: poll for processing status if needed
-    if (finalRes.data.processing_info?.state === 'pending') {
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+  // Images come back with no processing_info at all and are ready immediately.
+  while (info && info.state !== 'succeeded') {
+    if (info.state === 'failed') {
+      const reason = info.error?.message || info.error?.name || 'unknown error';
+      throw new Error(`X failed to process the media: ${reason}`);
     }
+    if (Date.now() >= deadline) {
+      throw new Error(`X media processing did not finish within ${X_MEDIA_POLL_MAX_MS / 1000}s`);
+    }
+    // Honour the server's own pacing hint rather than a fixed sleep.
+    const waitSec = Math.max(1, Number(info.check_after_secs) || 5);
+    await new Promise((resolve) => setTimeout(resolve, waitSec * 1000));
 
-    return finalRes.data.media_id_string;
-  } else {
-    // Image upload (supports JPG, PNG, GIF)
-    const form = new FormData();
-    form.append('media', buffer, { filename: 'media.jpg' });
-    const res = await axios.post('https://upload.twitter.com/1.1/media/upload.json', form, {
-      headers: {
-        ...form.getHeaders(),
-        Authorization: `Bearer ${accessToken}`,
-      },
+    const statusRes = await axios.get(`${X_API_BASE}/media/upload`, {
+      params: { command: 'STATUS', media_id: mediaId },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
-    return res.data.media_id_string;
+    info = statusRes.data?.data?.processing_info ?? statusRes.data?.processing_info;
+    // processing_info disappearing means processing finished.
+    if (!info) return;
   }
+}
+
+/**
+ * Upload one piece of media and return its media id.
+ *
+ * Images and videos share the chunked path — an image is simply one segment.
+ * The previous implementation sent the entire file as a single APPEND with
+ * segment_index 0, which X rejects above its 5MB per-segment cap, and treated
+ * FINALIZE as terminal instead of polling STATUS.
+ */
+async function uploadXMedia(accessToken: string, mediaUrl: string, mediaType: string): Promise<string> {
+  const source = await getMediaSource(mediaUrl);
+  const mime = xMediaMime(mediaUrl, mediaType);
+  const category = xMediaCategory(mime);
+  const auth = { Authorization: `Bearer ${accessToken}` };
+
+  if (category === 'tweet_video' && source.size > X_MAX_VIDEO_BYTES) {
+    throw new Error(
+      `Video is ${Math.round(source.size / 1024 / 1024)}MB — X allows at most ${X_MAX_VIDEO_BYTES / 1024 / 1024}MB.`,
+    );
+  }
+
+  // 1. INIT — multipart form fields, not query params.
+  const initForm = new FormData();
+  initForm.append('command', 'INIT');
+  initForm.append('media_type', mime);
+  initForm.append('total_bytes', String(source.size));
+  initForm.append('media_category', category);
+  const initRes = await axios.post(`${X_API_BASE}/media/upload`, initForm, {
+    headers: { ...initForm.getHeaders(), ...auth },
+  });
+  const mediaId = xMediaId(initRes.data);
+
+  // 2. APPEND — one request per segment, each under the 5MB cap. Ranges are read
+  // straight off disk for local media, so a 500MB video never lands in memory.
+  for (const chunkSpec of planXChunks(source.size)) {
+    const chunk = await readMediaRange(source, chunkSpec.start, chunkSpec.end);
+    const appendForm = new FormData();
+    appendForm.append('command', 'APPEND');
+    appendForm.append('media_id', mediaId);
+    appendForm.append('segment_index', String(chunkSpec.index));
+    appendForm.append('media', chunk, { filename: `chunk-${chunkSpec.index}`, contentType: 'application/octet-stream' });
+    await axios.post(`${X_API_BASE}/media/upload`, appendForm, {
+      headers: { ...appendForm.getHeaders(), ...auth },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    });
+  }
+
+  // 3. FINALIZE
+  const finalizeForm = new FormData();
+  finalizeForm.append('command', 'FINALIZE');
+  finalizeForm.append('media_id', mediaId);
+  const finalRes = await axios.post(`${X_API_BASE}/media/upload`, finalizeForm, {
+    headers: { ...finalizeForm.getHeaders(), ...auth },
+  });
+
+  // 4. STATUS — only video/GIF carry processing_info.
+  await waitForXMediaProcessing(
+    mediaId,
+    accessToken,
+    finalRes.data?.data?.processing_info ?? finalRes.data?.processing_info,
+  );
+
+  return mediaId;
 }
 
 export async function publishToX({

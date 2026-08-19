@@ -18,6 +18,32 @@ const upload = multer({
   },
 });
 
+// ── Re-enrich & Verify Past Imported Videos for All Accounts ────────────────
+// Registered before /import/tiktok/:accountId below — Express matches routes
+// in registration order, so a literal path like this one must come before a
+// wildcard route that would otherwise capture it (accountId="enrich-all").
+router.post('/import/tiktok/enrich-all', authenticate, async (_req, res, next) => {
+  try {
+    const tiktokAccounts = await prisma.socialAccount.findMany({
+      where: { platform: 'tiktok' },
+      select: { id: true },
+    });
+
+    let totalEnriched = 0;
+    let totalVerified = 0;
+
+    for (const acc of tiktokAccounts) {
+      const res = await enrichTikTokVideosBatch(acc.id, undefined, { force: true });
+      totalEnriched += res.enrichedCount;
+      totalVerified += res.verifiedCount;
+    }
+
+    res.json({ success: true, totalEnriched, totalVerified, accountsCount: tiktokAccounts.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── Import TikTok Studio exports for a TikTok account ────────────────────────
 router.post('/import/tiktok/:accountId', authenticate, upload.array('files', 12), async (req, res, next) => {
   try {
@@ -54,29 +80,6 @@ router.post('/import/tiktok/:accountId', authenticate, upload.array('files', 12)
     }
 
     res.json({ success: true, summary });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ── Re-enrich & Verify Past Imported Videos for All Accounts ────────────────
-router.post('/import/tiktok/enrich-all', authenticate, async (_req, res, next) => {
-  try {
-    const tiktokAccounts = await prisma.socialAccount.findMany({
-      where: { platform: 'tiktok' },
-      select: { id: true },
-    });
-
-    let totalEnriched = 0;
-    let totalVerified = 0;
-
-    for (const acc of tiktokAccounts) {
-      const res = await enrichTikTokVideosBatch(acc.id, undefined, { force: true });
-      totalEnriched += res.enrichedCount;
-      totalVerified += res.verifiedCount;
-    }
-
-    res.json({ success: true, totalEnriched, totalVerified, accountsCount: tiktokAccounts.length });
   } catch (err) {
     next(err);
   }
@@ -145,39 +148,6 @@ router.post('/import/:platform/:accountId', authenticate, upload.array('files', 
     }
 
     res.json({ success: true, summary });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ── Current import status for an account (powers the provenance chip) ────────
-router.get('/import/:accountId/status', authenticate, async (req, res, next) => {
-  try {
-    const { accountId } = req.params as { accountId: string };
-    const account = await prisma.socialAccount.findUnique({
-      where: { id: accountId },
-      select: { id: true, platform: true, lastImportedAt: true },
-    });
-    if (!account) {
-      res.status(404).json({ error: 'Account not found' });
-      return;
-    }
-
-    const [daily, demographics, activity, videos, unverifiedVideos] = await Promise.all([
-      prisma.accountInsightDaily.count({ where: { socialAccountId: accountId, source: 'import' } }),
-      prisma.accountDemographic.count({ where: { socialAccountId: accountId } }),
-      prisma.accountActivity.count({ where: { socialAccountId: accountId } }),
-      prisma.importedPost.count({ where: { socialAccountId: accountId } }),
-      prisma.importedPost.count({ where: { socialAccountId: accountId, isVerified: false } }),
-    ]);
-
-    res.json({
-      accountId,
-      platform: account.platform,
-      lastImportedAt: account.lastImportedAt,
-      counts: { daily, demographics, activity, videos, unverifiedVideos },
-      hasData: daily + demographics + activity + videos > 0,
-    });
   } catch (err) {
     next(err);
   }

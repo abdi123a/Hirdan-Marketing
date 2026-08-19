@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { requireModuleAccess } from '../lib/permission-guard.js';
+import { logSocialError } from '../lib/social/safe-error.js';
 import { verifyOAuthState, createOAuthState } from '../lib/social/oauth-state.service.js';
 import { encryptToken, decryptToken } from '../lib/social/token-crypto.service.js';
 import * as meta from '../lib/social/meta.service.js';
@@ -65,7 +67,7 @@ const PLATFORM_CAPABILITIES: Record<string, Record<string, boolean>> = {
 const ALL_PLATFORMS = ['facebook', 'instagram', 'linkedin', 'tiktok', 'youtube', 'x', 'threads', 'pinterest'];
 
 // ─── 1. OAuth connect — redirects to platform ────────────────────────────────
-router.get('/oauth/connect', authenticate, async (req, res, next) => {
+router.get('/oauth/connect', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
   try {
     const { platform, clientId, groupId } = req.query as { platform: string; clientId: string; groupId: string };
 
@@ -283,7 +285,7 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
       const { syncAccount } = await import('../lib/social/social-scheduler.js');
       await syncAccount(acc.id);
     } catch (err) {
-      console.error('Failed to run initial sync for oauth account:', err);
+      logSocialError('Failed to run initial sync for oauth account', err);
     }
 
     res.redirect(`${frontendUrl.replace(/\/$/, '')}/dashboard/social-media/accounts?connected=true`);
@@ -421,7 +423,7 @@ async function reconcileSiblingMetaAccounts(
         const { syncAccount } = await import('../lib/social/social-scheduler.js');
         await syncAccount(acc.id);
       } catch (err) {
-        console.warn(`[OAuth] Sibling sync failed for ${acc.id}:`, err);
+        logSocialError(`[OAuth] Sibling sync failed for ${acc.id}`, err);
       }
       continue;
     }
@@ -564,14 +566,14 @@ async function saveMetaAccount(
       const { syncAccount } = await import('../lib/social/social-scheduler.js');
       await syncAccount(acc.id);
     } catch (err) {
-      console.error('Failed to run initial sync for meta account:', err);
+      logSocialError('Failed to run initial sync for meta account', err);
     }
   }
   return acc ? { id: acc.id } : null;
 }
 
 // ─── 3. Get pending picker session ───────────────────────────────────────────
-router.get('/oauth/pending/:sessionId', authenticate, async (req, res) => {
+router.get('/oauth/pending/:sessionId', authenticate, requireModuleAccess('social_media'), async (req, res) => {
   const session = pendingOAuthStore.get(req.params.sessionId as string);
   if (!session || session.expires < Date.now()) {
     res.status(410).json({ error: 'Session expired or not found. Please start the connection again.' });
@@ -619,7 +621,7 @@ router.get('/oauth/pending/:sessionId', authenticate, async (req, res) => {
 });
 
 // ─── 4. Confirm account picker selection ─────────────────────────────────────
-router.post('/oauth/select-account', authenticate, async (req, res, next) => {
+router.post('/oauth/select-account', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
   try {
     // `assignments` routes each Page to its own client, so one Facebook grant can
     // populate several clients in a single pass — the whole point of opting in to
@@ -728,7 +730,7 @@ router.post('/oauth/select-account', authenticate, async (req, res, next) => {
 });
 
 // ─── 5. List all connected accounts ─────────────────────────────────────────
-router.get('/accounts', authenticate, async (req, res, next) => {
+router.get('/accounts', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 100;
@@ -739,6 +741,7 @@ router.get('/accounts', authenticate, async (req, res, next) => {
         skip, take: limit,
         orderBy: { createdAt: 'desc' },
         include: { client: { select: { name: true, company: true } } },
+        omit: { accessTokenEnc: true, refreshTokenEnc: true },
       }),
       prisma.socialAccount.count(),
     ]);
@@ -750,13 +753,14 @@ router.get('/accounts', authenticate, async (req, res, next) => {
 });
 
 // ─── 6. Workspace summary (all clients with accounts + health) ────────────────
-router.get('/accounts/workspace-summary', authenticate, async (req, res, next) => {
+router.get('/accounts/workspace-summary', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
   try {
     const [clients, allAccounts, latestSyncs, latestInsights, lastPublishes] = await Promise.all([
       prisma.client.findMany({ select: { id: true, name: true, company: true } }),
       prisma.socialAccount.findMany({
         orderBy: { createdAt: 'desc' },
         take: 2000,
+        omit: { accessTokenEnc: true, refreshTokenEnc: true },
       }),
       prisma.accountInsightDaily.groupBy({
         by: ['socialAccountId'],
@@ -874,7 +878,7 @@ router.get('/accounts/workspace-summary', authenticate, async (req, res, next) =
 // Facebook/Instagram CDN URLs often fail in React Native Image while working in
 // browsers. This streams the exact profile photo through our API (and refreshes
 // Meta picture URLs when the stored CDN link has expired).
-router.get('/accounts/:accountId/avatar', authenticate, async (req, res, next) => {
+router.get('/accounts/:accountId/avatar', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
   try {
     const accountId = req.params.accountId as string;
     const account = await prisma.socialAccount.findUnique({ where: { id: accountId } });
@@ -955,7 +959,7 @@ router.get('/accounts/:accountId/avatar', authenticate, async (req, res, next) =
 });
 
 // ─── 7. Virtual activity feed for an account ──────────────────────────────────
-router.get('/accounts/:accountId/activity', authenticate, async (req, res, next) => {
+router.get('/accounts/:accountId/activity', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
   try {
     const accountId = req.params.accountId as string;
 
@@ -1039,7 +1043,7 @@ router.get('/accounts/:accountId/activity', authenticate, async (req, res, next)
 });
 
 // ─── 8. Trigger sync for a single account ────────────────────────────────────
-router.post('/accounts/:accountId/sync', authenticate, async (req, res, next) => {
+router.post('/accounts/:accountId/sync', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
   try {
     const accountId = req.params.accountId as string;
     const account = await prisma.socialAccount.findUnique({ where: { id: accountId } });
@@ -1062,19 +1066,40 @@ router.post('/accounts/:accountId/sync', authenticate, async (req, res, next) =>
   }
 });
 
+// ─── 8b. Pinterest boards for the composer's board picker ────────────────────
+router.get('/accounts/:accountId/pinterest/boards', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
+  try {
+    const accountId = req.params.accountId as string;
+    const account = await prisma.socialAccount.findUnique({ where: { id: accountId } });
+    if (!account) { res.status(404).json({ error: 'Account not found' }); return; }
+    if (account.platform.toLowerCase() !== 'pinterest') {
+      res.status(400).json({ error: 'Not a Pinterest account' });
+      return;
+    }
+
+    const { ensureFreshAccessToken } = await import('../lib/social/platform-router.service.js');
+    const fresh = await ensureFreshAccessToken(account);
+    const boards = await pinterest.listPinterestBoards(decryptToken(fresh.accessTokenEnc));
+    res.json({ boards });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── 9. Accounts by client ───────────────────────────────────────────────────
-router.get('/accounts/by-client/:clientId', authenticate, async (req, res, next) => {
+router.get('/accounts/by-client/:clientId', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
   try {
     const accounts = await prisma.socialAccount.findMany({
       where: { clientId: req.params.clientId as string },
       orderBy: { createdAt: 'desc' },
+      omit: { accessTokenEnc: true, refreshTokenEnc: true },
     });
     res.json(accounts);
   } catch (err) { next(err); }
 });
 
 // ─── 10. Update account ──────────────────────────────────────────────────────
-router.put('/accounts/:id', authenticate, async (req, res, next) => {
+router.put('/accounts/:id', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
   try {
     const { groupName, groupColor, isActive } = req.body;
     const account = await prisma.socialAccount.update({
@@ -1100,7 +1125,7 @@ router.put('/accounts/:id', authenticate, async (req, res, next) => {
  * since every scheduler query filters on isActive. Pass ?purge=true to really
  * delete, for the rare case of removing a wrongly-created account.
  */
-router.delete('/accounts/:id', authenticate, async (req, res, next) => {
+router.delete('/accounts/:id', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
   try {
     const id = req.params.id as string;
     const purge = String(req.query.purge || '') === 'true';
@@ -1129,20 +1154,8 @@ router.delete('/accounts/:id', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── 12. Distinct group names ────────────────────────────────────────────────
-router.get('/accounts/groups', authenticate, async (req, res, next) => {
-  try {
-    const groups = await prisma.socialAccount.findMany({
-      select: { groupName: true, groupColor: true },
-      distinct: ['groupName'],
-      where: { groupName: { not: null } },
-    });
-    res.json(groups);
-  } catch (err) { next(err); }
-});
-
 // ─── 13. Platform status ─────────────────────────────────────────────────────
-router.get('/platform-status', authenticate, async (req, res, next) => {
+router.get('/platform-status', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
   try {
     const settings = await prisma.agencySettings.findFirst();
     res.json({

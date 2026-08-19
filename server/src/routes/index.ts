@@ -22,7 +22,6 @@ import notificationsRoutes from './notifications.routes.js';
 import devicesRoutes from './devices.routes.js';
 
 // Social Media Module
-import socialProfilesRoutes from './social-profiles.routes.js';
 import clientDocumentsRoutes from './client-documents.routes.js';
 import packageDeliverablesRoutes from './package-deliverables.routes.js';
 import tasksRoutes from './tasks.routes.js';
@@ -65,7 +64,6 @@ router.use('/notifications', notificationsRoutes);
 router.use('/devices', devicesRoutes);
 
 // Social Media Module — nested under existing resource paths
-router.use('/clients', authenticate, requireModuleAccess('clients'), socialProfilesRoutes);
 router.use('/clients', authenticate, requireModuleAccess('clients'), clientDocumentsRoutes);
 router.use('/clients', authenticate, requireModuleAccess('clients'), contentPostsRoutes);
 router.use('/clients', authenticate, requireModuleAccess('clients'), meetingsRoutes);

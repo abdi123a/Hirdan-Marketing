@@ -1107,9 +1107,9 @@ export async function buildHrDocumentHtml(input: HrPdfInput): Promise<string> {
   const agencyName = agency.agencyName || 'Hirdan Marketing';
   const currency = data.currency || agency.currency || 'USD';
   const timezone = agency.timezone || 'UTC';
-  const logoUrl = resolveAssetUrl(agency.logo);
-  const signatureUrl = resolveAssetUrl(agency.signature);
-  const stampUrl = resolveAssetUrl(agency.stamp);
+  const logoUrl = await resolveAssetUrl(agency.logo);
+  const signatureUrl = await resolveAssetUrl(agency.signature);
+  const stampUrl = await resolveAssetUrl(agency.stamp);
   const website = (agency.website || '').replace(/^https?:\/\//i, '');
 
   const showSignature = data.showSignature ?? true;

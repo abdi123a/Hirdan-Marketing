@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { createOAuthState } from './oauth-state.service.js';
-import { getMediaBuffer } from './storage.service.js';
+import { openMediaStream } from './storage.service.js';
 
 export function getYouTubeAuthorizationUrl(clientIdStr: string, groupId: string): string {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -58,7 +58,10 @@ export async function publishToYouTube({
   caption: string;
   privacy?: 'public' | 'unlisted' | 'private';
 }): Promise<string> {
-  const videoBuffer = await getMediaBuffer(videoUrl);
+  // Opened here, inside the function the platform router retries after a token
+  // refresh — a Buffer can be re-sent, a consumed stream cannot, so hoisting this
+  // to the caller would make the retry silently upload an empty body.
+  const { stream, size } = await openMediaStream(videoUrl);
 
   const initResponse = await axios.post(
     'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
@@ -71,16 +74,24 @@ export async function publishToYouTube({
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json; charset=UTF-8',
         'X-Upload-Content-Type': 'video/*',
-        'X-Upload-Content-Length': videoBuffer.length.toString(),
+        'X-Upload-Content-Length': size.toString(),
       },
     }
   );
 
   const uploadUrl = initResponse.headers.location;
-  if (!uploadUrl) throw new Error('Failed to get YouTube video upload URL');
+  if (!uploadUrl) {
+    stream.destroy();
+    throw new Error('Failed to get YouTube video upload URL');
+  }
 
-  const uploadResponse = await axios.put(uploadUrl, videoBuffer, {
-    headers: { 'Content-Type': 'video/*', 'Content-Length': videoBuffer.length.toString() },
+  // Content-Length must be set by hand: axios only derives it for Buffers and
+  // form-data bodies, and a stream would otherwise go out chunked, which the
+  // resumable endpoint rejects.
+  const uploadResponse = await axios.put(uploadUrl, stream, {
+    headers: { 'Content-Type': 'video/*', 'Content-Length': size.toString() },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
   });
   return uploadResponse.data.id;
 }

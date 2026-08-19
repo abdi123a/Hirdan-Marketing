@@ -18,6 +18,7 @@ import { createHash } from 'crypto';
 import { prisma } from '../../prisma.js';
 import { enrichTikTokVideosBatch } from '../tiktok-enrich.service.js';
 import { videoIdFromLink } from '../permalink.service.js';
+import { logSocialError } from '../safe-error.js';
 import {
   type ParsedSheet,
   type DailyAcc,
@@ -348,7 +349,7 @@ export async function importTikTokStudioFiles(
     // already committed, and this runs detached so a slow or failing TikTok API
     // can neither delay nor fail the import.
     enrichTikTokVideosBatch(accountId).catch((err) => {
-      console.error(`Background TikTok video enrichment error for account ${accountId}:`, err);
+      logSocialError(`Background TikTok video enrichment error for account ${accountId}`, err);
     });
   }
 

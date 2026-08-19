@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
-import { execFileSync } from 'child_process';
+import sharp from 'sharp';
 import { fileURLToPath } from 'url';
 import { PATHS } from '../paths.js';
 
@@ -206,22 +205,18 @@ function fileToDataUri(filePath: string): string {
   return `data:${mimeFromExt(filePath)};base64,${buf.toString('base64')}`;
 }
 
-/** Downscale large logos so the PDF stays small (header only needs ~400px). */
-function logoToDataUri(filePath: string): string {
+/** Downscale large logos so the PDF stays small (header only needs ~480px wide). */
+async function logoToDataUri(filePath: string): Promise<string> {
   const size = fs.statSync(filePath).size;
-  if (size < 80_000 || process.platform !== 'darwin') {
+  if (size < 80_000) {
     return fileToDataUri(filePath);
   }
   try {
-    const tmp = path.join(os.tmpdir(), `content-plan-logo-${process.pid}-${Date.now()}.jpg`);
-    execFileSync(
-      '/usr/bin/sips',
-      ['-Z', '480', '-s', 'format', 'jpeg', '-s', 'formatOptions', '72', filePath, '--out', tmp],
-      { stdio: 'pipe' }
-    );
-    const buf = fs.readFileSync(tmp);
-    fs.unlinkSync(tmp);
-    return `data:image/jpeg;base64,${buf.toString('base64')}`;
+    const buf = await sharp(filePath)
+      .resize({ width: 480, withoutEnlargement: true })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    return `data:image/png;base64,${buf.toString('base64')}`;
   } catch {
     return fileToDataUri(filePath);
   }
@@ -260,7 +255,7 @@ function resolveLocalUploadPath(raw: string): string | null {
   return null;
 }
 
-export function resolveAssetUrl(raw: string | null | undefined): string {
+export async function resolveAssetUrl(raw: string | null | undefined): Promise<string> {
   if (!raw) return '';
   const url = raw.trim();
   if (!url) return '';
@@ -376,13 +371,13 @@ function iconWeb(): string {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
 }
 
-export function buildContentPlanHtml(input: ContentPlanPdfInput): string {
+export async function buildContentPlanHtml(input: ContentPlanPdfInput): Promise<string> {
   const cssPath = path.join(CONTENT_PLAN_TEMPLATE_DIR, 'pdf.css');
   const css = fs.readFileSync(cssPath, 'utf8');
 
   const primary = input.agency.primaryColor || '#5A428A';
   const agencyName = input.agency.agencyName || 'Hirdan Marketing';
-  const logoUrl = resolveAssetUrl(input.agency.logo);
+  const logoUrl = await resolveAssetUrl(input.agency.logo);
   const monthLabel = MONTHS[input.month - 1] || String(input.month);
   const weeks = buildCalendarGrid(input.month, input.year);
   const generated = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });

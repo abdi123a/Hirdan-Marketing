@@ -1,10 +1,9 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
-import { publishPostToPlatform } from '../lib/social/platform-router.service.js';
-import { captureDestinationPermalink } from '../lib/social/permalink.service.js';
+import { publishDestination } from '../lib/social/publish-destination.service.js';
+import { diffDestinations } from '../lib/social/destination-diff.js';
 import { uploadSocialMediaFile } from '../lib/social/storage.service.js';
-import { extractSocialApiError } from '../lib/social/safe-error.js';
 import { callAI, resolveProviderKey } from '../lib/ai-provider.js';
 import multer from 'multer';
 import path from 'path';
@@ -19,7 +18,12 @@ function aggregatePostStatus(published: number, failed: number, total: number): 
 }
 
 const router = Router();
-const upload = multer({ dest: path.join(PATHS.UPLOADS_ROOT, 'social-temp') });
+// 500MB covers any realistic social video/image upload while bounding worst-case
+// disk/memory usage — multer's default fileSize limit is Infinity.
+const upload = multer({
+  dest: path.join(PATHS.UPLOADS_ROOT, 'social-temp'),
+  limits: { fileSize: 500 * 1024 * 1024 },
+});
 
 // 1. Create a Post (Draft or Scheduled)
 router.post('/posts', authenticate, async (req, res, next) => {
@@ -158,7 +162,10 @@ router.get('/posts/:id', authenticate, async (req, res, next) => {
 router.put('/posts/:id', authenticate, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { caption, platformContent, mediaUrls, mediaType, scheduledFor, campaignId, status, accountIds } = req.body;
+    // Express 5 leaves req.body undefined for a request with no body at all,
+    // which would make this destructure throw before any validation runs.
+    const { caption, platformContent, mediaUrls, mediaType, scheduledFor, campaignId, status, accountIds } =
+      req.body ?? {};
 
     const currentPost = await prisma.socialPost.findUnique({
       where: { id: id as string },
@@ -171,25 +178,29 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
     }
 
     if (accountIds && Array.isArray(accountIds)) {
-      // Preserve PUBLISHED destinations so edit + republish does not wipe live
-      // platform posts and then re-publish them. Only non-published destinations
-      // are replaced as QUEUED for the selected accounts.
-      const publishedAccountIds = new Set(
-        currentPost.destinations
-          .filter((d) => d.status === 'PUBLISHED')
-          .map((d) => d.socialAccountId),
+      // Reconcile destinations as a DIFF, never a wipe-and-rebuild.
+      //
+      // This used to deleteMany({ status: { not: 'PUBLISHED' } }) then recreate a
+      // fresh QUEUED row for every selected account. Because most callers resend
+      // the post's *existing* accountIds just to change one unrelated field (a
+      // reschedule, a comment, a bulk status change), that rebuilt every
+      // destination on every such edit and destroyed attempts / lastError /
+      // lastAttemptAt / lockedAt / platformPostUrl. Two consequences were severe:
+      // a FAILED destination came back QUEUED with attempts reset to 0, so the
+      // scheduler re-published a post that had already exhausted its retry budget
+      // (adding a comment could republish a post); and a destination the scheduler
+      // was mid-publish on could be deleted underneath it.
+      //
+      // Diffing keeps untouched rows byte-identical, so resending the same
+      // accountIds is now a genuine no-op.
+      const { toRemove, toCreate: accountsToQueue } = diffDestinations(
+        currentPost.destinations,
+        accountIds as string[],
       );
 
-      await prisma.socialPostDestination.deleteMany({
-        where: {
-          postId: id as string,
-          status: { not: 'PUBLISHED' },
-        },
-      });
-
-      const accountsToQueue = (accountIds as string[]).filter(
-        (accountId) => !publishedAccountIds.has(accountId),
-      );
+      if (toRemove.length > 0) {
+        await prisma.socialPostDestination.deleteMany({ where: { id: { in: toRemove } } });
+      }
 
       if (accountsToQueue.length > 0) {
         const accounts = await prisma.socialAccount.findMany({
@@ -206,33 +217,24 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
           })),
         });
       }
-
-      await prisma.socialPost.update({
-        where: { id: id as string },
-        data: {
-          caption: caption !== undefined ? (caption ?? '') : undefined,
-          platformContent: platformContent || {},
-          mediaUrls: mediaUrls || [],
-          mediaType: mediaType || 'image',
-          scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
-          campaignId: campaignId as string | null,
-          status: status || currentPost.status,
-        },
-      });
-    } else {
-      await prisma.socialPost.update({
-        where: { id: id as string },
-        data: {
-          caption: caption !== undefined ? (caption ?? '') : undefined,
-          platformContent: platformContent || {},
-          mediaUrls: mediaUrls || [],
-          mediaType: mediaType || 'image',
-          scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
-          campaignId: campaignId as string | null,
-          status: status || currentPost.status,
-        },
-      });
     }
+
+    await prisma.socialPost.update({
+      where: { id: id as string },
+      data: {
+        caption: caption !== undefined ? (caption ?? '') : undefined,
+        platformContent: platformContent !== undefined ? (platformContent || {}) : undefined,
+        mediaUrls: mediaUrls !== undefined ? (mediaUrls || []) : undefined,
+        mediaType: mediaType !== undefined ? (mediaType || 'image') : undefined,
+        scheduledFor: scheduledFor !== undefined ? (scheduledFor ? new Date(scheduledFor) : null) : undefined,
+        campaignId: campaignId !== undefined ? (campaignId as string | null) : undefined,
+        // Omitting status must mean "leave it alone". This used to fall back to
+        // `currentPost.status`, re-writing the value read a few awaits earlier —
+        // so a PUT that raced the scheduler could revert a just-PUBLISHED post to
+        // SCHEDULED, where nothing would ever pick it up again.
+        status: status || undefined,
+      },
+    });
 
     const updatedPost = await prisma.socialPost.findUnique({
       where: { id: id as string },
@@ -279,6 +281,17 @@ router.post('/posts/:id/submit', authenticate, async (req, res, next) => {
 router.post('/posts/:id/approve', authenticate, async (req, res, next) => {
   try {
     const { id } = req.params;
+    const current = await prisma.socialPost.findUnique({ where: { id: id as string } });
+    if (!current) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+    // The scheduler only ever claims posts with a scheduledFor in the past — an
+    // approved post with none would sit in SCHEDULED forever with no error.
+    if (!current.scheduledFor) {
+      res.status(400).json({ error: 'Cannot approve a post with no scheduled time. Set a schedule first.' });
+      return;
+    }
     const post = await prisma.socialPost.update({
       where: { id: id as string },
       data: { status: 'SCHEDULED' },
@@ -346,41 +359,21 @@ router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
     const errorsList: string[] = [];
 
     for (const dest of destinationsToPublish) {
-      try {
-        await prisma.socialPostDestination.update({
-          where: { id: dest.id as string },
-          data: { status: 'PUBLISHING', lockedAt: new Date(), lastAttemptAt: new Date() },
-        });
+      // Claim atomically: if the scheduler has already claimed this destination
+      // (status flipped to PUBLISHING between the fetch above and now), skip it
+      // instead of publishing it a second time concurrently with the cron.
+      const claim = await prisma.socialPostDestination.updateMany({
+        where: { id: dest.id as string, status: { not: 'PUBLISHING' } },
+        data: { status: 'PUBLISHING', lockedAt: new Date(), lastAttemptAt: new Date() },
+      });
+      if (claim.count === 0) continue;
 
-        const platformPostId = await publishPostToPlatform(post, dest.socialAccount);
-
-        await prisma.socialPostDestination.update({
-          where: { id: dest.id as string },
-          data: {
-            status: 'PUBLISHED',
-            platformPostId,
-            publishedAt: new Date(),
-            lockedAt: null,
-            lastError: null,
-          },
-        });
-
-        // Store the live post URL for the "View on platform" action. Non-fatal;
-        // TikTok resolves later via resolvePendingPermalinks() once processed.
-        await captureDestinationPermalink(dest.id as string, dest.socialAccount, platformPostId);
-      } catch (err: unknown) {
-        const msg = extractSocialApiError(err);
-        errorsList.push(`${dest.platform}: ${msg}`);
-
-        await prisma.socialPostDestination.update({
-          where: { id: dest.id as string },
-          data: {
-            status: 'FAILED',
-            attempts: dest.attempts + 1,
-            lockedAt: null,
-            lastError: msg,
-          },
-        });
+      // One-shot: a failure here is terminal, because this route always writes a
+      // non-SCHEDULED aggregate status below and the scheduler only ever claims
+      // destinations whose post is SCHEDULED.
+      const result = await publishDestination(dest, post, { maxAttempts: 1, skippedStatus: 'FAILED' });
+      if (result.outcome !== 'published') {
+        errorsList.push(`${dest.platform}: ${result.error}`);
       }
     }
 
@@ -447,41 +440,18 @@ router.post('/posts/:id/retry', authenticate, async (req, res, next) => {
     const errorsList: string[] = [];
 
     for (const dest of post.destinations) {
-      try {
-        await prisma.socialPostDestination.update({
-          where: { id: dest.id as string },
-          data: { status: 'PUBLISHING', lockedAt: new Date(), lastAttemptAt: new Date() },
-        });
+      // Claim conditionally, like publish-now. This used to be an unconditional
+      // update(), so a manual retry that overlapped a scheduler tick already
+      // holding the destination would publish it a second time.
+      const claim = await prisma.socialPostDestination.updateMany({
+        where: { id: dest.id as string, status: { not: 'PUBLISHING' } },
+        data: { status: 'PUBLISHING', lockedAt: new Date(), lastAttemptAt: new Date() },
+      });
+      if (claim.count === 0) continue;
 
-        const platformPostId = await publishPostToPlatform(post, dest.socialAccount);
-
-        await prisma.socialPostDestination.update({
-          where: { id: dest.id as string },
-          data: {
-            status: 'PUBLISHED',
-            platformPostId,
-            publishedAt: new Date(),
-            lockedAt: null,
-            lastError: null,
-          },
-        });
-
-        // Store the live post URL for the "View on platform" action. Non-fatal;
-        // TikTok resolves later via resolvePendingPermalinks() once processed.
-        await captureDestinationPermalink(dest.id as string, dest.socialAccount, platformPostId);
-      } catch (err: unknown) {
-        const msg = extractSocialApiError(err);
-        errorsList.push(`${dest.platform}: ${msg}`);
-
-        await prisma.socialPostDestination.update({
-          where: { id: dest.id as string },
-          data: {
-            status: 'FAILED',
-            attempts: dest.attempts + 1,
-            lockedAt: null,
-            lastError: msg,
-          },
-        });
+      const result = await publishDestination(dest, post, { maxAttempts: 1, skippedStatus: 'FAILED' });
+      if (result.outcome !== 'published') {
+        errorsList.push(`${dest.platform}: ${result.error}`);
       }
     }
 
@@ -604,34 +574,6 @@ router.post('/campaigns', authenticate, async (req, res, next) => {
       data: { clientId: clientId as string, name },
     });
     res.json(campaign);
-    return;
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.put('/campaigns/:id', authenticate, async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const { name, status } = req.body;
-    const campaign = await prisma.socialCampaign.update({
-      where: { id: id as string },
-      data: { name, status },
-    });
-    res.json(campaign);
-    return;
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.delete('/campaigns/:id', authenticate, async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    await prisma.socialCampaign.delete({
-      where: { id: id as string },
-    });
-    res.json({ success: true });
     return;
   } catch (err) {
     next(err);

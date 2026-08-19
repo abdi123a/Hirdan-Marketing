@@ -45,6 +45,21 @@ export async function getRequestPermissions(req: Request): Promise<Record<Module
 }
 
 /**
+ * Modules where client-portal users are intentionally allowed to reach staff
+ * routes because the route handlers themselves self-scope to the caller's
+ * own client record (e.g. `where: { userId: req.user.userId }`). Every other
+ * module must go through the normal permission check, which resolves CLIENT
+ * to NONE (see ROLE_DEFAULT_PERMISSIONS) and is rejected.
+ */
+const CLIENT_SELF_SERVICE_MODULES: ReadonlySet<ModuleKey> = new Set([
+  'clients',
+  'invoices',
+  'proforma',
+  'subscriptions',
+  'projects',
+] as ModuleKey[]);
+
+/**
  * Express middleware: require at least `minimum` access on `module`.
  * ADMIN always passes.
  */
@@ -55,9 +70,18 @@ export function requirePermission(module: ModuleKey, minimum: AccessLevel = 'REA
         next(AppError.unauthorized());
         return;
       }
-      // Admins bypass; client portal uses its own access model
-      if (req.user.role === 'ADMIN' || req.user.role === 'CLIENT') {
+      if (req.user.role === 'ADMIN') {
         next();
+        return;
+      }
+      // Client portal uses its own access model for a known allowlist of
+      // self-service modules; every other module is denied for CLIENT.
+      if (req.user.role === 'CLIENT') {
+        if (CLIENT_SELF_SERVICE_MODULES.has(module)) {
+          next();
+          return;
+        }
+        next(AppError.forbidden(`You do not have access to ${module}`));
         return;
       }
 

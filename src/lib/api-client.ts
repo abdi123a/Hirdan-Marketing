@@ -239,10 +239,21 @@ export async function viewProtectedFile(url: string) {
   }
 }
 
+/**
+ * Byte counts for an in-flight upload, handed to `apiUpload`'s progress
+ * callback alongside the percentage. Callers that want a transfer rate or a
+ * time-remaining estimate need the raw byte totals, not just the rounded
+ * percent — a percent alone cannot tell 2 MB from 2 GB.
+ */
+export interface UploadProgressDetail {
+  loaded: number;
+  total: number;
+}
+
 export function apiUpload<T>(
   endpoint: string, 
   formData: FormData, 
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number, detail: UploadProgressDetail) => void
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const store = useAuthStore.getState();
@@ -259,7 +270,7 @@ export function apiUpload<T>(
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {
           const percentComplete = Math.round((event.loaded / event.total) * 100);
-          onProgress(percentComplete);
+          onProgress(percentComplete, { loaded: event.loaded, total: event.total });
         }
       };
     }

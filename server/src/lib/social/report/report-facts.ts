@@ -198,12 +198,21 @@ export async function buildReportFacts(
     fetchDailyRows(accountIds, prevSince, prevUntil),
   ]);
 
-  // Posts published inside either window, with their per-post insights.
+  // Posts published inside the current/previous window OR the 6-month trend
+  // window below, with their per-post insights. Fetching only prevSince..until
+  // (2 months) meant the trend loop's `posts.filter(...)` for months 3-6 back
+  // always got an empty array — those months lost all Facebook/Instagram
+  // per-post engagement and looked like a fabricated collapse.
+  let trendStartMonth = month - 5;
+  let trendStartYear = year;
+  while (trendStartMonth <= 0) { trendStartMonth += 12; trendStartYear -= 1; }
+  const trendSince = monthBounds(trendStartMonth, trendStartYear).since;
+
   const posts = await prisma.socialPost.findMany({
     where: {
       clientId,
       status: 'PUBLISHED',
-      publishedAt: { gte: prevSince, lte: until },
+      publishedAt: { gte: trendSince, lte: until },
     },
     include: {
       insights: true,
@@ -484,7 +493,10 @@ export async function buildReportFacts(
     for (const p of currentPosts) {
       if (!p.publishedAt) continue;
       const d = new Date(p.publishedAt);
-      const k = `${d.getUTCDay()}_${d.getUTCHours()}`;
+      // Matches the dashboard's best-times bucketing (social-analytics.routes.ts) —
+      // both used to read the day/hour, just one in UTC and one server-local,
+      // so the two features could recommend different times from the same data.
+      const k = `${d.getDay()}_${d.getHours()}`;
       const eng = (p.insights || []).reduce(
         (s, i) => s + (i.likes || 0) + (i.comments || 0) + (i.shares || 0), 0);
       agg.set(k, (agg.get(k) || 0) + eng);
@@ -550,10 +562,19 @@ function buildPaidFacts(rows: any[], totalReach: number): PaidFacts {
     };
   }
 
-  const spendCents = rows.reduce((s, r) => s + (r.spendCents || 0), 0);
+  // Ad-spend currency is a free-text field entered per row, so a client can
+  // end up with e.g. Facebook spend logged in USD and TikTok spend in DJF for
+  // the same month. Summing across currencies and labeling the total with
+  // whichever row happened to be first would produce a number that isn't
+  // real in any currency, so only the rows matching the reporting currency
+  // (the first row's) are totaled.
+  const reportingCurrency = rows[0].currency || 'USD';
+  const rowsInReportingCurrency = rows.filter(r => (r.currency || 'USD') === reportingCurrency);
+
+  const spendCents = rowsInReportingCurrency.reduce((s, r) => s + (r.spendCents || 0), 0);
   const spend = centsToMajor(spendCents);
   const sumOrNull = (field: string): number | null => {
-    const vals = rows.map(r => r[field]).filter((v): v is number => typeof v === 'number');
+    const vals = rowsInReportingCurrency.map(r => r[field]).filter((v): v is number => typeof v === 'number');
     return vals.length > 0 ? vals.reduce((s, v) => s + v, 0) : null;
   };
 
@@ -568,7 +589,7 @@ function buildPaidFacts(rows: any[], totalReach: number): PaidFacts {
 
   return {
     hasData: true,
-    currency: rows[0].currency || 'USD',
+    currency: reportingCurrency,
     spend,
     paidReach,
     organicReach,

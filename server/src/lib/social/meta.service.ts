@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { createOAuthState } from './oauth-state.service.js';
-import { getMediaBuffer } from './storage.service.js';
+import { getMediaBuffer, openMediaStream } from './storage.service.js';
 
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v20.0';
 const GRAPH_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -375,18 +375,34 @@ async function publishVideoToMetaResumable({
     throw new Error(`Failed to initialize Facebook video upload session for ${endpointType}`);
   }
 
-  // Step 2: Load the video (supports local STORAGE_PUBLIC_URL via getMediaBuffer)
-  const videoBuffer = await getMediaBuffer(url);
-
-  // Step 3: Upload the binary data to the upload URL
-  await axios.post(upload_url, videoBuffer, {
-    headers: {
-      'Authorization': `OAuth ${pageAccessToken}`,
-      'offset': '0',
-      'file_size': videoBuffer.length.toString(),
-      'Content-Type': 'application/octet-stream',
-    },
-  });
+  // Step 2/3: Hand Meta the URL and let it fetch the video itself when the media
+  // is publicly reachable. That skips downloading the whole file into this
+  // process and re-uploading it — the single largest memory cost in the publish
+  // path, and pure waste when the CDN can serve Meta directly. Same trick the
+  // /videos endpoint already uses below via `file_url`, and TikTok via PULL_FROM_URL.
+  if (isPubliclyReachableMediaUrl(url)) {
+    await axios.post(upload_url, null, {
+      headers: {
+        'Authorization': `OAuth ${pageAccessToken}`,
+        'file_url': url,
+      },
+    });
+  } else {
+    // Local/dev media Meta cannot reach: stream the bytes rather than buffering
+    // the entire video. file_size is required — the endpoint will not infer it.
+    const { stream, size } = await openMediaStream(url);
+    await axios.post(upload_url, stream, {
+      headers: {
+        'Authorization': `OAuth ${pageAccessToken}`,
+        'offset': '0',
+        'file_size': size.toString(),
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': size.toString(),
+      },
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    });
+  }
 
   // Step 4: Finalize and publish the video
   const finishParams: Record<string, any> = {

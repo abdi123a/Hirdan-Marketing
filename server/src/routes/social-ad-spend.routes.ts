@@ -101,34 +101,11 @@ router.post('/ad-spend', async (req, res, next) => {
     const { platform, month, year, ...rest } = parsed.data;
     const row = await prisma.socialAdSpend.upsert({
       where: { clientId_platform_month_year: { clientId, platform, month, year } },
-      create: { clientId, platform, month, year, ...rest, createdById: (req as any).user?.id ?? null },
+      create: { clientId, platform, month, year, ...rest, createdById: req.user?.userId ?? null },
       update: { ...rest },
     });
 
     res.status(201).json(row);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ── Update one row ───────────────────────────────────────────────────────────
-router.put('/ad-spend/:id', async (req, res, next) => {
-  try {
-    const { id } = req.params as { id: string };
-    const existing = await prisma.socialAdSpend.findUnique({ where: { id } });
-    if (!existing) {
-      res.status(404).json({ error: 'Entry not found' });
-      return;
-    }
-
-    const parsed = parseBody({ ...req.body, platform: req.body.platform ?? existing.platform });
-    if (!parsed.ok) {
-      res.status(400).json({ error: parsed.error });
-      return;
-    }
-
-    const row = await prisma.socialAdSpend.update({ where: { id }, data: parsed.data });
-    res.json(row);
   } catch (err) {
     next(err);
   }

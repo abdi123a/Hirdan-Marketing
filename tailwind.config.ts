@@ -86,12 +86,19 @@ export default {
           "0%, 100%": { transform: "translateY(0)" },
           "50%": { transform: "translateY(-8px)" },
         },
+        // Indeterminate sweep for a destination that is mid-publish: the
+        // platform gives no percentage, so the row shows motion, not a number.
+        "sweep": {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(400%)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-up": "fade-up 0.6s ease-out forwards",
         "float": "float 3s ease-in-out infinite",
+        "sweep": "sweep 1.6s ease-in-out infinite",
       },
     },
   },

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, apiUpload } from "@/lib/api-client";
 import { CardGridSkeleton } from "@/components/ui/PageSkeleton";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,141 +15,22 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useAuthStore } from "@/lib/auth-store";
 import { useAgencyStore } from "@/lib/store";
 import { contentTypesFor, validateContentTypeMedia, TIKTOK_POST_MODES, type TikTokPostMode, type ContentType } from "@/lib/platform-capabilities";
+import PostGrid from "@/components/social/PostGrid";
+import CalendarViews from "@/components/social/CalendarViews";
+import PostComposer, { type PinterestBoardState } from "@/components/social/PostComposer";
+import { PublishProgressDialog } from "@/components/social/PublishProgressDialog";
 import {
-  Plus, Calendar, Clock, RefreshCw, Trash2, Sparkles, Image as ImageIcon, Loader2, Heart, MessageSquare, Share2, HelpCircle, ArrowLeft, X, Settings,
-  Tag, Tags, ChevronDown, Zap, Music, ShoppingBag, Eye, Link as LinkIcon, Link2, Link2Off, Maximize2, Minimize2, ChevronUp, MoreHorizontal, Search, Disc, Volume2, Smile, FileText, Check, Bookmark,
-  ImagePlus, Hash, ThumbsUp, ThumbsDown, MessageCircle, Repeat2, Send, Play, BarChart2, MapPin, Info, SquarePen, Grid, List, ArrowUpDown, User, Copy, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2
+  WEEK_VIEW_SLOTS,
+  type SocialPost, type SocialAccount, type Client, type SocialCampaign, type UploadProgressFile,
+} from "@/lib/social/types";
+import { PLATFORMS_CONFIG, FacebookGlyph, InstagramGlyph, YouTubeIcon } from "@/lib/social/platform";
+import { getStatusStyle, formatPostStatus } from "@/lib/social/post-status";
+import { createUploadTracker } from "@/lib/social/upload-progress";
+import {
+  Plus, Calendar, RefreshCw, Trash2, Sparkles, Image as ImageIcon, Loader2, Heart, MessageSquare, Share2, HelpCircle, ArrowLeft, X, Settings,
+  Tag, Link as LinkIcon, ChevronUp, MoreHorizontal, Search, Disc, Volume2, FileText, Check, Bookmark,
+  Hash, ThumbsUp, ThumbsDown, MessageCircle, Repeat2, Send, Play, BarChart2, MapPin, Info, SquarePen, Grid, List, ArrowUpDown, User, Copy, AlertCircle, CheckCircle2
 } from "lucide-react";
-
-/* ---------------- Brand glyphs (simple, generic mono icons from user design) ---------------- */
-const XGlyph = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="currentColor" style={style}>
-    <path d="M18.9 2H22l-7.6 8.7L23 22h-6.6l-5.2-6.8L5.2 22H2l8.1-9.3L1.5 2h6.8l4.7 6.2L18.9 2Zm-1.2 18h1.8L7.4 3.9H5.5L17.7 20Z" />
-  </svg>
-);
-const FacebookGlyph = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="currentColor" style={style}>
-    <path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.4h-1.2c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.4v7A10 10 0 0 0 22 12Z" />
-  </svg>
-);
-const InstagramGlyph = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" style={style}>
-    <rect x="3" y="3" width="18" height="18" rx="5" />
-    <circle cx="12" cy="12" r="4.2" />
-    <circle cx="17.2" cy="6.8" r="1.1" fill="currentColor" stroke="none" />
-  </svg>
-);
-const LinkedInGlyph = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="currentColor" style={style}>
-    <path d="M6.9 8.6H3.4V21h3.5V8.6ZM5.2 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM21 21h-3.5v-6.4c0-1.5 0-3.5-2.1-3.5s-2.5 1.7-2.5 3.4V21H9.4V8.6h3.4v1.7h.05c.5-.9 1.6-1.9 3.4-1.9 3.6 0 4.3 2.4 4.3 5.5V21Z" />
-  </svg>
-);
-const TikTokGlyph = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="currentColor" style={style}>
-    <path d="M16.6 3c.4 2 1.7 3.4 3.9 3.7v2.6c-1.4 0-2.7-.4-3.9-1.3v6.6a5.6 5.6 0 1 1-4.8-5.5v2.7a3 3 0 1 0 2.1 2.8V3h2.7Z" />
-  </svg>
-);
-const YouTubeGlyph = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="currentColor" style={style}>
-    <path d="M9.8 15.5V8.5l6 3.5-6 3.5Z" />
-  </svg>
-);
-const ThreadsGlyph = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
-  <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" style={style}>
-    <path d="M12 21c-4.5 0-7.5-2.6-7.5-8.9C4.5 5.9 7.6 3 12 3s7.2 2.6 7.4 6.7c.1 2.7-1.1 4-3 4-1.7 0-2.6-1-2.7-2.3-.1-1.7.9-2.6.9-2.6M12.2 12.4c2 .1 3.4 1 3.3 2.8-.1 2-2 3-4 2.9-1.7-.1-3-1-2.9-2.5.1-1.8 2-2.5 3.6-2.5.6 0 1.2.1 1.7.3" />
-  </svg>
-);
-const YouTubeIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => {
-  const isContrast = style?.color === "#fff" || style?.color === "white" || className?.includes("text-white") || style?.color === "inherit";
-  
-  if (!isContrast) {
-    return (
-      <svg viewBox="0 0 24 24" className={className} style={style}>
-        <rect x="2" y="4.7" width="20" height="14.6" rx="4.5" fill="#FF0000" />
-        <path d="M9.8 15.5V8.5l6 3.5-6 3.5Z" fill="white" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg viewBox="0 0 24 24" className={className} style={style}>
-      <defs>
-        <mask id="yt-play-mask">
-          <rect x="0" y="0" width="24" height="24" fill="white" />
-          <path d="M9.8 15.5V8.5l6 3.5-6 3.5Z" fill="black" />
-        </mask>
-      </defs>
-      <rect x="2" y="4.7" width="20" height="14.6" rx="4.5" fill="currentColor" mask="url(#yt-play-mask)" />
-    </svg>
-  );
-};
-
-const PLATFORMS_CONFIG = [
-  { id: "x", label: "Twitter / X", color: "#000000", icon: XGlyph, limit: 280, hasThread: true },
-  { id: "facebook", label: "Facebook", color: "#1877F2", icon: FacebookGlyph, limit: 63206, postTypes: ["Post", "Reel", "Story"] },
-  { id: "instagram", label: "Instagram", color: "#D6249F", icon: InstagramGlyph, limit: 2200, postTypes: ["Post", "Reel", "Story"] },
-  { id: "linkedin", label: "LinkedIn", color: "#0A66C2", icon: LinkedInGlyph, limit: 3000 },
-  { id: "tiktok", label: "TikTok", color: "#000000", icon: TikTokGlyph, limit: 4000 },
-  { id: "youtube", label: "YouTube", color: "#FF0000", icon: YouTubeIcon, limit: 5000 },
-  { id: "threads", label: "Threads", color: "#000000", icon: ThreadsGlyph, limit: 500, hasThread: true },
-];
-
-const TRENDING_TOPICS = ["Coffee Break", "Monday Motivation", "Tech News", "More..."];
-
-interface SocialPost {
-  id: string;
-  clientId: string;
-  caption: string;
-  platformContent: any;
-  mediaUrls: any;
-  mediaType: string | null;
-  status: string;
-  scheduledFor: string | null;
-  publishedAt: string | null;
-  campaignId: string | null;
-  errorMessage?: string | null;
-  createdAt: string;
-  updatedAt: string;
-  destinations: Array<{
-    id: string;
-    socialAccountId: string;
-    platform: string;
-    status: string;
-    platformPostId?: string | null;
-    lastError: string | null;
-    socialAccount: { displayName: string; platformUsername?: string };
-  }>;
-}
-
-interface SocialAccount {
-  id: string;
-  platform: string;
-  displayName: string;
-  platformUsername: string;
-  avatarUrl?: string;
-}
-
-interface Client {
-  id: string;
-  name: string;
-  company: string;
-}
-
-interface SocialCampaign {
-  id: string;
-  clientId: string;
-  name: string;
-  status: string;
-}
-
-interface UploadProgressFile {
-  id: string;
-  name: string;
-  progress: number;
-  status: "uploading" | "done" | "failed";
-  url?: string;
-  type: string;
-}
 
 // Helpers
 const hexToRgba = (hex: string, alpha: number) => {
@@ -158,25 +39,6 @@ const hexToRgba = (hex: string, alpha: number) => {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${isNaN(r) ? 80 : r}, ${isNaN(g) ? 65 : g}, ${isNaN(b) ? 136 : b}, ${alpha})`;
-};
-
-const getStatusStyle = (status: string) => {
-  switch (status) {
-    case "DRAFT":
-      return { text: "text-slate-600 dark:text-slate-300", bg: "bg-slate-50 dark:bg-slate-900/40", border: "border-slate-200 dark:border-slate-800", dot: "bg-slate-400" };
-    case "AWAITING_APPROVAL":
-      return { text: "text-sky-600 dark:text-sky-400", bg: "bg-sky-50 dark:bg-sky-950/20", border: "border-sky-200 dark:border-sky-900/50", dot: "bg-sky-500" };
-    case "SCHEDULED":
-      return { text: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-950/20", border: "border-amber-200 dark:border-amber-900/50", dot: "bg-amber-500" };
-    case "PUBLISHED":
-      return { text: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-950/20", border: "border-emerald-200 dark:border-emerald-900/50", dot: "bg-emerald-500" };
-    case "PARTIAL":
-      return { text: "text-amber-700 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-950/20", border: "border-amber-200 dark:border-amber-900/50", dot: "bg-amber-500" };
-    case "FAILED":
-      return { text: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-950/20", border: "border-rose-200 dark:border-rose-900/50", dot: "bg-rose-500" };
-    default:
-      return { text: "text-slate-600", bg: "bg-slate-50", border: "border-slate-200", dot: "bg-slate-400" };
-  }
 };
 
 function inferContentType(title: string, platforms: string[]): string {
@@ -194,11 +56,6 @@ function isTikTokDraft(dest: { platform?: string; platformPostId?: string | null
   if (/^v_(pub|inbox)_/i.test(dest.platformPostId || "")) return true;
   if (platformContent?.tiktok?.postMode === "draft") return true;
   return false;
-}
-
-function formatPostStatus(status: string): string {
-  if (status === "PARTIAL") return "PARTIAL SUCCESS";
-  return status.replace(/_/g, " ");
 }
 
 function buildCalendarGrid(month: number, year: number) {
@@ -223,7 +80,7 @@ function buildCalendarGrid(month: number, year: number) {
   return weeks;
 }
 
-function getWeekDays(date: Date) {
+export function getWeekDays(date: Date) {
   const startOfWeek = new Date(date);
   const day = startOfWeek.getDay();
   const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1); // Monday start
@@ -335,6 +192,8 @@ export default function SocialPublishPage() {
       id: string;
       platform: string;
       accountName: string;
+      /** The client's own logo, so the modal shows who is being posted for. */
+      avatarUrl?: string | null;
       status: string;
       error: string | null;
       platformPostId?: string | null;
@@ -361,24 +220,6 @@ export default function SocialPublishPage() {
       if (timer) clearInterval(timer);
     };
   }, [isPublishProgressOpen, publishStatus.status]);
-
-  const getEstimatedTimeRemaining = () => {
-    const total = publishStatus.totalDestinations;
-    const completed = publishStatus.completedDestinations;
-    const failed = publishStatus.failedDestinations;
-    const finished = completed + failed;
-    
-    if (finished === total) return "0s";
-    if (finished === 0) {
-      const est = total * 10 - elapsedSeconds;
-      return est > 0 ? `${est}s` : "Few seconds...";
-    }
-    
-    const avgTimePerPlatform = elapsedSeconds / finished;
-    const remaining = total - finished;
-    const estRemaining = Math.max(1, Math.round(avgTimePerPlatform * remaining));
-    return `${estRemaining}s`;
-  };
 
   // Redesigned composer states
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
@@ -420,6 +261,9 @@ export default function SocialPublishPage() {
   const [pinterestTitle, setPinterestTitle] = useState("");
   const [pinterestLink, setPinterestLink] = useState("");
   const [pinterestType, setPinterestType] = useState<string>("pin");
+  // Board choice per Pinterest account. Board ids are account-scoped, so this is
+  // keyed by socialAccountId rather than being a single flat value.
+  const [pinterestBoards, setPinterestBoards] = useState<Record<string, PinterestBoardState>>({});
 
   const [youtubeTitle, setYoutubeTitle] = useState("");
   const [youtubeType, setYoutubeType] = useState<"short" | "video">("short");
@@ -534,7 +378,11 @@ export default function SocialPublishPage() {
         name: file.name,
         progress: 0,
         status: "uploading",
-        type: isVideo ? "video" : "image"
+        type: isVideo ? "video" : "image",
+        loadedBytes: 0,
+        totalBytes: file.size,
+        speedBps: null,
+        etaSeconds: null,
       };
 
       setUploadProgressFiles(prev => [...prev, newUploadFile]);
@@ -543,26 +391,43 @@ export default function SocialPublishPage() {
       formData.append("file", file);
 
       try {
-        let progressVal = 0;
-        const interval = setInterval(() => {
-          progressVal = Math.min(progressVal + 15, 90);
-          setUploadProgressFiles(prev => prev.map(f => {
-            if (f.id === uploadId && f.status === "uploading") {
-              return { ...f, progress: progressVal };
-            }
-            return f;
-          }));
-        }, 150);
+        const tracker = createUploadTracker(performance.now());
+        let lastPaintedPct = -1;
+        let lastPaintAt = 0;
 
-        const data = await apiFetch<{ url: string }>("/social/media/upload", {
-          method: "POST",
-          headers: {
-            "Content-Type": "SKIP",
-          },
-          body: formData,
-        });
+        const data = await apiUpload<{ url: string }>(
+          "/social/media/upload",
+          formData,
+          (percent, { loaded, total }) => {
+            const now = performance.now();
+            const s = tracker.sample(loaded, total, now);
 
-        clearInterval(interval);
+            // The browser fires hundreds of progress events on a large video;
+            // repaint only when the percentage moves or ~250ms has passed.
+            if (!s.isTransferComplete && percent === lastPaintedPct && now - lastPaintAt < 250) return;
+            lastPaintedPct = percent;
+            lastPaintAt = now;
+
+            setUploadProgressFiles(prev => prev.map(f => {
+              // "processing" is not terminal here: a 401 mid-upload makes
+              // apiUpload re-send the whole file, and those bytes have to be
+              // able to pull the tile back out of the processing state.
+              if (f.id !== uploadId || (f.status !== "uploading" && f.status !== "processing")) return f;
+              // Once the bytes are all on the wire the API is still streaming
+              // them to storage, so switch to "processing" rather than leaving a
+              // full bar sitting there looking frozen.
+              return {
+                ...f,
+                status: s.isTransferComplete ? "processing" : "uploading",
+                progress: s.progress,
+                loadedBytes: s.loadedBytes,
+                totalBytes: s.totalBytes,
+                speedBps: s.speedBps,
+                etaSeconds: s.isTransferComplete ? null : s.etaSeconds,
+              };
+            }));
+          }
+        );
 
         setComposerMediaUrls(prev => [...prev, data.url]);
         if (isVideo) {
@@ -571,7 +436,7 @@ export default function SocialPublishPage() {
 
         setUploadProgressFiles(prev => prev.map(f => {
           if (f.id === uploadId) {
-            return { ...f, progress: 100, status: "done", url: data.url };
+            return { ...f, progress: 100, status: "done", url: data.url, etaSeconds: null };
           }
           return f;
         }));
@@ -583,7 +448,59 @@ export default function SocialPublishPage() {
       }
     }
     setIsUploading(false);
+    // Let the same file be re-picked after a failure; without this the input
+    // keeps the old value and the change event never fires again.
+    e.target.value = "";
   };
+
+  const loadPinterestBoards = useCallback(async (accountId: string) => {
+    setPinterestBoards(prev => ({
+      ...prev,
+      [accountId]: { boards: [], selectedId: null, ...prev[accountId], loading: true, error: null },
+    }));
+    try {
+      const res = await apiFetch<{ boards: { id: string; name: string }[] }>(
+        `/social/accounts/${accountId}/pinterest/boards`
+      );
+      setPinterestBoards(prev => ({
+        ...prev,
+        [accountId]: {
+          boards: res.boards || [],
+          selectedId: prev[accountId]?.selectedId ?? null,
+          loading: false,
+          error: null,
+        },
+      }));
+    } catch (err: any) {
+      setPinterestBoards(prev => ({
+        ...prev,
+        [accountId]: {
+          boards: [],
+          selectedId: prev[accountId]?.selectedId ?? null,
+          loading: false,
+          error: err.message || "Could not load boards",
+        },
+      }));
+    }
+  }, []);
+
+  const setPinterestBoard = (accountId: string, boardId: string | null) => {
+    setPinterestBoards(prev => ({
+      ...prev,
+      [accountId]: { boards: [], loading: false, error: null, ...prev[accountId], selectedId: boardId },
+    }));
+  };
+
+  // Fetch boards for each selected Pinterest account, once per account.
+  useEffect(() => {
+    if (!isComposerOpen) return;
+    for (const acct of accounts) {
+      if (acct.platform.toLowerCase() !== "pinterest") continue;
+      if (!composerAccounts.includes(acct.id)) continue;
+      if (pinterestBoards[acct.id]) continue;
+      loadPinterestBoards(acct.id);
+    }
+  }, [isComposerOpen, composerAccounts, accounts, pinterestBoards, loadPinterestBoards]);
 
   const getPlatformCaption = (platform: string) => {
     const isSynced = syncedPlatforms[platform] ?? true;
@@ -649,6 +566,7 @@ export default function SocialPublishPage() {
     setPinterestTitle("");
     setPinterestLink("");
     setPinterestType("pin");
+    setPinterestBoards({});
     setPostTags([]);
     setEditingPostId(null);
     setAlreadyPublishedAccountIds([]);
@@ -677,7 +595,7 @@ export default function SocialPublishPage() {
       case "youtube": return <img src="/social-icons/youtube.png" className={className} alt="YouTube" />;
       case "x":
       case "twitter": return <img src="/social-icons/twitter.png" className={className} alt="Twitter" />;
-      case "pinterest": return <img src="/social-icons/Pinterest.png" className={className} alt="Pinterest" />;
+      case "pinterest": return <img src="/social-icons/pinterest.png" className={className} alt="Pinterest" />;
       default: return <HelpCircle className={`${className} text-muted-foreground`} />;
     }
   };
@@ -729,6 +647,36 @@ export default function SocialPublishPage() {
       });
       return;
     }
+
+    // Catch content-type/media mismatches (e.g. a Reel with no video attached)
+    // before submitting, instead of letting the platform reject it mid-publish
+    // after other destinations may have already gone live.
+    if (!asDraft) {
+      const selectedPlatforms = new Set(
+        accounts.filter(a => composerAccounts.includes(a.id)).map(a => a.platform.toLowerCase())
+      );
+      const typeByPlatform: Record<string, string> = {
+        instagram: instagramType,
+        facebook: facebookType,
+        tiktok: tiktokType,
+        youtube: youtubeType,
+      };
+      for (const platform of selectedPlatforms) {
+        const typeId = typeByPlatform[platform];
+        if (!typeId) continue;
+        const contentType = contentTypesFor(platform).find(t => t.id === typeId);
+        const mediaError = validateContentTypeMedia(contentType, composerMediaUrls, composerMediaType);
+        if (mediaError) {
+          toast({
+            title: "Validation Error",
+            description: `${platform[0].toUpperCase()}${platform.slice(1)}: ${mediaError}`,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+    }
+
     if (isSubmitting) return;
 
     setIsSubmitting(true);
@@ -771,7 +719,18 @@ export default function SocialPublishPage() {
           pinterest: {
             caption: getPlatformCaption("pinterest"),
             title: pinterestTitle,
-            link: pinterestLink
+            link: pinterestLink,
+            type: pinterestType,
+            // Keyed by socialAccountId — a board id only exists on the account
+            // that owns it, so two Pinterest accounts cannot share one value.
+            boards: Object.fromEntries(
+              Object.entries(pinterestBoards)
+                .filter(([, s]) => s.selectedId)
+                .map(([accountId, s]) => [
+                  accountId,
+                  { id: s.selectedId, name: s.boards.find(b => b.id === s.selectedId)?.name || "" },
+                ])
+            )
           },
           youtube: {
             caption: getPlatformCaption("youtube"),
@@ -800,7 +759,12 @@ export default function SocialPublishPage() {
         mediaUrls: composerMediaUrls,
         mediaType: composerMediaType,
         accountIds: composerAccounts,
-        scheduledFor: (publishNow || asDraft) ? null : composerScheduledFor,
+        // composerScheduledFor is a timezone-less "datetime-local" string (the
+        // browser's own local wall-clock reading). Re-parsing it as a Date
+        // interprets it in the browser's timezone (correct), then toISOString()
+        // converts to an unambiguous UTC timestamp the server can parse the same
+        // way regardless of which timezone it runs in.
+        scheduledFor: (publishNow || asDraft) ? null : (composerScheduledFor ? new Date(composerScheduledFor).toISOString() : null),
         status: asDraft ? "DRAFT" : (publishNow ? "PUBLISHED" : "SCHEDULED"),
       };
 
@@ -860,6 +824,7 @@ export default function SocialPublishPage() {
               id: accId,
               platform: acc?.platform || 'UNKNOWN',
               accountName: acc?.displayName || acc?.platformUsername || 'Unknown Account',
+              avatarUrl: acc?.avatarUrl ?? null,
               status: 'QUEUED',
               error: null
             };
@@ -889,6 +854,7 @@ export default function SocialPublishPage() {
                   id: d.id,
                   platform: d.platform,
                   accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || 'Unknown Account',
+                  avatarUrl: d.socialAccount?.avatarUrl ?? null,
                   status: d.status,
                   error: d.lastError,
                   platformPostId: d.platformPostId
@@ -921,6 +887,7 @@ export default function SocialPublishPage() {
               id: d.id,
               platform: d.platform,
               accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || 'Unknown Account',
+                  avatarUrl: d.socialAccount?.avatarUrl ?? null,
               status: d.status,
               error: d.lastError,
               platformPostId: d.platformPostId
@@ -1011,6 +978,7 @@ export default function SocialPublishPage() {
           id: d.id,
           platform: d.platform,
           accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || "Unknown Account",
+          avatarUrl: d.socialAccount?.avatarUrl ?? null,
           status: "QUEUED",
           error: null,
         })),
@@ -1033,6 +1001,7 @@ export default function SocialPublishPage() {
           id: d.id,
           platform: d.platform,
           accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || "Unknown Account",
+          avatarUrl: d.socialAccount?.avatarUrl ?? null,
           status: d.status,
           error: d.lastError,
           platformPostId: d.platformPostId,
@@ -1142,6 +1111,17 @@ export default function SocialPublishPage() {
       setPinterestTitle(pc.pinterest.title || "");
       setPinterestLink(pc.pinterest.link || "");
       setPinterestType(pc.pinterest.type || "pin");
+      // Seed the saved choice; the board list itself is refetched when the
+      // composer opens, which then fills in the names.
+      const saved = pc.pinterest.boards || {};
+      setPinterestBoards(
+        Object.fromEntries(
+          Object.entries(saved).map(([accountId, b]: [string, any]) => [
+            accountId,
+            { boards: b?.name ? [{ id: b.id, name: b.name }] : [], selectedId: b?.id || null, loading: false, error: null },
+          ])
+        )
+      );
     }
     if (pc.tags) {
       setPostTags(pc.tags || []);
@@ -1239,10 +1219,10 @@ export default function SocialPublishPage() {
     }));
 
     try {
+      // Send ONLY what this action changes. Anything omitted is left untouched by
+      // the server, so a stale copy of the post in local state can no longer
+      // clobber a caption, media list or destination someone else just edited.
       const payload = {
-        clientId: postToUpdate.clientId,
-        campaignId: postToUpdate.campaignId,
-        caption: postToUpdate.caption,
         platformContent: {
           ...(postToUpdate.platformContent || {}),
           activities: [
@@ -1255,10 +1235,9 @@ export default function SocialPublishPage() {
             }
           ]
         },
-        mediaUrls: getMediaUrls(postToUpdate),
-        mediaType: postToUpdate.mediaType,
-        accountIds: postToUpdate.destinations.map(d => d.socialAccountId),
-        status: postToUpdate.status === "DRAFT" ? "SCHEDULED" : postToUpdate.status,
+        // Only promote a draft. Re-sending the current status would write a stale
+        // value back over whatever the scheduler has since set.
+        status: postToUpdate.status === "DRAFT" ? "SCHEDULED" : undefined,
         scheduledFor: targetDate.toISOString()
       };
 
@@ -1297,10 +1276,10 @@ export default function SocialPublishPage() {
     }));
 
     try {
+      // Send ONLY what this action changes. Anything omitted is left untouched by
+      // the server, so a stale copy of the post in local state can no longer
+      // clobber a caption, media list or destination someone else just edited.
       const payload = {
-        clientId: postToUpdate.clientId,
-        campaignId: postToUpdate.campaignId,
-        caption: postToUpdate.caption,
         platformContent: {
           ...(postToUpdate.platformContent || {}),
           activities: [
@@ -1313,10 +1292,9 @@ export default function SocialPublishPage() {
             }
           ]
         },
-        mediaUrls: getMediaUrls(postToUpdate),
-        mediaType: postToUpdate.mediaType,
-        accountIds: postToUpdate.destinations.map(d => d.socialAccountId),
-        status: postToUpdate.status === "DRAFT" ? "SCHEDULED" : postToUpdate.status,
+        // Only promote a draft. Re-sending the current status would write a stale
+        // value back over whatever the scheduler has since set.
+        status: postToUpdate.status === "DRAFT" ? "SCHEDULED" : undefined,
         scheduledFor: targetDate.toISOString()
       };
 
@@ -1350,9 +1328,6 @@ export default function SocialPublishPage() {
 
     try {
       const payload = {
-        clientId: postToUpdate.clientId,
-        campaignId: postToUpdate.campaignId,
-        caption: postToUpdate.caption,
         platformContent: {
           ...(postToUpdate.platformContent || {}),
           activities: [
@@ -1365,9 +1340,6 @@ export default function SocialPublishPage() {
             }
           ]
         },
-        mediaUrls: getMediaUrls(postToUpdate),
-        mediaType: postToUpdate.mediaType,
-        accountIds: postToUpdate.destinations.map(d => d.socialAccountId),
         status: "DRAFT",
         scheduledFor: null
       };
@@ -1424,17 +1396,10 @@ export default function SocialPublishPage() {
     setCommentText("");
 
     try {
-      const payload = {
-        clientId: postToUpdate.clientId,
-        campaignId: postToUpdate.campaignId,
-        caption: postToUpdate.caption,
-        platformContent: updatedPc,
-        mediaUrls: getMediaUrls(postToUpdate),
-        mediaType: postToUpdate.mediaType,
-        accountIds: postToUpdate.destinations.map(d => d.socialAccountId),
-        status: postToUpdate.status,
-        scheduledFor: postToUpdate.scheduledFor
-      };
+      // A comment changes nothing but platformContent. It used to resend status,
+      // scheduledFor and the account list too, which is how commenting on a post
+      // whose destinations had already FAILED could quietly re-queue and republish it.
+      const payload = { platformContent: updatedPc };
       await apiFetch(`/social/posts/${postId}`, {
         method: "PUT",
         body: JSON.stringify(payload)
@@ -1499,9 +1464,6 @@ export default function SocialPublishPage() {
         const p = posts.find(post => post.id === id);
         if (p) {
           const payload = {
-            clientId: p.clientId,
-            campaignId: p.campaignId,
-            caption: p.caption,
             platformContent: {
               ...(p.platformContent || {}),
               activities: [
@@ -1514,11 +1476,7 @@ export default function SocialPublishPage() {
                 }
               ]
             },
-            mediaUrls: getMediaUrls(p),
-            mediaType: p.mediaType,
-            accountIds: p.destinations.map(d => d.socialAccountId),
-            status: newStatus,
-            scheduledFor: p.scheduledFor
+            status: newStatus
           };
           await apiFetch(`/social/posts/${id}`, { method: "PUT", body: JSON.stringify(payload) });
         }
@@ -1539,9 +1497,6 @@ export default function SocialPublishPage() {
           const date = new Date(p.scheduledFor);
           date.setDate(date.getDate() + days);
           const payload = {
-            clientId: p.clientId,
-            campaignId: p.campaignId,
-            caption: p.caption,
             platformContent: {
               ...(p.platformContent || {}),
               activities: [
@@ -1554,10 +1509,6 @@ export default function SocialPublishPage() {
                 }
               ]
             },
-            mediaUrls: getMediaUrls(p),
-            mediaType: p.mediaType,
-            accountIds: p.destinations.map(d => d.socialAccountId),
-            status: p.status,
             scheduledFor: date.toISOString()
           };
           await apiFetch(`/social/posts/${id}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -1577,9 +1528,6 @@ export default function SocialPublishPage() {
         const p = posts.find(post => post.id === id);
         if (p) {
           const payload = {
-            clientId: p.clientId,
-            campaignId: p.campaignId,
-            caption: p.caption,
             platformContent: {
               ...(p.platformContent || {}),
               assignedWriter: writer,
@@ -1592,12 +1540,7 @@ export default function SocialPublishPage() {
                   createdAt: new Date().toISOString()
                 }
               ]
-            },
-            mediaUrls: getMediaUrls(p),
-            mediaType: p.mediaType,
-            accountIds: p.destinations.map(d => d.socialAccountId),
-            status: p.status,
-            scheduledFor: p.scheduledFor
+            }
           };
           await apiFetch(`/social/posts/${id}`, { method: "PUT", body: JSON.stringify(payload) });
         }
@@ -1655,7 +1598,7 @@ export default function SocialPublishPage() {
   const activeClientInitials = activeClientName ? activeClientName.split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() : "AC";
 
   // Determine if mockup section should be visible
-  const hasUploadedMedia = composerMediaUrls.length > 0 || uploadProgressFiles.some(f => f.status === "uploading");
+  const hasUploadedMedia = composerMediaUrls.length > 0 || uploadProgressFiles.some(f => f.status === "uploading" || f.status === "processing");
 
   // Get current active preview account platform and caption details
   const previewAccountObj = accounts.find(a => a.id === activePreviewAccount);
@@ -2107,482 +2050,48 @@ export default function SocialPublishPage() {
             <>
               {/* ── POSTS LIST ── */}
               {activeTab === "posts" && (
-                <>
-                  {filteredPosts.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center border-2 border-dashed border-border/50 rounded-2xl py-24 px-6 text-center bg-card/40">
-                      <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-5 shadow-sm">
-                        <ImageIcon className="w-7 h-7 text-primary" />
-                      </div>
-                      <h3 className="font-bold text-lg text-foreground">No posts found</h3>
-                      <p className="text-sm text-muted-foreground mt-2 max-w-xs leading-relaxed">No posts match your current filters. Try resetting or create your first post.</p>
-                      <div className="flex gap-3 mt-6">
-                        <Button variant="outline" onClick={resetAllFilters} className="rounded-xl text-sm font-semibold h-9">Reset Filters</Button>
-                        <Button onClick={() => { resetComposer(); setIsComposerOpen(true); }} className="rounded-xl flex items-center gap-2 text-sm font-semibold h-9">
-                          <Plus className="h-4 w-4" />Create Post
-                        </Button>
-                      </div>
-                    </div>
-                  ) : viewMode === "grid" ? (
-                    <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                      {filteredPosts.map(post => {
-                        const mUrls = getMediaUrls(post);
-                        const hasMedia = mUrls.length > 0;
-                        const client = getClientDetails(post.clientId);
-                        const cLabel = getContentTypeLabel(post);
-                        const campaign = getCampaignName(post.campaignId);
-                        const ss = getStatusStyle(post.status);
-                        const isSelected = selectedPostIds.includes(post.id);
-                        const isActive = activePostId === post.id;
-                        const statusAccent =
-                          post.status === "PUBLISHED" ? "#10b981" :
-                            post.status === "SCHEDULED" ? "#f59e0b" :
-                              post.status === "AWAITING_APPROVAL" ? "#0ea5e9" :
-                                post.status === "PARTIAL" ? "#f59e0b" : post.status === "FAILED" ? "#f43f5e" : "#94a3b8";
-                        return (
-                          <div
-                            key={post.id}
-                            draggable
-                            onDragStart={e => e.dataTransfer.setData("postId", post.id)}
-                            onClick={() => setActivePostId(post.id)}
-                            style={{ borderLeftColor: statusAccent, borderLeftWidth: "3px" }}
-                            className={`group relative flex flex-col border rounded-xl overflow-hidden bg-card shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer select-none text-left ${isSelected ? "ring-2 ring-primary/40" : ""} ${isActive ? "ring-2 ring-primary/30 border-primary/40" : "border-border/60 hover:border-border"}`}
-                          >
-                            {/* Thumbnail */}
-                            <div className="relative bg-muted overflow-hidden" style={{ aspectRatio: "16/9" }}>
-                              {hasMedia ? (
-                                post.mediaType === "video" ? (
-                                  <video src={mUrls[0]} className="w-full h-full object-cover" preload="metadata" />
-                                ) : (
-                                  <img src={mUrls[0]} alt="" className="w-full h-full object-cover" loading="lazy" />
-                                )
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted/30 to-muted/60">
-                                  <ImageIcon className="h-8 w-8 text-muted-foreground/25" />
-                                </div>
-                              )}
-                              <span className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm text-[9px] font-bold text-white px-2 py-0.5 rounded uppercase tracking-wider">
-                                {cLabel}
-                              </span>
-                              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                <Checkbox checked={isSelected} onCheckedChange={() => handleToggleSelect(post.id)} className="bg-white/90 shadow-sm rounded-md" />
-                              </div>
-                            </div>
-                            {/* Body */}
-                            <div className="p-3 flex-1 space-y-1.5">
-                              <div className="flex items-start justify-between gap-1.5">
-                                <h4 className="text-sm font-bold text-foreground truncate leading-tight">{client.company || client.name}</h4>
-                                {campaign && (
-                                  <span className="shrink-0 text-[9px] font-bold bg-violet-50 dark:bg-violet-950/30 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-900/50 px-1.5 py-0.5 rounded-full truncate max-w-[90px]" title={campaign}>
-                                    {campaign}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2 min-h-[28px]">
-                                {post.caption || <span className="italic opacity-40">No caption written</span>}
-                              </p>
-                              <div className="flex items-center justify-between pt-1.5 border-t border-border/25">
-                                <p className="text-[10px] text-muted-foreground flex items-center gap-1 font-semibold">
-                                  <Clock className="h-3 w-3 opacity-50 shrink-0" />
-                                  {post.scheduledFor
-                                    ? new Date(post.scheduledFor).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })
-                                    : post.publishedAt
-                                      ? new Date(post.publishedAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })
-                                      : "Unscheduled"}
-                                </p>
-                                <div className="flex gap-0.5 shrink-0">
-                                  {post.destinations.map(d => (
-                                    <TooltipProvider key={d.id}>
-                                      <Tooltip delayDuration={200}>
-                                        <TooltipTrigger asChild>
-                                          <span className="hover:scale-110 transition-transform inline-flex">{getPlatformIcon(d.platform, "h-3.5 w-3.5")}</span>
-                                        </TooltipTrigger>
-                                        <TooltipContent className="text-xs p-2 rounded-lg">
-                                          <p className="font-semibold">{d.socialAccount?.displayName || d.platform}</p>
-                                          <p className="text-[10px] text-muted-foreground capitalize mt-0.5">{d.status}</p>
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                            {/* Footer */}
-                            <div className="px-3 py-2 border-t border-border/25 bg-muted/5 flex items-center justify-between min-h-[38px]">
-                              <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 border rounded-full flex items-center gap-1 ${ss.text} ${ss.bg} ${ss.border}`}>
-                                <span className={`h-1.5 w-1.5 rounded-full ${ss.dot}`} />
-                                {formatPostStatus(post.status)}
-                              </span>
-                              <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                <Button variant="ghost" size="icon" onClick={() => handleEditPost(post)} className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted" title="Edit">
-                                  <SquarePen className="h-3 w-3" />
-                                </Button>
-                                <Button variant="ghost" size="icon" onClick={() => handleDuplicatePost(post)} className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted" title="Duplicate">
-                                  <Copy className="h-3 w-3" />
-                                </Button>
-                                <Button variant="ghost" size="icon" onClick={() => { setActivePostId(post.id); setIsReschedulingOpen(true); }} className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted" title="Reschedule">
-                                  <Calendar className="h-3 w-3" />
-                                </Button>
-                                <Button variant="ghost" size="icon" onClick={() => handleDeletePost(post.id)} className="h-6 w-6 rounded-md text-rose-500 hover:text-rose-600 hover:bg-rose-50/50 dark:hover:bg-rose-950/30" title="Delete">
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    /* LIST VIEW */
-                    <Card className="border border-border/60 rounded-xl overflow-hidden shadow-sm bg-card">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs text-left">
-                          <thead>
-                            <tr className="border-b border-border/50 bg-muted/20 text-muted-foreground uppercase tracking-wider text-[10px] font-bold">
-                              <th className="p-3 w-9" />
-                              <th className="p-3">Media</th>
-                              <th className="p-3">Client · Campaign</th>
-                              <th className="p-3">Platforms</th>
-                              <th className="p-3 max-w-[200px]">Caption</th>
-                              <th className="p-3 whitespace-nowrap">Schedule</th>
-                              <th className="p-3">Writer</th>
-                              <th className="p-3">Status</th>
-                              <th className="p-3 text-right">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredPosts.map(post => {
-                              const mUrls = getMediaUrls(post);
-                              const client = getClientDetails(post.clientId);
-                              const campaign = getCampaignName(post.campaignId);
-                              const ss = getStatusStyle(post.status);
-                              const isSelected = selectedPostIds.includes(post.id);
-                              const isActive = activePostId === post.id;
-                              const statusAccent = post.status === "PUBLISHED" ? "#10b981" : post.status === "PARTIAL" ? "#f59e0b" : post.status === "SCHEDULED" ? "#f59e0b" : post.status === "AWAITING_APPROVAL" ? "#0ea5e9" : post.status === "FAILED" ? "#f43f5e" : "#94a3b8";
-                              return (
-                                <tr
-                                  key={post.id}
-                                  draggable
-                                  onDragStart={e => e.dataTransfer.setData("postId", post.id)}
-                                  onClick={() => setActivePostId(post.id)}
-                                  style={{ borderLeft: `3px solid ${statusAccent}` }}
-                                  className={`border-b border-border/30 hover:bg-muted/10 cursor-pointer transition-colors ${isSelected ? "bg-primary/5" : ""} ${isActive ? "bg-primary/5" : ""}`}
-                                >
-                                  <td className="p-3" onClick={e => e.stopPropagation()}>
-                                    <Checkbox checked={isSelected} onCheckedChange={() => handleToggleSelect(post.id)} />
-                                  </td>
-                                  <td className="p-3">
-                                    {mUrls.length > 0 ? (
-                                      <img src={mUrls[0]} className="w-9 h-9 object-cover rounded-lg bg-muted" alt="" loading="lazy" />
-                                    ) : (
-                                      <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center text-[9px] font-bold text-muted-foreground uppercase">{getContentTypeLabel(post).slice(0, 2)}</div>
-                                    )}
-                                  </td>
-                                  <td className="p-3 min-w-[140px]">
-                                    <div className="font-bold text-foreground">{client.company || client.name}</div>
-                                    {campaign && <div className="text-[10px] text-violet-500 mt-0.5 font-medium">{campaign}</div>}
-                                  </td>
-                                  <td className="p-3">
-                                    <div className="flex gap-1 flex-wrap">
-                                      {post.destinations.map(d => (
-                                        <TooltipProvider key={d.id}>
-                                          <Tooltip delayDuration={200}>
-                                            <TooltipTrigger asChild>
-                                              <span className="inline-flex">{getPlatformIcon(d.platform, "h-4 w-4")}</span>
-                                            </TooltipTrigger>
-                                            <TooltipContent className="text-xs p-2">
-                                              <p className="font-semibold">{d.socialAccount?.displayName || d.platform}</p>
-                                              <p className="text-[10px] text-muted-foreground capitalize mt-0.5">{d.status}</p>
-                                            </TooltipContent>
-                                          </Tooltip>
-                                        </TooltipProvider>
-                                      ))}
-                                    </div>
-                                  </td>
-                                  <td className="p-3 max-w-[200px]">
-                                    <p className="truncate text-muted-foreground">{post.caption || <span className="italic opacity-40">No caption</span>}</p>
-                                  </td>
-                                  <td className="p-3 text-muted-foreground font-semibold whitespace-nowrap">
-                                    {post.scheduledFor ? new Date(post.scheduledFor).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "Draft"}
-                                  </td>
-                                  <td className="p-3 text-muted-foreground">{getWriterName(post) || "—"}</td>
-                                  <td className="p-3">
-                                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 border rounded-full flex items-center gap-1 w-fit ${ss.text} ${ss.bg} ${ss.border}`}>
-                                      <span className={`h-1 w-1 rounded-full ${ss.dot}`} />
-                                      {formatPostStatus(post.status)}
-                                    </span>
-                                  </td>
-                                  <td className="p-3 text-right" onClick={e => e.stopPropagation()}>
-                                    <div className="flex items-center justify-end gap-1">
-                                      <Button variant="ghost" size="icon" onClick={() => handleEditPost(post)} className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"><SquarePen className="h-3.5 w-3.5" /></Button>
-                                      <Button variant="ghost" size="icon" onClick={() => handleDuplicatePost(post)} className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"><Copy className="h-3.5 w-3.5" /></Button>
-                                      <Button variant="ghost" size="icon" onClick={() => handleDeletePost(post.id)} className="h-7 w-7 rounded-lg text-rose-500 hover:text-rose-600 hover:bg-rose-50/50 dark:hover:bg-rose-950/30"><Trash2 className="h-3.5 w-3.5" /></Button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </Card>
-                  )}
-                </>
+                <PostGrid
+                  filteredPosts={filteredPosts}
+                  viewMode={viewMode}
+                  selectedPostIds={selectedPostIds}
+                  activePostId={activePostId}
+                  setActivePostId={setActivePostId}
+                  setIsReschedulingOpen={setIsReschedulingOpen}
+                  setIsComposerOpen={setIsComposerOpen}
+                  resetAllFilters={resetAllFilters}
+                  resetComposer={resetComposer}
+                  handleToggleSelect={handleToggleSelect}
+                  handleEditPost={handleEditPost}
+                  handleDuplicatePost={handleDuplicatePost}
+                  handleDeletePost={handleDeletePost}
+                  getMediaUrls={getMediaUrls}
+                  getClientDetails={getClientDetails}
+                  getContentTypeLabel={getContentTypeLabel}
+                  getCampaignName={getCampaignName}
+                  getWriterName={getWriterName}
+                  getPlatformIcon={getPlatformIcon}
+                />
               )}
 
               {/* ── CALENDAR VIEW ── */}
               {activeTab === "calendar" && (
-                <div className="space-y-4">
-                  {/* Calendar Header */}
-                  <div className="flex items-center justify-between bg-card border border-border/60 rounded-xl px-4 py-3 shadow-sm">
-                    <div className="flex items-center gap-3">
-                      <h3 className="font-bold text-base text-foreground capitalize">
-                        {calendarView === "month" && calendarDate.toLocaleString("default", { month: "long", year: "numeric" })}
-                        {calendarView === "week" && `Week of ${getWeekDays(calendarDate)[0].toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
-                        {calendarView === "agenda" && "Post Agenda"}
-                      </h3>
-                      <div className="flex border border-border/50 rounded-lg p-0.5 bg-muted/20">
-                        <Button variant="ghost" size="icon" onClick={() => {
-                          if (calendarView === "month") setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
-                          else if (calendarView === "week") { const d = new Date(calendarDate); d.setDate(d.getDate() - 7); setCalendarDate(d); }
-                          else { const d = new Date(calendarDate); d.setDate(d.getDate() - 30); setCalendarDate(d); }
-                        }} className="h-7 w-7 rounded-md">
-                          <ChevronLeft className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setCalendarDate(new Date())} className="h-7 text-[11px] font-bold px-2 rounded-md">Today</Button>
-                        <Button variant="ghost" size="icon" onClick={() => {
-                          if (calendarView === "month") setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
-                          else if (calendarView === "week") { const d = new Date(calendarDate); d.setDate(d.getDate() + 7); setCalendarDate(d); }
-                          else { const d = new Date(calendarDate); d.setDate(d.getDate() + 30); setCalendarDate(d); }
-                        }} className="h-7 w-7 rounded-md">
-                          <ChevronRight className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                    {/* Status Legend */}
-                    <div className="hidden md:flex items-center gap-2 text-[9px] font-bold text-muted-foreground">
-                      {(["DRAFT", "AWAITING_APPROVAL", "SCHEDULED", "PUBLISHED"] as const).map(s => {
-                        const ss = getStatusStyle(s);
-                        return (
-                          <span key={s} className={`flex items-center gap-1 px-2 py-0.5 rounded-full border ${ss.text} ${ss.bg} ${ss.border}`}>
-                            <span className={`h-1.5 w-1.5 rounded-full ${ss.dot}`} />
-                            {s.replace(/_/g, " ")}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Month View */}
-                  {calendarView === "month" && (
-                    <Card className="border border-border/60 shadow-sm bg-card rounded-xl overflow-hidden p-0">
-                      <div className="grid grid-cols-7 bg-muted/10 text-center py-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border/30">
-                        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(d => <div key={d}>{d}</div>)}
-                      </div>
-                      <div className="grid grid-cols-7 border-l border-border/20 divide-x divide-y divide-border/20">
-                        {calendarCells.map((week, wI) =>
-                          week.map((cellDate, dI) => {
-                            if (!cellDate) return <div key={`e-${wI}-${dI}`} className="min-h-32 bg-muted/10" />;
-                            const postsForDay = posts.filter(p => {
-                              if (!p.scheduledFor) return false;
-                              const d = new Date(p.scheduledFor);
-                              return d.getDate() === cellDate.getDate() && d.getMonth() === cellDate.getMonth() && d.getFullYear() === cellDate.getFullYear();
-                            });
-                            const visiblePosts = postsForDay.filter(p => statusFilter === "PUBLISHED" || statusFilter === "ALL" ? true : p.status !== "PUBLISHED");
-                            const uniqueClients = new Set(postsForDay.map(p => p.clientId)).size;
-                            const isToday = cellDate.toDateString() === new Date().toDateString();
-                            const shown = visiblePosts.slice(0, 3);
-                            const overflow = Math.max(0, visiblePosts.length - 3);
-                            return (
-                              <div
-                                key={cellDate.toISOString()}
-                                onDragOver={e => e.preventDefault()}
-                                onDrop={e => { e.preventDefault(); const pid = e.dataTransfer.getData("postId"); if (pid) handleReschedulePost(pid, cellDate); }}
-                                className={`group min-h-32 p-2 flex flex-col hover:bg-muted/10 transition-all cursor-default relative ${isToday ? "bg-primary/5 ring-inset ring-1 ring-primary/20" : "bg-card"}`}
-                              >
-                                <div className="flex items-center justify-between mb-1.5">
-                                  <span className={`text-[11px] font-bold select-none ${isToday ? "bg-primary text-primary-foreground rounded-full w-5 h-5 flex items-center justify-center text-[10px] leading-none" : "text-muted-foreground/70"}`}>
-                                    {cellDate.getDate()}
-                                  </span>
-                                  <button
-                                    onClick={() => {
-                                      resetComposer();
-                                      const ld = new Date(cellDate); ld.setHours(10, 0);
-                                      const lDate = new Date(ld.getTime() - ld.getTimezoneOffset() * 60000);
-                                      setComposerScheduledFor(lDate.toISOString().slice(0, 16));
-                                      setPublishNow(false); setIsComposerOpen(true);
-                                    }}
-                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-primary hover:bg-primary/10 rounded p-0.5 cursor-pointer shrink-0"
-                                    title="Quick add"
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                  </button>
-                                </div>
-                                <div className="flex-1 space-y-0.5 overflow-hidden">
-                                  {shown.map(p => {
-                                    const client = getClientDetails(p.clientId);
-                                    const timeStr = p.scheduledFor ? new Date(p.scheduledFor).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
-                                    const ss = getStatusStyle(p.status);
-                                    const dashed = p.status === "DRAFT" ? "border-dashed" : "border-solid";
-                                    return (
-                                      <div
-                                        key={p.id}
-                                        draggable
-                                        onDragStart={e => e.dataTransfer.setData("postId", p.id)}
-                                        onClick={e => { e.stopPropagation(); setActivePostId(p.id); }}
-                                        className={`text-[9px] font-semibold px-1.5 py-1 rounded border flex items-center gap-1 cursor-grab hover:shadow-sm active:cursor-grabbing truncate ${ss.text} ${ss.bg} ${ss.border} ${dashed} ${activePostId === p.id ? "ring-1 ring-primary/40" : ""}`}
-                                        title={`${client.company}: ${p.caption}`}
-                                      >
-                                        <span className="text-[8px] font-black opacity-50 shrink-0 tabular-nums">{timeStr}</span>
-                                        <span className="truncate flex-1">{client.company || client.name}</span>
-                                        <div className="flex gap-0.5 shrink-0 ml-0.5">
-                                          {p.destinations.slice(0, 2).map(d => <span key={d.id}>{getPlatformIcon(d.platform, "h-2 w-2")}</span>)}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                  {overflow > 0 && (
-                                    <div className="text-[8px] font-bold text-muted-foreground/60 text-center pt-0.5 hover:text-primary transition-colors cursor-pointer select-none">
-                                      +{overflow} more
-                                    </div>
-                                  )}
-                                </div>
-                                {postsForDay.length > 0 && (
-                                  <div className="mt-1 pt-1 border-t border-border/20 flex justify-between text-[8px] font-bold text-muted-foreground/50 uppercase tracking-wide select-none">
-                                    <span>{postsForDay.length} post{postsForDay.length !== 1 ? "s" : ""}</span>
-                                    <span>{uniqueClients} client{uniqueClients !== 1 ? "s" : ""}</span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </Card>
-                  )}
-
-                  {/* Week View */}
-                  {calendarView === "week" && (
-                    <Card className="border border-border/60 shadow-sm bg-card rounded-xl overflow-hidden p-0">
-                      <div className="grid grid-cols-8 divide-x divide-border/30">
-                        <div className="flex flex-col divide-y divide-border/20 bg-muted/10 text-muted-foreground text-[10px] font-bold text-center select-none pt-[42px]">
-                          {["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00"].map(h => (
-                            <div key={h} className="h-24 flex items-center justify-center">{h}</div>
-                          ))}
-                        </div>
-                        {getWeekDays(calendarDate).map(dayDate => {
-                          const isToday = dayDate.toDateString() === new Date().toDateString();
-                          return (
-                            <div key={dayDate.toISOString()} className="flex flex-col divide-y divide-border/20">
-                              <div className={`p-2 text-center border-b border-border/30 text-xs font-bold ${isToday ? "bg-primary text-primary-foreground" : "bg-muted/5 text-muted-foreground"}`}>
-                                <div>{dayDate.toLocaleDateString(undefined, { weekday: "short" })}</div>
-                                <div className="text-[10px] font-semibold mt-0.5">{dayDate.getDate()}</div>
-                              </div>
-                              {["08:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00"].map(hourStr => {
-                                const postsInSlot = posts.filter(p => {
-                                  if (!p.scheduledFor) return false;
-                                  const d = new Date(p.scheduledFor);
-                                  const matchDate = d.getDate() === dayDate.getDate() && d.getMonth() === dayDate.getMonth() && d.getFullYear() === dayDate.getFullYear();
-                                  if (!matchDate) return false;
-                                  const hr = d.getHours();
-                                  const slotHr = parseInt(hourStr.split(":")[0]);
-                                  return hr >= slotHr && hr < slotHr + 2;
-                                });
-                                return (
-                                  <div
-                                    key={hourStr}
-                                    onDragOver={e => e.preventDefault()}
-                                    onDrop={e => { e.preventDefault(); const pid = e.dataTransfer.getData("postId"); if (pid) handleReschedulePostWithTime(pid, dayDate, hourStr); }}
-                                    className="h-24 p-1 bg-card hover:bg-muted/5 relative group flex flex-col gap-1 overflow-y-auto select-none"
-                                  >
-                                    <button
-                                      onClick={() => {
-                                        resetComposer();
-                                        const ld = new Date(dayDate);
-                                        const [hrs] = hourStr.split(":").map(Number);
-                                        ld.setHours(hrs, 0);
-                                        const lDate = new Date(ld.getTime() - ld.getTimezoneOffset() * 60000);
-                                        setComposerScheduledFor(lDate.toISOString().slice(0, 16));
-                                        setPublishNow(false); setIsComposerOpen(true);
-                                      }}
-                                      className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 transition-opacity text-primary hover:bg-primary/10 rounded p-0.5 cursor-pointer z-10"
-                                    >
-                                      <Plus className="h-2.5 w-2.5" />
-                                    </button>
-                                    {postsInSlot.map(p => {
-                                      const client = getClientDetails(p.clientId);
-                                      const ss = getStatusStyle(p.status);
-                                      return (
-                                        <div key={p.id} draggable onDragStart={e => e.dataTransfer.setData("postId", p.id)} onClick={() => setActivePostId(p.id)}
-                                          className={`text-[8px] font-bold p-1 border rounded truncate cursor-grab active:cursor-grabbing ${ss.text} ${ss.bg} ${ss.border} ${activePostId === p.id ? "ring-1 ring-primary/40" : ""}`}>
-                                          {client.company || client.name}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </Card>
-                  )}
-
-                  {/* Agenda View */}
-                  {calendarView === "agenda" && (
-                    <Card className="border border-border/60 shadow-sm bg-card rounded-xl p-5">
-                      {filteredPosts.filter(p => p.scheduledFor).length === 0 ? (
-                        <div className="text-center py-12 text-sm text-muted-foreground italic">No scheduled posts in agenda.</div>
-                      ) : (
-                        <div className="space-y-6">
-                          {Object.entries(
-                            filteredPosts.filter(p => p.scheduledFor).reduce((acc, p) => {
-                              const key = new Date(p.scheduledFor!).toDateString();
-                              if (!acc[key]) acc[key] = [];
-                              acc[key].push(p);
-                              return acc;
-                            }, {} as Record<string, SocialPost[]>)
-                          ).map(([dateStr, postsList]) => (
-                            <div key={dateStr}>
-                              <h4 className="font-bold text-xs text-muted-foreground uppercase tracking-wider border-b border-border/30 pb-2 mb-3 flex items-center gap-2">
-                                <Calendar className="h-3.5 w-3.5 text-primary" />
-                                {dateStr}
-                                <span className="ml-auto text-[10px] bg-muted px-2 py-0.5 rounded-full font-semibold">{postsList.length} posts</span>
-                              </h4>
-                              <div className="space-y-2">
-                                {postsList.map(p => {
-                                  const client = getClientDetails(p.clientId);
-                                  const time = new Date(p.scheduledFor!).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-                                  const ss = getStatusStyle(p.status);
-                                  return (
-                                    <div key={p.id} onClick={() => setActivePostId(p.id)}
-                                      className={`p-3 bg-muted/10 border rounded-xl flex items-center justify-between cursor-pointer transition-colors hover:border-primary/30 ${activePostId === p.id ? "border-primary/50 bg-primary/5" : "border-border/40"}`}>
-                                      <div className="flex items-center gap-3">
-                                        <span className="text-xs font-bold text-muted-foreground bg-muted border px-2.5 py-1 rounded-lg shrink-0 tabular-nums">{time}</span>
-                                        <div>
-                                          <div className="font-bold text-xs text-foreground">{client.company || client.name}</div>
-                                          <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1 max-w-xs">{p.caption}</p>
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center gap-3 shrink-0">
-                                        <div className="flex gap-1">
-                                          {p.destinations.map(d => <span key={d.id}>{getPlatformIcon(d.platform, "h-3.5 w-3.5")}</span>)}
-                                        </div>
-                                        <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 border rounded-full ${ss.text} ${ss.bg} ${ss.border}`}>
-                                          {formatPostStatus(p.status)}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </Card>
-                  )}
-                </div>
+                <CalendarViews
+                  calendarView={calendarView}
+                  calendarDate={calendarDate}
+                  setCalendarDate={setCalendarDate}
+                  calendarCells={calendarCells}
+                  filteredPosts={filteredPosts}
+                  activePostId={activePostId}
+                  setActivePostId={setActivePostId}
+                  resetComposer={resetComposer}
+                  setComposerScheduledFor={setComposerScheduledFor}
+                  setPublishNow={setPublishNow}
+                  setIsComposerOpen={setIsComposerOpen}
+                  handleReschedulePost={handleReschedulePost}
+                  handleReschedulePostWithTime={handleReschedulePostWithTime}
+                  getClientDetails={getClientDetails}
+                  getPlatformIcon={getPlatformIcon}
+                />
               )}
             </>
           )}
@@ -2812,7 +2321,10 @@ export default function SocialPublishPage() {
                 <SelectValue placeholder="Change Status..." />
               </SelectTrigger>
               <SelectContent>
-                {["DRAFT", "AWAITING_APPROVAL", "SCHEDULED", "PUBLISHED"].map(s => <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>)}
+                {/* PUBLISHED intentionally excluded — this just PUTs a status field with
+                    no actual publish call, so it would mark posts as live without ever
+                    posting them, corrupting publishing stats and client reports. */}
+                {["DRAFT", "AWAITING_APPROVAL", "SCHEDULED"].map(s => <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select onValueChange={v => { handleBulkMoveSchedule(Number(v)); }}>
@@ -2846,818 +2358,115 @@ export default function SocialPublishPage() {
       )}
 
       {/* ── REDESIGNED COMPOSER DIALOG ── */}
-      <Dialog open={isComposerOpen} onOpenChange={handleOpenChange}>
-        <DialogContent className={`flex h-[100dvh] max-h-[100dvh] w-full max-w-none flex-col overflow-hidden rounded-none border-border bg-background p-0 transition-all duration-200 sm:h-auto sm:max-h-[92vh] sm:rounded-2xl sm:border ${isFullscreen ? "sm:h-[95vh] sm:max-w-[98vw]" : "sm:w-[calc(100%-2rem)] sm:max-w-5xl md:max-w-6xl"}`}>
+      <PostComposer
+        isComposerOpen={isComposerOpen}
+        handleOpenChange={handleOpenChange}
+        isFullscreen={isFullscreen}
+        setIsFullscreen={setIsFullscreen}
+        editingPostId={editingPostId}
+        showPreview={showPreview}
+        setShowPreview={setShowPreview}
+        isTagsOpen={isTagsOpen}
+        setIsTagsOpen={setIsTagsOpen}
+        postTags={postTags}
+        setPostTags={setPostTags}
+        syncedPlatforms={syncedPlatforms}
+        setIsAiOpen={setIsAiOpen}
+        composerClient={composerClient}
+        setComposerClient={setComposerClient}
+        clientsWithAccounts={clientsWithAccounts}
+        clients={clients}
+        navigate={navigate}
+        composerCampaign={composerCampaign}
+        setComposerCampaign={setComposerCampaign}
+        setIsCampaignDialogOpen={setIsCampaignDialogOpen}
+        campaigns={campaigns}
+        accounts={accounts}
+        composerAccounts={composerAccounts}
+        setComposerAccounts={setComposerAccounts}
+        alreadyPublishedAccountIds={alreadyPublishedAccountIds}
+        selectedPlatforms={selectedPlatforms}
+        setSelectedPlatforms={setSelectedPlatforms}
+        activePlatform={activePlatform}
+        setActivePlatform={setActivePlatform}
+        setExpandedComposerPlatform={setExpandedComposerPlatform}
+        getPlatformIcon={getPlatformIcon}
+        composerCaption={composerCaption}
+        setComposerCaption={setComposerCaption}
+        isEmojiOpen={isEmojiOpen}
+        setIsEmojiOpen={setIsEmojiOpen}
+        handleMediaUpload={handleMediaUpload}
+        composerMediaUrls={composerMediaUrls}
+        setComposerMediaUrls={setComposerMediaUrls}
+        composerMediaType={composerMediaType}
+        uploadProgressFiles={uploadProgressFiles}
+        expandedComposerPlatform={expandedComposerPlatform}
+        getPlatformCaption={getPlatformCaption}
+        getCharLimitForPlatform={getCharLimitForPlatform}
+        setPlatformCaption={setPlatformCaption}
+        togglePlatformSync={togglePlatformSync}
+        instagramType={instagramType}
+        setInstagramType={setInstagramType}
+        facebookType={facebookType}
+        setFacebookType={setFacebookType}
+        youtubeType={youtubeType}
+        setYoutubeType={setYoutubeType}
+        tiktokType={tiktokType}
+        setTiktokType={setTiktokType}
+        linkedinType={linkedinType}
+        setLinkedinType={setLinkedinType}
+        xType={xType}
+        setXType={setXType}
+        threadsType={threadsType}
+        setThreadsType={setThreadsType}
+        pinterestType={pinterestType}
+        pinterestTitle={pinterestTitle}
+        setPinterestTitle={setPinterestTitle}
+        pinterestLink={pinterestLink}
+        setPinterestLink={setPinterestLink}
+        pinterestBoards={pinterestBoards}
+        loadPinterestBoards={loadPinterestBoards}
+        setPinterestBoard={setPinterestBoard}
+        setPinterestType={setPinterestType}
+        tiktokPostMode={tiktokPostMode}
+        setTiktokPostMode={setTiktokPostMode}
+        instagramMusic={instagramMusic}
+        setInstagramMusic={setInstagramMusic}
+        instagramTagProducts={instagramTagProducts}
+        setInstagramTagProducts={setInstagramTagProducts}
+        instagramFirstComment={instagramFirstComment}
+        setInstagramFirstComment={setInstagramFirstComment}
+        facebookFirstComment={facebookFirstComment}
+        setFacebookFirstComment={setFacebookFirstComment}
+        linkedinFirstComment={linkedinFirstComment}
+        setLinkedinFirstComment={setLinkedinFirstComment}
+        tiktokTitle={tiktokTitle}
+        setTiktokTitle={setTiktokTitle}
+        youtubeTitle={youtubeTitle}
+        setYoutubeTitle={setYoutubeTitle}
+        youtubePrivacy={youtubePrivacy}
+        setYoutubePrivacy={setYoutubePrivacy}
+        threadsTopic={threadsTopic}
+        setThreadsTopic={setThreadsTopic}
+        publishNow={publishNow}
+        setPublishNow={setPublishNow}
+        isSubmitting={isSubmitting}
+        composerScheduledFor={composerScheduledFor}
+        setComposerScheduledFor={setComposerScheduledFor}
+        handleCreatePost={handleCreatePost}
+        submitType={submitType}
+        isUploading={isUploading}
+      />
 
-          {/* Composer Header */}
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/50 px-4 py-3 pr-12 sm:px-6 sm:py-4">
-            <div className="flex min-w-0 items-center gap-2 sm:gap-4">
-              <h2 className="whitespace-nowrap text-base font-bold text-foreground">{editingPostId ? "Edit Post" : "Create Post"}</h2>
-              {selectedPlatforms.length > 0 && (
-                <div className="hidden sm:flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
-                  <span>{selectedPlatforms.length} platform{selectedPlatforms.length !== 1 ? "s" : ""}</span>
-                  <span className="opacity-40">·</span>
-                  <span>{composerAccounts.length} account{composerAccounts.length !== 1 ? "s" : ""}</span>
-                  {Object.values(syncedPlatforms).filter(v => !v).length > 0 && (
-                    <>
-                      <span className="opacity-40">·</span>
-                      <span className="text-amber-500">{Object.values(syncedPlatforms).filter(v => !v).length} customized</span>
-                    </>
-                  )}
-                </div>
-              )}
-              {/* Tags */}
-              <div className="relative">
-                <button type="button" onClick={() => setIsTagsOpen(!isTagsOpen)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border/60 text-xs text-muted-foreground hover:bg-muted/50 cursor-pointer bg-transparent transition-colors">
-                  <Tags size={13} />Tags
-                  {postTags.length > 0 && <span className="bg-primary text-primary-foreground rounded-full text-[9px] w-4 h-4 flex items-center justify-center font-bold">{postTags.length}</span>}
-                </button>
-                {isTagsOpen && (
-                  <div className="absolute left-0 mt-1 w-40 bg-background border border-border rounded-xl shadow-lg p-2 z-50 space-y-0.5">
-                    {["Marketing", "Social", "Promo", "Announcement", "Event", "Update"].map(tag => {
-                      const checked = postTags.includes(tag);
-                      return (
-                        <label key={tag} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-muted/50 cursor-pointer text-xs select-none">
-                          <input type="checkbox" checked={checked} onChange={() => checked ? setPostTags(p => p.filter(t => t !== tag)) : setPostTags(p => [...p, tag])} className="accent-primary rounded" />
-                          {tag}
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setShowPreview(!showPreview)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer border-none ${showPreview ? "bg-primary/10 text-primary" : "bg-muted/40 text-muted-foreground hover:bg-muted"}`}>
-                <Eye size={13} />Preview
-              </button>
-              <button type="button" onClick={() => setIsFullscreen(!isFullscreen)}
-                className="text-muted-foreground hover:text-foreground bg-transparent border-none cursor-pointer p-1 hover:bg-muted rounded-lg transition-colors">
-                {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-              </button>
-              <button type="button" onClick={() => handleOpenChange(false)}
-                className="text-muted-foreground hover:text-foreground bg-transparent border-none cursor-pointer p-1 hover:bg-muted rounded-lg transition-colors">
-                <X size={15} />
-              </button>
-            </div>
-          </div>
-
-          {/* Composer Body — stacks on phones, splits side-by-side from lg up.
-              Side-by-side below that left the editor with ~15px beside the
-              fixed 360px preview column. */}
-          <div className="flex flex-1 min-h-0 flex-col overflow-hidden lg:flex-row">
-
-            {/* LEFT: Editor (scrollable) */}
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <div className="space-y-5 px-4 py-4 sm:px-6 sm:py-5">
-
-                {/* Client + Campaign */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Client *</label>
-                    <Select value={composerClient || "none"} onValueChange={val => setComposerClient(val === "none" ? "" : val)}>
-                      <SelectTrigger className="w-full border border-border/60 bg-background rounded-xl px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer font-medium transition-colors h-10">
-                        <SelectValue placeholder="Select a Client..." />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        <SelectItem value="none">Select a Client...</SelectItem>
-                        {clientsWithAccounts.map(c => <SelectItem key={c.id} value={c.id}>{c.company || c.name}</SelectItem>)}
-                        {composerClient && !clientsWithAccounts.some(c => c.id === composerClient) && (
-                          clients.filter(c => c.id === composerClient).map(c => <SelectItem key={c.id} value={c.id}>{c.company || c.name}</SelectItem>)
-                        )}
-                      </SelectContent>
-                    </Select>
-                    {clientsWithAccounts.length === 0 && (
-                      <p className="text-[11px] text-amber-500 mt-1 flex items-center gap-1 font-medium">
-                        No clients have connected social accounts.
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleOpenChange(false);
-                            navigate("/dashboard/social-media/accounts");
-                          }}
-                          className="underline hover:text-amber-400 cursor-pointer font-bold bg-transparent border-none p-0"
-                        >
-                          Connect accounts here
-                        </button>
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Campaign</label>
-                      {composerClient && (
-                        <button
-                          type="button"
-                          onClick={() => setIsCampaignDialogOpen(true)}
-                          className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1 cursor-pointer bg-transparent border-none"
-                        >
-                          <Plus size={11} /> New Campaign
-                        </button>
-                      )}
-                    </div>
-                    <Select value={composerCampaign || "none"} onValueChange={val => setComposerCampaign(val === "none" ? "" : val)} disabled={!composerClient}>
-                      <SelectTrigger className="w-full border border-border/60 bg-background rounded-xl px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed h-10">
-                        <SelectValue placeholder="No Campaign" />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        <SelectItem value="none">No Campaign</SelectItem>
-                        {campaigns.filter(c => c.clientId === composerClient).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* Account Selection */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Publishing To</label>
-                  {!composerClient ? (
-                    <div className="text-xs text-muted-foreground/70 italic bg-muted/20 rounded-xl p-4 border border-dashed border-border text-center">
-                      Select a client above to view their connected social accounts.
-                    </div>
-                  ) : accounts.length > 0 ? (
-                    <div className="flex flex-wrap gap-4 py-2">
-                      {accounts.map(account => {
-                        const platId = account.platform.toLowerCase();
-                        const pConfig = PLATFORMS_CONFIG.find(p => p.id === platId) || { label: account.platform, color: "#8E8E93", icon: HelpCircle };
-                        const isAccSelected = composerAccounts.includes(account.id);
-                        const isAlreadyPublished = alreadyPublishedAccountIds.includes(account.id);
-                        const initials = (account.displayName || account.platformUsername || "?")
-                          .split(" ")
-                          .map(n => n[0])
-                          .join("")
-                          .slice(0, 2)
-                          .toUpperCase();
-
-                        return (
-                          <TooltipProvider key={account.id}>
-                            <Tooltip delayDuration={200}>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  disabled={isAlreadyPublished}
-                                  onClick={() => {
-                                    if (isAccSelected) {
-                                      setComposerAccounts(prev => prev.filter(id => id !== account.id));
-                                      const remaining = composerAccounts.filter(id => id !== account.id);
-                                      const hasMore = accounts.some(acc => remaining.includes(acc.id) && acc.platform.toLowerCase() === platId);
-                                      if (!hasMore) {
-                                        setSelectedPlatforms(prev => prev.filter(p => p !== platId));
-                                        if (activePlatform === platId) {
-                                          const rPlats = selectedPlatforms.filter(p => p !== platId);
-                                          setActivePlatform(rPlats.length > 0 ? rPlats[0] : "");
-                                        }
-                                      }
-                                    } else {
-                                      setComposerAccounts(prev => [...prev, account.id]);
-                                      if (!selectedPlatforms.includes(platId)) setSelectedPlatforms(prev => [...prev, platId]);
-                                      setActivePlatform(platId);
-                                      setExpandedComposerPlatform(platId);
-                                    }
-                                  }}
-                                  className={`relative w-12 h-12 rounded-full outline-none flex items-center justify-center shrink-0 ${
-                                    isAlreadyPublished
-                                      ? "ring-2 ring-emerald-500 ring-offset-2 ring-offset-background scale-105 opacity-85 cursor-not-allowed"
-                                      : isAccSelected
-                                        ? "ring-2 ring-primary ring-offset-2 ring-offset-background scale-105 opacity-100 cursor-pointer transition-all duration-200"
-                                        : "opacity-60 grayscale hover:opacity-100 hover:grayscale-0 hover:scale-105 cursor-pointer transition-all duration-200"
-                                  }`}
-                                >
-                                  {/* Avatar or Initials */}
-                                  {account.avatarUrl ? (
-                                    <img
-                                      src={account.avatarUrl}
-                                      alt={account.displayName}
-                                      className="w-full h-full rounded-full object-cover border border-border/40"
-                                      onError={(e) => {
-                                        (e.target as HTMLElement).style.display = "none";
-                                        const fallback = (e.target as HTMLElement).nextElementSibling as HTMLElement;
-                                        if (fallback) fallback.style.display = "flex";
-                                      }}
-                                    />
-                                  ) : null}
-                                  <div
-                                    className="w-full h-full rounded-full bg-muted/60 dark:bg-muted/30 border border-border/40 text-[11px] font-bold text-muted-foreground flex items-center justify-center uppercase"
-                                    style={{ display: account.avatarUrl ? "none" : "flex" }}
-                                  >
-                                    {initials}
-                                  </div>
-
-                                  {/* Platform Badge */}
-                                  <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-background border border-border shadow-sm flex items-center justify-center z-10 p-0.5">
-                                    {getPlatformIcon(platId, "w-full h-full rounded-sm object-contain")}
-                                  </div>
-
-                                  {/* Selected Checkmark indicator */}
-                                  {isAccSelected && (
-                                    <div className={`absolute -top-1 -right-1 text-primary-foreground rounded-full w-4 h-4 flex items-center justify-center z-20 shadow-sm border border-background ${
-                                      isAlreadyPublished ? "bg-emerald-500" : "bg-primary"
-                                    }`}>
-                                      <Check className="h-2.5 w-2.5 stroke-[3px]" />
-                                    </div>
-                                  )}
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent side="bottom" className="text-xs p-2">
-                                <p className="font-semibold">{account.displayName || account.platformUsername}</p>
-                                <p className="text-[10px] text-muted-foreground capitalize">{pConfig.label}</p>
-                                {isAlreadyPublished && (
-                                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
-                                    Already live — will not be re-posted. Only failed/new accounts publish again.
-                                  </p>
-                                )}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-muted-foreground/70 italic bg-muted/20 rounded-xl p-4 border border-dashed border-border text-center">
-                      No social accounts connected for this client. Connect accounts in Social Accounts settings.
-                    </div>
-                  )}
-                </div>
-
-                {/* Master Content */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Master Content</label>
-                    <span className="text-[10px] text-muted-foreground/60 italic">All platforms inherit unless customized</span>
-                  </div>
-                  <div className="border border-border/60 rounded-xl overflow-hidden focus-within:border-primary/50 transition-colors">
-                    <textarea
-                      value={composerCaption}
-                      onChange={e => setComposerCaption(e.target.value)}
-                      placeholder="Write your main caption here. All platforms will inherit this unless customized..."
-                      rows={4}
-                      className="w-full resize-none outline-none text-sm text-foreground placeholder:text-muted-foreground/40 p-4 bg-transparent focus:ring-0 border-0"
-                    />
-                    <div className="flex items-center gap-3 px-4 py-2.5 border-t border-border/30 bg-muted/5">
-                      <button type="button" onClick={() => document.getElementById("media-file")?.click()} className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer" title="Add Media">
-                        <ImagePlus size={16} />
-                      </button>
-                      <div className="relative">
-                        <button type="button" onClick={() => setIsEmojiOpen(!isEmojiOpen)} className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center" title="Emoji">
-                          <Smile size={16} />
-                        </button>
-                        {isEmojiOpen && (
-                          <div className="absolute left-0 bottom-full mb-2 w-44 bg-background border border-border rounded-xl shadow-lg p-2 z-50 grid grid-cols-4 gap-1">
-                            {["😊", "🔥", "🚀", "✨", "👍", "🎉", "❤️", "👏", "🙌", "💡", "📌", "📢", "😍", "🤩", "💯", "😎"].map(emoji => (
-                              <button key={emoji} type="button" onClick={() => { setComposerCaption(prev => prev + emoji); setIsEmojiOpen(false); }}
-                                className="h-8 w-8 text-lg flex items-center justify-center hover:bg-muted rounded cursor-pointer border-none bg-transparent">{emoji}</button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <button type="button" onClick={() => setComposerCaption(prev => prev + " #")} className="text-muted-foreground hover:text-foreground font-bold text-sm cursor-pointer bg-transparent border-none" title="Hashtag">#</button>
-                      <button type="button" onClick={() => setIsAiOpen(true)} className="ml-auto flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-primary transition-colors cursor-pointer bg-transparent border-none">
-                        <Sparkles size={13} />AI
-                      </button>
-                      <input id="media-file" type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleMediaUpload} />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Media Grid */}
-                {(composerMediaUrls.length > 0 || uploadProgressFiles.some(f => f.status === "uploading")) && (
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Media</label>
-                    <div className="flex gap-2 flex-wrap">
-                      {composerMediaUrls.map((url, i) => (
-                        <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden group border border-border/50 shrink-0">
-                          {composerMediaType === "video" ? <video src={url} className="w-full h-full object-cover" /> : <img src={url} alt="" className="w-full h-full object-cover" />}
-                          <button type="button" onClick={() => setComposerMediaUrls(prev => prev.filter((_, idx) => idx !== i))}
-                            className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 border-none cursor-pointer">×</button>
-                        </div>
-                      ))}
-                      {uploadProgressFiles.filter(f => f.status === "uploading").map(f => (
-                        <div key={f.id} className="w-20 h-20 rounded-lg border border-border/50 bg-muted/30 flex items-center justify-center shrink-0">
-                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                        </div>
-                      ))}
-                      <button type="button" onClick={() => document.getElementById("media-file")?.click()}
-                        className="w-20 h-20 rounded-lg border-2 border-dashed border-border/40 flex flex-col items-center justify-center gap-1 hover:border-primary/50 hover:bg-muted/20 cursor-pointer bg-transparent transition-colors shrink-0">
-                        <ImagePlus size={17} className="text-muted-foreground/50" />
-                        <span className="text-[9px] text-muted-foreground/50 font-medium">Add</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Platform Accordion Editors */}
-                {selectedPlatforms.length > 0 && (
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Per-Platform Settings</label>
-                    <div className="border border-border/60 rounded-xl overflow-hidden divide-y divide-border/30">
-                      {selectedPlatforms.map(plat => {
-                        const pConf = PLATFORMS_CONFIG.find(p => p.id === plat);
-                        if (!pConf) return null;
-                        const PlatIcon = pConf.icon;
-                        const isSynced = syncedPlatforms[plat] ?? true;
-                        const isExpanded = expandedComposerPlatform === plat;
-                        const captionPreview = getPlatformCaption(plat);
-                        const charCount = getCharLimitForPlatform(plat) - captionPreview.length;
-
-                        return (
-                          <div key={plat}>
-                            {/* Accordion Header */}
-                            <button type="button"
-                              onClick={() => setExpandedComposerPlatform(isExpanded ? null : plat)}
-                              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer text-left">
-                              <PlatIcon className="h-5 w-5 shrink-0" style={{ color: pConf.color }} />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-semibold text-foreground">{pConf.label}</span>
-                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${isSynced
-                                      ? "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/40"
-                                      : "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/40"
-                                    }`}>
-                                    {isSynced ? "Using Master" : "Customized"}
-                                  </span>
-                                </div>
-                                {!isExpanded && captionPreview && (
-                                  <p className="text-[10px] text-muted-foreground truncate mt-0.5 max-w-[320px]">{captionPreview}</p>
-                                )}
-                              </div>
-                              <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 shrink-0 ${isExpanded ? "rotate-180" : ""}`} />
-                            </button>
-
-                            {/* Accordion Content */}
-                            <div style={{ maxHeight: isExpanded ? "600px" : "0px", overflow: "hidden", transition: "max-height 0.25s ease-in-out" }}>
-                              <div className="px-4 pb-4 pt-2 space-y-4 bg-muted/5 border-t border-border/20">
-                                {/* Post type selector + sync toggle */}
-                                <div className="flex items-center justify-between flex-wrap gap-2">
-                                  <div className="flex items-center gap-4">
-                                    {(() => {
-                                      const types = contentTypesFor(plat);
-                                      if (types.length <= 1) return null;
-                                      const currentType = plat === 'instagram' ? instagramType
-                                        : plat === 'facebook' ? facebookType
-                                        : plat === 'youtube' ? youtubeType
-                                        : plat === 'tiktok' ? tiktokType
-                                        : plat === 'linkedin' ? linkedinType
-                                        : plat === 'x' ? xType
-                                        : plat === 'threads' ? threadsType
-                                        : plat === 'pinterest' ? pinterestType
-                                        : 'post';
-                                      const setType = (val: string) => {
-                                        if (plat === 'instagram') setInstagramType(val as any);
-                                        else if (plat === 'facebook') setFacebookType(val as any);
-                                        else if (plat === 'youtube') setYoutubeType(val as any);
-                                        else if (plat === 'tiktok') setTiktokType(val as any);
-                                        else if (plat === 'linkedin') setLinkedinType(val);
-                                        else if (plat === 'x') setXType(val);
-                                        else if (plat === 'threads') setThreadsType(val);
-                                        else if (plat === 'pinterest') setPinterestType(val);
-                                      };
-                                      return types.map(ct => (
-                                        <label key={ct.id} className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-foreground" title={ct.hint || ''}>
-                                          <input type="radio" name={`${plat}-type`}
-                                            checked={currentType === ct.id}
-                                            onChange={() => setType(ct.id)}
-                                            className="accent-primary" />
-                                          {ct.label}
-                                        </label>
-                                      ));
-                                    })()}
-                                    {plat === 'tiktok' && (
-                                      <div className="ml-2 pl-2 border-l border-border/40">
-                                        <Select value={tiktokPostMode} onValueChange={v => setTiktokPostMode(v as TikTokPostMode)}>
-                                          <SelectTrigger size="xs" className="w-auto min-w-[140px] shadow-none">
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {TIKTOK_POST_MODES.map(mode => (
-                                              <SelectItem key={mode.id} value={mode.id}>{mode.label}</SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                    )}
-                                  </div>
-                                  <button type="button" onClick={() => togglePlatformSync(plat)}
-                                    className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${isSynced
-                                        ? "bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/40"
-                                        : "bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/40"
-                                      }`}>
-                                    {isSynced ? <><Link2 size={11} />Using Master</> : <><Link2Off size={11} />Customized</>}
-                                  </button>
-                                </div>
-
-                                {/* Caption */}
-                                <div className="border border-border/50 rounded-lg overflow-hidden focus-within:border-primary/40 transition-colors">
-                                  <textarea
-                                    value={getPlatformCaption(plat)}
-                                    onChange={e => setPlatformCaption(plat, e.target.value)}
-                                    placeholder={isSynced ? "Inheriting master caption..." : `Custom caption for ${pConf.label}...`}
-                                    rows={3}
-                                    className="w-full resize-none outline-none text-sm text-foreground placeholder:text-muted-foreground/40 p-3 bg-transparent focus:ring-0 border-0"
-                                  />
-                                  <div className="flex items-center gap-3 px-3 py-2 border-t border-border/20 bg-muted/5">
-                                    <button type="button" onClick={() => setPlatformCaption(plat, getPlatformCaption(plat) + " #")}
-                                      className="text-muted-foreground hover:text-foreground font-bold text-sm cursor-pointer bg-transparent border-none">#</button>
-                                    <span className={`text-xs ml-auto tabular-nums ${charCount < 0 ? "text-rose-500 font-bold" : charCount < 50 ? "text-amber-500" : "text-muted-foreground"}`}>
-                                      {charCount}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {/* Platform-specific fields */}
-                                {(plat === "instagram" || plat === "facebook" || plat === "linkedin") && (
-                                  <div className="space-y-3">
-                                    {plat === "instagram" && (
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="text-xs text-muted-foreground w-20 shrink-0">Stickers</span>
-                                        <button type="button" onClick={() => setInstagramMusic(!instagramMusic)}
-                                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold cursor-pointer transition-colors ${instagramMusic ? "bg-primary text-primary-foreground border-transparent" : "border-border text-muted-foreground hover:bg-muted/50 bg-background"}`}>
-                                          <Music size={11} />Music
-                                        </button>
-                                        <button type="button" onClick={() => setInstagramTagProducts(!instagramTagProducts)}
-                                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold cursor-pointer transition-colors ${instagramTagProducts ? "bg-primary text-primary-foreground border-transparent" : "border-border text-muted-foreground hover:bg-muted/50 bg-background"}`}>
-                                          <ShoppingBag size={11} />Products
-                                        </button>
-                                      </div>
-                                    )}
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-xs text-muted-foreground w-20 shrink-0">First Comment</span>
-                                      <input
-                                        value={plat === "instagram" ? instagramFirstComment : plat === "facebook" ? facebookFirstComment : linkedinFirstComment}
-                                        onChange={e => plat === "instagram" ? setInstagramFirstComment(e.target.value) : plat === "facebook" ? setFacebookFirstComment(e.target.value) : setLinkedinFirstComment(e.target.value)}
-                                        placeholder="Scheduled first comment..."
-                                        className="flex-1 border border-border/50 rounded-lg px-3 py-2 text-xs outline-none focus:border-primary bg-background"
-                                      />
-                                    </div>
-                                  </div>
-                                )}
-                                {plat === "tiktok" && (
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-xs text-muted-foreground w-16 shrink-0">Title</span>
-                                    <input value={tiktokTitle} onChange={e => setTiktokTitle(e.target.value)} placeholder="TikTok title..." className="flex-1 border border-border/50 rounded-lg px-3 py-2 text-xs outline-none focus:border-primary bg-background" />
-                                  </div>
-                                )}
-                                {plat === "youtube" && (
-                                  <div className="space-y-3">
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-xs text-muted-foreground w-16 shrink-0">Title</span>
-                                      <input value={youtubeTitle} onChange={e => setYoutubeTitle(e.target.value)} placeholder="Video title..." className="flex-1 border border-border/50 rounded-lg px-3 py-2 text-xs outline-none focus:border-primary bg-background" />
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-xs text-muted-foreground w-16 shrink-0">Privacy</span>
-                                      <div className="flex-1">
-                                        <Select value={youtubePrivacy} onValueChange={setYoutubePrivacy}>
-                                          <SelectTrigger size="sm" className="w-full shadow-none border-border/50">
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="public">Public</SelectItem>
-                                            <SelectItem value="unlisted">Unlisted</SelectItem>
-                                            <SelectItem value="private">Private</SelectItem>
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                    </div>
-                                    <div className="pl-16 text-[10px] text-muted-foreground">
-                                      Public: Visible to everyone. Unlisted: Anyone with the link can view. Private: Only you can view.
-                                    </div>
-                                  </div>
-                                )}
-                                {plat === "threads" && (
-                                  <div className="space-y-2">
-                                    <div className="flex items-center gap-3">
-                                      <span className="text-xs text-muted-foreground w-16 shrink-0">Topic</span>
-                                      <input value={threadsTopic} onChange={e => setThreadsTopic(e.target.value)} placeholder="Thread topic..." className="flex-1 border border-border/50 rounded-lg px-3 py-2 text-xs outline-none focus:border-primary bg-background" />
-                                    </div>
-                                    <div className="flex items-center gap-2 pl-20">
-                                      <span className="text-[10px] text-muted-foreground shrink-0">Trending:</span>
-                                      {TRENDING_TOPICS.map(t => (
-                                        <button key={t} type="button" onClick={() => setThreadsTopic(t === "More..." ? threadsTopic : t)}
-                                          className="px-2 py-0.5 rounded-full border border-border text-[10px] text-muted-foreground whitespace-nowrap cursor-pointer hover:bg-muted/50 bg-background">{t}</button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-              </div>
-            </div>
-
-            {/* RIGHT: Live Preview (fixed, non-scrolling relative to dialog) */}
-            {showPreview && (
-              <div className="flex w-full shrink-0 flex-col overflow-hidden border-t border-border/40 bg-muted/20 lg:w-[360px] lg:border-l lg:border-t-0">
-                {/* Preview platform tabs */}
-                {selectedPlatforms.length > 0 && (
-                  <div className="flex gap-1 p-3 border-b border-border/30 bg-background/50 overflow-x-auto flex-nowrap shrink-0">
-                    {selectedPlatforms.map(plat => {
-                      const pConf = PLATFORMS_CONFIG.find(p => p.id === plat);
-                      if (!pConf) return null;
-                      const PlatIcon = pConf.icon;
-                      const isActive = activePlatform === plat;
-                      return (
-                        <button key={plat} type="button" onClick={() => setActivePlatform(plat)}
-                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer border-none shrink-0 ${isActive ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-muted/50 bg-transparent"
-                            }`}>
-                          <PlatIcon className="h-3.5 w-3.5" style={{ color: isActive ? "inherit" : pConf.color }} />
-                          {pConf.label.split(" ")[0]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
-                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                    <Eye size={11} />
-                    {activePlatform ? `${PLATFORMS_CONFIG.find(p => p.id === activePlatform)?.label || activePlatform} Preview` : "Live Preview"}
-                  </div>
-                  {activePlatform ? (() => {
-                    const previewAccount = accounts.find(a => composerAccounts.includes(a.id) && a.platform.toLowerCase() === activePlatform)
-                      || accounts.find(a => a.platform.toLowerCase() === activePlatform);
-                    return (
-                      <PreviewCard
-                        platform={activePlatform}
-                        text={getPlatformCaption(activePlatform) || "What would you like to share?"}
-                        image={composerMediaUrls[0] || null}
-                        mediaType={composerMediaType}
-                        accountName={previewAccount?.displayName || activePlatform}
-                        platformUsername={previewAccount?.platformUsername}
-                        avatarUrl={previewAccount?.avatarUrl}
-                        postType={
-                          activePlatform === "instagram" ? instagramType
-                          : activePlatform === "facebook" ? facebookType
-                          : activePlatform === "youtube" ? youtubeType
-                          : activePlatform === "tiktok" ? tiktokType
-                          : activePlatform === "linkedin" ? linkedinType
-                          : activePlatform === "x" ? xType
-                          : activePlatform === "threads" ? threadsType
-                          : activePlatform === "pinterest" ? pinterestType
-                          : "post"
-                        }
-                      />
-                    );
-                  })() : (
-                    <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs italic text-center py-12">
-                      Select a platform to see the live preview.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Composer Sticky Footer */}
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/40 bg-background px-4 py-3 sm:px-6 sm:py-4">
-            <div className="flex flex-1 flex-wrap items-center gap-2 sm:gap-3">
-              <Select value={publishNow ? "now" : "schedule"} onValueChange={v => setPublishNow(v === "now")} disabled={isSubmitting}>
-                <SelectTrigger size="sm" className="w-auto min-w-[130px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="now">Publish Now</SelectItem>
-                  <SelectItem value="schedule">Schedule</SelectItem>
-                </SelectContent>
-              </Select>
-              {!publishNow && (
-                <div className="flex items-center gap-2 border border-border/50 bg-muted/20 rounded-xl px-3 py-1.5">
-                  <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <input type="datetime-local" value={composerScheduledFor} onChange={e => setComposerScheduledFor(e.target.value)}
-                    disabled={isSubmitting}
-                    className="bg-transparent border-none text-xs focus:ring-0 outline-none cursor-pointer text-foreground disabled:opacity-50 disabled:cursor-not-allowed" />
-                </div>
-              )}
-              <button type="button" disabled={!composerClient || isSubmitting || isUploading} onClick={() => handleCreatePost(true)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors border flex items-center gap-2 ${!composerClient || isSubmitting || isUploading ? "bg-muted text-muted-foreground/40 border-border/30 cursor-not-allowed" : "text-foreground bg-muted/30 hover:bg-muted border-border/50 cursor-pointer"
-                  }`}>
-                {isSubmitting && submitType === "draft" && (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                )}
-                Save Draft
-              </button>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button variant="outline" className="rounded-xl px-5 font-semibold text-sm h-9" disabled={isSubmitting || isUploading} onClick={() => handleOpenChange(false)}>Cancel</Button>
-              {(() => {
-                const disabled = !composerClient || composerAccounts.length === 0 || isSubmitting || isUploading;
-                const label = !composerClient ? "Select Client" : composerAccounts.length === 0 ? "Select Accounts" : isUploading ? "Uploading Media..." : isSubmitting && submitType === "publish" ? (publishNow ? "Publishing..." : "Scheduling...") : publishNow ? "Publish Now" : "Schedule Post";
-                return (
-                  <button type="button" disabled={disabled} onClick={() => handleCreatePost()}
-                    className={`px-5 py-2 rounded-xl text-sm font-bold transition-colors border-none h-9 flex items-center justify-center gap-2 ${disabled ? "bg-muted text-muted-foreground/40 cursor-not-allowed" : "bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-sm"
-                      }`}>
-                    {isSubmitting && submitType === "publish" && (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary-foreground" />
-                    )}
-                    {isUploading && (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                    )}
-                    <span>{label}</span>
-                  </button>
-                );
-              })()}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Social Publishing Progress Modal */}
-      <Dialog open={isPublishProgressOpen} onOpenChange={(open) => {
-        if (!open && publishStatus.status !== 'publishing') {
-          setIsPublishProgressOpen(false);
-        }
-      }}>
-        <DialogContent className="max-w-md p-6 rounded-2xl bg-card border border-border/80 shadow-2xl backdrop-blur-md">
-          <DialogHeader className="space-y-2">
-            <DialogTitle className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-              {publishStatus.status === 'publishing' ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                  <span>Publishing Post...</span>
-                </>
-              ) : publishStatus.status === 'success' ? (
-                <>
-                  <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                  <span className="text-emerald-500">Publication Successful</span>
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="h-5 w-5 text-rose-500" />
-                  <span className="text-rose-500">Publication completed with errors</span>
-                </>
-              )}
-            </DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground">
-              {publishStatus.status === 'publishing' 
-                ? "Distributing your content and media assets to the selected social platforms. Please keep this window open."
-                : publishStatus.status === 'success'
-                ? "Your content has been successfully published across all platforms."
-                : "Some destinations failed to publish. Check details below."}
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* Progress Circular Indicator and Stats */}
-          <div className="flex flex-col items-center justify-center py-6 border-y border-border/40 my-4 space-y-4">
-            <div className="relative flex items-center justify-center">
-              {/* Circular SVG Progress */}
-              <svg className="w-32 h-32 transform -rotate-90">
-                {/* Background Track */}
-                <circle
-                  cx="64"
-                  cy="64"
-                  r="50"
-                  className="stroke-muted"
-                  strokeWidth="8"
-                  fill="transparent"
-                />
-                {/* Active Progress */}
-                <circle
-                  cx="64"
-                  cy="64"
-                  r="50"
-                  className={`transition-all duration-500 ease-out ${
-                    publishStatus.status === 'success' 
-                      ? 'stroke-emerald-500' 
-                      : publishStatus.status === 'failed' && publishStatus.completedDestinations === 0
-                      ? 'stroke-rose-500'
-                      : 'stroke-primary'
-                  }`}
-                  strokeWidth="8"
-                  fill="transparent"
-                  strokeDasharray={2 * Math.PI * 50}
-                  strokeDashoffset={
-                    2 * Math.PI * 50 - 
-                    ((publishStatus.completedDestinations + publishStatus.failedDestinations) / (publishStatus.totalDestinations || 1)) * (2 * Math.PI * 50)
-                  }
-                  strokeLinecap="round"
-                />
-              </svg>
-              {/* Inner Text */}
-              <div className="absolute flex flex-col items-center justify-center">
-                <span className="text-2xl font-black text-foreground">
-                  {Math.round(((publishStatus.completedDestinations + publishStatus.failedDestinations) / (publishStatus.totalDestinations || 1)) * 100)}%
-                </span>
-                <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
-                  {publishStatus.completedDestinations + publishStatus.failedDestinations} / {publishStatus.totalDestinations} Done
-                </span>
-              </div>
-            </div>
-
-            {/* Time Stats */}
-            <div className="grid grid-cols-2 gap-8 text-center w-full max-w-[280px]">
-              <div className="flex flex-col">
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Elapsed Time</span>
-                <span className="text-lg font-bold text-foreground mt-0.5">{elapsedSeconds}s</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Est. Remaining</span>
-                <span className="text-lg font-bold text-foreground mt-0.5">{getEstimatedTimeRemaining()}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Destinations Detailed List */}
-          <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
-            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Publishing Destinations</h4>
-            {publishStatus.destinations.map((dest) => {
-              const platConfig = PLATFORMS_CONFIG.find(p => p.id === dest.platform.toLowerCase());
-              const Icon = platConfig?.icon || HelpCircle;
-              
-              return (
-                <div key={dest.id} className="flex items-center justify-between p-2.5 rounded-xl border border-border/30 bg-muted/10">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div 
-                      className="p-1.5 rounded-lg shrink-0 flex items-center justify-center text-white" 
-                      style={{ backgroundColor: platConfig?.color || '#a3a3a3' }}
-                    >
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-xs font-bold text-foreground truncate">{dest.accountName}</span>
-                      <span className="text-[10px] text-muted-foreground capitalize">{dest.platform}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {dest.status === 'QUEUED' && (
-                      <Badge variant="outline" className="text-[10px] font-bold py-0.5 px-2 bg-muted/30 border-muted text-muted-foreground">
-                        Queued
-                      </Badge>
-                    )}
-                    {dest.status === 'PUBLISHING' && (
-                      <Badge variant="outline" className="text-[10px] font-bold py-0.5 px-2 bg-amber-500/10 border-amber-500/30 text-amber-500 flex items-center gap-1">
-                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                        Publishing
-                      </Badge>
-                    )}
-                    {dest.status === 'PUBLISHED' && (
-                      isTikTokDraft(dest) ? (
-                        <Badge variant="outline" className="text-[10px] font-bold py-0.5 px-2 bg-violet-500/10 border-violet-500/30 text-violet-500 flex items-center gap-1">
-                          <FileText className="h-2.5 w-2.5" />
-                          Saved to Drafts
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-[10px] font-bold py-0.5 px-2 bg-emerald-500/10 border-emerald-500/30 text-emerald-500 flex items-center gap-1">
-                          <Check className="h-2.5 w-2.5" />
-                          Success
-                        </Badge>
-                      )
-                    )}
-                    {dest.status === 'FAILED' && (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <Badge variant="outline" className="text-[10px] font-bold py-0.5 px-2 bg-rose-500/10 border-rose-500/30 text-rose-500 flex items-center gap-1 cursor-help">
-                              <AlertCircle className="h-2.5 w-2.5" />
-                              Failed
-                            </Badge>
-                          </TooltipTrigger>
-                          {dest.error && (
-                            <TooltipContent side="top" className="max-w-[200px] text-[11px] p-2 bg-popover border border-border">
-                              {dest.error}
-                            </TooltipContent>
-                          )}
-                        </Tooltip>
-                      </TooltipProvider>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {publishStatus.destinations.some(d => isTikTokDraft(d)) && (
-            <div className="p-3 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-300 text-xs flex items-start gap-2.5 mt-4">
-              <Sparkles className="h-4 w-4 shrink-0 text-violet-500 mt-0.5" />
-              <div>
-                <p className="font-bold text-xs">Saved as Draft in TikTok Mobile App</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Your video has been delivered to your TikTok Inbox. Open the <strong>TikTok app on your phone</strong> to edit (add sounds, cover, caption) and tap <strong>Post</strong> to publish.
-                </p>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter className="mt-6 pt-4 border-t border-border/40">
-            {publishStatus.status !== 'publishing' ? (
-              <Button 
-                onClick={() => setIsPublishProgressOpen(false)} 
-                className="w-full rounded-xl font-bold bg-primary hover:bg-primary/90 text-primary-foreground"
-              >
-                Close Progress View
-              </Button>
-            ) : (
-              <div className="w-full text-center text-[11px] text-muted-foreground italic">
-                Please do not close this browser tab while publishing is in progress...
-              </div>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PublishProgressDialog
+        open={isPublishProgressOpen}
+        onClose={() => setIsPublishProgressOpen(false)}
+        status={publishStatus}
+        elapsedSeconds={elapsedSeconds}
+        isTikTokDraft={(dest) => isTikTokDraft(dest)}
+      />
 
       {/* AI Caption Generator Modal */}
       <Dialog open={isAiOpen} onOpenChange={setIsAiOpen}>
@@ -3739,7 +2548,7 @@ export default function SocialPublishPage() {
 }
 
 /* ─────────────────────────── PREVIEW RENDERERS ─────────────────────────── */
-interface PreviewCardProps {
+export interface PreviewCardProps {
   platform: string;
   text: string;
   image: string | null;
@@ -3750,7 +2559,7 @@ interface PreviewCardProps {
   postType?: string;
 }
 
-function PreviewCard({ platform, text, image, mediaType = "image", accountName, platformUsername, avatarUrl, postType = "post" }: PreviewCardProps) {
+export function PreviewCard({ platform, text, image, mediaType = "image", accountName, platformUsername, avatarUrl, postType = "post" }: PreviewCardProps) {
   const avatar = avatarUrl || "https://api.dicebear.com/7.x/identicon/svg?seed=hirdanmarketing";
   const displayName = accountName || "Your Account";
   const handle = platformUsername || displayName.toLowerCase().replace(/\s+/g, "");

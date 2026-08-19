@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { prisma } from '../prisma.js';
 import { decryptToken } from './token-crypto.service.js';
+import { logSocialError } from './safe-error.js';
 
 export interface VideoEnrichmentResult {
   thumbnailUrl: string | null;
@@ -185,7 +186,7 @@ export async function enrichTikTokVideosBatch(
 
     return { enrichedCount, verifiedCount };
   } catch (err: any) {
-    console.error(`Error during TikTok video batch enrichment for account ${accountId}:`, err);
+    logSocialError(`Error during TikTok video batch enrichment for account ${accountId}`, err);
     return { enrichedCount: 0, verifiedCount: 0 };
   }
 }

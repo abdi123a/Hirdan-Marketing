@@ -54,32 +54,36 @@
   }
 
   .dark {
-    --background: 260 35% 8%;
-    --foreground: 260 10% 95%;
-    --card: 260 30% 12%;
-    --card-foreground: 260 10% 95%;
-    --popover: 260 30% 12%;
-    --popover-foreground: 260 10% 95%;
-    --primary: 42 92% 52%;
-    --primary-foreground: 260 30% 15%;
-    --secondary: 260 25% 25%;
-    --secondary-foreground: 260 10% 95%;
-    --muted: 260 25% 18%;
-    --muted-foreground: 260 10% 60%;
-    --accent: 260 25% 18%;
-    --accent-foreground: 260 10% 95%;
-    --destructive: 0 62% 30%;
+    /* Neutral black, not the violet-tinted dark this used to be. Every surface
+       is a step on one grayscale ramp so nothing reads as purple. */
+    --background: 0 0% 7%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 11%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 11%;
+    --popover-foreground: 0 0% 96%;
+    /* The brand purple, lightened so it carries on a near-black background —
+       the light-mode value (260 35% 40%) is too dark to read here. */
+    --primary: 260 55% 68%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 42 92% 52%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 64%;
+    --accent: 0 0% 16%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 62% 45%;
     --destructive-foreground: 0 0% 100%;
-    --border: 260 25% 20%;
-    --input: 260 25% 20%;
-    --ring: 42 92% 52%;
-    --sidebar-background: 260 35% 6%;
-    --sidebar-foreground: 260 10% 90%;
+    --border: 0 0% 19%;
+    --input: 0 0% 19%;
+    --ring: 260 55% 68%;
+    --sidebar-background: 0 0% 5%;
+    --sidebar-foreground: 0 0% 90%;
     --sidebar-primary: 42 92% 52%;
-    --sidebar-primary-foreground: 260 30% 15%;
-    --sidebar-accent: 260 30% 15%;
-    --sidebar-accent-foreground: 260 10% 90%;
-    --sidebar-border: 260 25% 15%;
+    --sidebar-primary-foreground: 0 0% 10%;
+    --sidebar-accent: 0 0% 13%;
+    --sidebar-accent-foreground: 0 0% 90%;
+    --sidebar-border: 0 0% 15%;
     --sidebar-ring: 42 92% 52%;
   }
 }

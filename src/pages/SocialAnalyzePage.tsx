@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { capStatus, capAvailable, capOf, type Capabilities, type MetricKey, type EffectiveStatus } from "@/lib/platform-capabilities";
 import { PostDetailDialog, openExternal } from "@/components/social/PostDetailDialog";
+import { compactNumber } from "@/lib/social/format";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip,
   CartesianGrid, BarChart, Bar, Legend, PieChart, Pie, Cell,
@@ -146,12 +147,6 @@ const TABS = [
 ];
 
 // ─────────────────────────── Utilities ───────────────────────────────────────
-const fmtN = (n: number | null | undefined): string => {
-  if (n == null) return "—";
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
-  return n.toLocaleString();
-};
 
 const getPlatformIcon = (platform: string, cls = "h-4 w-4 rounded-sm object-contain") => {
   const map: Record<string, string> = {
@@ -220,7 +215,7 @@ const KPICard = ({ label, value, growth, icon: Icon, color, isRate = false, suff
         ) : (
           <>
             <h3 className="text-2xl font-black text-foreground tracking-tight leading-none">
-              {isRate ? `${Number(value ?? 0).toFixed(1)}%` : fmtN(value)}{suffix}
+              {isRate ? `${Number(value ?? 0).toFixed(1)}%` : compactNumber(value)}{suffix}
             </h3>
             <div className="flex items-center gap-1.5 flex-wrap">
               {growth != null && <Delta value={growth} />}
@@ -259,7 +254,7 @@ const ChartTip = ({ active, payload, label }: any) => {
       <div className="flex items-center justify-between border-b border-border/40 pb-1.5 mb-1 gap-2">
         <span className="font-bold text-foreground">{formattedDate}</span>
         {payload.length > 1 && (
-          <span className="text-[11px] font-extrabold text-primary font-mono">{fmtN(totalSum)} total</span>
+          <span className="text-[11px] font-extrabold text-primary font-mono">{compactNumber(totalSum)} total</span>
         )}
       </div>
       {payload.map((p: any) => (
@@ -268,7 +263,7 @@ const ChartTip = ({ active, payload, label }: any) => {
             <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style={{ background: p.color || p.stroke }} />
             <span className="font-medium text-foreground/90 capitalize truncate">{p.name}:</span>
           </div>
-          <span className="font-bold text-foreground font-mono">{fmtN(Number(p.value))}</span>
+          <span className="font-bold text-foreground font-mono">{compactNumber(Number(p.value))}</span>
         </div>
       ))}
     </div>
@@ -286,11 +281,11 @@ const CompareRow = ({ label, curr, prev }: { label: string; curr: number; prev: 
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-3 border-b border-border/40 last:border-0 sm:flex-nowrap sm:gap-4">
       <span className="w-full text-sm font-medium text-muted-foreground sm:w-28 sm:shrink-0">{label}</span>
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-        <span className="w-14 shrink-0 text-right text-xs text-muted-foreground tabular-nums sm:w-20">{fmtN(prev)}</span>
+        <span className="w-14 shrink-0 text-right text-xs text-muted-foreground tabular-nums sm:w-20">{compactNumber(prev)}</span>
         <div className="h-1.5 min-w-[20px] flex-1 overflow-hidden rounded-full bg-muted">
           <div className="h-full bg-primary/30 rounded-full" style={{ width: `${prev > 0 ? Math.min((curr / Math.max(curr, prev)) * 100, 100) : 0}%` }} />
         </div>
-        <span className="w-14 shrink-0 text-sm font-bold text-foreground tabular-nums sm:w-20">{fmtN(curr)}</span>
+        <span className="w-14 shrink-0 text-sm font-bold text-foreground tabular-nums sm:w-20">{compactNumber(curr)}</span>
       </div>
       <span className="shrink-0"><Delta value={parseFloat(g.toFixed(1))} /></span>
     </div>
@@ -377,10 +372,38 @@ export default function SocialAnalyzePage() {
 
   // Posts pagination state
   const [posts, setPosts] = useState<TopPost[]>([]);
+  const aiInsightsRequestRef = useRef(0);
+  const [aiInsightsState, setAiInsightsState] = useState<{
+    insights: string[];
+    loading: boolean;
+    source: "ai" | "fallback";
+    reason: string | null;
+  }>({ insights: [], loading: false, source: "fallback", reason: null });
   const [postsTotal, setPostsTotal] = useState(0);
+  // Set when the date window held more posts than the server ranks in one pass,
+  // so the list can say so instead of quietly showing a partial ranking.
+  const [postsTruncated, setPostsTruncated] = useState<{ rowCap: number } | null>(null);
+
+  /** AI prose when we have it, the calculated sentences otherwise. */
+  const displayedInsights = aiInsightsState.insights.length > 0
+    ? aiInsightsState.insights
+    : (analytics?.aiInsights ?? []);
+
+  /**
+   * Render **bold** spans as real elements. Replaces a dangerouslySetInnerHTML
+   * that ran a regex over strings containing client-controlled values (platform
+   * names, content types), which is an HTML-injection sink.
+   */
+  const renderBold = (text: string) =>
+    text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+      part.startsWith("**") && part.endsWith("**") && part.length > 4
+        ? <strong key={i}>{part.slice(2, -2)}</strong>
+        : <span key={i}>{part}</span>
+    );
   const [postPage, setPostPage] = useState(1);
   const [postSort, setPostSort] = useState<"engagement"|"likes"|"views"|"newest"|"oldest">("engagement");
   const [postsLoading, setPostsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const POST_LIMIT = 10;
 
   // Post detail panel (metrics for one post + link out to the live post)
@@ -403,8 +426,60 @@ export default function SocialAnalyzePage() {
   // page doesn't open with ~700px of controls before a single number.
   const [showMobileFilters, setShowMobileFilters] = useState<boolean>(false);
   const [platformFilter, setPlatformFilter] = useState("ALL");
+
+  /**
+   * Ask the server to write real insights from the analytics already on screen.
+   * On-demand rather than part of /full: an LLM call on every page load would be
+   * slow and costly, and most visits never open this tab.
+   */
+  const fetchAiInsights = useCallback(async (force = false) => {
+    if (!selectedClient || !analytics) return;
+    if (!force && (aiInsightsState.loading || aiInsightsState.insights.length > 0)) return;
+
+    const requestId = ++aiInsightsRequestRef.current;
+    setAiInsightsState(s => ({ ...s, loading: true, reason: null }));
+    try {
+      // Send the numbers the page already has rather than recomputing them.
+      const facts = {
+        calculatedInsights: analytics.aiInsights,
+        kpis: analytics.kpis,
+        monthlyComparison: analytics.monthlyComparison,
+        platformComparison: analytics.platformComparison,
+        publishing: analytics.publishing,
+        contentTypePerformance: analytics.contentTypePerformance,
+        bestTimes: analytics.bestTimes,
+      };
+      const res = await apiFetch<{ insights: string[]; source: string; reason?: string }>(
+        `/social/analytics/${selectedClient}/insights`,
+        { method: "POST", body: JSON.stringify({ facts, days: dateRange, platform: platformFilter }) }
+      );
+      if (aiInsightsRequestRef.current !== requestId) return;
+      setAiInsightsState({
+        insights: res.insights || [],
+        loading: false,
+        source: res.source === "ai" && (res.insights || []).length > 0 ? "ai" : "fallback",
+        reason: res.reason ?? null,
+      });
+    } catch (err: any) {
+      if (aiInsightsRequestRef.current !== requestId) return;
+      setAiInsightsState({ insights: [], loading: false, source: "fallback", reason: err.message || "AI insights are unavailable." });
+    }
+  }, [selectedClient, analytics, aiInsightsState.loading, aiInsightsState.insights.length, dateRange, platformFilter]);
+
+  // Generate when the tab is opened, not on page load.
+  useEffect(() => {
+    if (activeTab === "ai") fetchAiInsights();
+  }, [activeTab, fetchAiInsights]);
+
+  // A different client / range / platform invalidates whatever was generated.
+  useEffect(() => {
+    aiInsightsRequestRef.current++;
+    setAiInsightsState({ insights: [], loading: false, source: "fallback", reason: null });
+  }, [selectedClient, dateRange, platformFilter]);
+
   const [contentTypeFilter, setContentTypeFilter] = useState("ALL");
   const [postSearch, setPostSearch] = useState("");
+  const [debouncedPostSearch, setDebouncedPostSearch] = useState("");
   const [chartMetric, setChartMetric] = useState<"followers"|"reach"|"impressions"|"engagementRate">("followers");
 
   // Engagement Trend focus (persisted, so the filter ALWAYS applies across sessions)
@@ -460,39 +535,64 @@ export default function SocialAnalyzePage() {
         setClients(list);
         if (list.length > 0) setSelectedClient(list[0].id);
       }
-    }).catch(() => {});
+    }).catch((err: any) => {
+      // A failed /clients load used to leave the dropdown silently empty
+      // forever, indistinguishable from "no clients have accounts yet".
+      toast({ title: "Error loading clients", description: err.message, variant: "destructive" });
+    });
   }, []);
+
+  // Debounce search so typing doesn't fire a request per keystroke.
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedPostSearch(postSearch), 300);
+    return () => clearTimeout(handler);
+  }, [postSearch]);
+
+  // Monotonic request counters: switching client/filters quickly can resolve
+  // an older, slower response after a newer one — these guard against
+  // committing a stale response under the current selection.
+  const analyticsRequestRef = useRef(0);
+  const postsRequestRef = useRef(0);
 
   const fetchAnalytics = useCallback(async () => {
     if (!selectedClient) return;
+    const requestId = ++analyticsRequestRef.current;
     setIsLoading(true);
     try {
       const q = getAnalyticsQueryString();
       const res = await apiFetch<FullAnalytics>(
         `/social/analytics/${selectedClient}/full?${q}`
       );
+      if (analyticsRequestRef.current !== requestId) return;
       setAnalytics(res);
     } catch (err: any) {
+      if (analyticsRequestRef.current !== requestId) return;
       toast({ title: "Error loading analytics", description: err.message, variant: "destructive" });
     } finally {
-      setIsLoading(false);
+      if (analyticsRequestRef.current === requestId) setIsLoading(false);
     }
   }, [selectedClient, getAnalyticsQueryString]);
 
   const fetchPosts = useCallback(async () => {
     if (!selectedClient) return;
+    const requestId = ++postsRequestRef.current;
     setPostsLoading(true);
     try {
       const q = getAnalyticsQueryString();
       const res = await apiFetch<any>(
-        `/social/analytics/${selectedClient}/posts?page=${postPage}&limit=${POST_LIMIT}&sortBy=${postSort}&search=${postSearch}&${q}`
+        `/social/analytics/${selectedClient}/posts?page=${postPage}&limit=${POST_LIMIT}&sortBy=${postSort}&search=${encodeURIComponent(debouncedPostSearch)}&${q}`
       );
+      if (postsRequestRef.current !== requestId) return;
       setPosts(res.posts || []);
       setPostsTotal(res.total || 0);
-    } catch { /* handled */ } finally {
-      setPostsLoading(false);
+      setPostsTruncated(res.truncated ? { rowCap: res.rowCap } : null);
+    } catch (err: any) {
+      if (postsRequestRef.current !== requestId) return;
+      toast({ title: "Error loading posts", description: err.message, variant: "destructive" });
+    } finally {
+      if (postsRequestRef.current === requestId) setPostsLoading(false);
     }
-  }, [selectedClient, postPage, postSort, postSearch, getAnalyticsQueryString]);
+  }, [selectedClient, postPage, postSort, debouncedPostSearch, getAnalyticsQueryString]);
 
   useEffect(() => {
     if (selectedClient) { fetchAnalytics(); setPostPage(1); }
@@ -503,35 +603,62 @@ export default function SocialAnalyzePage() {
   // paging, sorting and searching all run through here too.
   useEffect(() => {
     if (selectedClient) fetchPosts();
-  }, [selectedClient, postPage, postSort, postSearch, getAnalyticsQueryString]);
+  }, [selectedClient, postPage, postSort, debouncedPostSearch, getAnalyticsQueryString]);
 
   const handleRefresh = async () => {
     if (!selectedClient || isRefreshing) return;
     setIsRefreshing(true);
     try {
-      await apiFetch<any>(`/social/analytics/${selectedClient}/refresh`, { method: "POST" });
-      toast({ title: "✅ Metrics & Video Thumbnails Synced", description: "Fresh metrics, video thumbnails, and verifications pulled." });
+      const res = await apiFetch<any>(`/social/analytics/${selectedClient}/refresh`, { method: "POST" });
+      toast({
+        title: res.partial ? "⚠️ Partially Synced" : "✅ Metrics & Video Thumbnails Synced",
+        description: res.message || "Fresh metrics, video thumbnails, and verifications pulled.",
+        variant: res.partial ? "destructive" : "default",
+      });
       await Promise.all([fetchAnalytics(), fetchPosts()]);
     } catch (err: any) {
       toast({ title: "Sync Failed", description: err.message, variant: "destructive" });
     } finally { setIsRefreshing(false); }
   };
 
-  const exportCSV = () => {
-    if (!posts.length) return;
-    const hdr = "Caption,Platform(s),Date,Type,Likes,Comments,Shares,Saved,Views,Reach,Impressions,Engagement,ER%\n";
-    const rows = posts.map(p => [
-      `"${(p.caption||"").replace(/"/g,"'")}"`,
-      (p.destinations||[]).map((d:any)=>d.platform).join("|"),
-      p.publishedAt ? new Date(p.publishedAt).toLocaleDateString() : "",
-      p.mediaType || "text",
-      p.likes, p.comments, p.shares, p.saved, p.views, p.reach, p.impressions, p.engagement, p.engagementRate,
-    ].join(",")).join("\n");
-    const a = Object.assign(document.createElement("a"), {
-      href: URL.createObjectURL(new Blob([hdr+rows], { type:"text/csv" })),
-      download: `analytics_${new Date().toISOString().split("T")[0]}.csv`,
-    });
-    a.click();
+  // Fetches every page (not just the one currently on screen — the endpoint
+  // caps at 50 posts per page) so "Includes all posts" is actually true.
+  const exportCSV = async () => {
+    if (!selectedClient || postsTotal === 0 || isExporting) return;
+    setIsExporting(true);
+    try {
+      const q = getAnalyticsQueryString();
+      const PAGE_SIZE = 50; // server-side cap on /posts?limit=
+      const all: any[] = [];
+      let page = 1;
+      while (true) {
+        const res = await apiFetch<any>(
+          `/social/analytics/${selectedClient}/posts?page=${page}&limit=${PAGE_SIZE}&sortBy=${postSort}&search=${encodeURIComponent(postSearch)}&${q}`
+        );
+        const batch = res.posts || [];
+        all.push(...batch);
+        if (batch.length < PAGE_SIZE || all.length >= (res.total || 0)) break;
+        page++;
+      }
+
+      const hdr = "Caption,Platform(s),Date,Type,Likes,Comments,Shares,Saved,Views,Reach,Impressions,Engagement,ER%\n";
+      const rows = all.map(p => [
+        `"${(p.caption||"").replace(/"/g,"'")}"`,
+        (p.destinations||[]).map((d:any)=>d.platform).join("|"),
+        p.publishedAt ? new Date(p.publishedAt).toLocaleDateString() : "",
+        p.mediaType || "text",
+        p.likes, p.comments, p.shares, p.saved, p.views, p.reach, p.impressions, p.engagement, p.engagementRate,
+      ].join(",")).join("\n");
+      const a = Object.assign(document.createElement("a"), {
+        href: URL.createObjectURL(new Blob([hdr+rows], { type:"text/csv" })),
+        download: `analytics_${new Date().toISOString().split("T")[0]}.csv`,
+      });
+      a.click();
+    } catch (err: any) {
+      toast({ title: "Export Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // Derived values
@@ -648,7 +775,7 @@ export default function SocialAnalyzePage() {
                   <span className="hidden sm:inline">Sync Metrics</span>
                   <span className="sm:hidden">Sync</span>
                 </Button>
-                <Button variant="outline" onClick={exportCSV} className="rounded-xl h-9 px-3 gap-1.5 text-sm">
+                <Button variant="outline" onClick={exportCSV} disabled={isExporting || postsTotal===0} className="rounded-xl h-9 px-3 gap-1.5 text-sm">
                   <Download className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Export CSV</span>
                   <span className="sm:hidden">CSV</span>
@@ -926,7 +1053,7 @@ export default function SocialAnalyzePage() {
                               </defs>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
                               <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>v.slice(5)}/>
-                              <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
+                              <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>compactNumber(Number(v))}/>
                               <Tooltip content={<ChartTip/>}/>
                               <Area type="monotone" dataKey={chartMetric} stroke="hsl(var(--primary))" strokeWidth={2.5} fillOpacity={1} fill="url(#gArea)" dot={false} activeDot={{r:5}}/>
                             </AreaChart>
@@ -951,7 +1078,7 @@ export default function SocialAnalyzePage() {
                                 <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value">
                                   {pieData.map((e,i) => <Cell key={e.name} fill={PLATFORM_COLORS[e.name]||PIE_PALETTE[i%PIE_PALETTE.length]}/>)}
                                 </Pie>
-                                <Tooltip formatter={(v:any)=>fmtN(Number(v))} contentStyle={{borderRadius:"10px",fontSize:12}}/>
+                                <Tooltip formatter={(v:any)=>compactNumber(Number(v))} contentStyle={{borderRadius:"10px",fontSize:12}}/>
                               </PieChart>
                             </ResponsiveContainer>
                           </div>
@@ -963,7 +1090,7 @@ export default function SocialAnalyzePage() {
                               return (
                                 <div key={e.name} className="flex items-center justify-between text-xs">
                                   <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{background:col}}/><span className="capitalize font-medium">{e.name}</span></div>
-                                  <div className="flex items-center gap-2"><span className="text-muted-foreground">{fmtN(e.value)}</span><span className="font-bold">{pp}%</span></div>
+                                  <div className="flex items-center gap-2"><span className="text-muted-foreground">{compactNumber(e.value)}</span><span className="font-bold">{pp}%</span></div>
                                 </div>
                               );
                             })}
@@ -1051,15 +1178,15 @@ export default function SocialAnalyzePage() {
                         <div className="grid grid-cols-3 gap-3">
                           <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
                             <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1">{engFocusMeta.label} · Total {engFocusMeta.derived && <Sparkles className="h-2.5 w-2.5 text-violet-500"/>}</p>
-                            <p className="text-xl font-black leading-tight mt-0.5" style={{ color: engFocusMeta.color }}>{fmtN(engStats.focusTotal)}</p>
+                            <p className="text-xl font-black leading-tight mt-0.5" style={{ color: engFocusMeta.color }}>{compactNumber(engStats.focusTotal)}</p>
                           </div>
                           <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
                             <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">Peak Day</p>
-                            <p className="text-xl font-black leading-tight mt-0.5">{fmtN(engStats.peak)}</p>
+                            <p className="text-xl font-black leading-tight mt-0.5">{compactNumber(engStats.peak)}</p>
                           </div>
                           <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
                             <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">Daily Average</p>
-                            <p className="text-xl font-black leading-tight mt-0.5">{fmtN(engStats.avg)}</p>
+                            <p className="text-xl font-black leading-tight mt-0.5">{compactNumber(engStats.avg)}</p>
                           </div>
                         </div>
 
@@ -1103,7 +1230,7 @@ export default function SocialAnalyzePage() {
                                 }}
                                 minTickGap={24}
                               />
-                              <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))} width={44}/>
+                              <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>compactNumber(Number(v))} width={44}/>
                               <Tooltip content={<ChartTip/>} cursor={{ stroke: engFocusMeta.color, strokeOpacity: 0.3, strokeWidth: 1.5 }}/>
 
                               {engFocus === "total" ? (
@@ -1129,11 +1256,11 @@ export default function SocialAnalyzePage() {
                         <div className="pt-1">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Composition Breakdown</span>
-                            <span className="text-[10px] text-muted-foreground font-semibold">{fmtN(engStats.compTotal)} total interactions</span>
+                            <span className="text-[10px] text-muted-foreground font-semibold">{compactNumber(engStats.compTotal)} total interactions</span>
                           </div>
                           <div className="flex h-2.5 rounded-full overflow-hidden bg-muted gap-[2px]">
                             {engStats.comp.map(c => c.value > 0 && (
-                              <div key={c.key} style={{ width: `${(c.value / engStats.compTotal) * 100}%`, background: c.color }} title={`${c.label}: ${fmtN(c.value)}`}/>
+                              <div key={c.key} style={{ width: `${(c.value / engStats.compTotal) * 100}%`, background: c.color }} title={`${c.label}: ${compactNumber(c.value)}`}/>
                             ))}
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3">
@@ -1142,7 +1269,7 @@ export default function SocialAnalyzePage() {
                                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c.color }}/>
                                 <div className="min-w-0">
                                   <p className="text-[10px] text-muted-foreground leading-none font-medium">{c.label}</p>
-                                  <p className="text-xs font-bold leading-tight mt-0.5">{fmtN(c.value)} <span className="text-[10px] font-medium text-muted-foreground">({Math.round((c.value / engStats.compTotal) * 100)}%)</span></p>
+                                  <p className="text-xs font-bold leading-tight mt-0.5">{compactNumber(c.value)} <span className="text-[10px] font-medium text-muted-foreground">({Math.round((c.value / engStats.compTotal) * 100)}%)</span></p>
                                 </div>
                               </button>
                             ))}
@@ -1200,7 +1327,7 @@ export default function SocialAnalyzePage() {
                                   <div className={`h-full ${i.color} rounded-full`} style={{width:`${pct}%`}}/>
                                 </div>
                                 <span className="text-xs font-bold w-10 text-right">{pct.toFixed(0)}%</span>
-                                <span className="text-xs text-muted-foreground w-12 text-right">{fmtN(i.val)}</span>
+                                <span className="text-xs text-muted-foreground w-12 text-right">{compactNumber(i.val)}</span>
                               </div>
                             );
                           })}
@@ -1237,7 +1364,7 @@ export default function SocialAnalyzePage() {
                           <LineChart data={chartData} margin={{top:5,right:5,left:-20,bottom:0}}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
                             <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>v.slice(5)}/>
-                            <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
+                            <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>compactNumber(Number(v))}/>
                             <Tooltip content={<ChartTip/>}/>
                             <Line type="monotone" dataKey="followers" name={platformFilter === "YOUTUBE" ? "Subscribers" : "Followers"} stroke="#3b82f6" strokeWidth={2.5} dot={false} activeDot={{r:5}}/>
                           </LineChart>
@@ -1263,7 +1390,7 @@ export default function SocialAnalyzePage() {
                           <div key={p.platform} className="space-y-1.5">
                             <div className="flex items-center justify-between text-sm">
                               <div className="flex items-center gap-2">{getPlatformIcon(p.platform)}<span className="capitalize font-semibold">{p.platform}</span></div>
-                              <div className="flex items-center gap-3"><span className="text-muted-foreground text-xs">{fmtN(p.followers)}</span><span className="font-bold text-xs">{pctVal.toFixed(1)}%</span></div>
+                              <div className="flex items-center gap-3"><span className="text-muted-foreground text-xs">{compactNumber(p.followers)}</span><span className="font-bold text-xs">{pctVal.toFixed(1)}%</span></div>
                             </div>
                             <div className="h-2 bg-muted rounded-full overflow-hidden">
                               <div className="h-full rounded-full transition-all" style={{width:`${pctVal}%`,background:col}}/>
@@ -1301,7 +1428,7 @@ export default function SocialAnalyzePage() {
                           <BarChart data={chartData} margin={{top:5,right:5,left:-20,bottom:0}}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
                             <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>v.slice(5)}/>
-                            <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
+                            <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>compactNumber(Number(v))}/>
                             <Tooltip content={<ChartTip/>}/>
                             <Legend iconSize={8} wrapperStyle={{fontSize:11}}/>
                             <Bar dataKey="reach" name="Reach" fill="#10b981" radius={[4,4,0,0]}/>
@@ -1325,7 +1452,7 @@ export default function SocialAnalyzePage() {
                           <LineChart data={chartData} margin={{top:5,right:5,left:-20,bottom:0}}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)"/>
                             <XAxis dataKey="date" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>v.slice(5)}/>
-                            <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>fmtN(Number(v))}/>
+                            <YAxis stroke="#9ca3af" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v=>compactNumber(Number(v))}/>
                             <Tooltip content={<ChartTip/>}/>
                             <Line type="monotone" dataKey="reach" name="Reach" stroke="#10b981" strokeWidth={2.5} dot={false} activeDot={{r:5}}/>
                           </LineChart>
@@ -1366,11 +1493,11 @@ export default function SocialAnalyzePage() {
                                 <tr key={ct.type} className={`hover:bg-muted/5 transition-colors ${i===0?"bg-primary/3":""}`}>
                                   <td className="px-4 py-3"><div className="flex items-center gap-2"><Icon className="h-4 w-4 text-muted-foreground"/><span className="capitalize font-semibold">{ct.type}{i===0?" 🏆":""}</span></div></td>
                                   <td className="px-4 py-3 font-medium">{ct.count}</td>
-                                  <td className="px-4 py-3">{fmtN(ct.avgReach)}</td>
-                                  <td className="px-4 py-3 font-bold text-primary">{fmtN(ct.avgEngagement)}</td>
-                                  <td className="px-4 py-3">{fmtN(ct.avgViews)}</td>
-                                  <td className="px-4 py-3">{fmtN(ct.avgSaved)}</td>
-                                  <td className="px-4 py-3">{fmtN(ct.avgImpressions)}</td>
+                                  <td className="px-4 py-3">{compactNumber(ct.avgReach)}</td>
+                                  <td className="px-4 py-3 font-bold text-primary">{compactNumber(ct.avgEngagement)}</td>
+                                  <td className="px-4 py-3">{compactNumber(ct.avgViews)}</td>
+                                  <td className="px-4 py-3">{compactNumber(ct.avgSaved)}</td>
+                                  <td className="px-4 py-3">{compactNumber(ct.avgImpressions)}</td>
                                 </tr>
                               );
                             })}
@@ -1460,14 +1587,14 @@ export default function SocialAnalyzePage() {
                                 <span className="text-[10px] text-muted-foreground">{post.publishedAt?new Date(post.publishedAt).toLocaleDateString():""}</span>
                               </div>
                               <div className="flex items-center gap-3 mt-2 flex-wrap">
-                                <span className="flex items-center gap-1 text-[10px] font-bold text-rose-500"><Heart size={10} fill="currentColor"/>{fmtN(post.likes)}</span>
-                                <span className="flex items-center gap-1 text-[10px] font-bold text-blue-500"><MessageSquare size={10}/>{fmtN(post.comments)}</span>
-                                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-500"><Share2 size={10}/>{fmtN(post.shares)}</span>
-                                {post.saved>0 && <span className="flex items-center gap-1 text-[10px] font-bold text-amber-500"><Bookmark size={10}/>{fmtN(post.saved)}</span>}
-                                {post.views>0 && <span className="flex items-center gap-1 text-[10px] font-bold text-purple-500"><Play size={10}/>{fmtN(post.views)}</span>}
-                                {post.reach>0 && <span className="flex items-center gap-1 text-[10px] font-bold text-teal-500"><Eye size={10}/>{fmtN(post.reach)}</span>}
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-rose-500"><Heart size={10} fill="currentColor"/>{compactNumber(post.likes)}</span>
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-blue-500"><MessageSquare size={10}/>{compactNumber(post.comments)}</span>
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-500"><Share2 size={10}/>{compactNumber(post.shares)}</span>
+                                {post.saved>0 && <span className="flex items-center gap-1 text-[10px] font-bold text-amber-500"><Bookmark size={10}/>{compactNumber(post.saved)}</span>}
+                                {post.views>0 && <span className="flex items-center gap-1 text-[10px] font-bold text-purple-500"><Play size={10}/>{compactNumber(post.views)}</span>}
+                                {post.reach>0 && <span className="flex items-center gap-1 text-[10px] font-bold text-teal-500"><Eye size={10}/>{compactNumber(post.reach)}</span>}
                                 <div className="ml-auto flex items-center gap-2">
-                                  <span className="bg-primary/10 border border-primary/20 rounded-lg px-2 py-0.5 text-[10px] font-black text-primary">{fmtN(post.engagement)} eng.</span>
+                                  <span className="bg-primary/10 border border-primary/20 rounded-lg px-2 py-0.5 text-[10px] font-black text-primary">{compactNumber(post.engagement)} eng.</span>
                                   {post.engagementRate>0&&<span className="text-[10px] font-bold text-muted-foreground">{post.engagementRate.toFixed(1)}% ER</span>}
                                 </div>
                               </div>
@@ -1477,6 +1604,14 @@ export default function SocialAnalyzePage() {
                       );
                     })}
                   </div>
+                  {postsTruncated && (
+                    <div className="px-5 py-2.5 border-t border-border/40 bg-amber-50 dark:bg-amber-950/20 flex items-center gap-2">
+                      <AlertCircle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <span className="text-xs text-amber-700 dark:text-amber-300">
+                        This range holds more than {postsTruncated.rowCap.toLocaleString()} posts — ranking the most recent {postsTruncated.rowCap.toLocaleString()}. Narrow the date range to include the rest.
+                      </span>
+                    </div>
+                  )}
                   {postsTotal > POST_LIMIT && (
                     <div className="px-5 py-3 border-t border-border/40 flex items-center justify-between bg-muted/5">
                       <span className="text-xs text-muted-foreground">{(postPage-1)*POST_LIMIT+1}–{Math.min(postPage*POST_LIMIT,postsTotal)} of {postsTotal} posts</span>
@@ -1601,7 +1736,7 @@ export default function SocialAnalyzePage() {
                               return (
                                 <div
                                   key={hour}
-                                  title={`${DAYS_FULL[day]} ${hour}:00 — ${fmtN(val)} ${heatmapGrid.source === 'import' ? "active followers" : "engagement"}`}
+                                  title={`${DAYS_FULL[day]} ${hour}:00 — ${compactNumber(val)} ${heatmapGrid.source === 'import' ? "active followers" : "engagement"}`}
                                   className="w-7 h-7 rounded-sm shrink-0 border border-border/20 cursor-pointer hover:scale-110 transition-transform"
                                   style={{
                                     background: intensity>0
@@ -1642,7 +1777,7 @@ export default function SocialAnalyzePage() {
                               <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden sm:w-32">
                                 <div className="h-full bg-primary rounded-full" style={{width:`${(t.value/maxE)*100}%`}}/>
                               </div>
-                              <span className="text-xs font-bold text-primary w-16 text-right sm:w-20">{fmtN(t.value)} {heatmapGrid.source === 'import' ? "active" : "eng."}</span>
+                              <span className="text-xs font-bold text-primary w-16 text-right sm:w-20">{compactNumber(t.value)} {heatmapGrid.source === 'import' ? "active" : "eng."}</span>
                             </div>
                           </div>
                         );
@@ -1673,11 +1808,11 @@ export default function SocialAnalyzePage() {
                             {(analytics.platformComparison as any[]).sort((a,b)=>b.followers-a.followers).map((p:any) => (
                               <tr key={p.platform} className="hover:bg-muted/5 transition-colors">
                                 <td className="px-5 py-4"><div className="flex items-center gap-2.5">{getPlatformIcon(p.platform,"h-4 w-4 object-contain")}<span className="capitalize font-semibold">{p.platform}</span></div></td>
-                                <td className="px-5 py-4 font-bold">{fmtN(p.followers)}</td>
-                                <td className="px-5 py-4">{fmtN(p.reach)}</td>
-                                <td className="px-5 py-4">{fmtN(p.impressions)}</td>
-                                <td className="px-5 py-4">{fmtN(p.engagement)}</td>
-                                <td className="px-5 py-4">{fmtN(p.posts)}</td>
+                                <td className="px-5 py-4 font-bold">{compactNumber(p.followers)}</td>
+                                <td className="px-5 py-4">{compactNumber(p.reach)}</td>
+                                <td className="px-5 py-4">{compactNumber(p.impressions)}</td>
+                                <td className="px-5 py-4">{compactNumber(p.engagement)}</td>
+                                <td className="px-5 py-4">{compactNumber(p.posts)}</td>
                                 <td className="px-5 py-4"><Delta value={p.growth||0}/></td>
                               </tr>
                             ))}
@@ -1699,7 +1834,7 @@ export default function SocialAnalyzePage() {
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={analytics.platformBreakdown.sort((a,b)=>b.followers-a.followers)} layout="vertical" margin={{top:0,right:20,left:40,bottom:0}}>
                             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(0,0,0,0.05)"/>
-                            <XAxis type="number" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>fmtN(Number(v))}/>
+                            <XAxis type="number" stroke="#9ca3af" fontSize={10} tickLine={false} tickFormatter={v=>compactNumber(Number(v))}/>
                             <YAxis dataKey="platform" type="category" stroke="#9ca3af" fontSize={11} tickLine={false} axisLine={false} width={70} tickFormatter={v=>v.charAt(0).toUpperCase()+v.slice(1)}/>
                             <Tooltip content={<ChartTip/>}/>
                             <Bar dataKey="followers" name={platformFilter === "YOUTUBE" ? "Subscribers" : "Followers"} fill="#6366f1" radius={[0,4,4,0]}>
@@ -1862,7 +1997,7 @@ export default function SocialAnalyzePage() {
                                 <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide">{slot.label}</p>
                                 {shown ? (
                                   <>
-                                    <p className="text-lg font-black text-foreground mt-1">{fmtN(slot.value)}</p>
+                                    <p className="text-lg font-black text-foreground mt-1">{compactNumber(slot.value)}</p>
                                     <span className="text-[8px] text-muted-foreground/70 mt-0.5 leading-tight">{slot.sub}</span>
                                   </>
                                 ) : (
@@ -1916,18 +2051,40 @@ export default function SocialAnalyzePage() {
             {/* ══════════════ AI INSIGHTS ══════════════ */}
             {activeTab === "ai" && (
               <div className="space-y-6">
-                <div><h2 className="text-lg font-bold">AI Insights</h2><p className="text-xs text-muted-foreground">Automated recommendations based on your analytics data</p></div>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-bold">AI Insights</h2>
+                    <p className="text-xs text-muted-foreground">
+                      {aiInsightsState.source === "ai"
+                        ? "Written by your configured AI provider from this client's analytics"
+                        : "Automated recommendations based on your analytics data"}
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => fetchAiInsights(true)}
+                    disabled={aiInsightsState.loading} className="rounded-xl gap-2 shrink-0">
+                    <RefreshCw className={`h-3.5 w-3.5 ${aiInsightsState.loading ? "animate-spin" : ""}`} />
+                    {aiInsightsState.loading ? "Analysing…" : "Regenerate"}
+                  </Button>
+                </div>
+                {aiInsightsState.reason && (
+                  <div className="flex items-center gap-2 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20 px-4 py-2.5">
+                    <AlertCircle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span className="text-xs text-amber-700 dark:text-amber-300">
+                      {aiInsightsState.reason} Showing the calculated insights below instead.
+                    </span>
+                  </div>
+                )}
                 <div className="grid gap-4">
-                  {analytics.aiInsights.length > 0 ? analytics.aiInsights.map((insight, i) => (
+                  {displayedInsights.length > 0 ? displayedInsights.map((insight, i) => (
                     <Card key={i} className="rounded-2xl shadow-sm border border-border/80 hover:shadow-md transition-shadow">
                       <CardContent className="p-5 flex items-start gap-4">
                         <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-sm">
                           <Sparkles className="h-4 w-4"/>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-foreground leading-relaxed" dangerouslySetInnerHTML={{
-                            __html: insight.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                          }}/>
+                          {/* Rendered as text nodes, not innerHTML — these strings carry
+                              client-supplied values (captions, platform names). */}
+                          <p className="text-sm text-foreground leading-relaxed">{renderBold(insight)}</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -1961,7 +2118,7 @@ export default function SocialAnalyzePage() {
                         <h3 className="font-bold text-sm">CSV</h3>
                         <p className="text-xs text-muted-foreground mt-1">Raw data export for spreadsheets. Includes all posts, metrics, and engagement data.</p>
                       </div>
-                      <Button onClick={exportCSV} className="rounded-xl w-full gap-2"><Download className="h-4 w-4"/>Export Now</Button>
+                      <Button onClick={exportCSV} disabled={isExporting || postsTotal===0} className="rounded-xl w-full gap-2"><Download className="h-4 w-4"/>{isExporting ? "Exporting…" : "Export Now"}</Button>
                     </CardContent>
                   </Card>
 
@@ -2039,8 +2196,8 @@ export default function SocialAnalyzePage() {
                         </div>
                       ))}
                     </div>
-                    <Button onClick={exportCSV} className="mt-5 rounded-xl gap-2" disabled={posts.length===0}>
-                      <Download className="h-4 w-4"/>Download CSV ({posts.length} posts)
+                    <Button onClick={exportCSV} className="mt-5 rounded-xl gap-2" disabled={isExporting || postsTotal===0}>
+                      <Download className="h-4 w-4"/>{isExporting ? "Exporting…" : `Download CSV (${postsTotal} posts)`}
                     </Button>
                   </CardContent>
                 </Card>

@@ -4,20 +4,24 @@ import { encryptToken } from '../lib/social/token-crypto.service.js';
 async function seed() {
   console.log('🌱 Starting Social Media Mock Seeding...');
 
-  // 1. Find or create a client
-  let client = await prisma.client.findFirst();
+  // 1. Find or create THIS script's own demo client — never fall back to an
+  // arbitrary real client (findFirst() used to grab whichever client
+  // happened to be first in the table, deleting and overwriting its real
+  // social data with mock data on every run).
+  const DEMO_CLIENT_EMAIL = 'acme@hirdanmarketing.com';
+  let client = await prisma.client.findFirst({ where: { email: DEMO_CLIENT_EMAIL } });
   if (!client) {
     client = await prisma.client.create({
       data: {
         name: 'Hirdan Marketing Demo Client',
         company: 'Acme Corporation',
-        email: 'acme@hirdanmarketing.com',
+        email: DEMO_CLIENT_EMAIL,
         phone: '123-456-7890',
       },
     });
     console.log(`✅ Created Demo Client: ${client.company}`);
   } else {
-    console.log(`✅ Using Existing Client: ${client.company}`);
+    console.log(`✅ Using Existing Demo Client: ${client.company}`);
   }
 
   // Find existing mock accounts to delete their dependent relations

@@ -289,7 +289,7 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
                 <SelectTrigger className="h-8 flex-1 border-0 px-1 text-[13px] shadow-none focus:ring-0">
                   <SelectValue placeholder="Select a mailbox" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="z-[90]">
                   {writable.map((m) => (
                     <SelectItem key={m.id} value={m.id}>
                       <span className="flex items-center gap-2">
@@ -452,7 +452,7 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
                 <SelectTrigger className="h-8 w-[100px] border-0 text-xs shadow-none focus:ring-0">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="z-[90]">
                   {PRIORITIES.map((p) => (
                     <SelectItem key={p} value={p} className="text-xs">{p[0] + p.slice(1).toLowerCase()}</SelectItem>
                   ))}

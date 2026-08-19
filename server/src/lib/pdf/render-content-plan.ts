@@ -6,7 +6,7 @@ import { buildContentPlanHtml, type ContentPlanPdfInput } from './content-plan-h
  * (no leftover whitespace under the footer).
  */
 export async function renderContentPlanPdf(input: ContentPlanPdfInput): Promise<Buffer> {
-  const html = buildContentPlanHtml(input);
+  const html = await buildContentPlanHtml(input);
   const browser = await getPdfBrowser();
   const page = await browser.newPage();
 

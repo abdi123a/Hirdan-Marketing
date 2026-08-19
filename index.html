@@ -21,6 +21,17 @@
   </head>
 
   <body>
+    <script>
+      // Runs before React mounts so a dark-mode user never sees a white flash.
+      // Kept in sync afterwards by src/lib/system-theme.ts.
+      (function () {
+        try {
+          var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        } catch (e) {}
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

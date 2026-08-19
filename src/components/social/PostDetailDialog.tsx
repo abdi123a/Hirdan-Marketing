@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { apiFetch, getFullUrl } from "@/lib/api-client";
+import { compactNumber } from "@/lib/social/format";
 import {
   ExternalLink, Heart, MessageSquare, Share2, Bookmark, Play, Eye,
   BarChart2, RefreshCw, AlertCircle, Upload, Zap, Video, Image as ImageIcon,
@@ -52,12 +53,6 @@ export interface PostDetail {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-const fmtN = (n: number | null | undefined) => {
-  if (n == null) return "—";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-};
 
 const PLATFORM_LABEL: Record<string, string> = {
   facebook: "Facebook", instagram: "Instagram", tiktok: "TikTok", threads: "Threads",
@@ -106,7 +101,7 @@ const MetricTile = ({ icon: Icon, label, value, tone }: {
       <Icon size={11} className={tone} />
       <span className="text-[10px] font-bold uppercase tracking-wide">{label}</span>
     </div>
-    <p className="mt-1 text-lg font-black tabular-nums leading-none">{fmtN(value)}</p>
+    <p className="mt-1 text-lg font-black tabular-nums leading-none">{compactNumber(value)}</p>
   </div>
 );
 
@@ -297,20 +292,20 @@ export function PostDetailDialog({ postId, open, onOpenChange }: {
 
                         <div className="mt-2.5 flex flex-wrap items-center gap-3">
                           <span className="flex items-center gap-1 text-[10px] font-bold text-purple-500">
-                            <Play size={10} />{fmtN(b.metrics.views)}
+                            <Play size={10} />{compactNumber(b.metrics.views)}
                           </span>
                           <span className="flex items-center gap-1 text-[10px] font-bold text-rose-500">
-                            <Heart size={10} />{fmtN(b.metrics.likes)}
+                            <Heart size={10} />{compactNumber(b.metrics.likes)}
                           </span>
                           <span className="flex items-center gap-1 text-[10px] font-bold text-blue-500">
-                            <MessageSquare size={10} />{fmtN(b.metrics.comments)}
+                            <MessageSquare size={10} />{compactNumber(b.metrics.comments)}
                           </span>
                           <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-500">
-                            <Share2 size={10} />{fmtN(b.metrics.shares)}
+                            <Share2 size={10} />{compactNumber(b.metrics.shares)}
                           </span>
                           {b.metrics.reach != null && (
                             <span className="flex items-center gap-1 text-[10px] font-bold text-teal-500">
-                              <Eye size={10} />{fmtN(b.metrics.reach)}
+                              <Eye size={10} />{compactNumber(b.metrics.reach)}
                             </span>
                           )}
                         </div>

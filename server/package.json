@@ -1,6 +1,6 @@
 {
   "name": "hirdan-marketing-server",
-  "version": "2.31.55",
+  "version": "2.31.56",
   "private": true,
   "type": "module",
   "scripts": {
@@ -37,6 +37,7 @@
     "qrcode": "^1.5.4",
     "resend": "^6.17.2",
     "sanitize-html": "^2.17.6",
+    "sharp": "^0.35.3",
     "svix": "^1.99.1",
     "zod": "^3.25.76"
   },

@@ -213,40 +213,6 @@ router.get('/tasks', async (req: Request, res: Response, next) => {
 // ─── GET /api/portal/social/documents ─────────────────────────────
 // Returns only client-visible documents
 
-router.get('/documents', async (req: Request, res: Response, next) => {
-  try {
-    const clientId = await getClientId(req);
-
-    const { take, skip } = parsePagination(req.query, { maxTake: 200, defaultTake: 50 });
-    const documents = await prisma.clientDocument.findMany({
-      where: {
-        clientId,
-        clientVisible: true,
-      },
-      select: {
-        id: true,
-        title: true,
-        type: true,
-        fileUrl: true,
-        clientNotes: true, // Only client-facing notes — NOT internalNotes
-        expiryDate: true,
-        isSigned: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-      take,
-      skip,
-    });
-
-    res.json({ documents });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// ─── GET /api/portal/social/planner ────────────────────────────────
-// Returns client content planner posts for a given month/year
-
 router.get('/planner', async (req: Request, res: Response, next) => {
   try {
     const clientId = await getClientId(req);
