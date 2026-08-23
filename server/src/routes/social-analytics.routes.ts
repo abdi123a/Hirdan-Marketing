@@ -5,6 +5,7 @@ import { collectDailyInsights } from '../lib/social/social-scheduler.js';
 import { computeCapabilities, METRIC_AVAILABILITY, type MetricKey } from '../lib/social/metric-availability.js';
 import { buildCapabilityGate, engagementRate, pctChange, sumField } from '../lib/social/analytics-core.js';
 import { unifyPosts, destinationLink, type AccountMeta } from '../lib/social/post-merge.js';
+import { linkedImportedRowsFor, mergeImportedRows } from '../lib/social/post-link.service.js';
 import { derivePermalink, tiktokVideoIdOf } from '../lib/social/permalink.service.js';
 import { enrichTikTokVideosBatch } from '../lib/social/tiktok-enrich.service.js';
 import { logSocialError } from '../lib/social/safe-error.js';
@@ -139,7 +140,7 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
         destinations: {
           select: {
             platform: true, status: true, platformPostId: true,
-            platformPostUrl: true, socialAccountId: true,
+            platformPostUrl: true, socialAccountId: true, importedPostId: true,
           },
         },
       },
@@ -209,9 +210,12 @@ router.get('/analytics/:clientId/full', authenticate, async (req, res, next) => 
 
     // One row per real-world post: a TikTok video we published that also appears
     // in an imported export is merged instead of listed (and counted) twice.
+    // Rows a post claims by hand are unioned in explicitly: the query above caps
+    // at the 500 most-viewed, and a linked video falling outside that page would
+    // silently split its group back into two items.
     const { posts: unifiedPosts, mergedCount } = unifyPosts({
       posts: recentPosts,
-      imported: importedVideos,
+      imported: mergeImportedRows(importedVideos, await linkedImportedRowsFor(recentPosts)),
       platformFilter,
       accounts: accountMeta,
     });
@@ -658,7 +662,7 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
         destinations: {
           select: {
             platform: true, status: true, platformPostId: true,
-            platformPostUrl: true, socialAccountId: true,
+            platformPostUrl: true, socialAccountId: true, importedPostId: true,
           },
         },
       },
@@ -703,9 +707,12 @@ router.get('/analytics/:clientId/posts', authenticate, async (req, res, next) =>
 
     // Merge the two sources so a video that was published through the system and
     // then imported appears once, carrying both its identity and its real metrics.
+    // Linked rows are unioned in regardless of the content-type and search
+    // filters above: those filters decide which posts are listed, and once a post
+    // is listed it must carry all of its platforms' numbers.
     const { posts: unified } = unifyPosts({
       posts: inWindow,
-      imported: importedRows,
+      imported: mergeImportedRows(importedRows, await linkedImportedRowsFor(inWindow)),
       platformFilter,
       accounts: accountMeta,
     });
@@ -806,20 +813,26 @@ router.get('/analytics/post/:id', authenticate, async (req, res, next) => {
         })
       : [];
 
+    const allImported = mergeImportedRows(importedRows, await linkedImportedRowsFor([post]));
+
     const { posts: [unifiedPost] } = unifyPosts({
       posts: [post],
-      imported: importedRows,
+      imported: allImported,
       platformFilter: 'ALL',
       accounts: accountMeta,
     });
 
     // Per-destination breakdown: export numbers where they exist for that
     // platform, live insight numbers otherwise.
-    const importedByExternalId = new Map(importedRows.map(r => [String(r.externalId), r]));
+    const importedByExternalId = new Map(allImported.map(r => [String(r.externalId), r]));
+    const importedById = new Map(allImported.map(r => [String(r.id), r]));
     const breakdown = post.destinations.map(d => {
       const platform = d.platform.toLowerCase();
       const videoId = tiktokVideoIdOf(d);
-      const imp = videoId ? importedByExternalId.get(videoId) : undefined;
+      // A destination the user linked by hand names its export row outright.
+      const imp = d.importedPostId
+        ? importedById.get(String(d.importedPostId))
+        : (videoId ? importedByExternalId.get(videoId) : undefined);
       const ins = post.insights.find(i => (i.platform || '').toUpperCase() === d.platform.toUpperCase());
 
       return {
@@ -831,6 +844,9 @@ router.get('/analytics/post/:id', authenticate, async (req, res, next) => {
         source: imp ? 'import' : 'api',
         updatedAt: imp ? imp.importedAt : (ins?.fetchedAt ?? d.publishedAt),
         error: d.lastError,
+        // Present only on a destination the user attached to this group by hand.
+        destinationId: d.id,
+        linkedImportedPostId: d.importedPostId ?? null,
         metrics: imp
           ? { likes: imp.likes, comments: imp.comments, shares: imp.shares, saved: null, views: imp.views, reach: null, impressions: null }
           : {

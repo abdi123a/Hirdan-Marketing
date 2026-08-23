@@ -251,3 +251,220 @@ describe('destinationLink', () => {
     expect(link).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The case the video-id heuristic structurally cannot reach: a post the composer
+// sent to Instagram and Facebook, whose TikTok cut was uploaded by hand in the
+// TikTok app. There is no TikTok destination to recover an id from, so the user
+// links the export row to the group and the destination records which row it is.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('unifyPosts — export rows linked to a group by hand', () => {
+  const IG_ACCOUNT = 'acct-ig';
+  const linkAccounts = new Map<string, AccountMeta>([
+    ...accounts,
+    [IG_ACCOUNT, { platform: 'instagram', platformUsername: 'hirdan' }],
+  ]);
+
+  /** IG + FB through the composer, plus the TikTok destination the user linked. */
+  const crossPost = (overrides: any = {}) => ({
+    id: 'post-x',
+    caption: 'Ramadan campaign',
+    mediaUrls: ['/uploads/ramadan.mp4'],
+    mediaType: 'video',
+    publishedAt: new Date('2026-06-10'),
+    insights: [
+      { platform: 'INSTAGRAM', likes: 120, comments: 8, shares: 3, saved: 10, views: 900, reach: 1500, impressions: 1800 },
+      { platform: 'FACEBOOK', likes: 60, comments: 4, shares: 2, saved: 0, views: 400, reach: 700, impressions: 800 },
+    ],
+    destinations: [
+      { platform: 'instagram', status: 'PUBLISHED', platformPostId: 'ig_1', platformPostUrl: null, socialAccountId: IG_ACCOUNT },
+      { platform: 'facebook', status: 'PUBLISHED', platformPostId: '5550001_99', platformPostUrl: null, socialAccountId: FB_ACCOUNT },
+      // Created by the link action: no publish of ours behind it, so the export
+      // row id — not a recovered video id — is what ties the two together.
+      {
+        platform: 'tiktok', status: 'PUBLISHED', platformPostId: VIDEO_ID,
+        platformPostUrl: VIDEO_URL, socialAccountId: TIKTOK_ACCOUNT, importedPostId: 'imp-1',
+      },
+    ],
+    ...overrides,
+  });
+
+  it('folds a hand-linked video into the group instead of listing it separately', () => {
+    const { posts, mergedCount } = unifyPosts({
+      posts: [crossPost()],
+      imported: [importedRow()],
+      platformFilter: 'ALL',
+      accounts: linkAccounts,
+    });
+
+    expect(posts).toHaveLength(1);
+    expect(mergedCount).toBe(1);
+    expect(posts[0].source).toBe('both');
+    expect(posts[0].destinations.map(d => d.platform)).toEqual(['instagram', 'facebook', 'tiktok']);
+  });
+
+  it('adds the export numbers to the live ones rather than replacing them', () => {
+    const { posts } = unifyPosts({
+      posts: [crossPost()],
+      imported: [importedRow()],
+      platformFilter: 'ALL',
+      accounts: linkAccounts,
+    });
+
+    // Instagram + Facebook keep their real API numbers; TikTok's come from the
+    // export, because no TikTok insight row exists for a post we never published.
+    expect(posts[0].likes).toBe(120 + 60 + 400);
+    expect(posts[0].comments).toBe(8 + 4 + 50);
+    expect(posts[0].shares).toBe(3 + 2 + 25);
+    expect(posts[0].views).toBe(900 + 400 + 10000);
+    expect(posts[0].reach).toBe(1500 + 700);
+  });
+
+  it('keeps the identity of the post the user recognises, not the export title', () => {
+    const { posts } = unifyPosts({
+      posts: [crossPost()],
+      imported: [importedRow({ title: 'ramadan_final_v3.mp4' })],
+      platformFilter: 'ALL',
+      accounts: linkAccounts,
+    });
+
+    expect(posts[0].caption).toBe('Ramadan campaign');
+    expect(posts[0].mediaUrls).toEqual(['/uploads/ramadan.mp4']);
+  });
+
+  it('surfaces the linked row id on the destination so the UI can offer unlink', () => {
+    const { posts } = unifyPosts({
+      posts: [crossPost()],
+      imported: [importedRow()],
+      platformFilter: 'ALL',
+      accounts: linkAccounts,
+    });
+
+    const dests = posts[0].destinations;
+    expect(dests.find(d => d.platform === 'tiktok')?.importedPostId).toBe('imp-1');
+    expect(dests.find(d => d.platform === 'instagram')?.importedPostId).toBeNull();
+  });
+
+  it('lets the group answer a TikTok platform filter it could not answer before', () => {
+    const { posts } = unifyPosts({
+      posts: [crossPost()],
+      imported: [importedRow()],
+      platformFilter: 'TIKTOK',
+      accounts: linkAccounts,
+    });
+
+    // Only the export's numbers survive the filter — IG and FB insights are
+    // scoped out, so the row reports TikTok's performance alone.
+    expect(posts).toHaveLength(1);
+    expect(posts[0].likes).toBe(400);
+    expect(posts[0].views).toBe(10000);
+    expect(posts[0].link).toBe(VIDEO_URL);
+  });
+
+  it('trusts the explicit link over a video id pointing at a different row', () => {
+    // A stale platformPostId must not win: the user's choice is the source of
+    // truth, so the row named by importedPostId is the one that merges.
+    const post = crossPost({
+      destinations: [{
+        platform: 'tiktok', status: 'PUBLISHED', platformPostId: '7309999999999999999',
+        platformPostUrl: null, socialAccountId: TIKTOK_ACCOUNT, importedPostId: 'imp-1',
+      }],
+      insights: [],
+    });
+
+    const { posts } = unifyPosts({
+      posts: [post],
+      imported: [importedRow(), importedRow({ id: 'imp-2', externalId: '7309999999999999999', likes: 7 })],
+      platformFilter: 'ALL',
+      accounts: linkAccounts,
+    });
+
+    // imp-1 merged into the group; imp-2 was claimed by nobody and stands alone.
+    expect(posts).toHaveLength(2);
+    expect(posts[0].likes).toBe(400);
+    expect(posts[1].id).toBe('imported:imp-2');
+  });
+
+  it('never lets two groups claim the same export row', () => {
+    const { posts, mergedCount } = unifyPosts({
+      posts: [crossPost(), crossPost({ id: 'post-y' })],
+      imported: [importedRow()],
+      platformFilter: 'ALL',
+      accounts: linkAccounts,
+    });
+
+    expect(mergedCount).toBe(1);
+    expect(posts.filter(p => p.source === 'both')).toHaveLength(1);
+    expect(posts.filter(p => p.source === 'scheduled')).toHaveLength(1);
+  });
+
+  it('widens the engagement-rate denominator to cover the linked audience', () => {
+    // The export brings 10k views and 475 engagements but no reach at all. Divide
+    // by Instagram+Facebook's 2,200 reach alone and the post reports >1000%; the
+    // denominator has to grow with the audience the numerator now covers.
+    const { posts } = unifyPosts({
+      posts: [crossPost()],
+      imported: [importedRow()],
+      platformFilter: 'ALL',
+      accounts: linkAccounts,
+    });
+
+    // engagement 682 ÷ (reach 2,200 + export views 10,000) × 100
+    expect(posts[0].engagement).toBe(682);
+    expect(posts[0].engagementRate).toBe(5.59);
+  });
+
+  // Callers that also tally the raw export rows (the client report counts posts
+  // per platform, and builds a top-four list) need to know which rows a group has
+  // already absorbed, or the same video is counted on both sides.
+  it('names the export rows it absorbed so callers do not re-count them', () => {
+    const { mergedImportedIds } = unifyPosts({
+      posts: [crossPost()],
+      imported: [importedRow(), importedRow({ id: 'imp-2', externalId: '7300000000000000001' })],
+      platformFilter: 'ALL',
+      accounts: linkAccounts,
+    });
+
+    expect([...mergedImportedIds]).toEqual(['imp-1']);
+  });
+
+  it('names which platform of which post the export spoke for', () => {
+    const { mergedPlatformsByPost } = unifyPosts({
+      posts: [crossPost()],
+      imported: [importedRow()],
+      platformFilter: 'ALL',
+      accounts: linkAccounts,
+    });
+
+    // Instagram and Facebook keep their own insights; only TikTok was replaced.
+    expect([...(mergedPlatformsByPost.get('post-x') ?? [])]).toEqual(['tiktok']);
+  });
+
+  it('reports nothing merged for a post no export row touched', () => {
+    const { mergedImportedIds, mergedPlatformsByPost } = unifyPosts({
+      posts: [crossPost()],
+      imported: [],
+      platformFilter: 'ALL',
+      accounts: linkAccounts,
+    });
+
+    expect(mergedImportedIds.size).toBe(0);
+    expect(mergedPlatformsByPost.has('post-x')).toBe(false);
+  });
+
+  it('leaves the group intact when the linked row is missing from this page', () => {
+    // The read sites union linked rows back in precisely so this does not
+    // happen, but a group must still render — minus those numbers — if it does.
+    const { posts, mergedCount } = unifyPosts({
+      posts: [crossPost()],
+      imported: [],
+      platformFilter: 'ALL',
+      accounts: linkAccounts,
+    });
+
+    expect(posts).toHaveLength(1);
+    expect(mergedCount).toBe(0);
+    expect(posts[0].likes).toBe(180);
+    expect(posts[0].destinations).toHaveLength(3);
+  });
+});

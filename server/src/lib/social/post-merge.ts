@@ -20,6 +20,14 @@
 // Cross-posted content is handled precisely: only the merged platform's insight
 // rows are dropped from the scheduled side, so a post that went to Facebook AND
 // TikTok keeps its real Facebook numbers and gains the imported TikTok ones.
+//
+// The id heuristic only fires when the post carries a TikTok destination, which
+// requires us to have published it. Content posted by hand in the TikTok app has
+// no such destination, so a video cross-posted as "system → Instagram+Facebook,
+// by hand → TikTok" could never be recognised as one post. For that case the
+// user attaches the export row to the group themselves, and the destination
+// records which imported_posts row it stands for: destination.importedPostId is
+// then the join key, taking priority over the heuristic below.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Import the pure permalink helpers directly, not via permalink.service, so
@@ -33,6 +41,8 @@ export interface UnifiedDestination {
   status: string;
   platformPostId: string | null;
   link: string | null;
+  /** Set when the user attached this platform by hand; null for real publishes. */
+  importedPostId?: string | null;
 }
 
 export interface UnifiedPost {
@@ -83,6 +93,29 @@ export interface AccountMeta {
   pageId?: string | null;
 }
 
+export interface UnifyResult {
+  posts: UnifiedPost[];
+  /** How many post groups gained numbers from an export row. */
+  mergedCount: number;
+  /**
+   * Ids of the export rows folded into a group.
+   *
+   * A caller that also counts or lists `imported` rows on its own must skip
+   * these, or the same video lands in the tally twice — once inside the group
+   * that now speaks for it, once again on its own.
+   */
+  mergedImportedIds: Set<string>;
+  /**
+   * postId → the platforms whose numbers came from an export row.
+   *
+   * For those platforms the post's own PostInsight row is not the truth: it is
+   * either absent (nothing of ours published there) or the zero-filled placeholder
+   * TikTok's API leaves behind. Callers reading insights per platform should skip
+   * the pairs named here and take the export's figures instead.
+   */
+  mergedPlatformsByPost: Map<string, Set<string>>;
+}
+
 export interface UnifyOptions {
   posts: any[];
   imported: ImportedRow[];
@@ -94,9 +127,18 @@ export interface UnifyOptions {
 
 const n = (v: unknown): number => Number(v) || 0;
 
-/** Engagement rate against whichever denominator we actually have. */
-function rate(engagement: number, reach: number, views: number): number {
-  const base = reach > 0 ? reach : views;
+/**
+ * Engagement rate against whichever denominator we actually have.
+ *
+ * `reachlessViews` is the view count contributed by sources that report no reach
+ * at all — every export row, since TikTok Studio exports carry views but no
+ * reach. Without adding those back, a merged post divides the engagement of ALL
+ * its platforms by the reach of only the platforms that report it: a video with
+ * 500k TikTok views folded into a post with 2k Instagram reach came out at over
+ * 1000%. The numerator and the denominator have to cover the same audience.
+ */
+function rate(engagement: number, reach: number, views: number, reachlessViews = 0): number {
+  const base = reach > 0 ? reach + reachlessViews : views;
   return base > 0 ? parseFloat(((engagement / base) * 100).toFixed(2)) : 0;
 }
 
@@ -110,14 +152,33 @@ export function destinationLink(dest: any, accounts: Map<string, AccountMeta>): 
   });
 }
 
-export function unifyPosts(opts: UnifyOptions): { posts: UnifiedPost[]; mergedCount: number } {
+export function unifyPosts(opts: UnifyOptions): UnifyResult {
   const { posts, imported, platformFilter, accounts } = opts;
 
-  // Index the export rows by TikTok video id so a post can find its twin.
+  // Index the export rows both ways: by their own id, for destinations the user
+  // attached by hand, and by TikTok video id, for posts we published ourselves.
+  const importedById = new Map<string, ImportedRow>();
   const importedByVideoId = new Map<string, ImportedRow>();
-  for (const row of imported) importedByVideoId.set(String(row.externalId), row);
+  for (const row of imported) {
+    importedById.set(String(row.id), row);
+    importedByVideoId.set(String(row.externalId), row);
+  }
+
+  /**
+   * The export row this destination stands for, if any.
+   *
+   * A manual link is the user telling us outright that these are one post, so it
+   * wins over the video-id heuristic and applies on any platform — the heuristic
+   * only ever answers for TikTok.
+   */
+  const rowFor = (dest: any): ImportedRow | undefined => {
+    if (dest?.importedPostId) return importedById.get(String(dest.importedPostId));
+    const videoId = tiktokVideoIdOf(dest);
+    return videoId ? importedByVideoId.get(videoId) : undefined;
+  };
 
   const consumed = new Set<string>();
+  const mergedPlatformsByPost = new Map<string, Set<string>>();
   let mergedCount = 0;
   const unified: UnifiedPost[] = [];
 
@@ -127,16 +188,21 @@ export function unifyPosts(opts: UnifyOptions): { posts: UnifiedPost[]; mergedCo
     // Which destinations have an export twin, and on which platforms.
     const matches: { dest: any; row: ImportedRow }[] = [];
     for (const dest of destinations) {
-      const videoId = tiktokVideoIdOf(dest);
-      if (!videoId) continue;
-      const row = importedByVideoId.get(videoId);
-      // A video id is unique per account, so never let two posts claim one row.
+      const row = rowFor(dest);
+      // A video belongs to one real-world post, so never let two posts claim one
+      // row — whether it was found by id or by the heuristic.
       if (!row || consumed.has(row.id)) continue;
       matches.push({ dest, row });
       consumed.add(row.id);
     }
 
     const mergedPlatforms = new Set(matches.map(m => (m.dest.platform || '').toUpperCase()));
+    if (matches.length) {
+      mergedPlatformsByPost.set(
+        post.id,
+        new Set(matches.map(m => (m.dest.platform || '').toLowerCase())),
+      );
+    }
 
     // Score the scheduled side, skipping platforms the export now speaks for.
     // Without this the zero-filled (or mock) TikTok PostInsight row would drag
@@ -160,9 +226,14 @@ export function unifyPosts(opts: UnifyOptions): { posts: UnifiedPost[]; mergedCo
     let importedIsVerified = false;
     let importedVerSource: string | null = null;
 
+    // Views from the export side, tracked apart from the rest so the engagement
+    // rate can widen its denominator to match — these rows bring no reach.
+    let reachlessViews = 0;
+
     for (const { row } of matches) {
       likes += n(row.likes); comments += n(row.comments);
       shares += n(row.shares); views += n(row.views);
+      reachlessViews += n(row.views);
       if (!importedLink && row.link) importedLink = row.link;
       if (!importedThumb && row.thumbnailUrl) importedThumb = row.thumbnailUrl;
       if (row.isVerified) {
@@ -176,6 +247,7 @@ export function unifyPosts(opts: UnifyOptions): { posts: UnifiedPost[]; mergedCo
       status: d.status ?? 'PUBLISHED',
       platformPostId: d.platformPostId ?? null,
       link: destinationLink(d, accounts),
+      importedPostId: d.importedPostId ?? null,
     }));
 
     // Prefer a link on the platform the user is filtered to, then any link at
@@ -203,7 +275,7 @@ export function unifyPosts(opts: UnifyOptions): { posts: UnifiedPost[]; mergedCo
       imported: matches.length > 0,
       likes, comments, shares, saved, views, reach, impressions,
       engagement,
-      engagementRate: rate(engagement, reach, views),
+      engagementRate: rate(engagement, reach, views, reachlessViews),
     });
   }
 
@@ -238,5 +310,5 @@ export function unifyPosts(opts: UnifyOptions): { posts: UnifiedPost[]; mergedCo
     });
   }
 
-  return { posts: unified, mergedCount };
+  return { posts: unified, mergedCount, mergedImportedIds: consumed, mergedPlatformsByPost };
 }

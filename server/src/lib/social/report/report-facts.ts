@@ -19,6 +19,7 @@ import {
   type PeriodTotals,
 } from '../analytics-core.js';
 import { unifyPosts, type AccountMeta } from '../post-merge.js';
+import { linkedImportedRowsFor, mergeImportedRows } from '../post-link.service.js';
 import { centsToMajor } from '../../money.js';
 
 export const REPORT_PLATFORMS = ['tiktok', 'instagram', 'youtube', 'facebook'] as const;
@@ -219,7 +220,7 @@ export async function buildReportFacts(
       destinations: {
         select: {
           platform: true, status: true, platformPostId: true,
-          platformPostUrl: true, socialAccountId: true,
+          platformPostUrl: true, socialAccountId: true, importedPostId: true,
         },
       },
     },
@@ -254,9 +255,13 @@ export async function buildReportFacts(
     }]),
   );
 
-  const { posts: unified } = unifyPosts({
+  // Only the merge input gets the union — the per-platform aggregates below
+  // still read `importedPosts`, which is deliberately scoped to the report month.
+  // A row linked to a post inside the month may itself sit outside it, and it
+  // belongs to that post's totals either way.
+  const { posts: unified, mergedImportedIds, mergedPlatformsByPost } = unifyPosts({
     posts: currentPosts,
-    imported: importedPosts,
+    imported: mergeImportedRows(importedPosts, await linkedImportedRowsFor(currentPosts)),
     platformFilter: 'ALL',
     accounts: accountMeta,
   });
@@ -323,7 +328,13 @@ export async function buildReportFacts(
       (p.destinations || []).some(d => d.platform.toLowerCase() === platform));
     const platInsights = platPosts.flatMap(p =>
       (p.insights || []).filter(i => (i.platform || '').toLowerCase() === platform));
-    const platImported = importedPosts.filter(ip => platformOf.get(ip.socialAccountId) === platform);
+    // FIX: a video merged into a post group was counted twice here — once via
+    // platPosts, because the group carries a destination on this platform, and
+    // again via its export row. Linking a hand-published TikTok video to the post
+    // it went out with hits this every time, inflating the platform's post count
+    // by one per link. The group already speaks for these rows.
+    const platImported = importedPosts.filter(ip =>
+      platformOf.get(ip.socialAccountId) === platform && !mergedImportedIds.has(ip.id));
 
     const t = periodTotals(platDaily, platInsights, gate);
     const canReach = gate.metricPlatformOk(platform, 'reach');
@@ -384,6 +395,11 @@ export async function buildReportFacts(
     for (const p of currentPosts) {
       const dest = (p.destinations || []).find(d => d.platform.toLowerCase() === platform);
       if (!dest) continue;
+      // FIX: this platform's real numbers are on an export row, which the loop
+      // below adds. The insight row here is the zero-filled placeholder TikTok's
+      // API leaves behind, so taking it too entered one video as two candidates —
+      // a real one and an all-zero twin competing for the same top-four slots.
+      if (mergedPlatformsByPost.get(p.id)?.has(platform)) continue;
       const ins = (p.insights || []).find(i => (i.platform || '').toLowerCase() === platform);
       if (!ins) continue;
 

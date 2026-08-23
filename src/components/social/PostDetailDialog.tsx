@@ -12,7 +12,9 @@ import { compactNumber } from "@/lib/social/format";
 import {
   ExternalLink, Heart, MessageSquare, Share2, Bookmark, Play, Eye,
   BarChart2, RefreshCw, AlertCircle, Upload, Zap, Video, Image as ImageIcon,
+  Link2, Unlink,
 } from "lucide-react";
+import { LinkImportedPostDialog } from "./LinkImportedPostDialog";
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -31,6 +33,9 @@ interface Breakdown {
   updatedAt: string | null;
   error?: string | null;
   metrics: Metrics;
+  destinationId?: string;
+  /** Set when the user attached this platform to the group by hand. */
+  linkedImportedPostId?: string | null;
 }
 
 export interface PostDetail {
@@ -105,6 +110,12 @@ const MetricTile = ({ icon: Icon, label, value, tone }: {
   </div>
 );
 
+const LinkedChip = () => (
+  <span className="inline-flex items-center gap-1 rounded-md border border-sky-500/25 bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-bold text-sky-600">
+    <Link2 size={9} /> Linked by you
+  </span>
+);
+
 const SourceChip = ({ source }: { source: "api" | "import" }) =>
   source === "import" ? (
     <span className="inline-flex items-center gap-1 rounded-md border border-violet-500/25 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-bold text-violet-600">
@@ -126,6 +137,10 @@ export function PostDetailDialog({ postId, open, onOpenChange }: {
   const [detail, setDetail] = useState<PostDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  // Bumped after a link or unlink to pull the recomputed totals back down.
+  const [reloadKey, setReloadKey] = useState(0);
+  const [unlinking, setUnlinking] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !postId) return;
@@ -137,7 +152,28 @@ export function PostDetailDialog({ postId, open, onOpenChange }: {
       .catch(err => { if (!cancelled) setError(err?.message || "Could not load this post"); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [postId, open]);
+  }, [postId, open, reloadKey]);
+
+  const unlink = async (destinationId: string) => {
+    if (!postId) return;
+    setUnlinking(destinationId);
+    setError(null);
+    try {
+      await apiFetch(
+        `/social/posts/${encodeURIComponent(postId)}/linked-imports/${encodeURIComponent(destinationId)}`,
+        { method: "DELETE" },
+      );
+      setReloadKey(k => k + 1);
+    } catch (err: any) {
+      setError(err?.message || "Could not unlink that video");
+    } finally {
+      setUnlinking(null);
+    }
+  };
+
+  // Only content we published can take a link — an export-only row has no group
+  // to add a platform to, and the "imported:" id is not a SocialPost id.
+  const canLink = Boolean(postId) && !String(postId).startsWith("imported:");
 
   const media = firstMediaUrl(detail?.mediaUrls);
   const isVideo = detail?.mediaType === "video" || detail?.mediaType === "reel" || detail?.mediaType === "short";
@@ -278,7 +314,20 @@ export function PostDetailDialog({ postId, open, onOpenChange }: {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <SourceChip source={b.source} />
+                            {b.linkedImportedPostId ? <LinkedChip /> : <SourceChip source={b.source} />}
+                            {b.linkedImportedPostId && b.destinationId && (
+                              <button
+                                onClick={() => unlink(b.destinationId!)}
+                                disabled={unlinking === b.destinationId}
+                                title="Remove this platform from the post — the video stays on its own"
+                                className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[10px] font-bold text-muted-foreground transition-colors hover:bg-muted/50 hover:text-destructive disabled:opacity-50"
+                              >
+                                {unlinking === b.destinationId
+                                  ? <RefreshCw size={10} className="animate-spin" />
+                                  : <Unlink size={10} />}
+                                Unlink
+                              </button>
+                            )}
                             {b.link && (
                               <button
                                 onClick={() => openExternal(b.link!)}
@@ -318,10 +367,42 @@ export function PostDetailDialog({ postId, open, onOpenChange }: {
                   </div>
                 </div>
               )}
+
+              {/* Grouping content published by hand.
+                  TikTok has no publish approval on these accounts, so its cut of
+                  a post never becomes a destination on its own — the user points
+                  at the imported video and it joins the group. */}
+              {canLink && (
+                <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold">Posted this somewhere else yourself?</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        Add the imported video so this counts as one post, not two.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setLinkOpen(true)}
+                      className="h-8 shrink-0 gap-1.5 rounded-lg text-[11px] font-bold"
+                    >
+                      <Link2 size={12} /> Add video
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
       </DialogContent>
+
+      <LinkImportedPostDialog
+        postId={postId}
+        open={linkOpen}
+        onOpenChange={setLinkOpen}
+        onLinked={() => setReloadKey(k => k + 1)}
+      />
     </Dialog>
   );
 }

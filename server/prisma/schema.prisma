@@ -1386,9 +1386,17 @@ model SocialPostDestination {
   attempts        Int       @default(0)
   lastAttemptAt   DateTime? @map("last_attempt_at")
   lockedAt        DateTime? @map("locked_at")
+  // Set only on a destination the user attached by hand, for content published
+  // outside the system — TikTok, which we have no API approval to publish to.
+  // Pointing at the exact imported_posts row makes the grouping explicit instead
+  // of re-derived from the video id on every read, and it survives a re-import:
+  // the importer upserts on (social_account_id, external_id), so the row id is
+  // stable and refreshed metrics flow into the group automatically.
+  importedPostId  String?   @unique @map("imported_post_id")
 
   post          SocialPost    @relation(fields: [postId], references: [id], onDelete: Cascade)
   socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  importedPost  ImportedPost? @relation(fields: [importedPostId], references: [id], onDelete: Cascade)
 
   @@index([postId])
   @@index([status, lockedAt])
@@ -1519,6 +1527,9 @@ model ImportedPost {
   importedAt      DateTime  @default(now()) @map("imported_at")
 
   account SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  // At most one post group may claim this row (enforced by the unique on the
+  // other side), so a video can never be counted into two posts.
+  linkedDestination SocialPostDestination?
 
   @@unique([socialAccountId, externalId])
   @@index([socialAccountId])

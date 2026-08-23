@@ -602,7 +602,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.31.57",
+  appVersion: "2.31.58",
   versionHistory: [
     {
       version: "2.23.0",

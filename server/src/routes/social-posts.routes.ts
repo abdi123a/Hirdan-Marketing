@@ -8,6 +8,9 @@ import { callAI, resolveProviderKey } from '../lib/ai-provider.js';
 import multer from 'multer';
 import path from 'path';
 import { PATHS } from '../lib/paths.js';
+import {
+  findLinkCandidates, linkImportedPostToGroup, unlinkImportedPost, PostLinkError,
+} from '../lib/social/post-link.service.js';
 
 /** Aggregate post status from per-destination outcomes. */
 function aggregatePostStatus(published: number, failed: number, total: number): string {
@@ -490,7 +493,64 @@ router.post('/posts/:id/retry', authenticate, async (req, res, next) => {
   }
 });
 
-// 11. Media Upload
+// ── 11. Grouping content published outside the system ───────────────────────
+//
+// TikTok has no publish approval on these accounts, so a video that goes out to
+// Instagram and Facebook through the composer is posted to TikTok by hand and
+// only arrives here later, in a Studio export. Nothing in the two records ties
+// them together, so these three endpoints let the user say "this export row is
+// that post" and have the dashboard treat them as the single post they are.
+
+// 11a. Export rows this post could be — best guess first.
+router.get('/posts/:id/link-candidates', authenticate, async (req, res, next) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 40, 100);
+    res.json(await findLinkCandidates(req.params.id as string, limit));
+    return;
+  } catch (err) {
+    if (err instanceof PostLinkError) { res.status(err.status).json({ error: err.message }); return; }
+    next(err);
+  }
+});
+
+// 11b. Attach one export row to this post as a real destination.
+router.post('/posts/:id/linked-imports', authenticate, async (req, res, next) => {
+  try {
+    const importedPostId = (req.body || {}).importedPostId;
+    if (!importedPostId || typeof importedPostId !== 'string') {
+      res.status(400).json({ error: 'importedPostId is required' });
+      return;
+    }
+
+    const { destination, platform } = await linkImportedPostToGroup(req.params.id as string, importedPostId);
+
+    // Answer with the post in the same shape the detail views already consume,
+    // so the client can drop it straight into state without a second round trip.
+    const post = await prisma.socialPost.findUnique({
+      where: { id: req.params.id as string },
+      include: { destinations: { include: { socialAccount: true } }, insights: true },
+    });
+    res.status(201).json({ linked: true, platform, destinationId: destination.id, post });
+    return;
+  } catch (err) {
+    if (err instanceof PostLinkError) { res.status(err.status).json({ error: err.message }); return; }
+    next(err);
+  }
+});
+
+// 11c. Detach a hand-linked destination; the export row stands alone again.
+router.delete('/posts/:id/linked-imports/:destinationId', authenticate, async (req, res, next) => {
+  try {
+    const result = await unlinkImportedPost(req.params.id as string, req.params.destinationId as string);
+    res.json({ unlinked: true, ...result });
+    return;
+  } catch (err) {
+    if (err instanceof PostLinkError) { res.status(err.status).json({ error: err.message }); return; }
+    next(err);
+  }
+});
+
+// 12. Media Upload
 router.post('/media/upload', authenticate, upload.single('file'), async (req, res, next) => {
   try {
     const file = req.file;
