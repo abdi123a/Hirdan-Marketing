@@ -39,6 +39,77 @@ export function parseMonthDay(input: unknown, ref: Date): Date | null {
   return cand;
 }
 
+const MONTH_DAY_RE = /^([A-Za-z]+)\s+(\d{1,2})$/;
+
+type MonthDay = { mon: number; day: number };
+
+/** "August 21" → { mon: 7, day: 21 }; anything else (a full date, junk) → null. */
+function monthDayOf(input: unknown): MonthDay | null {
+  if (input == null) return null;
+  const m = String(input).trim().match(MONTH_DAY_RE);
+  if (!m) return null;
+  const mon = MONTHS[m[1].toLowerCase()];
+  return mon == null ? null : { mon, day: parseInt(m[2], 10) };
+}
+
+const laterInYear = (a: MonthDay, b: MonthDay): boolean =>
+  a.mon > b.mon || (a.mon === b.mon && a.day > b.day);
+
+/**
+ * Resolve a chronologically ordered export column of year-less dates
+ * ("August 21") to real dates.
+ *
+ * parseMonthDay() dates each cell on its own as its most recent past
+ * occurrence. That is right for a short window and wrong for a 365-day one: the
+ * first days of the window share their month-day with the days around the
+ * export date, so they land a year late — on top of the current week, one of
+ * them in the future — while the real first days go missing. The sequence
+ * itself carries the year: anchor the most recent row the way parseMonthDay
+ * does, then walk towards the oldest row and step the year down each time the
+ * month-day wraps (Jan 1 → Dec 31). Repeated dates (hourly rows) and either
+ * sort order are fine.
+ *
+ * Cells that carry a year, or don't parse at all, come back exactly as
+ * parseMonthDay would return them.
+ */
+export function resolveSequentialDates(cells: unknown[], ref: Date): (Date | null)[] {
+  const mds = cells.map(monthDayOf);
+
+  // Visit rows most-recent-last whichever way the export is sorted. A step of
+  // more than half a year is a year wrap, which votes for the opposite order.
+  const doy = (md: MonthDay) => md.mon * 31 + md.day;
+  let asc = 0;
+  let desc = 0;
+  let prev: MonthDay | null = null;
+  for (const md of mds) {
+    if (!md) continue;
+    if (prev) {
+      const delta = doy(md) - doy(prev);
+      if (delta !== 0) {
+        if ((delta > 0 && delta <= 186) || delta < -186) asc++;
+        else desc++;
+      }
+    }
+    prev = md;
+  }
+  const order = [...cells.keys()];
+  if (desc > asc) order.reverse();
+
+  const out: (Date | null)[] = cells.map((c, i) => (mds[i] ? null : parseMonthDay(c, ref)));
+  let year: number | null = null;
+  let newer: MonthDay | null = null;
+  for (let k = order.length - 1; k >= 0; k--) {
+    const i = order[k];
+    const md = mds[i];
+    if (!md) continue;
+    if (year == null) year = parseMonthDay(cells[i], ref)!.getUTCFullYear();
+    else if (newer && laterInYear(md, newer)) year -= 1;
+    out[i] = new Date(Date.UTC(year, md.mon, md.day));
+    newer = md;
+  }
+  return out;
+}
+
 /**
  * Parse an ISO-ish timestamp to a UTC midnight date.
  *

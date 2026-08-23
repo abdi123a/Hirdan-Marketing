@@ -1,8 +1,13 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import multer from 'multer';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
-import { importTikTokStudioFiles } from '../lib/social/import/tiktok-import.service.js';
+import {
+  type ClearImportedDataOptions,
+  clearImportedData,
+  countImportedData,
+  importTikTokStudioFiles,
+} from '../lib/social/import/tiktok-import.service.js';
 import { importMetaAudienceFiles } from '../lib/social/import/meta-audience-import.service.js';
 import { enrichTikTokVideosBatch } from '../lib/social/tiktok-enrich.service.js';
 
@@ -97,6 +102,70 @@ router.post('/import/tiktok/:accountId/enrich', authenticate, async (req, res, n
 
     const result = await enrichTikTokVideosBatch(accountId, undefined, { force: true });
     res.json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Clear imported data for a TikTok account ─────────────────────────────────
+// GET  …/data  → counts of what a DELETE with the same query would remove.
+// DELETE …/data → removes it. Query: from=YYYY-MM-DD, to=YYYY-MM-DD (inclusive,
+// both optional), daily|videos|audience=0 to leave a category alone.
+
+function parseClearQuery(q: Record<string, unknown>): ClearImportedDataOptions | { error: string } {
+  const day = (v: unknown): Date | null | undefined => {
+    if (v == null || v === '') return null;
+    const s = String(v);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return undefined;
+    const d = new Date(`${s}T00:00:00Z`);
+    return isNaN(d.getTime()) ? undefined : d;
+  };
+  const from = day(q.from);
+  const to = day(q.to);
+  if (from === undefined || to === undefined) return { error: 'from/to must be YYYY-MM-DD' };
+  if (from && to && from > to) return { error: '"from" must not be after "to"' };
+  const flag = (v: unknown) => !(v === '0' || v === 'false');
+  return { from, to, daily: flag(q.daily), videos: flag(q.videos), audience: flag(q.audience) };
+}
+
+async function loadTikTokAccount(accountId: string, res: Response) {
+  const account = await prisma.socialAccount.findUnique({ where: { id: accountId } });
+  if (!account) {
+    res.status(404).json({ error: 'Account not found' });
+    return null;
+  }
+  if (account.platform.toLowerCase() !== 'tiktok') {
+    res.status(400).json({ error: 'Only TikTok accounts hold imported Studio data' });
+    return null;
+  }
+  return account;
+}
+
+router.get('/import/tiktok/:accountId/data', authenticate, async (req, res, next) => {
+  try {
+    const { accountId } = req.params as { accountId: string };
+    if (!(await loadTikTokAccount(accountId, res))) return;
+    const opts = parseClearQuery(req.query as Record<string, unknown>);
+    if ('error' in opts) {
+      res.status(400).json({ error: opts.error });
+      return;
+    }
+    res.json({ success: true, counts: await countImportedData(accountId, opts) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/import/tiktok/:accountId/data', authenticate, async (req, res, next) => {
+  try {
+    const { accountId } = req.params as { accountId: string };
+    if (!(await loadTikTokAccount(accountId, res))) return;
+    const opts = parseClearQuery(req.query as Record<string, unknown>);
+    if ('error' in opts) {
+      res.status(400).json({ error: opts.error });
+      return;
+    }
+    res.json({ success: true, deleted: await clearImportedData(accountId, opts) });
   } catch (err) {
     next(err);
   }

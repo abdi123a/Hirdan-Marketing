@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { capStatus, capAvailable, capOf, type Capabilities, type MetricKey, type EffectiveStatus } from "@/lib/platform-capabilities";
 import { PostDetailDialog, openExternal } from "@/components/social/PostDetailDialog";
+import { ClearImportedDataDialog } from "@/components/social/ClearImportedDataDialog";
 import { compactNumber } from "@/lib/social/format";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -21,7 +22,7 @@ import {
   ArrowUp, ArrowDown, Minus, ChevronLeft, ChevronRight, Activity, Zap, Target, Upload, Lock, Info,
   Globe, Clock, CheckCircle2, XCircle, AlertCircle, FileText, Repeat2, LayoutGrid,
   Image, Video, Film, BookOpen, Layers, List, BarChart3, Cpu, Sparkles, Send,
-  MapPin, Hash, MousePointer, TrendingDown, SortDesc, ExternalLink,
+  MapPin, Hash, MousePointer, TrendingDown, SortDesc, ExternalLink, Trash2,
 } from "lucide-react";
 
 // ─────────────────────────── Types ───────────────────────────────────────────
@@ -408,6 +409,7 @@ export default function SocialAnalyzePage() {
 
   // Post detail panel (metrics for one post + link out to the live post)
   const [detailPostId, setDetailPostId] = useState<string | null>(null);
+  const [clearImportOpen, setClearImportOpen] = useState(false);
 
   // Global filters
   const [activeTab, setActiveTab] = useState("overview");
@@ -2174,6 +2176,14 @@ export default function SocialAnalyzePage() {
                             <span><Upload className="h-4 w-4"/>Upload XLSX Files</span>
                           </Button>
                         </label>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="rounded-xl w-full gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => setClearImportOpen(true)}
+                        >
+                          <Trash2 className="h-4 w-4"/>Clear imported data…
+                        </Button>
                       </CardContent>
                     </Card>
                   )}
@@ -2212,6 +2222,13 @@ export default function SocialAnalyzePage() {
         postId={detailPostId}
         open={detailPostId !== null}
         onOpenChange={open => { if (!open) setDetailPostId(null); }}
+      />
+      <ClearImportedDataDialog
+        accountId={analytics?.accounts?.find(a => a.platform.toLowerCase() === 'tiktok')?.id ?? null}
+        accountLabel={analytics?.accounts?.find(a => a.platform.toLowerCase() === 'tiktok')?.platformUsername}
+        open={clearImportOpen}
+        onOpenChange={setClearImportOpen}
+        onCleared={() => { void Promise.all([fetchAnalytics(), fetchPosts()]); }}
       />
     </div>
   );

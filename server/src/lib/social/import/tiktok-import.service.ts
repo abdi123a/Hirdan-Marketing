@@ -12,6 +12,10 @@
 // upload any subset in any order. Everything upserts idempotently, keyed by
 // (account,date) / (account,kind,label) / (account,weekday,hour) / (account,
 // videoId) — re-importing a fresh export just updates in place.
+//
+// The daily files carry no year ("August 21"), so their dates are resolved as an
+// ordered sequence (resolveSequentialDates) rather than cell by cell — a
+// full-year export would otherwise fold its first days onto the current week.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createHash } from 'crypto';
@@ -28,6 +32,7 @@ import {
   has,
   parseMonthDay,
   parseWorkbook,
+  resolveSequentialDates,
   safeFloat,
   safeInt,
 } from './import-utils.js';
@@ -116,32 +121,69 @@ export function detectType(sheet: ParsedSheet): TikTokFileType {
   return 'unknown';
 }
 
-// ── main entry ───────────────────────────────────────────────────────────────
+// ── parsing ──────────────────────────────────────────────────────────────────
 
-export async function importTikTokStudioFiles(
-  accountId: string,
+export interface ParsedVideo {
+  externalId: string; title: string | null; link: string | null; postedAt: Date | null;
+  likes: number | null; comments: number | null; shares: number | null; views: number | null;
+}
+
+export interface ActivityCell { sum: number; count: number; weekday: number; hour: number }
+
+/** Everything the export files say, before any of it touches the database. */
+export interface ParsedTikTokExport {
+  fileResults: ImportFileResult[];
+  warnings: string[];
+  daily: Map<string, DailyAcc>;
+  gender: { label: string; fraction: number }[];
+  country: { label: string; fraction: number }[];
+  activity: Map<string, ActivityCell>;
+  videos: ParsedVideo[];
+  /** Content rows imported under a synthetic key because their link carried no video id. */
+  unlinkedVideos: number;
+  /** Daily rows refused because they resolved to a date after the export itself. */
+  futureRows: number;
+}
+
+/**
+ * Parse TikTok Studio export files into plain data.
+ *
+ * Pure apart from reading the buffers — no database — so the date handling can
+ * be tested against a real-shaped export. `now` is the import time and the
+ * reference every year-less date is resolved against.
+ */
+export async function parseTikTokStudioFiles(
   files: { originalname: string; buffer: Buffer }[],
-): Promise<ImportSummary> {
-  const now = new Date();
+  now: Date = new Date(),
+): Promise<ParsedTikTokExport> {
   const fileResults: ImportFileResult[] = [];
   const warnings: string[] = [];
 
   const daily = new Map<string, DailyAcc>();
   const gender: { label: string; fraction: number }[] = [];
   const country: { label: string; fraction: number }[] = [];
-  const activityAcc = new Map<string, { sum: number; count: number; weekday: number; hour: number }>();
-  const videos: {
-    externalId: string; title: string | null; link: string | null; postedAt: Date | null;
-    likes: number | null; comments: number | null; shares: number | null; views: number | null;
-  }[] = [];
+  const activityAcc = new Map<string, ActivityCell>();
+  const videos: ParsedVideo[] = [];
   // Rows imported under a synthetic key because their link carried no video id.
   // Reported as a warning, never as a failure — they are in the dashboard either way.
   let unlinkedVideos = 0;
+  let futureRows = 0;
 
-  const upsertDaily = (d: Date, patch: Partial<DailyAcc>) => {
+  // A daily row can never be dated after the export that contains it. One that
+  // is means a year-less date was placed wrongly — exactly the failure that once
+  // put a year-old viral spike on top of the current week — so refuse it instead
+  // of writing it. A day of slack covers the export day itself across timezones.
+  const futureCutoff = now.getTime() + 86400000;
+
+  const upsertDaily = (d: Date, patch: Partial<DailyAcc>): boolean => {
+    if (d.getTime() > futureCutoff) {
+      futureRows++;
+      return false;
+    }
     const k = dateKey(d);
     const cur = daily.get(k) || { date: d };
     daily.set(k, { ...cur, ...patch, date: d });
+    return true;
   };
 
   for (const file of files) {
@@ -158,21 +200,25 @@ export async function importTikTokStudioFiles(
 
     try {
       switch (type) {
-        case 'followerHistory':
-          for (const r of sheet.rows) {
-            const d = parseMonthDay(r[0], now);
+        case 'followerHistory': {
+          const dates = resolveSequentialDates(sheet.rows.map(r => r[0]), now);
+          for (let i = 0; i < sheet.rows.length; i++) {
+            const r = sheet.rows[i];
+            const d = dates[i];
             if (!d) continue;
-            upsertDaily(d, { followers: safeInt(r[1]) });
-            count++;
+            if (upsertDaily(d, { followers: safeInt(r[1]) })) count++;
           }
           break;
+        }
 
-        case 'overview':
-          for (const r of sheet.rows) {
-            const d = parseMonthDay(r[0], now);
+        case 'overview': {
+          const dates = resolveSequentialDates(sheet.rows.map(r => r[0]), now);
+          for (let i = 0; i < sheet.rows.length; i++) {
+            const r = sheet.rows[i];
+            const d = dates[i];
             if (!d) continue;
             const videoViews = safeInt(r[1]);
-            upsertDaily(d, {
+            const ok = upsertDaily(d, {
               videoViews,
               impressions: videoViews, // TikTok's closest impressions proxy
               profileVisits: safeInt(r[2]),
@@ -180,22 +226,26 @@ export async function importTikTokStudioFiles(
               comments: safeInt(r[4]),
               shares: safeInt(r[5]),
             });
-            count++;
+            if (ok) count++;
           }
           break;
+        }
 
-        case 'viewers':
-          for (const r of sheet.rows) {
-            const d = parseMonthDay(r[0], now);
+        case 'viewers': {
+          const dates = resolveSequentialDates(sheet.rows.map(r => r[0]), now);
+          for (let i = 0; i < sheet.rows.length; i++) {
+            const r = sheet.rows[i];
+            const d = dates[i];
             if (!d) continue;
-            upsertDaily(d, {
+            const ok = upsertDaily(d, {
               reach: safeInt(r[1]),      // Total Viewers ≈ reach
               newViewers: safeInt(r[2]),
               returningViewers: safeInt(r[3]),
             });
-            count++;
+            if (ok) count++;
           }
           break;
+        }
 
         case 'followerGender':
           for (const r of sheet.rows) {
@@ -217,9 +267,11 @@ export async function importTikTokStudioFiles(
           }
           break;
 
-        case 'followerActivity':
-          for (const r of sheet.rows) {
-            const d = parseMonthDay(r[0], now);
+        case 'followerActivity': {
+          const dates = resolveSequentialDates(sheet.rows.map(r => r[0]), now);
+          for (let i = 0; i < sheet.rows.length; i++) {
+            const r = sheet.rows[i];
+            const d = dates[i];
             const hour = safeInt(r[1]);
             const active = safeInt(r[2]);
             if (!d || hour == null || active == null) continue;
@@ -231,6 +283,7 @@ export async function importTikTokStudioFiles(
             count++;
           }
           break;
+        }
 
         case 'content':
           for (let idx = 0; idx < sheet.rows.length; idx++) {
@@ -274,6 +327,30 @@ export async function importTikTokStudioFiles(
 
     fileResults.push({ filename: file.originalname, type, rows: count });
   }
+
+  if (futureRows > 0) {
+    warnings.push(
+      `${futureRows} daily row(s) were dated after today and skipped — their dates could not be ` +
+      `placed on the calendar, so nothing was written for them. Check the export and re-upload.`,
+    );
+  }
+
+  return {
+    fileResults, warnings, daily, gender, country,
+    activity: activityAcc, videos, unlinkedVideos, futureRows,
+  };
+}
+
+// ── main entry ───────────────────────────────────────────────────────────────
+
+export async function importTikTokStudioFiles(
+  accountId: string,
+  files: { originalname: string; buffer: Buffer }[],
+): Promise<ImportSummary> {
+  const now = new Date();
+  const {
+    fileResults, warnings, daily, gender, country, activity: activityAcc, videos, unlinkedVideos,
+  } = await parseTikTokStudioFiles(files, now);
 
   // ── persist ──
   const account = await prisma.socialAccount.findUnique({ where: { id: accountId } });
@@ -365,4 +442,106 @@ export async function importTikTokStudioFiles(
     videos: videos.length,
     warnings,
   };
+}
+
+// ── clearing ─────────────────────────────────────────────────────────────────
+//
+// The importer only ever upserts, so a bad upload (wrong account, mis-dated
+// rows, a stale export) cannot be undone by importing again — the wrong rows
+// stay unless something removes them. This is that something: scoped to one
+// account, optionally to a date window, with a dry-run count so the UI can say
+// exactly what is about to go before it goes.
+
+export interface ClearImportedDataOptions {
+  /** Inclusive UTC-midnight bounds. Both omitted = everything. */
+  from?: Date | null;
+  to?: Date | null;
+  /** Daily metric rows (followers, reach, views, …). Default true. */
+  daily?: boolean;
+  /** Imported videos, ranged on their post date. Default true. */
+  videos?: boolean;
+  /**
+   * Demographics and the active-times heatmap. These carry no date, so they
+   * are only touched when no range is given. Default true.
+   */
+  audience?: boolean;
+}
+
+export interface ClearImportedDataCounts {
+  daily: number;
+  videos: number;
+  demographics: number;
+  activity: number;
+}
+
+function clearFilters(accountId: string, opts: ClearImportedDataOptions) {
+  const from = opts.from ?? null;
+  const to = opts.to ?? null;
+  const ranged = from != null || to != null;
+  const dayAfterTo = to ? new Date(to.getTime() + 86400000) : null;
+
+  const dailyWhere = {
+    socialAccountId: accountId,
+    ...(ranged ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
+  };
+  // A video with no post date cannot be placed in a window, so a ranged clear
+  // leaves it alone; only an unbounded clear removes it.
+  const videosWhere = {
+    socialAccountId: accountId,
+    ...(ranged
+      ? { postedAt: { ...(from ? { gte: from } : {}), ...(dayAfterTo ? { lt: dayAfterTo } : {}) } }
+      : {}),
+  };
+  return {
+    ranged,
+    daily: opts.daily !== false,
+    videos: opts.videos !== false,
+    audience: opts.audience !== false && !ranged,
+    dailyWhere,
+    videosWhere,
+  };
+}
+
+/** What clearImportedData() would delete, without deleting it. */
+export async function countImportedData(
+  accountId: string,
+  opts: ClearImportedDataOptions = {},
+): Promise<ClearImportedDataCounts> {
+  const f = clearFilters(accountId, opts);
+  const [daily, videos, demographics, activity] = await Promise.all([
+    f.daily ? prisma.accountInsightDaily.count({ where: f.dailyWhere }) : 0,
+    f.videos ? prisma.importedPost.count({ where: f.videosWhere }) : 0,
+    f.audience ? prisma.accountDemographic.count({ where: { socialAccountId: accountId } }) : 0,
+    f.audience ? prisma.accountActivity.count({ where: { socialAccountId: accountId } }) : 0,
+  ]);
+  return { daily, videos, demographics, activity };
+}
+
+export async function clearImportedData(
+  accountId: string,
+  opts: ClearImportedDataOptions = {},
+): Promise<ClearImportedDataCounts> {
+  const account = await prisma.socialAccount.findUnique({ where: { id: accountId } });
+  if (!account) throw new Error('Account not found');
+
+  const f = clearFilters(accountId, opts);
+
+  return prisma.$transaction(async (tx) => {
+    const daily = f.daily ? (await tx.accountInsightDaily.deleteMany({ where: f.dailyWhere })).count : 0;
+    const videos = f.videos ? (await tx.importedPost.deleteMany({ where: f.videosWhere })).count : 0;
+    const demographics = f.audience
+      ? (await tx.accountDemographic.deleteMany({ where: { socialAccountId: accountId } })).count
+      : 0;
+    const activity = f.audience
+      ? (await tx.accountActivity.deleteMany({ where: { socialAccountId: accountId } })).count
+      : 0;
+
+    // With nothing imported left, "last imported" would point at data that no
+    // longer exists.
+    if (!f.ranged && f.daily && f.videos && f.audience) {
+      await tx.socialAccount.update({ where: { id: accountId }, data: { lastImportedAt: null } });
+    }
+
+    return { daily, videos, demographics, activity };
+  });
 }
