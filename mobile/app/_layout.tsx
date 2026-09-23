@@ -47,6 +47,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const isHydrated = useAuthStore((s) => s.isHydrated);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isLocked = useAuthStore((s) => s.isLocked);
+  const mustChangePassword = useAuthStore((s) => Boolean(s.user?.mustChangePassword));
   const segments = useSegments();
   const router = useRouter();
   const responseListener = useRef<{ remove: () => void } | null>(null);
@@ -79,13 +80,17 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isHydrated) return;
     const inAuth = segments[0] === '(auth)';
+    const onChangePassword = segments[0] === 'change-password';
     if (!sessionReady && !inAuth) {
       router.replace('/(auth)/login');
+    } else if (sessionReady && mustChangePassword) {
+      // The API answers 403 to everything else until the password is replaced.
+      if (!onChangePassword) router.replace('/change-password');
     } else if (sessionReady && inAuth) {
       router.replace('/(tabs)/home');
       registerForPushNotifications().catch(() => undefined);
     }
-  }, [isHydrated, sessionReady, segments, router]);
+  }, [isHydrated, sessionReady, mustChangePassword, segments, router]);
 
   useEffect(() => {
     if (!sessionReady) return;
@@ -157,6 +162,7 @@ function RootNavigator() {
       <Stack.Screen name="index" />
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="change-password" options={{ gestureEnabled: false }} />
 
       <Stack.Screen name="client/[id]" options={detailOptions('Client', t)} />
       <Stack.Screen name="client/add" options={modalOptions('Add Client', t)} />

@@ -118,6 +118,12 @@ export default function SettingsScreen() {
 
         <Section title="Security">
           <ListGroup>
+            <ListRow
+              title="Change password"
+              subtitle="Signs out your other devices"
+              left={<SettingIcon name="lock" />}
+              onPress={() => router.push('/change-password')}
+            />
             {biometricAvailable ? (
               <View style={styles.switchRow}>
                 <SwitchRow
