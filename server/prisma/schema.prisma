@@ -313,13 +313,17 @@ model Invoice {
   reminderSentAt            DateTime?           @map("reminder_sent_at")
   overdueSentAt             DateTime?           @map("overdue_sent_at")
   dueSoonNotifiedAt         DateTime?           @map("due_soon_notified_at")
+  /// Subscription billing period this auto-generated invoice covers ("YYYY-MM" of the cycle's first month). Unique per subscription so concurrent billing runs cannot double-bill.
+  billingPeriod             String?             @map("billing_period") @db.VarChar(16)
   client                    Client              @relation(fields: [clientId], references: [id], onDelete: Restrict )
   verificationTokens        VerificationToken[]
   deposits                  Deposit[]
   sourceProforma            Proforma?           @relation("ProformaConversion")
 
+  @@unique([subscriptionId, billingPeriod])
   @@index([clientId])
   @@index([status])
+  @@index([status, dueDate])
   @@map("invoices")
 }
 
@@ -967,6 +971,8 @@ model Account {
   name       String
   type       AccountType
   currency   String      @default("USD")
+  /// Balance (cents) the account held before its first recorded transaction.
+  openingBalance Int     @default(0) @map("opening_balance")
   color      String?
   icon       String?
   image      String?     @db.LongText
@@ -995,12 +1001,17 @@ model Expense {
   date        DateTime
   receiptUrl  String?  @map("receipt_url") @db.LongText
   notes       String?  @db.Text
+  /// Template this expense was posted from, and the period key it covers (see recurringPeriodKey)
+  recurringExpenseId String? @map("recurring_expense_id")
+  recurringPeriod    String? @map("recurring_period") @db.VarChar(16)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   account  Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
   employee TeamMember? @relation("EmployeeExpenses", fields: [employeeId], references: [id], onDelete: SetNull)
+  recurringExpense RecurringExpense? @relation(fields: [recurringExpenseId], references: [id], onDelete: SetNull)
 
+  @@unique([recurringExpenseId, recurringPeriod])
   @@index([accountId])
   @@index([date])
   @@index([category])
@@ -1024,7 +1035,8 @@ model RecurringExpense {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  account  Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  expenses Expense[]
 
   @@index([accountId])
   @@map("recurring_expenses")
@@ -1035,7 +1047,9 @@ model AccountTransfer {
   id            String   @id @default(uuid())
   fromAccountId String   @map("from_account_id")
   toAccountId   String   @map("to_account_id")
-  amount        Int // in cents
+  amount        Int // in cents, in the source account's currency
+  /// Amount credited to the destination account (cents, destination currency). Differs from amount only for cross-currency transfers.
+  toAmount      Int?     @map("to_amount")
   note          String?  @db.Text
   date          DateTime
   createdAt     DateTime @default(now()) @map("created_at")

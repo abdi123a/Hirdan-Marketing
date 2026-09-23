@@ -164,8 +164,15 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) =>
 // ─── POST /api/subscriptions/run-billing-cycle ──────────────────
 router.post('/run-billing-cycle', requireAdmin, async (req: Request, res: Response, next) => {
   try {
-    await runBillingCycle();
-    res.json({ success: true, message: 'Subscription billing cycle executed successfully' });
+    const result = await runBillingCycle();
+    res.json({
+      success: true,
+      skipped: result.skipped,
+      invoicesCreated: result.invoicesCreated,
+      message: result.skipped
+        ? 'A billing cycle is already running; it will pick up anything due.'
+        : `Subscription billing cycle executed successfully (${result.invoicesCreated} invoice${result.invoicesCreated === 1 ? '' : 's'} generated)`,
+    });
   } catch (error) {
     next(error);
   }
