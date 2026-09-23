@@ -20,6 +20,25 @@ import { PATHS } from '../lib/paths.js';
 import {
   findLinkCandidates, linkImportedPostToGroup, unlinkImportedPost, PostLinkError,
 } from '../lib/social/post-link.service.js';
+import {
+  canApproveSocialPosts, requestedStatusError, manualPublishError, changesPublishedContent,
+  contributorUpdateOutcome, parseRejectionReason, SUBMITTABLE_POST_STATUSES,
+  APPROVABLE_POST_STATUSES, REJECTABLE_POST_STATUSES, APPROVER_ONLY_MESSAGE,
+} from '../lib/social/post-approval.js';
+import { getRequestPermissions } from '../lib/permission-guard.js';
+import type { Request } from 'express';
+
+/**
+ * Whether the caller may schedule/publish directly and approve or reject
+ * others' posts: ADMIN, or MANAGE on social_media. Everyone else who reaches
+ * these routes (WRITE) works through submit-for-approval.
+ */
+async function isSocialApprover(req: Request): Promise<boolean> {
+  if (!req.user) return false;
+  if (req.user.role === 'ADMIN') return true;
+  const permissions = await getRequestPermissions(req);
+  return canApproveSocialPosts(req.user.role, permissions.social_media);
+}
 
 /** Social account shape returned to the browser: never the encrypted tokens. */
 const SAFE_ACCOUNT = { omit: { accessTokenEnc: true, refreshTokenEnc: true } } as const;
@@ -77,9 +96,9 @@ function validateMediaUrls(mediaUrls: unknown, alreadyOnPost: unknown = []): str
 }
 
 /**
- * Status a create/update request may set. Staff with write access schedule
- * directly (the planner has no separate approver role), so SCHEDULED is
- * allowed; engine-owned statuses are not.
+ * Status a create/update request may set: DRAFT / AWAITING_APPROVAL /
+ * SCHEDULED, never an engine-owned status. Whether the caller may pick
+ * SCHEDULED is an approval question, checked separately (post-approval.ts).
  */
 function validateRequestedStatus(status: unknown): string | null {
   if (status === undefined || status === null || status === '') return null;
@@ -131,6 +150,14 @@ router.post('/posts', authenticate, async (req, res, next) => {
       res.status(400).json({ error: statusError || mediaError });
       return;
     }
+    const approver = await isSocialApprover(req);
+    const approvalError = requestedStatusError(status, approver);
+    if (approvalError) {
+      res.status(403).json({ error: approvalError });
+      return;
+    }
+    const now = new Date();
+    const userId = req.user?.userId ?? null;
 
     // One destination per account (a repeated id would publish twice).
     const uniqueAccountIds = [...new Set(accountIds as string[])];
@@ -154,6 +181,10 @@ router.post('/posts', authenticate, async (req, res, next) => {
         status: status || 'DRAFT',
         scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
         campaignId: campaignId as string | null,
+        createdById: userId,
+        // An approver scheduling their own post approves it by doing so.
+        ...(status === 'SCHEDULED' ? { approvedAt: now, approvedById: userId } : {}),
+        ...(status === 'AWAITING_APPROVAL' ? { submittedAt: now, submittedById: userId } : {}),
         destinations: {
           create: uniqueAccountIds.map(accountId => ({
             socialAccountId: accountId,
@@ -280,6 +311,13 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
       res.status(409).json({ error: 'This post is being published right now — try again in a moment.' });
       return;
     }
+    const approver = await isSocialApprover(req);
+    const approvalError = requestedStatusError(status, approver);
+    if (approvalError) {
+      res.status(403).json({ error: approvalError });
+      return;
+    }
+    let accountsChanged = false;
 
     if (accountIds && Array.isArray(accountIds)) {
       // Reconcile destinations as a DIFF, never a wipe-and-rebuild.
@@ -301,6 +339,7 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
         currentPost.destinations,
         accountIds as string[],
       );
+      accountsChanged = toRemove.length > 0 || accountsToQueue.length > 0;
 
       // Validate newly added accounts before touching anything.
       let accountMap = new Map<string, { id: string; platform: string }>();
@@ -336,9 +375,44 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
       }
     }
 
+    // Approval bookkeeping. An approver setting SCHEDULED approves the post; a
+    // contributor changing what would go out on an approved post sends it back
+    // for review (see post-approval.ts).
+    const now = new Date();
+    const userId = req.user?.userId ?? null;
+    let nextStatus: string | undefined = status || undefined;
+    let approvalData: Record<string, unknown> = {};
+    if (approver) {
+      if (status === 'SCHEDULED' && (!currentPost.approvedAt || currentPost.status !== 'SCHEDULED')) {
+        approvalData = { approvedAt: now, approvedById: userId, rejectedAt: null, rejectedById: null, rejectionReason: null };
+      } else if (status === 'DRAFT' || status === 'AWAITING_APPROVAL') {
+        approvalData = { approvedAt: null, approvedById: null };
+      }
+    } else {
+      const contentChanged = changesPublishedContent(
+        {
+          caption: currentPost.caption,
+          platformContent: currentPost.platformContent,
+          mediaUrls: currentPost.mediaUrls,
+          mediaType: currentPost.mediaType,
+          scheduledFor: currentPost.scheduledFor,
+        },
+        { caption, platformContent, mediaUrls, mediaType, scheduledFor, accountsChanged },
+      );
+      const outcome = contributorUpdateOutcome(currentPost.status, status || undefined, contentChanged);
+      nextStatus = outcome.status;
+      if (outcome.clearApproval && currentPost.approvedAt) {
+        approvalData = { approvedAt: null, approvedById: null };
+      }
+    }
+    if (nextStatus === 'AWAITING_APPROVAL' && currentPost.status !== 'AWAITING_APPROVAL') {
+      approvalData = { ...approvalData, submittedAt: now, submittedById: userId };
+    }
+
     await prisma.socialPost.update({
       where: { id: id as string },
       data: {
+        ...approvalData,
         caption: caption !== undefined ? (caption ?? '') : undefined,
         platformContent: platformContent !== undefined ? (platformContent || {}) : undefined,
         mediaUrls: mediaUrls !== undefined ? (mediaUrls || []) : undefined,
@@ -349,7 +423,7 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
         // `currentPost.status`, re-writing the value read a few awaits earlier —
         // so a PUT that raced the scheduler could revert a just-PUBLISHED post to
         // SCHEDULED, where nothing would ever pick it up again.
-        status: status || undefined,
+        status: nextStatus,
       },
     });
 
@@ -379,56 +453,130 @@ router.delete('/posts/:id', authenticate, async (req, res, next) => {
   }
 });
 
-// 6. Submit post for approval
+// 6. Submit post for approval (anyone with write access)
 router.post('/posts/:id/submit', authenticate, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const post = await prisma.socialPost.update({
-      where: { id: id as string },
-      data: { status: 'AWAITING_APPROVAL' },
+    const current = await prisma.socialPost.findUnique({ where: { id: id as string }, select: { status: true } });
+    if (!current) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+    // Conditional on the status we checked, so a post the scheduler or an
+    // approver moved on meanwhile is not dragged back into review.
+    const { count } = await prisma.socialPost.updateMany({
+      where: { id: id as string, status: { in: [...SUBMITTABLE_POST_STATUSES] } },
+      data: {
+        status: 'AWAITING_APPROVAL',
+        submittedAt: new Date(),
+        submittedById: req.user?.userId ?? null,
+        approvedAt: null,
+        approvedById: null,
+      },
     });
-    res.json(post);
+    if (count === 0) {
+      res.status(409).json({ error: `Only draft posts can be submitted for approval (this one is ${current.status.toLowerCase().replace(/_/g, ' ')}).` });
+      return;
+    }
+    res.json(await prisma.socialPost.findUnique({ where: { id: id as string }, include: { destinations: true } }));
     return;
   } catch (err) {
     next(err);
   }
 });
 
-// 7. Approve post
+// 7. Approve post (approvers only). Moves it to SCHEDULED — the scheduler
+// publishes it at scheduledFor, or on its next tick if that time has passed —
+// or, with { publishNow: true }, publishes it straight away.
 router.post('/posts/:id/approve', authenticate, async (req, res, next) => {
   try {
+    if (!(await isSocialApprover(req))) {
+      res.status(403).json({ error: APPROVER_ONLY_MESSAGE });
+      return;
+    }
     const { id } = req.params;
+    const publishNow = req.body?.publishNow === true;
     const current = await prisma.socialPost.findUnique({ where: { id: id as string } });
     if (!current) {
       res.status(404).json({ error: 'Post not found' });
       return;
     }
-    // The scheduler only ever claims posts with a scheduledFor in the past — an
-    // approved post with none would sit in SCHEDULED forever with no error.
-    if (!current.scheduledFor) {
-      res.status(400).json({ error: 'Cannot approve a post with no scheduled time. Set a schedule first.' });
+    if (!APPROVABLE_POST_STATUSES.has(current.status)) {
+      res.status(409).json({ error: `This post is ${current.status.toLowerCase().replace(/_/g, ' ')} and cannot be approved.` });
       return;
     }
-    const post = await prisma.socialPost.update({
-      where: { id: id as string },
-      data: { status: 'SCHEDULED' },
+    // The scheduler only ever claims posts with a scheduledFor in the past — an
+    // approved post with none would sit in SCHEDULED forever with no error.
+    if (!current.scheduledFor && !publishNow) {
+      res.status(400).json({ error: 'Cannot approve a post with no scheduled time. Set a schedule first, or approve and publish now.' });
+      return;
+    }
+    const { count } = await prisma.socialPost.updateMany({
+      where: { id: id as string, status: current.status },
+      data: {
+        status: 'SCHEDULED',
+        approvedAt: new Date(),
+        approvedById: req.user?.userId ?? null,
+        rejectedAt: null,
+        rejectedById: null,
+        rejectionReason: null,
+      },
     });
-    res.json(post);
+    if (count === 0) {
+      res.status(409).json({ error: 'This post changed while you were reviewing it — reload and try again.' });
+      return;
+    }
+    if (publishNow) {
+      const finalPost = await publishPostNow(
+        id as string,
+        (dests) => dests.filter((dest: any) =>
+          (MANUALLY_PUBLISHABLE_DESTINATION_STATUSES as readonly string[]).includes(dest.status)),
+        MANUALLY_PUBLISHABLE_DESTINATION_STATUSES,
+      );
+      res.json(finalPost);
+      return;
+    }
+    res.json(await prisma.socialPost.findUnique({ where: { id: id as string }, include: { destinations: true } }));
     return;
   } catch (err) {
     next(err);
   }
 });
 
-// 8. Reject post (back to draft)
+// 8. Reject post (approvers only): back to draft, with an optional reason.
 router.post('/posts/:id/reject', authenticate, async (req, res, next) => {
   try {
+    if (!(await isSocialApprover(req))) {
+      res.status(403).json({ error: APPROVER_ONLY_MESSAGE });
+      return;
+    }
     const { id } = req.params;
-    const post = await prisma.socialPost.update({
-      where: { id: id as string },
-      data: { status: 'DRAFT' },
+    const parsed = parseRejectionReason(req.body?.reason);
+    if ('error' in parsed) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+    const current = await prisma.socialPost.findUnique({ where: { id: id as string }, select: { status: true } });
+    if (!current) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+    const { count } = await prisma.socialPost.updateMany({
+      where: { id: id as string, status: { in: [...REJECTABLE_POST_STATUSES] } },
+      data: {
+        status: 'DRAFT',
+        approvedAt: null,
+        approvedById: null,
+        rejectedAt: new Date(),
+        rejectedById: req.user?.userId ?? null,
+        rejectionReason: parsed.reason,
+      },
     });
-    res.json(post);
+    if (count === 0) {
+      res.status(409).json({ error: `This post is ${current.status.toLowerCase().replace(/_/g, ' ')} and cannot be rejected.` });
+      return;
+    }
+    res.json(await prisma.socialPost.findUnique({ where: { id: id as string }, include: { destinations: true } }));
     return;
   } catch (err) {
     next(err);
@@ -481,8 +629,28 @@ async function publishPostNow(
   });
 }
 
+/** 403 message when the caller may not publish-now / retry this post, else null. */
+async function manualPublishBlocked(req: Request, postId: string): Promise<string | null> {
+  if (await isSocialApprover(req)) return null;
+  const post = await prisma.socialPost.findUnique({ where: { id: postId }, select: { status: true, approvedAt: true } });
+  if (!post) return null; // publishPostNow answers 404
+  return manualPublishError(post, false);
+}
+
 router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
   try {
+    const blocked = await manualPublishBlocked(req, req.params.id as string);
+    if (blocked) {
+      res.status(403).json({ error: blocked });
+      return;
+    }
+    if (await isSocialApprover(req)) {
+      // An approver publishing directly approves what they publish.
+      await prisma.socialPost.updateMany({
+        where: { id: req.params.id as string, approvedAt: null },
+        data: { approvedAt: new Date(), approvedById: req.user?.userId ?? null },
+      });
+    }
     const { accountIds: targetAccountIds } = req.body || {};
     const targetSet =
       Array.isArray(targetAccountIds) && targetAccountIds.length > 0
@@ -511,6 +679,11 @@ router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
 
 router.post('/posts/:id/retry', authenticate, async (req, res, next) => {
   try {
+    const blocked = await manualPublishBlocked(req, req.params.id as string);
+    if (blocked) {
+      res.status(403).json({ error: blocked });
+      return;
+    }
     const finalPost = await publishPostNow(
       req.params.id as string,
       (dests) => dests.filter((dest: any) => dest.status === 'FAILED'),

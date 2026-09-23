@@ -21,6 +21,11 @@ export interface SocialPost {
   publishedAt: string | null;
   campaignId: string | null;
   errorMessage?: string | null;
+  // Approval workflow (server: lib/social/post-approval.ts).
+  submittedAt?: string | null;
+  approvedAt?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
   createdAt: string;
   updatedAt: string;
   destinations: Array<{

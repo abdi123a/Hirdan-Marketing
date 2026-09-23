@@ -51,6 +51,7 @@ import { useClientsWithSocialAccounts } from '../hooks/useClientsWithSocialAccou
 import { fontSize, radius, spacing } from '../constants/theme';
 import { pressScale } from '../constants/motion';
 import { type } from '../constants/typography';
+import { usePermissions } from '../hooks/usePermissions';
 
 type PickedMedia = { uri: string; name: string; type: string; kind: 'image' | 'video' };
 type Mode = 'schedule' | 'now' | 'draft';
@@ -68,6 +69,10 @@ export default function SocialComposeScreen() {
   const [caption, setCaption] = useState('');
   const [campaignId, setCampaignId] = useState('');
   const [mode, setMode] = useState<Mode>('schedule');
+  // Without Manage access to Social, "schedule" submits the post for approval
+  // (the server refuses SCHEDULED / publish-now for these users).
+  const { canManage } = usePermissions();
+  const canApprove = canManage('social_media');
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState('10:00');
   const [media, setMedia] = useState<PickedMedia[]>([]);
@@ -250,7 +255,8 @@ export default function SocialComposeScreen() {
 
       const scheduledFor =
         mode === 'schedule' ? combineLocalDateTime(date, time) : null;
-      const status = mode === 'draft' ? 'DRAFT' : mode === 'schedule' ? 'SCHEDULED' : 'DRAFT';
+      const status =
+        mode === 'draft' ? 'DRAFT' : mode === 'schedule' ? (canApprove ? 'SCHEDULED' : 'AWAITING_APPROVAL') : 'DRAFT';
 
       const platformContent: Record<string, unknown> = {
         syncedPlatforms: selectedPlatforms,
@@ -328,7 +334,7 @@ export default function SocialComposeScreen() {
         postId = created.id;
       }
 
-      if (mode === 'now' && postId) {
+      if (mode === 'now' && postId && canApprove) {
         setPublishing(true);
         setPublishProgress({
           done: 0,
@@ -363,7 +369,7 @@ export default function SocialComposeScreen() {
           result.failed > 0 ? 'error' : 'success'
         );
       } else {
-        toast(mode === 'draft' ? 'Draft saved' : 'Post scheduled', 'success');
+        toast(mode === 'draft' ? 'Draft saved' : canApprove ? 'Post scheduled' : 'Submitted for approval', 'success');
       }
       if (result.postId) {
         router.replace(`/post/${result.postId}`);
@@ -378,7 +384,7 @@ export default function SocialComposeScreen() {
   });
 
   const primaryLabel =
-    mode === 'now' ? 'Publish now' : mode === 'draft' ? 'Save draft' : 'Schedule post';
+    mode === 'now' ? 'Publish now' : mode === 'draft' ? 'Save draft' : canApprove ? 'Schedule post' : 'Submit for approval';
 
   if (editId && editQ.isLoading) {
     return (
@@ -649,11 +655,18 @@ export default function SocialComposeScreen() {
         <View style={styles.section}>
           <Text style={[styles.label, { color: t.foreground }]}>Publish mode</Text>
           <SegmentedControl
-            options={[
-              { label: 'Schedule', value: 'schedule' },
-              { label: 'Now', value: 'now' },
-              { label: 'Draft', value: 'draft' },
-            ]}
+            options={
+              canApprove
+                ? [
+                    { label: 'Schedule', value: 'schedule' },
+                    { label: 'Now', value: 'now' },
+                    { label: 'Draft', value: 'draft' },
+                  ]
+                : [
+                    { label: 'For approval', value: 'schedule' },
+                    { label: 'Draft', value: 'draft' },
+                  ]
+            }
             value={mode}
             onChange={setMode}
           />
@@ -685,7 +698,9 @@ export default function SocialComposeScreen() {
         caption={
           selectedAccounts.length > 0 ? (
             <Text variant="caption" color="muted" numberOfLines={1}>
-              {mode === 'schedule'
+              {mode === 'schedule' && !canApprove
+                ? 'Sending to an approver'
+                : mode === 'schedule'
                 ? `Scheduling to ${selectedAccounts.length} ${selectedAccounts.length === 1 ? 'account' : 'accounts'}`
                 : mode === 'now'
                   ? `Publishing to ${selectedAccounts.length} ${selectedAccounts.length === 1 ? 'account' : 'accounts'}`

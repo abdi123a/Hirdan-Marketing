@@ -68,8 +68,9 @@ export default function SocialPublishScreen() {
   const router = useRouter();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { canWrite } = usePermissions();
+  const { canWrite, canManage } = usePermissions();
   const canCompose = canWrite('social_media');
+  const canApprove = canManage('social_media');
 
   const [view, setView] = useState<ViewMode>('posts');
   const [status, setStatus] = useState('');
@@ -474,12 +475,13 @@ export default function SocialPublishScreen() {
               onPress={() => bulkStatusM.mutate('DRAFT')}
               style={styles.bulkAction}
             />
+            {/* Only approvers may schedule; others send posts for approval. */}
             <Button
-              title="Schedule"
+              title={canApprove ? 'Schedule' : 'For approval'}
               size="sm"
               variant="primary"
               loading={bulkStatusM.isPending}
-              onPress={() => bulkStatusM.mutate('SCHEDULED')}
+              onPress={() => bulkStatusM.mutate(canApprove ? 'SCHEDULED' : 'AWAITING_APPROVAL')}
               style={styles.bulkAction}
             />
             <PressableScale
