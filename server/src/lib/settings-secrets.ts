@@ -117,3 +117,52 @@ export function decryptSecrets<T>(row: T): T {
   }
   return (out ?? record) as T;
 }
+
+// ─── API projection helpers ──────────────────────────────────────────────────
+// Decrypted secrets must never be sent back to the browser. Admins receive a
+// masked placeholder (enough to recognise which key is configured); everyone
+// else receives nothing. The PUT handler recognises the placeholder and keeps
+// the stored value, so round-tripping a settings form can't clobber a key.
+
+/** Bullet sequence that marks a masked placeholder. */
+const MASK = '••••••••';
+
+/** Well-known key prefixes that the UI uses to validate a key's shape. */
+const KNOWN_PREFIXES = ['whsec_', 're_', 'sk-ant-', 'sk-'];
+
+export function maskSecret(value: unknown): string | null {
+  if (typeof value !== 'string' || value === '') return null;
+  const prefix = KNOWN_PREFIXES.find((p) => value.startsWith(p)) ?? '';
+  const tail = value.length >= 12 ? value.slice(-4) : '';
+  return prefix + MASK + tail;
+}
+
+/** True when a submitted value is (or contains) a masked placeholder. */
+export function isMaskedSecret(value: unknown): boolean {
+  return typeof value === 'string' && value.includes(MASK);
+}
+
+/**
+ * Project a settings row for an API response.
+ *  - 'admin': secrets replaced by maskSecret(), plus has<Field> booleans.
+ *  - 'staff': secret fields removed entirely.
+ */
+export function redactSettingsSecrets<T extends Record<string, unknown>>(
+  row: T,
+  mode: 'admin' | 'staff'
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...row };
+  const configured: Record<string, boolean> = {};
+  for (const key of SECRET_FIELDS) {
+    const has = typeof row[key] === 'string' && row[key] !== '';
+    if (mode === 'admin') {
+      out[key] = has ? maskSecret(row[key]) : null;
+      configured[key] = has;
+      out[`has${key.charAt(0).toUpperCase()}${key.slice(1)}`] = has;
+    } else {
+      delete out[key];
+    }
+  }
+  if (mode === 'admin') out.secretsConfigured = configured;
+  return out;
+}

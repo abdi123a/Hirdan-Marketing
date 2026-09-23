@@ -18,6 +18,7 @@ import { emailApi } from '@/lib/email/api';
 import { useSendEmail } from '@/lib/email/hooks';
 import { fileToAttachment, type PreparedAttachment } from '@/lib/email/attachments';
 import { applyTemplateVars } from '@/lib/email/templateVars';
+import { sanitizeEmailHtml } from '@/lib/sanitize-html';
 import { formatBytes } from '@/lib/email/format';
 import { useIsMobile } from '@/hooks/use-mobile';
 import type { EmailPriority, EmailTemplate, Mailbox } from '@/lib/email/types';
@@ -88,7 +89,7 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
     setSize(isMobile ? 'expanded' : 'normal');
     setToFocused(false);
     setTimeout(() => {
-      if (editorRef.current) editorRef.current.innerHTML = initial?.html || '';
+      if (editorRef.current) editorRef.current.innerHTML = sanitizeEmailHtml(initial?.html);
     }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -115,7 +116,8 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
 
   const insertTemplate = (t: EmailTemplate) => {
     if (!subject.trim() && t.subject) setSubject(applyTemplateVars(t.subject));
-    const rendered = applyTemplateVars(t.body);
+    // Templates are staff-authored HTML — sanitize after variable substitution.
+    const rendered = sanitizeEmailHtml(applyTemplateVars(t.body));
     if (editorRef.current) {
       const existing = editorRef.current.innerHTML.trim();
       editorRef.current.innerHTML = existing && existing !== '<br>' ? `${existing}<br/>${rendered}` : rendered;

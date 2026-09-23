@@ -241,7 +241,9 @@ async function callGemini(
     ];
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:generateContent?key=${apiKey}`;
+  // Key goes in a header, not the query string, so it never lands in proxy /
+  // access logs or error messages that echo the request URL.
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(resolvedModel)}:generateContent`;
 
   // ── Retry loop with exponential backoff (max 3 attempts) ──────────────────
   const MAX_RETRIES = 3;
@@ -250,7 +252,7 @@ async function callGemini(
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify(body),
     });
 

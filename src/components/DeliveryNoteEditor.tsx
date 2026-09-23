@@ -1,3 +1,4 @@
+import { sanitizeEmailHtml } from "@/lib/sanitize-html";
 import { useRef, useState, useCallback, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -40,7 +41,7 @@ export function DeliveryNoteEditor({
   const initialised = useRef(false);
   useEffect(() => {
     if (editorRef.current && !initialised.current) {
-      editorRef.current.innerHTML = content || "";
+      editorRef.current.innerHTML = sanitizeEmailHtml(content);
       initialised.current = true;
     }
   }, [content]);

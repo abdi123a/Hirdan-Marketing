@@ -58,7 +58,10 @@ export async function storeAttachments(emailId: string, items: IncomingAttachmen
     usedNames.add(safeName);
 
     const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
-    const storageKey = path.join('email', emailId, safeName);
+    // The on-disk name is unique per call: storeAttachments() runs again for the
+    // same email when an attachment is replaced (new version), and reusing the
+    // display name would silently overwrite the earlier version's file.
+    const storageKey = path.join('email', emailId, `${crypto.randomUUID()}-${safeName}`);
     await fs.writeFile(path.join(PATHS.UPLOADS_ROOT, storageKey), buffer);
 
     stored.push({
@@ -86,8 +89,9 @@ export async function scanAttachment(_buffer: Buffer, _filename: string): Promis
 
 export function attachmentAbsolutePath(storageKey: string): string {
   // storageKey is relative to the uploads root; guard against traversal.
-  const resolved = path.resolve(PATHS.UPLOADS_ROOT, storageKey);
-  if (!resolved.startsWith(path.resolve(PATHS.UPLOADS_ROOT))) {
+  const root = path.resolve(PATHS.UPLOADS_ROOT);
+  const resolved = path.resolve(root, storageKey);
+  if (!resolved.startsWith(root + path.sep)) {
     throw new Error('Invalid attachment path');
   }
   return resolved;

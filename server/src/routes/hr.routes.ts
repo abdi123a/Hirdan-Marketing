@@ -12,11 +12,45 @@ import path from 'path';
 import { PATHS } from '../lib/paths.js';
 import { createNotification } from '../lib/notifications.js';
 import { renderHrPdfById } from '../lib/pdf/document-pdf.js';
+import { canAccessEmployee, assertCanAccessEmployee, managerEmployeeScope } from '../lib/hr-access.js';
 
 const router = Router();
 router.use(authenticate);
 
 // ─── HELPERS ──────────────────────────────────────────────────────
+
+type AuthUser = NonNullable<Request['user']>;
+
+/** Employee fields safe to embed in HR document responses (no payroll/PII). */
+const safeEmployeeSelect = {
+  id: true,
+  name: true,
+  email: true,
+  department: true,
+  role: true,
+  userId: true,
+  managerId: true,
+  manager: { select: { id: true, name: true, userId: true } },
+} as const;
+
+async function assertCanAccessDocument(user: AuthUser, documentId: string) {
+  const document = await prisma.hrDocument.findUnique({
+    where: { id: documentId },
+    select: { id: true, employeeId: true },
+  });
+  if (!document) throw AppError.notFound('Document not found');
+  await assertCanAccessEmployee(user, document.employeeId);
+  return document;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 async function generateDocNumber(docType: string): Promise<string> {
   let prefix = 'HR';
@@ -54,6 +88,11 @@ router.get('/', requireRole('ADMIN', 'MANAGER'), async (req: Request, res: Respo
     
     if (employeeId) {
       where.employeeId = employeeId as string;
+    }
+
+    // Managers only ever see documents for their direct reports (and their own).
+    if (req.user!.role !== 'ADMIN') {
+      where.AND = [await managerEmployeeScope(req.user!.userId)];
     }
 
     if (pendingApproval === 'true') {
@@ -145,14 +184,7 @@ router.get('/employee/:employeeId', async (req: Request, res: Response, next) =>
       throw AppError.forbidden('Access denied');
     }
 
-    if (user.role === 'STAFF') {
-      const employee = await prisma.teamMember.findUnique({
-        where: { id: employeeId },
-      });
-      if (!employee || employee.userId !== user.userId) {
-        throw AppError.forbidden('Access denied');
-      }
-    }
+    await assertCanAccessEmployee(user, employeeId);
 
     const documents = await prisma.hrDocument.findMany({
       where: { employeeId },
@@ -206,11 +238,7 @@ router.get('/:id', async (req: Request, res: Response, next) => {
     const document = await prisma.hrDocument.findUnique({
       where: { id: req.params.id as string },
       include: {
-        employee: {
-          include: {
-            manager: true
-          }
-        },
+        employee: { select: safeEmployeeSelect },
         generatedBy: { select: { id: true, name: true, email: true } },
         approvedBy: { select: { id: true, name: true, email: true } },
         approvals: {
@@ -226,12 +254,8 @@ router.get('/:id', async (req: Request, res: Response, next) => {
       throw AppError.notFound('Document not found');
     }
 
-    // Auth check: staff can only see their own
-    if (req.user!.role === 'STAFF') {
-      if (document.employee.userId !== req.user!.userId) {
-        throw AppError.forbidden('Access denied');
-      }
-    } else if (req.user!.role === 'CLIENT') {
+    // ADMIN: any; MANAGER: direct reports + own; STAFF: own only.
+    if (!(await canAccessEmployee(req.user!, document.employee))) {
       throw AppError.forbidden('Access denied');
     }
 
@@ -258,9 +282,17 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: createHrDocum
     // Check if employee exists
     const employee = await prisma.teamMember.findUnique({
       where: { id: employeeId },
+      select: { id: true, name: true, userId: true, managerId: true, manager: { select: { userId: true } } },
     });
     if (!employee) {
       throw AppError.notFound('Employee not found');
+    }
+    // Managers may only issue documents for their own direct reports.
+    if (user.role !== 'ADMIN') {
+      const isDirectReport = !!employee.manager?.userId && employee.manager.userId === user.userId;
+      if (!isDirectReport) {
+        throw AppError.forbidden('Managers can only create documents for their direct reports.');
+      }
     }
 
     let finalDocNumber = docNumber;
@@ -271,10 +303,13 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: createHrDocum
       const lastDoc = await prisma.hrDocument.findFirst({
         where: { docNumber },
         orderBy: { version: 'desc' },
-        select: { version: true }
+        select: { version: true, employeeId: true, docType: true }
       });
       if (!lastDoc) {
         throw AppError.notFound('Original document not found to increment version.');
+      }
+      if (lastDoc.employeeId !== employeeId || lastDoc.docType !== docType) {
+        throw AppError.badRequest('A new version must keep the original employee and document type.');
       }
       nextVersion = lastDoc.version + 1;
     } else {
@@ -289,9 +324,11 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: createHrDocum
         initialStatus = 'PENDING_APPROVAL';
       }
     } else {
-      // Non-warning certificates go straight to APPROVED/FINAL if not draft
+      // Non-warning certificates go straight to FINAL if not draft — but only
+      // an ADMIN may issue a final document directly. A manager's document
+      // goes through the approval workflow instead.
       if (status !== 'DRAFT') {
-        initialStatus = 'FINAL';
+        initialStatus = user.role === 'ADMIN' ? 'FINAL' : 'PENDING_APPROVAL';
       }
     }
 
@@ -342,11 +379,7 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), validate({ body: createHrDocum
 router.get('/:id/export-pdf', requireRole('ADMIN', 'MANAGER'), async (req: Request, res: Response, next) => {
   try {
     const documentId = req.params.id as string;
-    const existing = await prisma.hrDocument.findUnique({
-      where: { id: documentId },
-      select: { id: true },
-    });
-    if (!existing) throw AppError.notFound('Document not found');
+    await assertCanAccessDocument(req.user!, documentId);
 
     const { buffer, filename } = await renderHrPdfById(documentId);
 
@@ -364,12 +397,7 @@ router.get('/:id/export-pdf', requireRole('ADMIN', 'MANAGER'), async (req: Reque
 router.post('/:id/pdf', requireRole('ADMIN', 'MANAGER'), async (req: Request, res: Response, next) => {
   try {
     const documentId = req.params.id as string;
-    const document = await prisma.hrDocument.findUnique({
-      where: { id: documentId },
-    });
-    if (!document) {
-      throw AppError.notFound('Document not found');
-    }
+    await assertCanAccessDocument(req.user!, documentId);
 
     await renderHrPdfById(documentId);
 
@@ -393,11 +421,7 @@ router.post('/:id/approve', async (req: Request, res: Response, next) => {
     const document = await prisma.hrDocument.findUnique({
       where: { id: documentId },
       include: {
-        employee: {
-          include: {
-            manager: true,
-          }
-        }
+        employee: { select: safeEmployeeSelect }
       }
     });
 
@@ -412,11 +436,14 @@ router.post('/:id/approve', async (req: Request, res: Response, next) => {
     // Check permissions: manager, fallback approver, or admin
     const employee = document.employee;
     const settings = await prisma.agencySettings.findFirst();
-    const isManager = employee.manager && employee.manager.userId === user.userId;
+    const isManager = !!employee.manager && employee.manager.userId === user.userId;
     const isFallback = settings?.hrFallbackApproverId === user.userId;
     const isAdmin = user.role === 'ADMIN';
+    // No self-approval: only an ADMIN may approve a document they generated
+    // themselves, and nobody but an ADMIN approves their own HR document.
+    const isSelfIssued = document.generatedById === user.userId || employee.userId === user.userId;
 
-    if (!isManager && !isFallback && !isAdmin) {
+    if (!isAdmin && ((!isManager && !isFallback) || isSelfIssued)) {
       throw AppError.forbidden('You are not authorized to approve this document.');
     }
 
@@ -443,7 +470,7 @@ router.post('/:id/approve', async (req: Request, res: Response, next) => {
           employeeId: employee.id,
           actionType: 'STATUS_CHANGED',
           performedBy: user.email,
-          notes: `Approved Warning Certificate (${document.docNumber}) v${document.version}${comment ? ': ' + comment : ''}`,
+          notes: `Approved ${document.docType.replace(/_/g, ' ')} (${document.docNumber}) v${document.version}${comment ? ': ' + comment : ''}`,
         }
       })
     ]);
@@ -479,11 +506,7 @@ router.post('/:id/reject', async (req: Request, res: Response, next) => {
     const document = await prisma.hrDocument.findUnique({
       where: { id: documentId },
       include: {
-        employee: {
-          include: {
-            manager: true,
-          }
-        }
+        employee: { select: safeEmployeeSelect }
       }
     });
 
@@ -497,11 +520,14 @@ router.post('/:id/reject', async (req: Request, res: Response, next) => {
 
     const employee = document.employee;
     const settings = await prisma.agencySettings.findFirst();
-    const isManager = employee.manager && employee.manager.userId === user.userId;
+    const isManager = !!employee.manager && employee.manager.userId === user.userId;
     const isFallback = settings?.hrFallbackApproverId === user.userId;
     const isAdmin = user.role === 'ADMIN';
+    // No self-approval: only an ADMIN may approve a document they generated
+    // themselves, and nobody but an ADMIN approves their own HR document.
+    const isSelfIssued = document.generatedById === user.userId || employee.userId === user.userId;
 
-    if (!isManager && !isFallback && !isAdmin) {
+    if (!isAdmin && ((!isManager && !isFallback) || isSelfIssued)) {
       throw AppError.forbidden('You are not authorized to reject this document.');
     }
 
@@ -526,7 +552,7 @@ router.post('/:id/reject', async (req: Request, res: Response, next) => {
           employeeId: employee.id,
           actionType: 'STATUS_CHANGED',
           performedBy: user.email,
-          notes: `Rejected Warning Certificate (${document.docNumber}) v${document.version}. Reason: ${comment}`,
+          notes: `Rejected ${document.docType.replace(/_/g, ' ')} (${document.docNumber}) v${document.version}. Reason: ${comment}`,
         }
       })
     ]);
@@ -543,9 +569,10 @@ router.post('/:id/send-email', requireRole('ADMIN', 'MANAGER'), async (req: Requ
     const documentId = req.params.id as string;
     const { to, cc, subject, body, filename } = req.body;
 
+    await assertCanAccessDocument(req.user!, documentId);
     const document = await prisma.hrDocument.findUnique({
       where: { id: documentId },
-      include: { employee: true },
+      select: { id: true, docNumber: true, pdfUrl: true },
     });
 
     if (!document) {
@@ -578,7 +605,7 @@ router.post('/:id/send-email', requireRole('ADMIN', 'MANAGER'), async (req: Requ
       title: subject,
       preheader: subject,
       contentHtml: `
-        <p style="margin: 0 0 16px; color: #475569; line-height: 1.6; white-space: pre-line;">${body}</p>
+        <p style="margin: 0 0 16px; color: #475569; line-height: 1.6; white-space: pre-line;">${escapeHtml(String(body))}</p>
       `,
     });
 

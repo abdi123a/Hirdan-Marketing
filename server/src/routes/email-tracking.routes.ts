@@ -11,6 +11,14 @@ import { publishMailEvent } from '../lib/mail/sse.js';
 
 const router = Router();
 
+/**
+ * Public router holding only the open-tracking pixel. Mounted in routes/index.ts
+ * BEFORE any `/email` router that requires a bearer token (mail clients fetch
+ * the pixel anonymously). It answers only `GET /track/open/:id.png`, always with
+ * the same 1x1 GIF, and reveals nothing about whether the id exists.
+ */
+export const emailTrackingPixelRouter = Router();
+
 // 1x1 transparent GIF buffer
 const TRANSPARENT_GIF_BUFFER = Buffer.from(
   'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
@@ -18,7 +26,7 @@ const TRANSPARENT_GIF_BUFFER = Buffer.from(
 );
 
 // ─── GET /api/email/track/open/:id.png — Unauthenticated Open Pixel ──
-router.get('/track/open/:id.png', async (req: Request, res: Response) => {
+emailTrackingPixelRouter.get('/track/open/:id.png', async (req: Request, res: Response) => {
   try {
     const emailId = req.params.id as string;
     if (emailId) {
@@ -118,8 +126,13 @@ router.get('/attachments/:id', async (req: Request, res: Response, next) => {
     const abs = await ensureAttachmentFile(att);
     if (!fs.existsSync(abs)) throw AppError.notFound('File no longer available');
 
-    const inline = req.query.inline === '1' && isInlinePreviewable(att.mimeType || '');
-    res.setHeader('Content-Type', att.mimeType || 'application/octet-stream');
+    const mime = (att.mimeType || 'application/octet-stream').toLowerCase();
+    // SVG is an active document (scripts run when opened same-origin) — never
+    // serve it inline, whatever the stored mime type claims.
+    const isSvg = mime.includes('svg');
+    const inline = req.query.inline === '1' && !isSvg && isInlinePreviewable(mime);
+    res.setHeader('Content-Type', isSvg ? 'application/octet-stream' : mime);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.setHeader(
       'Content-Disposition',

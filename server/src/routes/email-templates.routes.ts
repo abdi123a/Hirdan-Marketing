@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
-import { requireStaff } from '../lib/mail/access.js';
+import { requireStaff, isSuperAdmin } from '../lib/mail/access.js';
+import { sanitizeEmailHtml } from '../lib/mail/sanitize.js';
 
 const router = Router();
 router.use(authenticate, requireStaff);
@@ -27,6 +28,17 @@ function detectVariables(subject: string, body: string): string[] {
     while ((m = re.exec(text || ''))) found.add(m[1]);
   }
   return [...found];
+}
+
+/**
+ * Templates are shared with every staff member (listed, previewed and inserted
+ * into compose), so only the author or an ADMIN may change or delete one.
+ * Legacy rows without an author are ADMIN-only.
+ */
+function assertCanModify(req: Request, template: { createdById: string | null }): void {
+  if (isSuperAdmin(req.user!.role)) return;
+  if (template.createdById && template.createdById === req.user!.userId) return;
+  throw AppError.forbidden('Only the template author or an admin can modify this template');
 }
 
 function zodErr(e: z.ZodError): AppError {
@@ -62,15 +74,16 @@ router.get('/templates/:id', async (req: Request, res: Response, next) => {
 router.post('/templates', async (req: Request, res: Response, next) => {
   try {
     const data = templateSchema.parse(req.body);
+    const body = sanitizeEmailHtml(data.body);
     const template = await prisma.emailTemplate.create({
       data: {
         name: data.name,
         category: data.category,
         subject: data.subject,
-        body: data.body,
+        body,
         mailboxId: data.mailboxId ?? null,
         createdById: req.user!.userId,
-        variables: detectVariables(data.subject, data.body),
+        variables: detectVariables(data.subject, body),
       },
     });
     res.status(201).json({ template });
@@ -86,9 +99,11 @@ router.put('/templates/:id', async (req: Request, res: Response, next) => {
     const data = templateSchema.partial().parse(req.body);
     const existing = await prisma.emailTemplate.findUnique({ where: { id: req.params.id as string } });
     if (!existing) throw AppError.notFound('Template not found');
+    assertCanModify(req, existing);
 
     const subject = data.subject ?? existing.subject;
-    const body = data.body ?? existing.body;
+    const sanitizedBody = data.body !== undefined ? sanitizeEmailHtml(data.body) : undefined;
+    const body = sanitizedBody ?? existing.body;
 
     const template = await prisma.emailTemplate.update({
       where: { id: existing.id },
@@ -96,7 +111,7 @@ router.put('/templates/:id', async (req: Request, res: Response, next) => {
         ...(data.name !== undefined ? { name: data.name } : {}),
         ...(data.category !== undefined ? { category: data.category } : {}),
         ...(data.subject !== undefined ? { subject: data.subject } : {}),
-        ...(data.body !== undefined ? { body: data.body } : {}),
+        ...(sanitizedBody !== undefined ? { body: sanitizedBody } : {}),
         ...(data.mailboxId !== undefined ? { mailboxId: data.mailboxId } : {}),
         variables: detectVariables(subject, body),
       },
@@ -111,7 +126,13 @@ router.put('/templates/:id', async (req: Request, res: Response, next) => {
 // ─── DELETE /api/email/templates/:id ─────────────────────────────
 router.delete('/templates/:id', async (req: Request, res: Response, next) => {
   try {
-    await prisma.emailTemplate.delete({ where: { id: req.params.id as string } });
+    const existing = await prisma.emailTemplate.findUnique({
+      where: { id: req.params.id as string },
+      select: { id: true, createdById: true },
+    });
+    if (!existing) throw AppError.notFound('Template not found');
+    assertCanModify(req, existing);
+    await prisma.emailTemplate.delete({ where: { id: existing.id } });
     res.json({ success: true });
   } catch (error) {
     next(error);

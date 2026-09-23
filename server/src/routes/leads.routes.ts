@@ -10,6 +10,13 @@ import { createNotification } from '../lib/notifications.js';
 
 const router = Router();
 
+/**
+ * Public lead capture (landing-page email sign-up). Mounted in routes/index.ts
+ * WITHOUT authentication, before the authenticated leads router. It only
+ * answers `POST /`; everything else about leads stays behind auth.
+ */
+export const publicLeadsRouter = Router();
+
 const leadsLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
@@ -20,14 +27,21 @@ const leadsLimiter = rateLimit({
 
 // ─── POST /api/leads ──────────────────────────────────────────────
 // Public route to collect emails
-router.post(
+publicLeadsRouter.post(
   '/',
   leadsLimiter,
-  validate({ body: z.object({ email: z.string().email() }) }),
+  validate({
+    body: z.object({
+      email: z.string().trim().toLowerCase().max(254).email(),
+      // Honeypot: real forms leave this hidden field empty; bots fill it.
+      website: z.string().max(0).optional(),
+    }),
+  }),
   async (req: Request, res: Response, next) => {
   try {
     const { email } = req.body;
 
+    const existing = await prisma.lead.findUnique({ where: { email }, select: { id: true } });
     const lead = await prisma.lead.upsert({
       where: { email },
       update: { status: 'PENDING' }, // Re-activate if they submit again
@@ -35,7 +49,7 @@ router.post(
     });
 
     // Fire notification only on first capture (not re-submissions)
-    if (lead.createdAt.getTime() === lead.updatedAt.getTime() || Math.abs(lead.createdAt.getTime() - new Date().getTime()) < 5000) {
+    if (!existing) {
       createNotification({
         title: 'New Lead Captured 🎯',
         message: `A new lead signed up: ${email}`,
@@ -47,7 +61,8 @@ router.post(
       });
     }
 
-    res.status(201).json({ lead, message: 'Thank you for your interest!' });
+    // Same response for new and returning addresses — don't echo the lead row.
+    res.status(201).json({ message: 'Thank you for your interest!' });
   } catch (error) {
     next(error);
   }

@@ -222,6 +222,27 @@ async function logoToDataUri(filePath: string): Promise<string> {
   }
 }
 
+const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif|svg)$/i;
+
+/**
+ * Join an untrusted relative path onto `base`, refusing anything that escapes
+ * it (`../`, absolute paths, encoded traversal) or isn't an image file.
+ */
+function safeJoinWithin(base: string, relative: string): string | null {
+  let decoded = relative;
+  try {
+    decoded = decodeURIComponent(relative);
+  } catch {
+    return null;
+  }
+  if (decoded.includes('\0') || path.isAbsolute(decoded)) return null;
+  const root = path.resolve(base);
+  const resolved = path.resolve(root, decoded);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
+  if (!IMAGE_EXT_RE.test(resolved)) return null;
+  return resolved;
+}
+
 function resolveLocalUploadPath(raw: string): string | null {
   let pathname = raw.trim();
   if (!pathname) return null;
@@ -240,18 +261,19 @@ function resolveLocalUploadPath(raw: string): string | null {
 
   const uploadMatch = pathname.match(/^\/?(?:api\/)?(?:files\/)?uploads\/(.+)$/i);
   if (uploadMatch) {
-    const filePath = path.join(PATHS.UPLOADS_ROOT, uploadMatch[1]);
-    if (fs.existsSync(filePath)) return filePath;
+    const filePath = safeJoinWithin(PATHS.UPLOADS_ROOT, uploadMatch[1]);
+    if (filePath && fs.existsSync(filePath)) return filePath;
   }
 
   // Also try branding files referenced without the uploads prefix.
   const brandingMatch = pathname.match(/^\/?(?:api\/)?(?:files\/)?branding\/(.+)$/i);
   if (brandingMatch) {
-    const filePath = path.join(PATHS.BRANDING, brandingMatch[1]);
-    if (fs.existsSync(filePath)) return filePath;
+    const filePath = safeJoinWithin(PATHS.BRANDING, brandingMatch[1]);
+    if (filePath && fs.existsSync(filePath)) return filePath;
   }
 
-  if (path.isAbsolute(pathname) && fs.existsSync(pathname)) return pathname;
+  // No absolute-path fallback: asset URLs come from user-editable data and
+  // must never be able to pull arbitrary server files into a rendered PDF.
   return null;
 }
 

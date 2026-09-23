@@ -10,11 +10,40 @@ import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 import { PATHS } from '../lib/paths.js';
 import { sendEmail, maskApiKey, generateEmailHtml } from '../lib/email.js';
 import { enforceMagicBytes } from '../lib/upload.js';
+import { SECRET_FIELDS, isMaskedSecret, redactSettingsSecrets } from '../lib/settings-secrets.js';
+
+/** JSON.parse for settings columns — a corrupt value must not take down the endpoint. */
+function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Parse the JSON columns of a settings row for API responses. */
+function withParsedJson<T extends { paymentMethods: string | null; socialLinks: string | null; notifications: string | null }>(settings: T) {
+  return {
+    ...settings,
+    paymentMethods: safeJsonParse<unknown>(settings.paymentMethods, []),
+    socialLinks: safeJsonParse<unknown>(settings.socialLinks, {}),
+    notifications: safeJsonParse<unknown>(settings.notifications, {}),
+  };
+}
+
+/** Backup files are produced by scripts/backup.cjs as backup_<timestamp>.sql. */
+const BACKUP_FILENAME_RE = /^backup_[A-Za-z0-9_.-]+\.sql$/;
+function assertBackupFilename(filename: string): void {
+  if (!BACKUP_FILENAME_RE.test(filename) || filename.includes('..')) {
+    throw AppError.badRequest('Invalid backup filename.');
+  }
+}
 
 // Configure multer storage
 const storage = multer.diskStorage({
@@ -82,10 +111,11 @@ router.get('/public', async (req: Request, res: Response, next) => {
 
 // ─── GET /api/settings ───────────────────────────────────────────
 // Public endpoint for guest users to see agency branding.
-// Authenticated staff/admin users receive all fields including
-// sensitive API keys and mail config.  A `_isAdminResponse` flag is
-// included so the frontend can tell whether the sensitive fields
-// were intentionally returned or simply absent from a guest response.
+// Authenticated staff receive the full (non-secret) settings row; the
+// third-party credentials in SECRET_FIELDS are removed for MANAGER/STAFF
+// and masked for ADMIN (with has<Field> booleans). A `_isAdminResponse`
+// flag marks an authenticated (non-guest) response so the frontend knows
+// the internal fields (signature, stamp, mail config…) are genuinely present.
 
 router.get('/', async (req: Request, res: Response, next) => {
   try {
@@ -107,6 +137,7 @@ router.get('/', async (req: Request, res: Response, next) => {
 
     // Determine if requester is an authenticated staff member or admin
     let isStaffOrAdmin = false;
+    let isAdmin = false;
     try {
       const authHeader = req.headers.authorization;
       if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -114,6 +145,7 @@ router.get('/', async (req: Request, res: Response, next) => {
         const decoded = jwt.verify(token, env.JWT_SECRET) as any;
         if (['ADMIN', 'MANAGER', 'STAFF'].includes(decoded.role)) {
           isStaffOrAdmin = true;
+          isAdmin = decoded.role === 'ADMIN';
         }
       }
     } catch (e) {
@@ -128,11 +160,8 @@ router.get('/', async (req: Request, res: Response, next) => {
       // present in this response — even when their value is null.
       res.json({
         settings: {
-          ...settings,
+          ...redactSettingsSecrets(withParsedJson(settings), isAdmin ? 'admin' : 'staff'),
           _isAdminResponse: true,
-          paymentMethods: settings.paymentMethods ? JSON.parse(settings.paymentMethods) : [],
-          socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
-          notifications: settings.notifications ? JSON.parse(settings.notifications) : {},
         },
       });
     } else {
@@ -170,7 +199,7 @@ router.get('/', async (req: Request, res: Response, next) => {
           comingSoonMessage: settings.comingSoonMessage,
           comingSoonCountdown: settings.comingSoonCountdown,
           comingSoonBullets: settings.comingSoonBullets,
-          socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
+          socialLinks: safeJsonParse<unknown>(settings.socialLinks, {}),
         },
       });
     }
@@ -218,8 +247,9 @@ const settingsDtoSchema = z.object({
   geminiApiKey: z.string().optional().nullable(),
   mainAiProvider: z.enum(['openai', 'claude', 'gemini']).optional(),
   // Allow empty string (stored as null) — actual re_ check is done in /settings/email
-  resendApiKey: z.preprocess((val) => val === '' ? null : val, z.string().optional().nullable()),
-  resendWebhookSecret: z.preprocess((val) => val === '' ? null : val, z.string().optional().nullable()),
+  // Secrets: '' clears the stored value, a masked placeholder keeps it (see PUT handler)
+  resendApiKey: z.string().optional().nullable(),
+  resendWebhookSecret: z.string().optional().nullable(),
   resendInboundDomain: z.preprocess((val) => val === '' ? null : val, z.string().optional().nullable()),
   // Coerce empty string → null, validate email format only when non-null
   emailFrom: z.preprocess(
@@ -298,17 +328,28 @@ router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }
     // response) doesn't accidentally wipe real API keys and credentials from the DB.
     // Sending `undefined` tells Prisma to skip updating the column.
     const sensitiveKeys = [
-      'openAiApiKey', 'claudeApiKey', 'geminiApiKey',
-      'resendApiKey', 'resendWebhookSecret', 'resendInboundDomain',
+      'resendInboundDomain',
       'emailFrom', 'mailerName',
       'smtpHost', 'smtpPort', 'smtpUsername', 'smtpEncryption', 'smtpDriver',
-      'googleDriveFolderId', 'googleDriveServiceAccountJson',
-      'googleDriveClientId', 'googleDriveClientSecret', 'googleDriveRefreshToken',
-      'oneSignalAppId', 'oneSignalApiKey', 'recaptchaSecretKey'
+      'googleDriveFolderId', 'googleDriveClientId', 'oneSignalAppId',
     ] as const;
     for (const key of sensitiveKeys) {
       if (rest[key] === '' || rest[key] === null || rest[key] === undefined) {
         rest[key] = undefined;
+      }
+    }
+
+    // Secrets: GET only ever returns a masked placeholder, so a form that
+    // round-trips it must not overwrite the real value.
+    //   undefined / null / masked placeholder → keep stored value
+    //   ''                                    → explicitly clear
+    //   anything else                         → new value
+    for (const key of SECRET_FIELDS) {
+      const value = rest[key];
+      if (value === undefined || value === null || isMaskedSecret(value)) {
+        rest[key] = undefined;
+      } else if (value === '') {
+        rest[key] = null;
       }
     }
 
@@ -324,12 +365,7 @@ router.put('/', authenticate, requireAdmin, validate({ body: settingsDtoSchema }
     });
 
     res.json({
-      settings: {
-        ...settings,
-        paymentMethods: settings.paymentMethods ? JSON.parse(settings.paymentMethods) : [],
-        socialLinks: settings.socialLinks ? JSON.parse(settings.socialLinks) : {},
-        notifications: settings.notifications ? JSON.parse(settings.notifications) : {},
-      },
+      settings: redactSettingsSecrets(withParsedJson(settings), 'admin'),
     });
   } catch (error) {
     next(error);
@@ -403,15 +439,16 @@ router.get('/email', authenticate, requireAdmin, async (req: Request, res: Respo
 // so the change takes effect immediately without a restart.
 
 const emailSettingsSchema = z.object({
+  // A masked placeholder (as returned by GET /settings) means "unchanged".
   resendApiKey: z
-    .preprocess((val) => (val === '' ? undefined : val), z.string().startsWith('re_', 'API key must start with re_').optional()),
+    .preprocess((val) => (val === '' || isMaskedSecret(val) ? undefined : val), z.string().startsWith('re_', 'API key must start with re_').optional()),
   emailFrom: z.preprocess(
     (val) => (val === '' ? undefined : val),
     z.string().email('Must be a valid email address').optional()
   ),
   mailerName: z.preprocess((val) => (val === '' ? undefined : val), z.string().optional()),
   resendWebhookSecret: z.preprocess(
-    (val) => (val === '' ? undefined : val),
+    (val) => (val === '' || isMaskedSecret(val) ? undefined : val),
     z.string().startsWith('whsec_', 'Webhook secret must start with whsec_').optional()
   ),
   resendInboundDomain: z.preprocess(
@@ -581,7 +618,12 @@ async function uploadToGoogleDrive(
     if (!serviceAccountJsonStr) {
       throw new Error('Google Drive integration is not configured. Configure OAuth 2.0 or Service Account first.');
     }
-    const credentials = JSON.parse(serviceAccountJsonStr);
+    let credentials: any;
+    try {
+      credentials = JSON.parse(serviceAccountJsonStr);
+    } catch {
+      throw new Error('Invalid Google Service Account JSON. Paste the full key file contents.');
+    }
     const clientEmail = credentials.client_email;
     const privateKey = credentials.private_key;
 
@@ -693,7 +735,7 @@ router.post('/backups', authenticate, requireAdmin, async (req: Request, res: Re
     const scriptPath = path.resolve(__dirname, '../../scripts/backup.cjs');
 
     console.log('⚡ Triggering database backup script...');
-    execSync(`node "${scriptPath}"`, { stdio: 'inherit' });
+    execFileSync(process.execPath, [scriptPath], { stdio: 'inherit' });
 
     // Find the latest backup file created
     const backupDir = path.resolve(__dirname, '../../backups');
@@ -813,7 +855,12 @@ router.post('/backups/gdrive-oauth-callback', authenticate, requireAdmin, async 
 // Tests Google Drive integration by uploading a small test file.
 router.post('/backups/gdrive-test', authenticate, requireAdmin, async (req: Request, res: Response, next) => {
   try {
-    const { serviceAccountJson, folderId } = req.body;
+    const { folderId } = req.body;
+    // The UI only holds a masked placeholder for the stored key — ignore it.
+    const serviceAccountJson =
+      typeof req.body.serviceAccountJson === 'string' && !isMaskedSecret(req.body.serviceAccountJson)
+        ? req.body.serviceAccountJson
+        : undefined;
     const settings = await prisma.agencySettings.findFirst();
 
     const hasServiceAccount = !!(serviceAccountJson || settings?.googleDriveServiceAccountJson);
@@ -860,9 +907,7 @@ router.get('/backups/:filename/download', authenticate, requireAdmin, async (req
     const filename = req.params.filename as string;
 
     // Security: Prevent path traversal attacks
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-      throw AppError.badRequest('Invalid backup filename.');
-    }
+    assertBackupFilename(filename);
 
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const filePath = path.resolve(__dirname, '../../backups', filename);
@@ -884,9 +929,7 @@ router.post('/backups/:filename/upload-gdrive', authenticate, requireAdmin, asyn
     const filename = req.params.filename as string;
 
     // Security check
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-      throw AppError.badRequest('Invalid backup filename.');
-    }
+    assertBackupFilename(filename);
 
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const filePath = path.resolve(__dirname, '../../backups', filename);
@@ -928,9 +971,7 @@ router.post('/backups/:filename/restore', authenticate, requireAdmin, async (req
     const filename = req.params.filename as string;
 
     // Security check: Prevent path traversal
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-      throw AppError.badRequest('Invalid backup filename.');
-    }
+    assertBackupFilename(filename);
 
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const filePath = path.resolve(__dirname, '../../backups', filename);
@@ -942,7 +983,7 @@ router.post('/backups/:filename/restore', authenticate, requireAdmin, async (req
     const scriptPath = path.resolve(__dirname, '../../scripts/restore.cjs');
 
     console.log(`⚡ Triggering database restore script for ${filename}...`);
-    execSync(`node "${scriptPath}" "${filename}"`, { stdio: 'inherit' });
+    execFileSync(process.execPath, [scriptPath, filename], { stdio: 'inherit' });
 
     res.json({ success: true });
   } catch (error: any) {
@@ -957,9 +998,7 @@ router.delete('/backups/:filename', authenticate, requireAdmin, async (req: Requ
     const filename = req.params.filename as string;
 
     // Security check
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-      throw AppError.badRequest('Invalid backup filename.');
-    }
+    assertBackupFilename(filename);
 
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const filePath = path.resolve(__dirname, '../../backups', filename);

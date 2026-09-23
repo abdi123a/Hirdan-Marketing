@@ -1,3 +1,4 @@
+import { sanitizeHtml } from "@/lib/sanitize-html";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAgencyStore } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -222,7 +223,7 @@ export default function ProformaDetailsPage() {
     setIsEmailModalOpen(true);
     setTimeout(() => {
       if (richTextRef.current) {
-        richTextRef.current.innerHTML = bodyContent.replace(/\n/g, "<br>");
+        richTextRef.current.innerHTML = sanitizeHtml(bodyContent.replace(/\n/g, "<br>"));
       }
     }, 150);
   };
@@ -236,7 +237,7 @@ export default function ProformaDetailsPage() {
     setEmailSubject(content.subject);
     setEmailBody(content.body);
     if (richTextRef.current) {
-      richTextRef.current.innerHTML = content.body.replace(/\n/g, "<br>");
+      richTextRef.current.innerHTML = sanitizeHtml(content.body.replace(/\n/g, "<br>"));
     }
   };
 

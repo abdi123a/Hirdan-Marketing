@@ -14,7 +14,7 @@ import packagesRoutes from './packages.routes.js';
 import servicesRoutes from './services.routes.js';
 import settingsRoutes from './settings.routes.js';
 import verifyRoutes from './verify.routes.js';
-import leadsRoutes from './leads.routes.js';
+import leadsRoutes, { publicLeadsRouter } from './leads.routes.js';
 import usersRoutes from './users.routes.js';
 import aiRoutes from './ai.routes.js';
 import transferRoutes from './transfer.routes.js';
@@ -53,6 +53,9 @@ router.use('/services', authenticate, requireModuleAccess('services'), servicesR
 // Settings has public branding endpoints — auth is enforced inside the route file
 router.use('/settings', settingsRoutes);
 router.use('/verify', verifyRoutes);
+// POST /leads is the public landing-page sign-up (rate-limited + validated in
+// leads.routes.ts); every other leads route requires auth + the leads module.
+router.use('/leads', publicLeadsRouter);
 router.use('/leads', authenticate, requireModuleAccess('leads'), leadsRoutes);
 router.use('/users', usersRoutes);
 router.use('/ai', authenticate, requireModuleAccess('ai_assistant'), aiRoutes);
@@ -101,8 +104,8 @@ router.use(
 import emailMailboxesRoutes from './email-mailboxes.routes.js';
 import emailMessagesRoutes from './email-messages.routes.js';
 import emailConversationsRoutes from './email-conversations.routes.js';
-import emailStreamRoutes from './email-stream.routes.js';
-import emailTrackingRoutes from './email-tracking.routes.js';
+import emailStreamRoutes, { emailStreamPublicRouter } from './email-stream.routes.js';
+import emailTrackingRoutes, { emailTrackingPixelRouter } from './email-tracking.routes.js';
 import emailTemplatesRoutes from './email-templates.routes.js';
 import emailLabelsRoutes from './email-labels.routes.js';
 import emailNotesRoutes from './email-notes.routes.js';
@@ -111,12 +114,18 @@ import emailAnalyticsRoutes from './email-analytics.routes.js';
 import emailCustomersRoutes from './email-customers.routes.js';
 import emailAttachmentsRoutes from './email-attachments.routes.js';
 
+// Public /email endpoints MUST be mounted before any router guarded by
+// `authenticate`, otherwise that guard rejects them first:
+//  - GET /email/track/open/:id.png — anonymous open pixel fetched by mail clients
+//  - GET /email/stream?ticket=     — SSE; authenticated by a short-lived,
+//    single-use ticket (EventSource cannot send an Authorization header)
+router.use('/email', emailTrackingPixelRouter);
+router.use('/email', emailStreamPublicRouter);
 router.use('/email', authenticate, requireModuleAccess('email'), emailStreamRoutes);
 router.use('/email', authenticate, requireModuleAccess('email'), emailMailboxesRoutes);
 router.use('/email', authenticate, requireModuleAccess('email'), emailMessagesRoutes);
 router.use('/email', authenticate, requireModuleAccess('email'), emailConversationsRoutes);
-// Tracking has a public open-pixel — auth is handled inside the route file
-router.use('/email', emailTrackingRoutes);
+router.use('/email', authenticate, requireModuleAccess('email'), emailTrackingRoutes);
 router.use('/email', authenticate, requireModuleAccess('email'), emailTemplatesRoutes);
 router.use('/email', authenticate, requireModuleAccess('email'), emailLabelsRoutes);
 router.use('/email', authenticate, requireModuleAccess('email'), emailNotesRoutes);

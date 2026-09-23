@@ -2139,6 +2139,20 @@ export const useAgencyStore = create<AgencyStore>()(
           // they are only stored in the Zustand store and must not be sent to
           // PUT /settings or they'll trigger Zod "unrecognized key" errors.
           const { appVersion, versionHistory, ...dbSettings } = settings as typeof settings & { appVersion?: unknown; versionHistory?: unknown };
+          // Credentials come back from the API as masked placeholders. Only send
+          // a secret when the user actually changed it ('' = explicit clear), so
+          // a form save can never write a placeholder/stale default over a key.
+          const current = get().settings as unknown as Record<string, unknown>;
+          const secretFields = [
+            'openAiApiKey', 'claudeApiKey', 'geminiApiKey', 'resendApiKey', 'resendWebhookSecret',
+            'recaptchaSecretKey', 'googleDriveServiceAccountJson', 'googleDriveClientSecret',
+            'googleDriveRefreshToken', 'oneSignalApiKey',
+          ];
+          for (const field of secretFields) {
+            const next = (dbSettings as Record<string, unknown>)[field];
+            if (next === undefined) continue;
+            if ((next ?? '') === (current[field] ?? '')) delete (dbSettings as Record<string, unknown>)[field];
+          }
           await apiFetch('/settings', {
             method: 'PUT',
             body: JSON.stringify(dbSettings),
