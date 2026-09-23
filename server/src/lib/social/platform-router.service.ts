@@ -412,36 +412,40 @@ export async function refreshAccountToken(account: SocialAccount): Promise<{ acc
       };
     }
 
-    case 'tiktok':
+    case 'tiktok': {
       const tkRes = await tiktok.refreshTikTokToken(decryptedRefreshToken);
       access_token = tkRes.access_token;
       refresh_token = tkRes.refresh_token;
       expires_in = tkRes.expires_in;
       break;
+    }
 
     case 'linkedin':
       // LinkedIn tokens are long-lived and refreshed via standard client credentials exchange
       throw new Error('LinkedIn token refresh must be triggered via re-authentication');
 
-    case 'youtube':
+    case 'youtube': {
       const ytRes = await youtube.refreshYouTubeToken(decryptedRefreshToken);
       access_token = ytRes.access_token;
       expires_in = ytRes.expires_in;
       break;
+    }
 
-    case 'x':
+    case 'x': {
       const xRes = await x.refreshXToken(decryptedRefreshToken);
       access_token = xRes.access_token;
       refresh_token = xRes.refresh_token; // X uses rotating refresh tokens
       expires_in = xRes.expires_in;
       break;
+    }
 
-    case 'pinterest':
+    case 'pinterest': {
       const pinRes = await pinterest.refreshPinterestToken(decryptedRefreshToken);
       access_token = pinRes.access_token;
       refresh_token = pinRes.refresh_token;
       expires_in = pinRes.expires_in;
       break;
+    }
 
     default:
       throw new Error(`Refresh token not supported for platform: ${account.platform}`);

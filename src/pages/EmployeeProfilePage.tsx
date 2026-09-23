@@ -215,7 +215,7 @@ export default function EmployeeProfilePage() {
           return sum + amt;
         }, 0);
       }
-    } catch {}
+    } catch { /* best-effort; nothing to do */ }
     return basic + housing + transport + allowancesSum;
   };
 
@@ -407,7 +407,7 @@ export default function EmployeeProfilePage() {
                             ));
                           }
                         }
-                      } catch (e) {}
+                      } catch (e) { /* best-effort; nothing to do */ }
 
                       return (
                         <div className="space-y-1">
@@ -734,7 +734,7 @@ export default function EmployeeProfilePage() {
                                     </TableRow>
                                   ));
                                 }
-                              } catch {}
+                              } catch { /* best-effort; nothing to do */ }
                               return null;
                             })()}
 

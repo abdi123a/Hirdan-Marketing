@@ -211,7 +211,7 @@ export function decodeCsvBuffer(buffer: Buffer): string {
       return swapped.toString('utf16le');
     }
   }
-  return buffer.toString('utf8').replace(/^﻿/, '');
+  return buffer.toString('utf8').replace(/^\uFEFF/, '');
 }
 
 /** Split one CSV line into fields, honouring quotes and escaped quotes. */

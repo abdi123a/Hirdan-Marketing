@@ -484,7 +484,7 @@ router.post(
       }
 
       // ─── AI-powered or mechanical generation ────────────────────
-      let tasksToCreate: any[] = [];
+      const tasksToCreate: any[] = [];
 
       if (useAi) {
         // Resolve the active AI provider and API key from settings
@@ -643,7 +643,7 @@ Return only the required JSON object.`;
       const cycleEndDate = parseIsoDateOnly(cycleEnd);
 
       if (useAi) {
-        let validationErrors: string[] = [];
+        const validationErrors: string[] = [];
         const startMs = cycleStartDate.getTime();
         const endMs = cycleEndDate.getTime();
 

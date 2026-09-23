@@ -837,7 +837,7 @@ export default function ClientPortalPage() {
                         onClick={() => {
                           if (isForcedPasswordChange && item.value !== 'account') return;
                           setActiveTab(item.value);
-                          isMobile && setIsMobileSidebarOpen(false);
+                          if (isMobile) setIsMobileSidebarOpen(false);
                         }}
                         whileHover={{ x: 4 }}
                         aria-current={activeTab === item.value ? 'page' : undefined}
@@ -870,7 +870,7 @@ export default function ClientPortalPage() {
                         onClick={() => {
                           if (isForcedPasswordChange && item.value !== 'account') return;
                           setActiveTab(item.value);
-                          isMobile && setIsMobileSidebarOpen(false);
+                          if (isMobile) setIsMobileSidebarOpen(false);
                         }}
                         whileHover={{ x: 4 }}
                         aria-current={activeTab === item.value ? 'page' : undefined}
@@ -912,7 +912,7 @@ export default function ClientPortalPage() {
                   type="button"
                   onClick={() => {
                     setActiveTab('account');
-                    isMobile && setIsMobileSidebarOpen(false);
+                    if (isMobile) setIsMobileSidebarOpen(false);
                   }}
                   className="w-full flex items-center gap-3 p-3 rounded-lg bg-muted/20 border border-border/50 hover:bg-muted/40 transition-colors text-left"
                 >

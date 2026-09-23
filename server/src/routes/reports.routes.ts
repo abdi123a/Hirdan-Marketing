@@ -74,7 +74,7 @@ router.post(
         },
       });
 
-      const safeClient = body.clientName.replace(/[^\w\-]+/g, '_').slice(0, 60);
+      const safeClient = body.clientName.replace(/[^\w-]+/g, '_').slice(0, 60);
       const months = [
         'January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December',
@@ -119,7 +119,7 @@ router.post(
       });
 
       const rawName = body.filename || 'export.pdf';
-      const safeName = rawName.replace(/[^\w.\-]+/g, '_').slice(0, 180);
+      const safeName = rawName.replace(/[^\w.-]+/g, '_').slice(0, 180);
       const filename = safeName.toLowerCase().endsWith('.pdf') ? safeName : `${safeName}.pdf`;
 
       res.setHeader('Content-Type', 'application/pdf');

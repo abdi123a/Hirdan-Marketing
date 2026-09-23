@@ -462,7 +462,7 @@ router.delete('/case-studies/:id', authenticate, requireAdmin, async (req: Reque
       const filename = path.basename(record.imageUrl);
       const filePath = path.resolve(PATHS.BRANDING, filename);
       if (fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch {}
+        try { fs.unlinkSync(filePath); } catch { /* best-effort; nothing to do */ }
       }
     }
     await prisma.caseStudy.delete({ where: { id } });
@@ -505,7 +505,7 @@ router.delete('/projects/:id', authenticate, requireAdmin, async (req: Request, 
       const filename = path.basename(record.imageUrl);
       const filePath = path.resolve(PATHS.BRANDING, filename);
       if (fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch {}
+        try { fs.unlinkSync(filePath); } catch { /* best-effort; nothing to do */ }
       }
     }
     await prisma.landingPageProject.delete({ where: { id } });
@@ -548,7 +548,7 @@ router.delete('/testimonials/:id', authenticate, requireAdmin, async (req: Reque
       const filename = path.basename(record.avatarUrl);
       const filePath = path.resolve(PATHS.BRANDING, filename);
       if (fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch {}
+        try { fs.unlinkSync(filePath); } catch { /* best-effort; nothing to do */ }
       }
     }
     await prisma.testimonial.delete({ where: { id } });

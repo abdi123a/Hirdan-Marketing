@@ -20,9 +20,9 @@ export function redactSecrets(input: unknown): string {
     .replace(/refresh_token=[^&\s"'\\]+/gi, 'refresh_token=REDACTED')
     .replace(/fb_exchange_token=[^&\s"'\\]+/gi, 'fb_exchange_token=REDACTED')
     .replace(/([?&])key=[^&\s"'\\]+/gi, '$1key=REDACTED') // Gemini's ?key=<api key> auth style
-    .replace(/Bearer\s+[A-Za-z0-9._\-]+/gi, 'Bearer REDACTED')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer REDACTED')
     .replace(/\bEAA[A-Za-z0-9]+/g, 'REDACTED_META_TOKEN')
-    .replace(/\bya29\.[A-Za-z0-9._\-]+/g, 'REDACTED_GOOGLE_TOKEN')
+    .replace(/\bya29\.[A-Za-z0-9._-]+/g, 'REDACTED_GOOGLE_TOKEN')
     .replace(/\b[0-9]+-[A-Za-z0-9_]+\.apps\.googleusercontent\.com/g, 'REDACTED_GOOGLE_CLIENT');
 }
 

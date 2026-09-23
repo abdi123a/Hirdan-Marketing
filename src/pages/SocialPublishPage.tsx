@@ -1194,7 +1194,7 @@ export default function SocialPublishPage() {
     const postToUpdate = posts.find(p => p.id === postId);
     if (!postToUpdate) return;
 
-    let targetDate = new Date(date);
+    const targetDate = new Date(date);
     if (postToUpdate.scheduledFor) {
       const orig = new Date(postToUpdate.scheduledFor);
       targetDate.setHours(orig.getHours());
@@ -1659,7 +1659,7 @@ export default function SocialPublishPage() {
         if (Array.isArray(parsed)) {
           return parsed.filter(item => typeof item === "string");
         }
-      } catch (e) { }
+      } catch (e) { /* best-effort; nothing to do */ }
       return [post.mediaUrls];
     }
     return [];

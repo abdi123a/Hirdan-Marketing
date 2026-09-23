@@ -274,7 +274,7 @@ router.post(
       const parsed = uploadBodySchema.safeParse(req.body);
       if (!parsed.success) {
         for (const f of uploadedFiles) {
-          try { fs.unlinkSync(f.path); } catch {}
+          try { fs.unlinkSync(f.path); } catch { /* best-effort; nothing to do */ }
         }
         return next(AppError.badRequest("Validation failed"));
       }
@@ -314,7 +314,7 @@ router.post(
         const zipSize = await zipFiles(uploadedFiles, zipPath);
         // Remove individual temp files
         for (const f of uploadedFiles) {
-          try { fs.unlinkSync(f.path); } catch {}
+          try { fs.unlinkSync(f.path); } catch { /* best-effort; nothing to do */ }
         }
         storedFileName = zipName;
         originalFileName = `files-${uploadedFiles.length}.zip`;
@@ -352,7 +352,7 @@ router.post(
     } catch (err) {
       // Clean up any uploaded files on error
       for (const f of uploadedFiles) {
-        try { fs.unlinkSync(f.path); } catch {}
+        try { fs.unlinkSync(f.path); } catch { /* best-effort; nothing to do */ }
       }
       console.error("Transfer upload failed:", err);
       next(err);

@@ -190,7 +190,7 @@ export default function GenerateHrDocumentPage() {
     let allowances: any[] = [];
     try {
       allowances = JSON.parse(emp.otherAllowances || "[]");
-    } catch { }
+    } catch { /* best-effort; nothing to do */ }
 
     const basic = emp.basicSalary || 0;
     const housing = emp.housingAllowance || 0;
@@ -397,14 +397,14 @@ export default function GenerateHrDocumentPage() {
       const blob = await apiFetchBlob(`/hr/documents/${encodeURIComponent(doc.id)}/export-pdf`);
       triggerBlobDownload(blob, `${doc.docNumber}.pdf`);
       navigate("/dashboard/hr");
-    } catch (e) { }
+    } catch (e) { /* best-effort; nothing to do */ }
   };
 
   const handleSaveDraft = async () => {
     try {
       await generateAndSaveDocument(true);
       navigate("/dashboard/hr");
-    } catch (e) { }
+    } catch (e) { /* best-effort; nothing to do */ }
   };
 
   const handleApproveWarning = async () => {

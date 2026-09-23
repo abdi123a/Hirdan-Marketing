@@ -14,7 +14,7 @@ export function auditLog(event: AuditEvent) {
     ts: new Date().toISOString(),
     ...event,
   };
-  // eslint-disable-next-line no-console
+   
   console.log('[AUDIT]', JSON.stringify(payload));
 }
 

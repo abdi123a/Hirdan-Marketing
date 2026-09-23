@@ -43,7 +43,7 @@ export async function ensureAttachmentFile(att: Attachment): Promise<string> {
   if (!resp.ok) throw new Error('Failed to download attachment from Resend');
   const buf = Buffer.from(await resp.arrayBuffer());
 
-  const safeName = (att.filename || 'attachment').replace(/[^\w.\-]+/g, '_').slice(0, 200) || 'attachment';
+  const safeName = (att.filename || 'attachment').replace(/[^\w.-]+/g, '_').slice(0, 200) || 'attachment';
   const relKey = path.join('email', att.emailId ?? 'inbound', `${att.id}-${safeName}`);
   const abs = path.join(PATHS.UPLOADS_ROOT, relKey);
   await fs.mkdir(path.dirname(abs), { recursive: true });

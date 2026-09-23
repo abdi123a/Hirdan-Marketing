@@ -171,7 +171,7 @@ export default function AddEmployeePage() {
             if (draftForm.otherAllowances) {
               try {
                 setAllowanceList(JSON.parse(draftForm.otherAllowances));
-              } catch {}
+              } catch { /* best-effort; nothing to do */ }
             }
             if (draftId) {
               fetchEmployeeFiles(draftId).then((files) => {
@@ -227,7 +227,7 @@ export default function AddEmployeePage() {
               return;
             }
           }
-        } catch (e) {}
+        } catch (e) { /* best-effort; nothing to do */ }
 
         const phoneParts = (form.emergencyContactPhone || "").split(" ");
         const pCode = phoneParts.length > 1 && phoneParts[0].startsWith("+") ? phoneParts[0] : "+1";

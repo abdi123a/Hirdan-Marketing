@@ -80,7 +80,9 @@ describe('xMediaId', () => {
   });
 
   it('coerces a numeric id to string so precision is not lost downstream', () => {
-    expect(xMediaId({ data: { id: 1234567890123456789 } })).toBe(String(1234567890123456789));
+    // Numeric ids above 2^53 lose precision; the helper must still return a string.
+    const bigId = Number('1234567890123456789');
+    expect(xMediaId({ data: { id: bigId } })).toBe(String(bigId));
   });
 
   it('throws instead of returning undefined, which used to become media_ids:[null]', () => {

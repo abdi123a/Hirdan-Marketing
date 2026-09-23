@@ -246,7 +246,7 @@ const ChartTip = ({ active, payload, label }: any) => {
     if (!isNaN(d.getTime())) {
       formattedDate = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
     }
-  } catch {}
+  } catch { /* best-effort; nothing to do */ }
 
   const totalSum = payload.reduce((acc: number, p: any) => acc + (Number(p.value) || 0), 0);
 
@@ -303,7 +303,7 @@ const getFirstMediaUrl = (mediaUrls: any): string | null => {
       try {
         const parsed = JSON.parse(mediaUrls);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed[0];
-      } catch (e) {}
+      } catch (e) { /* best-effort; nothing to do */ }
     }
     return mediaUrls;
   }

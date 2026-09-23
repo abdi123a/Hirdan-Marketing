@@ -30,7 +30,7 @@ function parsePeriod(month: unknown, year: unknown): { month: number; year: numb
 }
 
 function safeFilename(title: string): string {
-  const base = title.replace(/[^\w.\-]+/g, '_').slice(0, 180);
+  const base = title.replace(/[^\w.-]+/g, '_').slice(0, 180);
   return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
 }
 

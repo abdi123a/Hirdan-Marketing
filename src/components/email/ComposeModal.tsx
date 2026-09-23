@@ -151,7 +151,7 @@ export function ComposeModal({ open, onClose, mailboxes, initial, onSent }: Prop
       }
     }, 4000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [open, to, cc, bcc, subject, priority, scheduledAt, mailboxId, draftId]);
 
   const handleSend = async () => {

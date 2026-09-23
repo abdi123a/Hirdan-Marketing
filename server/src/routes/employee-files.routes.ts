@@ -99,7 +99,7 @@ router.post(
     } catch (error) {
       // Clean up uploaded file if DB insert fails
       if (req.file) {
-        try { fs.unlinkSync(req.file.path); } catch {}
+        try { fs.unlinkSync(req.file.path); } catch { /* best-effort; nothing to do */ }
       }
       next(error);
     }
@@ -129,7 +129,7 @@ router.delete('/:employeeId/files/:fileId', requireAdmin, async (req: Request, r
     const filename = path.basename(fileRecord.fileUrl);
     const filePath = path.resolve(PATHS.EMPLOYEE_DOCS, filename);
     if (fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch {}
+      try { fs.unlinkSync(filePath); } catch { /* best-effort; nothing to do */ }
     }
 
     // Log activity

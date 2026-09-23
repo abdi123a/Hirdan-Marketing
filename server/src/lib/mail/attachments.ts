@@ -45,7 +45,7 @@ export async function storeAttachments(emailId: string, items: IncomingAttachmen
       throw new Error(`Attachment "${item.filename}" exceeds the 25MB limit`);
     }
 
-    let safeName = (item.filename || 'attachment').replace(/[^\w.\-]+/g, '_').slice(0, 200) || 'attachment';
+    let safeName = (item.filename || 'attachment').replace(/[^\w.-]+/g, '_').slice(0, 200) || 'attachment';
     // Avoid overwriting same-named files within one email.
     let candidate = safeName;
     let n = 1;

@@ -169,7 +169,7 @@ export default function HrDocumentsPage() {
     setLoading(true);
     try {
       await fetchHrDocuments({ pendingApproval: activeTab === "approvals" });
-    } catch (err) { }
+    } catch (err) { /* best-effort; nothing to do */ }
     setLoading(false);
   };
 

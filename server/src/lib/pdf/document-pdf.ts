@@ -85,7 +85,7 @@ export async function renderInvoicePdfById(idOrNumber: string): Promise<{
     verificationToken,
   });
 
-  const safe = displayId.replace(/[^\w\-]+/g, '_').slice(0, 80);
+  const safe = displayId.replace(/[^\w-]+/g, '_').slice(0, 80);
   return { buffer, filename: `${safe}.pdf` };
 }
 
@@ -133,7 +133,7 @@ export async function renderProformaPdfById(idOrNumber: string): Promise<{
     verificationToken,
   });
 
-  const safe = displayId.replace(/[^\w\-]+/g, '_').slice(0, 80);
+  const safe = displayId.replace(/[^\w-]+/g, '_').slice(0, 80);
   return { buffer, filename: `${safe}.pdf` };
 }
 

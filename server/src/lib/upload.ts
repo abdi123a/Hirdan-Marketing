@@ -114,13 +114,13 @@ export function enforceMagicBytes(options: {
       }
 
       if (!ok) {
-        try { fs.unlinkSync(file.path); } catch {}
+        try { fs.unlinkSync(file.path); } catch { /* best-effort; nothing to do */ }
         return next(AppError.badRequest('File content does not match allowed type'));
       }
 
       return next();
     } catch (err) {
-      try { if (file?.path) fs.unlinkSync(file.path); } catch {}
+      try { if (file?.path) fs.unlinkSync(file.path); } catch { /* best-effort; nothing to do */ }
       return next(err);
     }
   };
