@@ -209,7 +209,7 @@ export default function SocialPublishPage() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setInterval>;
     if (isPublishProgressOpen && publishStatus.status === 'publishing') {
       setElapsedSeconds(0);
       timer = setInterval(() => {
