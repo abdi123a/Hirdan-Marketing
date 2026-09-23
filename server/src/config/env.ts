@@ -79,6 +79,8 @@ const envSchema = z.object({
   TIKTOK_CLIENT_KEY: z.string().optional(),
   TIKTOK_CLIENT_SECRET: z.string().optional(),
   TIKTOK_REDIRECT_URI: z.string().optional(),
+  /** Opt-in PKCE for TikTok OAuth ("true"); see lib/social/tiktok.service.ts. */
+  TIKTOK_USE_PKCE: z.string().optional(),
 
   // LinkedIn
   LINKEDIN_CLIENT_ID: z.string().optional(),

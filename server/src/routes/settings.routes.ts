@@ -5,7 +5,6 @@ import { validate } from '../middleware/validate.js';
 import { z } from 'zod';
 import { AppError } from '../lib/errors.js';
 import jwt from 'jsonwebtoken';
-import { env } from '../config/env.js';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -138,27 +137,18 @@ router.get('/', async (req: Request, res: Response, next) => {
     // Determine if requester is an authenticated staff member or admin
     let isStaffOrAdmin = false;
     let isAdmin = false;
-    try {
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.split(' ')[1];
-        const decoded = jwt.verify(token, env.JWT_SECRET) as any;
-        // Trust the database, not the token: a demoted or disabled account
-        // must lose staff-level settings immediately.
-        const dbUser = decoded?.userId
-          ? await prisma.user.findUnique({
-              where: { id: decoded.userId },
-              select: { role: true, isActive: true },
-            })
-          : null;
-        if (dbUser?.isActive && ['ADMIN', 'MANAGER', 'STAFF'].includes(dbUser.role)) {
-          isStaffOrAdmin = true;
-          isAdmin = dbUser.role === 'ADMIN';
-        }
+    // Optional authentication with the exact same rules as protected routes
+    // (active account, current DB role, live session). Anything that fails
+    // falls back to guest access silently — expected on the login page etc.
+    if (req.headers.authorization?.startsWith('Bearer ')) {
+      const authed = await new Promise<boolean>((resolve) => {
+        authenticate(req, res, (err?: unknown) => resolve(!err)).catch(() => resolve(false));
+      });
+      const role = authed ? req.user?.role : undefined;
+      if (role === 'ADMIN' || role === 'MANAGER' || role === 'STAFF') {
+        isStaffOrAdmin = true;
+        isAdmin = role === 'ADMIN';
       }
-    } catch (e) {
-      // Token expired or invalid — fall back to guest access silently.
-      // This is expected for unauthenticated requests (login page, etc.).
     }
 
     if (isStaffOrAdmin) {

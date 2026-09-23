@@ -73,7 +73,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<'ADMIN' | 'MANAGER' | 'STAFF' | 'C
     financial_reports: 'READ',
     packages: 'WRITE',
     services: 'WRITE',
-    social_media: 'WRITE',
+    social_media: 'MANAGE', // managers approve/schedule posts (see lib/social/post-approval.ts)
     strategy_decks: 'WRITE',
     monthly_reports: 'WRITE',
     transfers: 'WRITE',
