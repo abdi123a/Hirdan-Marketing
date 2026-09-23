@@ -17,10 +17,19 @@
 // record the schema as created without ever creating it.
 //
 // Safe to run on every deploy.
+//
+// Baselining is a promise that the live database already matches 0_init — it
+// is NOT verified by `migrate resolve`. So right after baselining this script
+// runs a drift check and prints a loud warning (it never auto-fixes):
+//   • SHADOW_DATABASE_URL set → exact check: live DB vs the state 0_init alone
+//     produces (replayed on the throwaway shadow DB).
+//   • otherwise → live DB vs prisma/schema.prisma. Differences that the newer
+//     migrations will apply are expected there; anything else is real drift.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { PrismaClient } = require('@prisma/client');
 
@@ -89,6 +98,71 @@ async function main() {
     cwd: SERVER_DIR,
   });
   console.log('✅ Baseline recorded. `migrate deploy` will now apply only newer migrations.');
+
+  checkDriftAfterBaseline();
+}
+
+/**
+ * Warn-only drift check after baselining. Returns nothing, never throws: the
+ * baseline has already been recorded and a check failure must not hide that.
+ */
+function checkDriftAfterBaseline() {
+  const cli = resolvePrismaCli();
+  const schema = path.join('prisma', 'schema.prisma');
+  let args;
+  let tmpDir = null;
+  let mode;
+
+  if (process.env.SHADOW_DATABASE_URL) {
+    // Build a migrations dir containing only the baseline so the comparison
+    // target is exactly "what 0_init creates".
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-baseline-'));
+    const src = path.join(SERVER_DIR, 'prisma', 'migrations');
+    fs.cpSync(path.join(src, BASELINE), path.join(tmpDir, BASELINE), { recursive: true });
+    fs.copyFileSync(path.join(src, 'migration_lock.toml'), path.join(tmpDir, 'migration_lock.toml'));
+    args = ['migrate', 'diff', '--from-schema-datasource', schema, '--to-migrations', tmpDir,
+      '--shadow-database-url', process.env.SHADOW_DATABASE_URL, '--exit-code'];
+    mode = `the "${BASELINE}" migration (exact, via SHADOW_DATABASE_URL)`;
+  } else {
+    // --from-schema-datasource reads DATABASE_URL from .env (prisma.config.ts),
+    // so the connection string is never placed on the command line.
+    args = ['migrate', 'diff', '--from-schema-datasource', schema, '--to-schema-datamodel', schema, '--exit-code'];
+    mode = 'prisma/schema.prisma (approximate — includes changes from migrations newer than 0_init)';
+  }
+
+  console.log(`🔍 Verifying baseline: comparing the live database with ${mode}...`);
+  const res = spawnSync(cli, args, { cwd: SERVER_DIR, encoding: 'utf-8' });
+  if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+
+  const output = `${res.stdout || ''}${res.stderr || ''}`.trim();
+  if (res.status === 0) {
+    console.log('✅ No drift: the live database matches. Baseline is sound.');
+    return;
+  }
+
+  const bar = '!'.repeat(78);
+  if (res.status === 2) {
+    console.warn(`\n${bar}\n⚠️  BASELINE DRIFT DETECTED — "${BASELINE}" was marked applied, but the live`);
+    console.warn('   database differs from what it describes. Nothing has been changed.');
+    console.warn(`${bar}\n`);
+    console.warn(output.split('\n').slice(0, 120).join('\n'));
+    console.warn(`\n${bar}`);
+    console.warn('What to do:');
+    console.warn('  1. Compare the differences above with prisma/migrations/* newer than 0_init;');
+    console.warn('     changes those migrations make are expected (approximate mode only).');
+    console.warn('  2. For anything else, write a reviewed migration that reconciles it, e.g.');
+    console.warn('       npx prisma migrate diff --from-schema-datasource prisma/schema.prisma \\');
+    console.warn('         --to-schema-datamodel prisma/schema.prisma --script');
+    console.warn('     then commit it under prisma/migrations/. Do NOT run `prisma db push`.');
+    console.warn('  3. For an exact check, rerun with SHADOW_DATABASE_URL pointing at an empty');
+    console.warn('     throwaway database.');
+    console.warn(`${bar}\n`);
+    if (process.env.GITHUB_ACTIONS) console.log('::warning::Baseline drift detected — see deploy log.');
+    return;
+  }
+
+  console.warn(`⚠️  Could not run the baseline drift check (exit ${res.status ?? res.error?.message}). Verify manually:`);
+  console.warn(output.split('\n').slice(0, 20).join('\n'));
 }
 
 main().catch((err) => {
