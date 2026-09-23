@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireRole } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 import { sendEmail, generateEmailHtml, generateProformaFollowUpEmailHtml } from '../lib/email.js';
 import { createNotification } from '../lib/notifications.js';
@@ -9,7 +10,20 @@ import { auditLog } from '../lib/audit.js';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { parsePagination } from '../lib/pagination.js';
-import { computeInvoiceTotalsCents } from '../lib/money.js';
+import { computeInvoiceTotalsCents, deriveBaseSubtotalCents } from '../lib/money.js';
+import { nextDocumentNumber } from '../lib/document-number.js';
+import { syncInvoiceDeposit } from '../lib/deposit-sync.js';
+import { cleanRichText, escapeHtml, sanitizeRichHtml } from '../lib/rich-text.js';
+import {
+  FINANCIAL_FIELDS,
+  changedFields,
+  discountError,
+  isAppendOnlyNotes,
+  isClientProformaTransitionAllowed,
+  normalizeItems,
+  resolveInvoicePayment,
+  resolveTotalCents,
+} from '../lib/billing-rules.js';
 import { renderProformaPdfById } from '../lib/pdf/document-pdf.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -23,29 +37,20 @@ const proformaItemSchema = z.object({
   discountable: z.boolean().optional(),
 });
 
-/** Normalize incoming items: positions follow array order, discountable defaults to true. */
-function normalizeItems(items: any[] | undefined) {
-  return items?.map((item: any, index: number) => ({
-    description: item.description,
-    quantity: item.quantity,
-    unitPrice: item.unitPrice,
-    position: item.position !== undefined ? item.position : index,
-    discountable: item.discountable !== false,
-  }));
-}
-
 const proformaDtoSchema = z.object({
-  proformaNumber: z.string().min(1),
+  // Assigned by the server on create; on update an explicit, unique number
+  // may be set manually.
+  proformaNumber: z.string().trim().min(1).optional(),
   clientId: z.string().uuid(),
   amount: z.number().int().nonnegative(),
   status: z.enum(['DRAFT', 'SENT', 'ACCEPTED', 'PARTIALLY_PAID', 'EXPIRED']).optional(),
   date: z.string().or(z.date()),
   dueDate: z.string().or(z.date()),
   notes: z.string().optional().nullable(),
-  taxRate: z.number().optional().nullable(),
-  discount: z.number().optional().nullable(),
+  taxRate: z.number().min(0).max(100).optional().nullable(),
+  discount: z.number().min(0).optional().nullable(),
   discountType: z.enum(['PERCENTAGE', 'FIXED']).optional().nullable(),
-  deposit: z.number().int().optional().nullable(),
+  deposit: z.number().int().nonnegative().optional().nullable(),
   showSignature: z.boolean().optional(),
   showStamp: z.boolean().optional(),
   deliveryNoteEnabled: z.boolean().optional(),
@@ -56,6 +61,7 @@ const proformaDtoSchema = z.object({
 
 const router = Router();
 router.use(authenticate);
+const staffOnly = requireRole('ADMIN', 'MANAGER', 'STAFF');
 // ─── GET /api/proformas ───────────────────────────────────────────
 
 router.get('/', async (req: Request, res: Response, next) => {
@@ -150,29 +156,226 @@ router.get('/:id/export-pdf', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/proformas ─────────────────────────────────────────
 
-router.post('/', validate({ body: proformaDtoSchema }), async (req: Request, res: Response, next) => {
+/** document-number.ts types its client against the base (un-extended) Prisma client. */
+const counterClient = (tx: unknown) => tx as Parameters<typeof nextDocumentNumber>[1];
+type Tx = Pick<typeof prisma, 'proforma' | 'invoice' | 'deposit' | 'account' | 'agencySettings'>;
+
+function isUniqueViolation(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === 'P2002';
+}
+
+function isRecordNotFound(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === 'P2025';
+}
+
+const CONVERTED_MESSAGE =
+  'This proforma has already been accepted and converted to an invoice. Edit the invoice instead.';
+
+/** Validate totals-related inputs shared by create and update. */
+function assertProformaMoney(amount: number, deposit: number | null | undefined, discount: number | null | undefined, discountType: string | null | undefined) {
+  const discountMsg = discountError(discount, discountType);
+  if (discountMsg) throw AppError.badRequest(discountMsg);
+  if ((deposit ?? 0) > amount) throw AppError.badRequest('The deposit cannot exceed the proforma total.');
+}
+
+/**
+ * Convert an accepted proforma into an invoice, atomically and at most once.
+ * Must run inside the caller's transaction: the invoice number, the invoice,
+ * its ledger deposit and the proforma's `convertedInvoiceId` claim all commit
+ * or roll back together. The claim is a conditional update, so a concurrent
+ * or repeated conversion finds `convertedInvoiceId` already set and fails.
+ */
+async function convertProformaToInvoice(tx: Tx, proformaId: string) {
+  const proforma = await tx.proforma.findUniqueOrThrow({
+    where: { id: proformaId },
+    include: { items: { orderBy: { position: 'asc' } } },
+  });
+  if (proforma.convertedInvoiceId) throw AppError.conflict(CONVERTED_MESSAGE);
+
+  const invoiceNumber = await nextDocumentNumber('INV', counterClient(tx));
+
+  // Map proforma items to invoice items
+  const invoiceItems = proforma.items.map((item) => ({
+    description: item.description,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    position: item.position,
+    discountable: item.discountable,
+  }));
+
+  const finalItems = invoiceItems.length > 0
+    ? invoiceItems
+    : [{ description: 'Services rendered', quantity: 1, unitPrice: deriveBaseSubtotalCents(proforma.amount, proforma.taxRate, proforma.discount, proforma.discountType), position: 0, discountable: true }];
+
+  // Compute total invoice amount with the shared formula (matches UI + PDF)
+  const computedAmount = computeInvoiceTotalsCents({
+    items: finalItems,
+    taxRate: proforma.taxRate,
+    discount: proforma.discount,
+    discountType: proforma.discountType,
+  }).totalCents;
+
+  // A deposit already paid against the proforma carries over as a partial
+  // (or full) payment on the invoice, so status and ledger stay consistent.
+  const payment = resolveInvoicePayment({
+    amount: computedAmount,
+    deposit: proforma.deposit != null ? Math.min(proforma.deposit, computedAmount) : null,
+    status: 'PENDING',
+    financialChange: true,
+  });
+  if (!payment.ok) throw AppError.badRequest(payment.error);
+
+  // Set due date to 14 days from now if not specified
+  const dueDate = proforma.dueDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+
+  const invoice = await tx.invoice.create({
+    data: {
+      invoiceNumber,
+      clientId: proforma.clientId,
+      amount: computedAmount,
+      status: payment.status,
+      date: new Date(),
+      dueDate,
+      notes: proforma.notes,
+      taxRate: proforma.taxRate,
+      discount: proforma.discount,
+      discountType: proforma.discountType,
+      deposit: payment.deposit,
+      showSignature: proforma.showSignature,
+      showStamp: proforma.showStamp,
+      deliveryNoteEnabled: proforma.deliveryNoteEnabled,
+      deliveryNoteTitle: proforma.deliveryNoteTitle,
+      deliveryNoteContent: cleanRichText(proforma.deliveryNoteContent),
+      items: {
+        create: finalItems.map((item) => ({ ...item, description: cleanRichText(item.description) })),
+      },
+    },
+    include: {
+      client: { select: { name: true, company: true, userId: true } },
+    },
+  });
+
+  const claimed = await tx.proforma.updateMany({
+    where: { id: proforma.id, convertedInvoiceId: null },
+    data: { convertedInvoiceId: invoice.id, status: 'ACCEPTED' },
+  });
+  if (claimed.count !== 1) throw AppError.conflict(CONVERTED_MESSAGE);
+
+  await syncInvoiceDeposit(invoice.id, tx);
+  return invoice;
+}
+
+/** Notifications + audit for a proforma → invoice conversion (after commit). */
+function announceConversion(
+  req: Request,
+  proforma: { id: string; proformaNumber: string | null; client?: { name: string; company: string | null } | null },
+  createdInvoice: { id: string; invoiceNumber: string; clientId: string; client?: { userId: string | null } | null }
+) {
+  const clientName = proforma.client?.company || proforma.client?.name || 'Unknown';
+  const invoiceNumber = createdInvoice.invoiceNumber;
+  createNotification({
+    title: 'Proposal Accepted 🎉',
+    message: `Proforma ${proforma.proformaNumber} has been accepted by ${clientName}.`,
+    type: 'PROFORMA_ACCEPTED',
+    category: 'SUCCESS',
+    entityType: 'PROFORMA',
+    entityId: proforma.proformaNumber || proforma.id,
+    actionUrl: `/dashboard/proforma/view/${proforma.proformaNumber || proforma.id}`,
+  });
+
+  // Audit Log the invoice creation
+  const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
+  auditLog({
+    action: 'invoice.create',
+    success: true,
+    userId: req.user!.userId,
+    invoiceId: createdInvoice.id,
+    clientId: createdInvoice.clientId,
+    ip
+  });
+
+  // Notify Admin/Staff of the new invoice
+  createNotification({
+    title: 'New Invoice Created',
+    message: `Invoice ${invoiceNumber} for ${clientName} has been created from Proforma ${proforma.proformaNumber}.`,
+    type: 'INVOICE_CREATED',
+    category: 'INFORMATION',
+    entityType: 'INVOICE',
+    entityId: invoiceNumber,
+    actionUrl: `/dashboard/invoices/view/${createdInvoice.id}`,
+  });
+
+  // Notify Client of the new invoice
+  const clientUser = createdInvoice.client;
+  if (clientUser?.userId) {
+    createNotification({
+      title: 'New Invoice Issued 🧾',
+      message: `Invoice ${invoiceNumber} has been issued for your account.`,
+      type: 'INVOICE_CREATED',
+      category: 'ACTION_REQUIRED',
+      entityType: 'INVOICE',
+      entityId: invoiceNumber,
+      userId: clientUser.userId,
+      actionUrl: `/portal?tab=financials`,
+    });
+  }
+}
+
+router.post('/', staffOnly, validate({ body: proformaDtoSchema }), async (req: Request, res: Response, next) => {
   try {
-    const { items, ...proformaData } = req.body;
+    // Any client-sent proformaNumber is ignored: numbers are allocated below.
+    const { items, proformaNumber: _ignoredNumber, status, ...proformaData } = req.body;
+    if (proformaData.deliveryNoteContent !== undefined) {
+      proformaData.deliveryNoteContent = cleanRichText(proformaData.deliveryNoteContent);
+    }
     const itemsWithPosition = normalizeItems(items);
     // Server-authoritative total when line items exist (see invoices.routes.ts).
-    const computedAmount = itemsWithPosition?.length
+    const amount = itemsWithPosition?.length
       ? computeInvoiceTotalsCents({
           items: itemsWithPosition,
           taxRate: proformaData.taxRate ?? null,
           discount: proformaData.discount ?? null,
           discountType: proformaData.discountType ?? null,
         }).totalCents
-      : undefined;
-    const proforma = await prisma.proforma.create({
-      data: {
-        ...proformaData,
-        ...(computedAmount !== undefined ? { amount: computedAmount } : {}),
-        items: itemsWithPosition ? { create: itemsWithPosition } : undefined,
-      },
-      include: { items: { orderBy: { position: 'asc' } } },
+      : proformaData.amount;
+    assertProformaMoney(amount, proformaData.deposit, proformaData.discount, proformaData.discountType);
+    const acceptOnCreate = status === 'ACCEPTED';
+
+    const { proforma, createdInvoice } = await prisma.$transaction(async (tx) => {
+      const proformaNumber = await nextDocumentNumber('PRO', counterClient(tx));
+      const created = await tx.proforma.create({
+        data: {
+          ...proformaData,
+          proformaNumber,
+          amount,
+          // Acceptance goes through the conversion below (which sets ACCEPTED).
+          status: acceptOnCreate ? 'SENT' : status,
+          items: itemsWithPosition ? { create: itemsWithPosition } : undefined,
+        },
+      });
+      const invoice = acceptOnCreate ? await convertProformaToInvoice(tx, created.id) : null;
+      const full = await tx.proforma.findUniqueOrThrow({
+        where: { id: created.id },
+        include: {
+          client: { select: { name: true, company: true } },
+          items: { orderBy: { position: 'asc' } },
+        },
+      });
+      return { proforma: full, createdInvoice: invoice };
     });
-    res.status(201).json({ proforma });
+
+    if (createdInvoice) announceConversion(req, proforma, createdInvoice);
+
+    res.status(201).json({
+      proforma,
+      invoiceId: createdInvoice?.id,
+      invoiceNumber: createdInvoice?.invoiceNumber,
+    });
   } catch (error) {
+    if (isUniqueViolation(error)) {
+      next(AppError.conflict('Could not allocate a unique document number, please retry.'));
+      return;
+    }
     next(error);
   }
 });
@@ -205,167 +408,110 @@ router.put('/:id', validate({ body: proformaDtoSchema.partial() }), async (req: 
       if (!client || targetProforma.clientId !== client.id) {
         throw AppError.forbidden('You do not have access to this proforma');
       }
+      // Clients may append a comment and accept / request a revision of a
+      // proforma awaiting their decision — nothing else.
       const sanitized: any = {};
-      if (req.body.notes !== undefined) sanitized.notes = req.body.notes;
-      if (req.body.status !== undefined) sanitized.status = req.body.status;
+      if (req.body.notes !== undefined) {
+        if (!isAppendOnlyNotes(targetProforma.notes, req.body.notes)) {
+          throw AppError.badRequest('You can only add a comment to the proforma notes.');
+        }
+        sanitized.notes = req.body.notes;
+      }
+      if (req.body.status !== undefined) {
+        if (!isClientProformaTransitionAllowed(targetProforma.status, req.body.status)) {
+          throw AppError.forbidden('You cannot change the status of this proforma.');
+        }
+        sanitized.status = req.body.status;
+      }
       req.body = sanitized;
     }
 
-    const { items, ...proformaData } = req.body;
-    const itemsWithPosition = normalizeItems(items);
-
-    // Server-authoritative total (see invoices.routes.ts PUT for rationale).
-    const affectsTotal =
-      itemsWithPosition !== undefined ||
-      proformaData.taxRate !== undefined ||
-      proformaData.discount !== undefined ||
-      proformaData.discountType !== undefined;
-    const computedAmount = affectsTotal
-      ? computeInvoiceTotalsCents({
-          items:
-            itemsWithPosition ??
-            (await prisma.proformaItem.findMany({
-              where: { proformaId: targetProforma.id },
-              orderBy: { position: 'asc' },
-            })),
-          taxRate: proformaData.taxRate !== undefined ? proformaData.taxRate : targetProforma.taxRate,
-          discount: proformaData.discount !== undefined ? proformaData.discount : targetProforma.discount,
-          discountType:
-            proformaData.discountType !== undefined ? proformaData.discountType : targetProforma.discountType,
-        }).totalCents
-      : undefined;
-
-    const statusChangedToAccepted = targetProforma.status !== 'ACCEPTED' && proformaData.status === 'ACCEPTED';
-    // Nested writes run in one transaction — items can no longer be lost if
-    // the update fails partway.
-    const proforma = await prisma.proforma.update({
-      where: { id: targetProforma.id },
-      data: {
-        ...proformaData,
-        ...(computedAmount !== undefined ? { amount: computedAmount } : {}),
-        items: itemsWithPosition ? { deleteMany: {}, create: itemsWithPosition } : undefined,
-      },
-      include: {
-        client: { select: { name: true, company: true } },
-        items: { orderBy: { position: 'asc' } },
-      },
-    });
-
-    let createdInvoice: any = null;
-    if (statusChangedToAccepted) {
-      const clientName = (proforma as any).client?.company || (proforma as any).client?.name || 'Unknown';
-      createNotification({
-        title: 'Proposal Accepted 🎉',
-        message: `Proforma ${proforma.proformaNumber} has been accepted by ${clientName}.`,
-        type: 'PROFORMA_ACCEPTED',
-        category: 'SUCCESS',
-        entityType: 'PROFORMA',
-        entityId: proforma.proformaNumber || proforma.id,
-        actionUrl: `/dashboard/proforma/view/${proforma.proformaNumber || proforma.id}`,
-      });
-
-      // Automatically generate a unique short invoice number
-      let invoiceNumber = '';
-      while (true) {
-        const num = Math.floor(Math.random() * 9000 + 1000);
-        invoiceNumber = `INV-${num}`;
-        const existing = await prisma.invoice.findUnique({
-          where: { invoiceNumber }
-        });
-        if (!existing) {
-          break;
-        }
-      }
-
-      // Map proforma items to invoice items
-      const invoiceItems = proforma.items.map(item => ({
-        description: item.description,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        position: item.position,
-        discountable: item.discountable,
-      }));
-
-      const finalItems = invoiceItems.length > 0
-        ? invoiceItems
-        : [{ description: "Services rendered", quantity: 1, unitPrice: proforma.amount, position: 0, discountable: true }];
-
-      // Compute total invoice amount with the shared formula (matches UI + PDF)
-      const computedAmount = computeInvoiceTotalsCents({
-        items: finalItems,
-        taxRate: proforma.taxRate,
-        discount: proforma.discount,
-        discountType: proforma.discountType,
-      }).totalCents;
-
-      // Set due date to 14 days from now if not specified
-      const dueDate = proforma.dueDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-
-      // Create the invoice
-      createdInvoice = await prisma.invoice.create({
-        data: {
-          invoiceNumber,
-          clientId: proforma.clientId,
-          amount: computedAmount,
-          status: 'PENDING',
-          date: new Date(),
-          dueDate,
-          notes: proforma.notes,
-          taxRate: proforma.taxRate,
-          discount: proforma.discount,
-          discountType: proforma.discountType,
-          deposit: proforma.deposit,
-          showSignature: proforma.showSignature,
-          showStamp: proforma.showStamp,
-          deliveryNoteEnabled: proforma.deliveryNoteEnabled,
-          deliveryNoteTitle: proforma.deliveryNoteTitle,
-          deliveryNoteContent: proforma.deliveryNoteContent,
-          items: {
-            create: finalItems
-          }
-        },
-        include: {
-          client: { select: { name: true, company: true, userId: true } }
-        }
-      });
-
-      // Audit Log the invoice creation
-      const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
-      auditLog({
-        action: 'invoice.create',
-        success: true,
-        userId: req.user!.userId,
-        invoiceId: createdInvoice.id,
-        clientId: createdInvoice.clientId,
-        ip
-      });
-
-      // Notify Admin/Staff of the new invoice
-      createNotification({
-        title: 'New Invoice Created',
-        message: `Invoice ${invoiceNumber} for ${clientName} has been created from Proforma ${proforma.proformaNumber}.`,
-        type: 'INVOICE_CREATED',
-        category: 'INFORMATION',
-        entityType: 'INVOICE',
-        entityId: invoiceNumber,
-        actionUrl: `/dashboard/invoices/view/${createdInvoice.id}`,
-      });
-
-      // Notify Client of the new invoice
-      const clientUser = (createdInvoice as any).client;
-      if (clientUser?.userId) {
-        createNotification({
-          title: 'New Invoice Issued 🧾',
-          message: `Invoice ${invoiceNumber} has been issued for your account.`,
-          type: 'INVOICE_CREATED',
-          category: 'ACTION_REQUIRED',
-          entityType: 'INVOICE',
-          entityId: invoiceNumber,
-          userId: clientUser.userId,
-          actionUrl: `/portal?tab=financials`,
-        });
-      }
+    const { items, proformaNumber, amount: sentAmount, ...proformaData } = req.body;
+    if (proformaData.deliveryNoteContent !== undefined) {
+      proformaData.deliveryNoteContent = cleanRichText(proformaData.deliveryNoteContent);
     }
+    const itemsWithPosition = normalizeItems(items);
+    const currentItems = await prisma.proformaItem.findMany({
+      where: { proformaId: targetProforma.id },
+      orderBy: { position: 'asc' },
+    });
+    const changed = changedFields(
+      { ...req.body, items: itemsWithPosition, deliveryNoteContent: proformaData.deliveryNoteContent },
+      targetProforma as unknown as Record<string, unknown>,
+      currentItems
+    );
+
+    // Accepted proformas have been turned into an invoice (legacy ones may
+    // predate `convertedInvoiceId`): only the notes may still change, so the
+    // same proforma can never be converted twice.
+    const isConverted = !!targetProforma.convertedInvoiceId || targetProforma.status === 'ACCEPTED';
+    if (isConverted && changed.some((key) => key !== 'notes')) {
+      throw AppError.conflict(CONVERTED_MESSAGE);
+    }
+
+    const nextTaxRate = proformaData.taxRate !== undefined ? proformaData.taxRate : targetProforma.taxRate;
+    const nextDiscount = proformaData.discount !== undefined ? proformaData.discount : targetProforma.discount;
+    const nextDiscountType =
+      proformaData.discountType !== undefined ? proformaData.discountType : targetProforma.discountType;
+    const affectsTotal = changed.some((key) => (FINANCIAL_FIELDS as readonly string[]).includes(key));
+
+    // Server-authoritative total (see invoices.routes.ts PUT for rationale);
+    // item-less proformas keep their base instead of collapsing to $0.
+    const amount = resolveTotalCents({
+      items: itemsWithPosition ?? currentItems,
+      explicitAmount: sentAmount,
+      affectsTotal,
+      current: targetProforma,
+      next: { taxRate: nextTaxRate, discount: nextDiscount, discountType: nextDiscountType },
+    });
+    const nextDeposit = proformaData.deposit !== undefined ? proformaData.deposit : targetProforma.deposit;
+    if (affectsTotal) assertProformaMoney(amount, nextDeposit, nextDiscount, nextDiscountType);
+
+    const renumber =
+      proformaNumber !== undefined && proformaNumber !== targetProforma.proformaNumber ? proformaNumber : undefined;
+    const statusChangedToAccepted = targetProforma.status !== 'ACCEPTED' && proformaData.status === 'ACCEPTED';
+
+    let result;
+    try {
+      result = await prisma.$transaction(async (tx) => {
+        // The guard makes a concurrent conversion win over this write.
+        const guard: Prisma.ProformaWhereUniqueInput = isConverted
+          ? { id: targetProforma.id }
+          : { id: targetProforma.id, status: { not: 'ACCEPTED' }, AND: [{ convertedInvoiceId: null }] };
+        await tx.proforma.update({
+          where: guard,
+          data: {
+            ...proformaData,
+            ...(renumber !== undefined ? { proformaNumber: renumber } : {}),
+            // Acceptance is applied by the conversion itself.
+            ...(statusChangedToAccepted ? { status: targetProforma.status } : {}),
+            amount,
+            items:
+              itemsWithPosition && changed.includes('items')
+                ? { deleteMany: {}, create: itemsWithPosition }
+                : undefined,
+          },
+        });
+        const invoice = statusChangedToAccepted
+          ? await convertProformaToInvoice(tx, targetProforma.id)
+          : null;
+        const proforma = await tx.proforma.findUniqueOrThrow({
+          where: { id: targetProforma.id },
+          include: {
+            client: { select: { name: true, company: true } },
+            items: { orderBy: { position: 'asc' } },
+          },
+        });
+        return { proforma, createdInvoice: invoice };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) throw AppError.conflict('That proforma number is already in use.');
+      if (isRecordNotFound(error)) throw AppError.conflict(CONVERTED_MESSAGE);
+      throw error;
+    }
+
+    const { proforma, createdInvoice } = result;
+    if (createdInvoice) announceConversion(req, proforma, createdInvoice);
 
     res.json({
       proforma,
@@ -379,7 +525,7 @@ router.put('/:id', validate({ body: proformaDtoSchema.partial() }), async (req: 
 
 // ─── DELETE /api/proformas/:id ───────────────────────────────────
 
-router.delete('/:id', async (req: Request, res: Response, next) => {
+router.delete('/:id', staffOnly, async (req: Request, res: Response, next) => {
   try {
     const targetProforma = await prisma.proforma.findFirst({
       where: {
@@ -398,7 +544,7 @@ router.delete('/:id', async (req: Request, res: Response, next) => {
   }
 });
 
-router.post('/:id/send-email', async (req: Request, res: Response, next) => {
+router.post('/:id/send-email', staffOnly, async (req: Request, res: Response, next) => {
   try {
     const targetProforma = await prisma.proforma.findFirst({
       where: {
@@ -429,9 +575,13 @@ router.post('/:id/send-email', async (req: Request, res: Response, next) => {
       console.error('[Email] Failed to save proforma PDF to system:', fsErr);
     }
 
-    // Sanitize rich text inputs
-    const cleanBody = sanitizeRichText(body);
-    const cleanCustomNote = customNote ? sanitizeRichText(customNote) : cleanBody;
+    // Sanitize user-authored inputs: rich text goes through the allowlist,
+    // plain text is escaped (newlines are kept by white-space: pre-line).
+    const isHtml = typeof body === 'string' && /<\/?[a-z][\s\S]*>/i.test(body);
+    const cleanBody = isHtml ? sanitizeRichHtml(String(body)) : escapeHtml(String(body));
+    const cleanCustomNote = customNote ? sanitizeRichHtml(String(customNote)) : cleanBody;
+    const safeVerificationUrl =
+      typeof verificationUrl === 'string' && /^https?:\/\//i.test(verificationUrl) ? escapeHtml(verificationUrl) : undefined;
 
     // Generate styled branding HTML
     let emailHtml = '';
@@ -444,13 +594,12 @@ router.post('/:id/send-email', async (req: Request, res: Response, next) => {
         date: targetProforma.date ? new Date(targetProforma.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : undefined,
         dueDate: targetProforma.dueDate ? new Date(targetProforma.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : undefined,
         customNote: cleanCustomNote,
-        verificationUrl,
+        verificationUrl: safeVerificationUrl,
         followUpType: followUpType || 'GENTLE_REMINDER',
         items: targetProforma.items,
         deposit: targetProforma.deposit ?? undefined,
       });
     } else {
-      const isHtml = /<\/?[a-z][\s\S]*>/i.test(cleanBody);
       emailHtml = await generateEmailHtml({
         title: subject,
         preheader: subject,
@@ -504,45 +653,5 @@ router.post('/:id/send-email', async (req: Request, res: Response, next) => {
     next(error);
   }
 });
-
-function sanitizeRichText(html: string): string {
-  // Remove all dangerous tags entirely (script, style, iframe, object, etc.)
-  const stripped = html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
-    .replace(/<object[\s\S]*?>/gi, "")
-    .replace(/<embed[\s\S]*?>/gi, "")
-    .replace(/<form[\s\S]*?<\/form>/gi, "")
-    .replace(/<input[\s\S]*?>/gi, "")
-    .replace(/<link[\s\S]*?>/gi, "")
-    .replace(/<meta[\s\S]*?>/gi, "");
-
-  // Strip all HTML attributes from all remaining tags EXCEPT safe ones (keeps whitelist of tags and attributes)
-  const noAttribs = stripped.replace(/<(\w+)([^>]*?)(\/?)>/g, (_match: string, tag: string, attrs: string, selfClose: string) => {
-    const safeTags = new Set(["b","strong","i","em","u","s","strike","ul","ol","li","br","p","span","div","font"]);
-    if (safeTags.has(tag.toLowerCase())) {
-      const allowedAttrs: string[] = [];
-      const styleMatch = attrs.match(/style\s*=\s*["']([^"']*)["']/i);
-      const faceMatch = attrs.match(/face\s*=\s*["']([^"']*)["']/i);
-      const colorMatch = attrs.match(/color\s*=\s*["']([^"']*)["']/i);
-      if (styleMatch) allowedAttrs.push(styleMatch[0]);
-      if (faceMatch) allowedAttrs.push(faceMatch[0]);
-      if (colorMatch) allowedAttrs.push(colorMatch[0]);
-      const attrStr = allowedAttrs.length > 0 ? " " + allowedAttrs.join(" ") : "";
-      return `<${tag.toLowerCase()}${attrStr}${selfClose}>`;
-    }
-    return ""; // strip unknown/unsafe opening tags
-  });
-
-  // Also strip closing tags not in our whitelist
-  const cleanClosing = noAttribs.replace(/<\/(\w+)>/g, (_match: string, tag: string) => {
-    const safeTags = new Set(["b","strong","i","em","u","s","strike","ul","ol","li","p","span","div","font"]);
-    if (safeTags.has(tag.toLowerCase())) return `</${tag.toLowerCase()}>`;
-    return "";
-  });
-
-  return cleanClosing.trim();
-}
 
 export default router;
