@@ -4,6 +4,7 @@ import { PATHS } from './paths.js';
 import crypto from 'crypto';
 import fs from 'fs';
 import { AppError } from './errors.js';
+import { detectMediaType } from './social/media-safety.js';
 
 // ─── Document Uploads (PDF, images, office docs) ───────────────────
 
@@ -92,8 +93,22 @@ function isZip(buf: Buffer): boolean {
   return buf.length >= 2 && buf[0] === 0x50 && buf[1] === 0x4b;
 }
 function isMp4(buf: Buffer): boolean {
-  // Common MP4 starts with box size + 'ftyp'
+  // ISO-BMFF (MP4/M4V, modern MOV 'qt  ', HEIC/AVIF photos): box size + 'ftyp'
   return buf.length >= 12 && buf.subarray(4, 8).toString('ascii') === 'ftyp';
+}
+/** Legacy QuickTime files have no 'ftyp' box and open straight on a top-level atom. */
+const QUICKTIME_LEADING_ATOMS = new Set(['moov', 'mdat', 'wide', 'free', 'skip', 'pnot']);
+function isQuickTime(buf: Buffer): boolean {
+  if (detectMediaType(buf)?.ext === 'mov') return true;
+  return buf.length >= 8 && QUICKTIME_LEADING_ATOMS.has(buf.subarray(4, 8).toString('ascii'));
+}
+function isGif(buf: Buffer): boolean {
+  return detectMediaType(buf)?.ext === 'gif';
+}
+
+/** Whether a file header is an accepted media (image/video) upload. Exported for tests. */
+export function isAllowedMediaHeader(header: Buffer): boolean {
+  return isPng(header) || isJpeg(header) || isGif(header) || isWebp(header) || isMp4(header) || isQuickTime(header);
 }
 
 export function enforceMagicBytes(options: {
@@ -110,7 +125,7 @@ export function enforceMagicBytes(options: {
       if (options.kind === 'document') {
         ok = isPdf(header) || isPng(header) || isJpeg(header) || isWebp(header) || isZip(header);
       } else {
-        ok = isPng(header) || isJpeg(header) || isWebp(header) || isMp4(header);
+        ok = isAllowedMediaHeader(header);
       }
 
       if (!ok) {
