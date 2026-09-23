@@ -1,32 +1,117 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
-import { publishDestination } from '../lib/social/publish-destination.service.js';
+import {
+  publishDestination, claimDestination, finalizePostStatus,
+} from '../lib/social/publish-destination.service.js';
 import { diffDestinations } from '../lib/social/destination-diff.js';
-import { uploadSocialMediaFile } from '../lib/social/storage.service.js';
+import { uploadSocialMediaFile, sniffUploadedMedia } from '../lib/social/storage.service.js';
+import { isAllowedUploadDeclaration, isOwnMediaUrl, ownMediaBases } from '../lib/social/media-safety.js';
+import {
+  CLIENT_SETTABLE_POST_STATUSES, MANUALLY_PUBLISHABLE_DESTINATION_STATUSES,
+} from '../lib/social/post-status.js';
 import { callAI, resolveProviderKey } from '../lib/ai-provider.js';
+import { AppError } from '../lib/errors.js';
+import { logSocialError } from '../lib/social/safe-error.js';
 import multer from 'multer';
 import path from 'path';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { PATHS } from '../lib/paths.js';
 import {
   findLinkCandidates, linkImportedPostToGroup, unlinkImportedPost, PostLinkError,
 } from '../lib/social/post-link.service.js';
 
-/** Aggregate post status from per-destination outcomes. */
-function aggregatePostStatus(published: number, failed: number, total: number): string {
-  if (total > 0 && published === total) return 'PUBLISHED';
-  if (published > 0 && failed > 0) return 'PARTIAL';
-  if (failed > 0) return 'FAILED';
-  return 'PUBLISHING';
+/** Social account shape returned to the browser: never the encrypted tokens. */
+const SAFE_ACCOUNT = { omit: { accessTokenEnc: true, refreshTokenEnc: true } } as const;
+
+/**
+ * Every account a post targets must belong to the post's client and still be
+ * connected — otherwise one client's post could go out on another client's
+ * Pages. Returns the accounts keyed by id, or an error message for a 400.
+ */
+async function loadPublishableAccounts(
+  clientId: string,
+  accountIds: string[],
+): Promise<{ accounts: Map<string, { id: string; platform: string }> } | { error: string }> {
+  if (accountIds.some((id) => typeof id !== 'string' || !id)) {
+    return { error: 'accountIds must be a list of account ids' };
+  }
+  const accounts = accountIds.length
+    ? await prisma.socialAccount.findMany({
+        where: { id: { in: accountIds } },
+        select: { id: true, platform: true, clientId: true, isActive: true },
+      })
+    : [];
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  const missing = accountIds.filter((id) => !byId.has(id));
+  if (missing.length > 0) return { error: `Unknown account id(s): ${missing.join(', ')}` };
+  const foreign = accounts.filter((a) => a.clientId !== clientId);
+  if (foreign.length > 0) {
+    return { error: `Account(s) not connected to this client: ${foreign.map((a) => a.id).join(', ')}` };
+  }
+  const inactive = accounts.filter((a) => !a.isActive);
+  if (inactive.length > 0) {
+    return { error: `Account(s) are disconnected — reconnect before posting: ${inactive.map((a) => a.id).join(', ')}` };
+  }
+  return { accounts: new Map(accounts.map((a) => [a.id, { id: a.id, platform: a.platform }])) };
+}
+
+/**
+ * mediaUrls may only reference media this app uploaded — the publisher fetches
+ * each one server-side and pushes it to a social platform, so an arbitrary URL
+ * is an SSRF / file-exfiltration primitive. URLs already stored on the post are
+ * accepted unchanged so pre-existing posts stay editable (the fetch layer still
+ * refuses private addresses and non-upload local paths for those).
+ */
+function validateMediaUrls(mediaUrls: unknown, alreadyOnPost: unknown = []): string | null {
+  if (mediaUrls === undefined || mediaUrls === null) return null;
+  if (!Array.isArray(mediaUrls) || mediaUrls.length > 20) return 'mediaUrls must be a list of at most 20 URLs';
+  const existing = new Set(Array.isArray(alreadyOnPost) ? alreadyOnPost.filter((u) => typeof u === 'string') : []);
+  const bases = ownMediaBases(process.env);
+  for (const url of mediaUrls) {
+    if (typeof url !== 'string') return 'mediaUrls must be a list of URLs';
+    if (existing.has(url)) continue;
+    if (!isOwnMediaUrl(url, bases)) return 'Media must be uploaded through the media uploader';
+  }
+  return null;
+}
+
+/**
+ * Status a create/update request may set. Staff with write access schedule
+ * directly (the planner has no separate approver role), so SCHEDULED is
+ * allowed; engine-owned statuses are not.
+ */
+function validateRequestedStatus(status: unknown): string | null {
+  if (status === undefined || status === null || status === '') return null;
+  if (typeof status !== 'string' || !CLIENT_SETTABLE_POST_STATUSES.has(status)) {
+    return `status must be one of ${[...CLIENT_SETTABLE_POST_STATUSES].join(', ')}`;
+  }
+  return null;
 }
 
 const router = Router();
 // 500MB covers any realistic social video/image upload while bounding worst-case
-// disk/memory usage — multer's default fileSize limit is Infinity.
+// disk/memory usage — multer's default fileSize limit is Infinity. Only image
+// and video declarations get through; the bytes are checked after upload.
 const upload = multer({
   dest: path.join(PATHS.UPLOADS_ROOT, 'social-temp'),
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: 500 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (isAllowedUploadDeclaration(file.originalname || '', file.mimetype || '')) cb(null, true);
+    else cb(AppError.badRequest('Only JPG, PNG, GIF, WebP, MP4 and MOV files can be uploaded.'));
+  },
 });
+
+// The AI caption helper spends the agency's own provider key — bound it per user.
+const captionLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.userId ?? ipKeyGenerator(req.ip ?? ''),
+  message: { error: 'Too many caption requests — please try again later.' },
+});
+const MAX_CAPTION_PROMPT_CHARS = 4000;
 
 // 1. Create a Post (Draft or Scheduled)
 router.post('/posts', authenticate, async (req, res, next) => {
@@ -40,21 +125,24 @@ router.post('/posts', authenticate, async (req, res, next) => {
 
     const safeCaption = caption ?? '';
 
-    // FIX: previously created destinations with platform: 'UNKNOWN' and then
-    // patched each one individually in a follow-up loop (N extra queries, plus
-    // a window where a post that failed partway through the loop was left with
-    // some destinations still stuck on 'UNKNOWN'). Resolve accounts first, then
-    // create the post with the correct platform on every destination in one write.
-    const accounts = await prisma.socialAccount.findMany({
-      where: { id: { in: accountIds } },
-    });
-    const accountMap = new Map(accounts.map(a => [a.id, a]));
-
-    const missing = accountIds.filter(id => !accountMap.has(id));
-    if (missing.length > 0) {
-      res.status(400).json({ error: `Unknown account id(s): ${missing.join(', ')}` });
+    const statusError = validateRequestedStatus(status);
+    const mediaError = validateMediaUrls(mediaUrls);
+    if (statusError || mediaError) {
+      res.status(400).json({ error: statusError || mediaError });
       return;
     }
+
+    // One destination per account (a repeated id would publish twice).
+    const uniqueAccountIds = [...new Set(accountIds as string[])];
+
+    // Resolve accounts first, then create the post with the correct platform on
+    // every destination in one write.
+    const loaded = await loadPublishableAccounts(clientId as string, uniqueAccountIds);
+    if ('error' in loaded) {
+      res.status(400).json({ error: loaded.error });
+      return;
+    }
+    const accountMap = loaded.accounts;
 
     const post = await prisma.socialPost.create({
       data: {
@@ -67,7 +155,7 @@ router.post('/posts', authenticate, async (req, res, next) => {
         scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
         campaignId: campaignId as string | null,
         destinations: {
-          create: accountIds.map(accountId => ({
+          create: uniqueAccountIds.map(accountId => ({
             socialAccountId: accountId,
             platform: accountMap.get(accountId)!.platform,
             status: 'QUEUED',
@@ -142,7 +230,7 @@ router.get('/posts/:id', authenticate, async (req, res, next) => {
       include: {
         destinations: {
           include: {
-            socialAccount: true,
+            socialAccount: SAFE_ACCOUNT,
           },
         },
         insights: true,
@@ -180,6 +268,19 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
       return;
     }
 
+    const statusError = validateRequestedStatus(status);
+    const mediaError = validateMediaUrls(mediaUrls, currentPost.mediaUrls);
+    if (statusError || mediaError) {
+      res.status(400).json({ error: statusError || mediaError });
+      return;
+    }
+    // While a publish is in flight the engine owns the status; a PUT would
+    // either be overwritten or strand the post.
+    if (status && currentPost.status === 'PUBLISHING') {
+      res.status(409).json({ error: 'This post is being published right now — try again in a moment.' });
+      return;
+    }
+
     if (accountIds && Array.isArray(accountIds)) {
       // Reconcile destinations as a DIFF, never a wipe-and-rebuild.
       //
@@ -201,23 +302,36 @@ router.put('/posts/:id', authenticate, async (req, res, next) => {
         accountIds as string[],
       );
 
+      // Validate newly added accounts before touching anything.
+      let accountMap = new Map<string, { id: string; platform: string }>();
+      if (accountsToQueue.length > 0) {
+        const loaded = await loadPublishableAccounts(currentPost.clientId, accountsToQueue);
+        if ('error' in loaded) {
+          res.status(400).json({ error: loaded.error });
+          return;
+        }
+        accountMap = loaded.accounts;
+      }
+
       if (toRemove.length > 0) {
-        await prisma.socialPostDestination.deleteMany({ where: { id: { in: toRemove } } });
+        // Conditional on status so a destination the scheduler claimed since we
+        // read it is never deleted out from under an in-flight publish.
+        await prisma.socialPostDestination.deleteMany({
+          where: { id: { in: toRemove }, status: { notIn: ['PUBLISHED', 'PUBLISHING'] } },
+        });
       }
 
       if (accountsToQueue.length > 0) {
-        const accounts = await prisma.socialAccount.findMany({
-          where: { id: { in: accountsToQueue } },
-        });
-        const accountMap = new Map(accounts.map((a) => [a.id, a]));
-
         await prisma.socialPostDestination.createMany({
           data: accountsToQueue.map((accountId: string) => ({
             postId: id as string,
             socialAccountId: accountId,
-            platform: accountMap.get(accountId)?.platform || 'UNKNOWN',
+            platform: accountMap.get(accountId)!.platform,
             status: 'QUEUED',
           })),
+          // (postId, socialAccountId) is unique: a concurrent edit that already
+          // added the same account is not an error.
+          skipDuplicates: true,
         });
       }
     }
@@ -321,94 +435,73 @@ router.post('/posts/:id/reject', authenticate, async (req, res, next) => {
   }
 });
 
-// 9. Publish immediately
+// 9/10. Publish immediately, or retry failed destinations.
+//
+// Both are one-shot (maxAttempts 1, skipped → FAILED): they always finish by
+// writing a non-SCHEDULED aggregate, and the scheduler only claims destinations
+// of SCHEDULED posts, so nothing may be left QUEUED by them.
+async function publishPostNow(
+  postId: string,
+  pickDestinations: (dests: any[]) => any[],
+  claimFrom: readonly string[],
+): Promise<any | null> {
+  const post = (await prisma.socialPost.findUnique({
+    where: { id: postId },
+    include: { destinations: { include: { socialAccount: true } } },
+  })) as any;
+  if (!post) return null;
+
+  // What to put back while untargeted destinations are still QUEUED: the
+  // status the post had (never an engine status), so they are neither
+  // stranded in PUBLISHING nor published behind the user's back.
+  const restoreStatus = CLIENT_SETTABLE_POST_STATUSES.has(post.status) ? post.status : 'DRAFT';
+
+  await prisma.socialPost.update({ where: { id: postId }, data: { status: 'PUBLISHING' } });
+  try {
+    for (const dest of pickDestinations(post.destinations)) {
+      try {
+        // Claim atomically and only from a publishable state. This used to be
+        // `status != 'PUBLISHING'`, which also matched PUBLISHED — so a
+        // destination the scheduler had just published was published again.
+        if (!(await claimDestination(dest.id as string, claimFrom))) continue;
+        await publishDestination(dest, post, { maxAttempts: 1, skippedStatus: 'FAILED' });
+      } catch (err: unknown) {
+        logSocialError(`Manual publish of destination ${dest.id} failed`, err);
+      }
+    }
+  } finally {
+    // Always re-derive the post status, even if something above threw — a
+    // post left in PUBLISHING is invisible to the scheduler and the UI.
+    await finalizePostStatus(postId, restoreStatus);
+  }
+
+  return prisma.socialPost.findUnique({
+    where: { id: postId },
+    include: { destinations: { include: { socialAccount: SAFE_ACCOUNT } } },
+  });
+}
+
 router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
   try {
-    const { id } = req.params;
     const { accountIds: targetAccountIds } = req.body || {};
-    const post = (await prisma.socialPost.findUnique({
-      where: { id: id as string },
-      include: {
-        destinations: {
-          include: { socialAccount: true },
-        },
-      },
-    })) as any;
-
-    if (!post) {
-      res.status(404).json({ error: 'Post not found' });
-      return;
-    }
-
     const targetSet =
       Array.isArray(targetAccountIds) && targetAccountIds.length > 0
         ? new Set(targetAccountIds as string[])
         : null;
 
-    // Never re-publish destinations that already succeeded — edit/retry must only
-    // hit QUEUED/FAILED (or explicitly targeted unpublished) accounts.
-    const destinationsToPublish = post.destinations.filter((dest: any) => {
-      if (dest.status === 'PUBLISHED' && dest.platformPostId) return false;
-      if (targetSet && !targetSet.has(dest.socialAccountId)) return false;
-      return true;
-    });
-
-    // Set post status to PUBLISHING
-    await prisma.socialPost.update({
-      where: { id: id as string },
-      data: { status: 'PUBLISHING' },
-    });
-
-    const errorsList: string[] = [];
-
-    for (const dest of destinationsToPublish) {
-      // Claim atomically: if the scheduler has already claimed this destination
-      // (status flipped to PUBLISHING between the fetch above and now), skip it
-      // instead of publishing it a second time concurrently with the cron.
-      const claim = await prisma.socialPostDestination.updateMany({
-        where: { id: dest.id as string, status: { not: 'PUBLISHING' } },
-        data: { status: 'PUBLISHING', lockedAt: new Date(), lastAttemptAt: new Date() },
-      });
-      if (claim.count === 0) continue;
-
-      // One-shot: a failure here is terminal, because this route always writes a
-      // non-SCHEDULED aggregate status below and the scheduler only ever claims
-      // destinations whose post is SCHEDULED.
-      const result = await publishDestination(dest, post, { maxAttempts: 1, skippedStatus: 'FAILED' });
-      if (result.outcome !== 'published') {
-        errorsList.push(`${dest.platform}: ${result.error}`);
-      }
+    const finalPost = await publishPostNow(
+      req.params.id as string,
+      // Never re-publish destinations that already succeeded — only QUEUED/FAILED
+      // (optionally narrowed to the accounts the caller targeted).
+      (dests) => dests.filter((dest: any) =>
+        (MANUALLY_PUBLISHABLE_DESTINATION_STATUSES as readonly string[]).includes(dest.status) &&
+        (!targetSet || targetSet.has(dest.socialAccountId))),
+      MANUALLY_PUBLISHABLE_DESTINATION_STATUSES,
+    );
+    if (!finalPost) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
     }
-
-    // Check resulting statuses of all destinations for this post
-    const allDests = await prisma.socialPostDestination.findMany({
-      where: { postId: id as string },
-    });
-    const totalDests = allDests.length;
-    const publishedDests = allDests.filter((d) => d.status === 'PUBLISHED').length;
-    const failedDests = allDests.filter((d) => d.status === 'FAILED').length;
-    const isAllPublished = totalDests > 0 && publishedDests === totalDests;
-    const aggregateStatus = aggregatePostStatus(publishedDests, failedDests, totalDests);
-
-    const finalPost = await prisma.socialPost.update({
-      where: { id: id as string },
-      data: {
-        status: aggregateStatus,
-        // Keep the first successful publish time on partial failures instead of clearing it.
-        publishedAt: isAllPublished
-          ? new Date()
-          : publishedDests > 0
-            ? (post.publishedAt || new Date())
-            : null,
-        errorMessage: isAllPublished ? null : (errorsList.length > 0 ? errorsList.join('; ') : null),
-      },
-      include: {
-        destinations: {
-          include: { socialAccount: true },
-        },
-      },
-    });
-
     res.json(finalPost);
     return;
   } catch (err) {
@@ -416,76 +509,17 @@ router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
   }
 });
 
-// 10. Retry failed destinations
 router.post('/posts/:id/retry', authenticate, async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const post = (await prisma.socialPost.findUnique({
-      where: { id: id as string },
-      include: {
-        destinations: {
-          where: { status: 'FAILED' },
-          include: { socialAccount: true },
-        },
-      },
-    })) as any;
-
-    if (!post) {
+    const finalPost = await publishPostNow(
+      req.params.id as string,
+      (dests) => dests.filter((dest: any) => dest.status === 'FAILED'),
+      ['FAILED'],
+    );
+    if (!finalPost) {
       res.status(404).json({ error: 'Post not found' });
       return;
     }
-
-    await prisma.socialPost.update({
-      where: { id: id as string },
-      data: { status: 'PUBLISHING' },
-    });
-
-    const errorsList: string[] = [];
-
-    for (const dest of post.destinations) {
-      // Claim conditionally, like publish-now. This used to be an unconditional
-      // update(), so a manual retry that overlapped a scheduler tick already
-      // holding the destination would publish it a second time.
-      const claim = await prisma.socialPostDestination.updateMany({
-        where: { id: dest.id as string, status: { not: 'PUBLISHING' } },
-        data: { status: 'PUBLISHING', lockedAt: new Date(), lastAttemptAt: new Date() },
-      });
-      if (claim.count === 0) continue;
-
-      const result = await publishDestination(dest, post, { maxAttempts: 1, skippedStatus: 'FAILED' });
-      if (result.outcome !== 'published') {
-        errorsList.push(`${dest.platform}: ${result.error}`);
-      }
-    }
-
-    // Check resulting statuses of all destinations for this post
-    const allDests = await prisma.socialPostDestination.findMany({
-      where: { postId: id as string },
-    });
-    const totalDests = allDests.length;
-    const publishedDests = allDests.filter((d) => d.status === 'PUBLISHED').length;
-    const failedDests = allDests.filter((d) => d.status === 'FAILED').length;
-    const isAllPublished = totalDests > 0 && publishedDests === totalDests;
-    const aggregateStatus = aggregatePostStatus(publishedDests, failedDests, totalDests);
-
-    const finalPost = await prisma.socialPost.update({
-      where: { id: id as string },
-      data: {
-        status: aggregateStatus,
-        publishedAt: isAllPublished
-          ? new Date()
-          : publishedDests > 0
-            ? (post.publishedAt || new Date())
-            : null,
-        errorMessage: isAllPublished ? null : (errorsList.length > 0 ? errorsList.join('; ') : null),
-      },
-      include: {
-        destinations: {
-          include: { socialAccount: true },
-        },
-      },
-    });
-
     res.json(finalPost);
     return;
   } catch (err) {
@@ -528,7 +562,7 @@ router.post('/posts/:id/linked-imports', authenticate, async (req, res, next) =>
     // so the client can drop it straight into state without a second round trip.
     const post = await prisma.socialPost.findUnique({
       where: { id: req.params.id as string },
-      include: { destinations: { include: { socialAccount: true } }, insights: true },
+      include: { destinations: { include: { socialAccount: SAFE_ACCOUNT } }, insights: true },
     });
     res.status(201).json({ linked: true, platform, destinationId: destination.id, post });
     return;
@@ -559,7 +593,15 @@ router.post('/media/upload', authenticate, upload.single('file'), async (req, re
       return;
     }
 
-    const publicUrl = await uploadSocialMediaFile(file);
+    // Type the file by its bytes; the stored extension/Content-Type come from
+    // this, so nothing uploaded here can be served back as HTML/SVG/JS.
+    const detected = await sniffUploadedMedia(file);
+    if (!detected) {
+      res.status(400).json({ error: 'File content is not a supported image or video (JPG, PNG, GIF, WebP, MP4, MOV).' });
+      return;
+    }
+
+    const publicUrl = await uploadSocialMediaFile(file, detected);
     res.json({ url: publicUrl });
     return;
   } catch (err) {
@@ -568,11 +610,15 @@ router.post('/media/upload', authenticate, upload.single('file'), async (req, re
 });
 
 // 12. AI generate caption (Gemini/configured model)
-router.post('/ai/caption', authenticate, async (req, res, next) => {
+router.post('/ai/caption', authenticate, captionLimiter, async (req, res, next) => {
   try {
-    const { prompt, platform } = req.body;
-    if (!prompt || !platform) {
+    const { prompt, platform } = req.body ?? {};
+    if (!prompt || !platform || typeof prompt !== 'string' || typeof platform !== 'string') {
       res.status(400).json({ error: 'Missing prompt or platform' });
+      return;
+    }
+    if (prompt.length > MAX_CAPTION_PROMPT_CHARS || platform.length > 32) {
+      res.status(400).json({ error: `Prompt is too long (max ${MAX_CAPTION_PROMPT_CHARS} characters)` });
       return;
     }
 

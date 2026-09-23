@@ -1,9 +1,15 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
-import { requireModuleAccess } from '../lib/permission-guard.js';
+import { requireModuleAccess, requirePermission } from '../lib/permission-guard.js';
 import { logSocialError } from '../lib/social/safe-error.js';
-import { verifyOAuthState, createOAuthState } from '../lib/social/oauth-state.service.js';
+import {
+  consumeOAuthState,
+  createOAuthState,
+  createPickerSession,
+  getPickerSession,
+  deletePickerSession,
+} from '../lib/social/oauth-state.service.js';
 import { encryptToken, decryptToken } from '../lib/social/token-crypto.service.js';
 import * as meta from '../lib/social/meta.service.js';
 import * as tiktok from '../lib/social/tiktok.service.js';
@@ -11,11 +17,13 @@ import * as linkedin from '../lib/social/linkedin.service.js';
 import * as youtube from '../lib/social/youtube.service.js';
 import * as x from '../lib/social/x.service.js';
 import * as pinterest from '../lib/social/pinterest.service.js';
-import { randomBytes } from 'crypto';
 
 const router = Router();
 
-// ─── In-memory account picker session store (10 min TTL) ─────────────────────
+// ─── Account picker sessions ─────────────────────────────────────────────────
+// Stored server-side (encrypted, 10 min TTL, bound to the user who started the
+// connect) by oauth-state.service — not in process memory, so the picker keeps
+// working when requests land on different instances.
 type PendingMetaPage = {
   pageId: string;
   pageName: string;
@@ -29,7 +37,6 @@ type PendingMetaPage = {
 };
 
 type PendingPickerSession = {
-  expires: number;
   platform: string;
   clientId: string;
   groupId: string;
@@ -44,13 +51,6 @@ type PendingPickerSession = {
   allPages?: PendingMetaPage[];
 };
 
-const pendingOAuthStore = new Map<string, PendingPickerSession>();
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of pendingOAuthStore) {
-    if (v.expires < now) pendingOAuthStore.delete(k);
-  }
-}, 60_000);
 
 // ─── Platform capability map ──────────────────────────────────────────────────
 const PLATFORM_CAPABILITIES: Record<string, Record<string, boolean>> = {
@@ -67,12 +67,26 @@ const PLATFORM_CAPABILITIES: Record<string, Record<string, boolean>> = {
 const ALL_PLATFORMS = ['facebook', 'instagram', 'linkedin', 'tiktok', 'youtube', 'x', 'threads', 'pinterest'];
 
 // ─── 1. OAuth connect — redirects to platform ────────────────────────────────
-router.get('/oauth/connect', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
+// Linking an account changes what the agency can publish to, so this needs
+// WRITE — not the READ that a GET would get from requireModuleAccess.
+router.get('/oauth/connect', authenticate, requirePermission('social_media', 'WRITE'), async (req, res, next) => {
   try {
     const { platform, clientId, groupId } = req.query as { platform: string; clientId: string; groupId: string };
 
-    if (!platform || !clientId || !groupId) {
+    if (
+      typeof platform !== 'string' || typeof clientId !== 'string' || typeof groupId !== 'string' ||
+      !platform || !clientId || !groupId
+    ) {
       res.status(400).json({ error: 'Missing platform, clientId, or groupId' });
+      return;
+    }
+    if (!ALL_PLATFORMS.includes(platform)) {
+      res.status(400).json({ error: 'Unsupported platform' });
+      return;
+    }
+    const client = await prisma.client.findUnique({ where: { id: clientId }, select: { id: true } });
+    if (!client) {
+      res.status(404).json({ error: 'Client not found' });
       return;
     }
 
@@ -90,9 +104,18 @@ router.get('/oauth/connect', authenticate, requireModuleAccess('social_media'), 
       return;
     }
 
+    // Persisted server-side and single-use; X's PKCE verifier stays with it.
+    const { state, codeVerifier } = await createOAuthState({
+      platform,
+      clientId,
+      groupId,
+      userId: req.user!.userId,
+      withPkce: platform === 'x',
+    });
+
     let authUrl = '';
     if (platform === 'facebook' || platform === 'instagram' || platform === 'threads') {
-      authUrl = meta.getMetaAuthorizationUrl(platform as any, clientId, groupId);
+      authUrl = meta.getMetaAuthorizationUrl(platform as any, state);
       try {
         const parsed = new URL(authUrl);
         console.log(
@@ -103,15 +126,15 @@ router.get('/oauth/connect', authenticate, requireModuleAccess('social_media'), 
         /* ignore URL parse errors */
       }
     } else if (platform === 'tiktok') {
-      authUrl = tiktok.getTikTokAuthorizationUrl(clientId, groupId);
+      authUrl = tiktok.getTikTokAuthorizationUrl(state);
     } else if (platform === 'linkedin') {
-      authUrl = linkedin.getLinkedInAuthorizationUrl(clientId, groupId);
+      authUrl = linkedin.getLinkedInAuthorizationUrl(state);
     } else if (platform === 'youtube') {
-      authUrl = youtube.getYouTubeAuthorizationUrl(clientId, groupId);
+      authUrl = youtube.getYouTubeAuthorizationUrl(state);
     } else if (platform === 'x') {
-      authUrl = x.getXAuthorizationUrl(clientId, groupId);
+      authUrl = x.getXAuthorizationUrl(state, codeVerifier!);
     } else if (platform === 'pinterest') {
-      authUrl = pinterest.getPinterestAuthorizationUrl(clientId, groupId);
+      authUrl = pinterest.getPinterestAuthorizationUrl(state);
     } else {
       res.status(400).json({ error: 'Unsupported platform' });
       return;
@@ -126,7 +149,11 @@ router.get('/oauth/connect', authenticate, requireModuleAccess('social_media'), 
 });
 
 // ─── 2. OAuth callback ────────────────────────────────────────────────────────
-router.get('/oauth/callback/:platform', async (req, res, next) => {
+// Unauthenticated by necessity (a top-level redirect from the platform carries
+// no bearer token). What makes it safe is the state: an opaque id minted by
+// /oauth/connect for an authenticated WRITE user, stored server-side, and
+// deleted here on first use — so it cannot be forged, replayed or reused.
+router.get('/oauth/callback/:platform', async (req, res, _next) => {
   const { platform } = req.params;
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -147,10 +174,8 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
     }
     if (!code || !state) throw new Error('Callback missing code or state parameters');
 
-    const verified = verifyOAuthState(state);
-    if (verified.platform !== platform) throw new Error('OAuth state platform mismatch');
-
-    const { clientId, groupId } = verified as { clientId: string; groupId: string };
+    const verified = await consumeOAuthState(state, platform);
+    const { clientId, groupId } = verified;
     let tokenData: any = {};
 
     // ── Meta (Facebook / Instagram) ──
@@ -205,9 +230,7 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
       }
 
       // Multiple pages → store in picker session
-      const sessionId = randomBytes(16).toString('hex');
-      pendingOAuthStore.set(sessionId, {
-        expires: Date.now() + 10 * 60 * 1000,
+      const sessionId = await createPickerSession<PendingPickerSession>(verified.userId, {
         platform,
         clientId,
         groupId,
@@ -250,8 +273,8 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
       const d = await youtube.exchangeYouTubeCodeForToken(code);
       tokenData = { accessToken: d.access_token, refreshToken: d.refresh_token, expiresIn: d.expires_in, userId: d.channelId, username: d.name };
     } else if (platform === 'x') {
-      const codeVerifier = (verified as any).codeVerifier || req.cookies?.x_code_verifier || '';
-      const d = await x.exchangeXCodeForToken(code, codeVerifier);
+      if (!verified.codeVerifier) throw new Error('OAuth state is missing the PKCE verifier — start the connection again.');
+      const d = await x.exchangeXCodeForToken(code, verified.codeVerifier);
       tokenData = { accessToken: d.access_token, refreshToken: d.refresh_token, expiresIn: d.expires_in, userId: d.platformUserId, username: d.username };
     } else if (platform === 'pinterest') {
       const d = await pinterest.exchangePinterestCodeForToken(code);
@@ -278,6 +301,11 @@ router.get('/oauth/callback/:platform', async (req, res, next) => {
         accessTokenEnc: encryptToken(tokenData.accessToken),
         refreshTokenEnc: tokenData.refreshToken ? encryptToken(tokenData.refreshToken) : null,
         tokenExpiresAt: tokenData.expiresIn ? new Date(Date.now() + tokenData.expiresIn * 1000) : null,
+        // Reconnecting revives a soft-disconnected account (same as the Meta
+        // path) — publishing and sync skip inactive accounts.
+        isActive: true,
+        healthStatus: 'healthy',
+        healthMessage: null,
       },
     });
 
@@ -574,8 +602,8 @@ async function saveMetaAccount(
 
 // ─── 3. Get pending picker session ───────────────────────────────────────────
 router.get('/oauth/pending/:sessionId', authenticate, requireModuleAccess('social_media'), async (req, res) => {
-  const session = pendingOAuthStore.get(req.params.sessionId as string);
-  if (!session || session.expires < Date.now()) {
+  const session = await getPickerSession<PendingPickerSession>(req.params.sessionId as string, req.user!.userId);
+  if (!session) {
     res.status(410).json({ error: 'Session expired or not found. Please start the connection again.' });
     return;
   }
@@ -621,7 +649,7 @@ router.get('/oauth/pending/:sessionId', authenticate, requireModuleAccess('socia
 });
 
 // ─── 4. Confirm account picker selection ─────────────────────────────────────
-router.post('/oauth/select-account', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
+router.post('/oauth/select-account', authenticate, requirePermission('social_media', 'WRITE'), async (req, res, next) => {
   try {
     // `assignments` routes each Page to its own client, so one Facebook grant can
     // populate several clients in a single pass — the whole point of opting in to
@@ -638,8 +666,8 @@ router.post('/oauth/select-account', authenticate, requireModuleAccess('social_m
       return;
     }
 
-    const session = pendingOAuthStore.get(sessionId);
-    if (!session || session.expires < Date.now()) {
+    const session = await getPickerSession<PendingPickerSession>(sessionId, req.user!.userId);
+    if (!session) {
       res.status(410).json({ error: 'Session expired. Please reconnect.' });
       return;
     }
@@ -716,7 +744,7 @@ router.post('/oauth/select-account', authenticate, requireModuleAccess('social_m
       siblingsDropped = reconcile.dropped;
     }
 
-    pendingOAuthStore.delete(sessionId);
+    await deletePickerSession(sessionId);
     res.json({
       success: true,
       savedCount,
@@ -1101,10 +1129,16 @@ router.get('/accounts/by-client/:clientId', authenticate, requireModuleAccess('s
 // ─── 10. Update account ──────────────────────────────────────────────────────
 router.put('/accounts/:id', authenticate, requireModuleAccess('social_media'), async (req, res, next) => {
   try {
-    const { groupName, groupColor, isActive } = req.body;
+    const { groupName, groupColor, isActive } = req.body ?? {};
     const account = await prisma.socialAccount.update({
       where: { id: req.params.id as string },
-      data: { groupName, groupColor, isActive },
+      data: {
+        groupName: typeof groupName === 'string' || groupName === null ? groupName : undefined,
+        groupColor: typeof groupColor === 'string' || groupColor === null ? groupColor : undefined,
+        isActive: typeof isActive === 'boolean' ? isActive : undefined,
+      },
+      // Never hand the encrypted tokens back to the browser.
+      omit: { accessTokenEnc: true, refreshTokenEnc: true },
     });
     res.json(account);
   } catch (err) { next(err); }

@@ -157,8 +157,25 @@ app.get('/api/health', async (_req, res) => {
 
 app.use('/api', routes);
 
-// Serve social media assets publicly for external platforms (Meta/TikTok/etc) to download
-app.use('/public-uploads', express.static(path.join(PATHS.UPLOADS_ROOT, 'social')));
+// Serve social media assets publicly for external platforms (Meta/TikTok/etc) to download.
+// This is the API origin, so nothing here may ever render as an active document:
+// new uploads are typed by magic bytes, and these headers neuter anything older
+// (e.g. a legacy upload that kept a .html/.svg extension) — no sniffing, a
+// sandboxed no-script CSP, and a download for anything that isn't image/video.
+const PUBLIC_MEDIA_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.m4v', '.mov']);
+app.use('/public-uploads', express.static(path.join(PATHS.UPLOADS_ROOT, 'social'), {
+  dotfiles: 'ignore',
+  index: false,
+  redirect: false,
+  setHeaders: (res, filePath) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    if (!PUBLIC_MEDIA_EXTENSIONS.has(path.extname(filePath).toLowerCase())) {
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', 'attachment');
+    }
+  },
+}));
 
 // Handle protected file access first
 app.use('/uploads', fileRoutes);

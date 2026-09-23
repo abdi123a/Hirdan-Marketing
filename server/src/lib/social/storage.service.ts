@@ -5,7 +5,12 @@ import { Readable } from 'stream';
 import path from 'path';
 import crypto from 'crypto';
 import axios from 'axios';
+import dns from 'node:dns';
+import http from 'node:http';
+import https from 'node:https';
+import net from 'node:net';
 import { PATHS } from '../paths.js';
+import { detectMediaType, isPrivateAddress, publicUploadFilename, type DetectedMedia } from './media-safety.js';
 
 let _s3Client: S3Client | null = null;
 
@@ -29,10 +34,38 @@ function warnIfLocalStorageUrlInProd(publicUrl: string) {
   }
 }
 
-export async function uploadSocialMediaFile(file: Express.Multer.File): Promise<string> {
+/**
+ * Type an uploaded temp file by its magic bytes. Null (and the temp file
+ * removed) when it is not an allowed image/video — the caller answers 400.
+ */
+export async function sniffUploadedMedia(file: Express.Multer.File): Promise<DetectedMedia | null> {
+  let detected: DetectedMedia | null = null;
+  try {
+    const handle = await fs.open(file.path, 'r');
+    try {
+      const buf = Buffer.alloc(32);
+      const { bytesRead } = await handle.read(buf, 0, 32, 0);
+      detected = detectMediaType(buf.subarray(0, bytesRead));
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    detected = null;
+  }
+  if (!detected) {
+    await fs.unlink(file.path).catch(() => {});
+  }
+  return detected;
+}
+
+/**
+ * Store an upload that sniffUploadedMedia() has already typed. The extension and
+ * Content-Type come from the detected type, never from the client's filename or
+ * declared MIME — an upload named x.html can no longer be served as HTML.
+ */
+export async function uploadSocialMediaFile(file: Express.Multer.File, detected: DetectedMedia): Promise<string> {
   const provider = process.env.STORAGE_PROVIDER || 'local';
-  const ext = path.extname(file.originalname);
-  const filename = `social-${crypto.randomUUID()}${ext}`;
+  const filename = `social-${crypto.randomUUID()}.${detected.ext}`;
 
   if (provider === 'local') {
     const destinationPath = path.join(PATHS.UPLOADS_ROOT, 'social', filename);
@@ -55,7 +88,7 @@ export async function uploadSocialMediaFile(file: Express.Multer.File): Promise<
         Key: filename,
         Body: fsSync.createReadStream(file.path),
         ContentLength: size,
-        ContentType: file.mimetype,
+        ContentType: detected.mime,
       }));
     } finally {
       // Always clean up the multer temp file, even if the S3 upload itself
@@ -88,18 +121,58 @@ function resolveWithinBase(baseDir: string, relativePath: string): string | null
 /**
  * The on-disk path this media URL refers to, or null when it is not one of ours.
  * Returns null (rather than throwing) so callers can fall back to fetching.
+ *
+ * Only the social uploads directory is ever read. This used to also map any
+ * `/uploads/<path>` URL onto UPLOADS_ROOT, so a post whose mediaUrls pointed at
+ * /uploads/employee-docs/… pushed that private file to a social platform.
  */
 function localPathForMediaUrl(mediaUrl: string): string | null {
   if ((process.env.STORAGE_PROVIDER || 'local') !== 'local') return null;
-  if (mediaUrl.includes('/public-uploads/')) {
-    const filename = mediaUrl.split('/public-uploads/').pop() as string;
-    return resolveWithinBase(path.join(PATHS.UPLOADS_ROOT, 'social'), filename);
+  const filename = publicUploadFilename(mediaUrl);
+  if (!filename) return null;
+  return resolveWithinBase(path.join(PATHS.UPLOADS_ROOT, 'social'), filename);
+}
+
+/**
+ * DNS lookup that refuses private/loopback/link-local answers. Installed on the
+ * fetch agents so the check applies to the address actually connected to —
+ * including after redirects and against DNS rebinding.
+ */
+function guardedLookup(hostname: string, options: any, callback: any): void {
+  dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
+    if (err) return callback(err);
+    const list = addresses as unknown as dns.LookupAddress[];
+    if (!list.length || list.some((a) => isPrivateAddress(a.address))) {
+      return callback(new Error(`Refusing to fetch media from a private address (${hostname})`));
+    }
+    if (options?.all) return callback(null, list);
+    return callback(null, list[0].address, list[0].family);
+  });
+}
+
+const guardedHttpsAgent = new https.Agent({ lookup: guardedLookup as any });
+const guardedHttpAgent = new http.Agent({ lookup: guardedLookup as any });
+
+function assertFetchableMediaUrl(mediaUrl: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(mediaUrl);
+  } catch {
+    throw new Error('Invalid media URL');
   }
-  if (mediaUrl.includes('/uploads/')) {
-    const subPath = mediaUrl.split('/uploads/').pop() as string;
-    return resolveWithinBase(PATHS.UPLOADS_ROOT, subPath);
+  // Plain http is tolerated only for our own local-dev public URL; anything
+  // else remote must be https.
+  const ownBase = (process.env.STORAGE_PUBLIC_URL || '').replace(/\/+$/, '');
+  const isOwnHttp = parsed.protocol === 'http:' && ownBase.startsWith('http:') && mediaUrl.startsWith(ownBase + '/');
+  if (parsed.protocol !== 'https:' && !isOwnHttp) {
+    throw new Error('Media URL must use https');
   }
-  return null;
+  const host = parsed.hostname.replace(/^\[|\]$/g, '');
+  // IP literals skip DNS (and so the guarded lookup) — check them directly.
+  if (net.isIP(host) && isPrivateAddress(host) && !isOwnHttp) {
+    throw new Error('Refusing to fetch media from a private address');
+  }
+  return parsed;
 }
 
 export async function getMediaBuffer(mediaUrl: string): Promise<Buffer> {
@@ -111,7 +184,21 @@ export async function getMediaBuffer(mediaUrl: string): Promise<Buffer> {
       console.warn(`[getMediaBuffer] Failed to read local file for ${mediaUrl}:`, err.message);
     }
   }
-  const response = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+  const parsed = assertFetchableMediaUrl(mediaUrl);
+  const ownLocalDev = parsed.protocol === 'http:';
+  const response = await axios.get(mediaUrl, {
+    responseType: 'arraybuffer',
+    timeout: 120_000,
+    maxContentLength: 600 * 1024 * 1024,
+    maxRedirects: 3,
+    // Our own local-dev URL is localhost by definition; everything else goes
+    // through the private-address guard.
+    httpAgent: ownLocalDev ? undefined : guardedHttpAgent,
+    httpsAgent: guardedHttpsAgent,
+    beforeRedirect: (options: any) => {
+      if (options.protocol !== 'https:') throw new Error('Refusing non-https media redirect');
+    },
+  } as any);
   return Buffer.from(response.data);
 }
 

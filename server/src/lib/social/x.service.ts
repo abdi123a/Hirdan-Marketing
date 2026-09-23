@@ -1,20 +1,22 @@
-import { createHash, randomBytes } from 'crypto';
 import axios from 'axios';
 import FormData from 'form-data';
-import { createOAuthState } from './oauth-state.service.js';
+import { pkceChallenge } from './oauth-state.service.js';
 import { getMediaSource, readMediaRange } from './storage.service.js';
 import { xMediaMime, xMediaCategory, xMediaId, planXChunks } from './x-media.js';
 
-export function getXAuthorizationUrl(clientIdStr: string, groupId: string, existingCodeVerifier?: string): string {
+/**
+ * `state` and `codeVerifier` come from createOAuthState({ withPkce: true }). The
+ * verifier is stored server-side with the state row; only its S256 challenge
+ * leaves the server.
+ */
+export function getXAuthorizationUrl(state: string, codeVerifier: string): string {
   const clientId = process.env.X_CLIENT_ID;
   if (!clientId) {
     throw new Error('X_CLIENT_ID is not configured');
   }
 
   const redirectUri = process.env.X_REDIRECT_URI || '';
-  const codeVerifier = existingCodeVerifier || randomBytes(32).toString('base64url');
-  const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
-  const state = createOAuthState('x', clientIdStr, groupId, { codeVerifier });
+  const codeChallenge = pkceChallenge(codeVerifier);
 
   const params = new URLSearchParams({
     response_type: 'code',

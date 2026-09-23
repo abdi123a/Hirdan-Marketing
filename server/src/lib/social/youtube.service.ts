@@ -1,12 +1,10 @@
 import axios from 'axios';
-import { createOAuthState } from './oauth-state.service.js';
 import { openMediaStream } from './storage.service.js';
 
-export function getYouTubeAuthorizationUrl(clientIdStr: string, groupId: string): string {
+export function getYouTubeAuthorizationUrl(state: string): string {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) throw new Error('GOOGLE_CLIENT_ID is not configured');
   const redirectUri = process.env.GOOGLE_REDIRECT_URI || '';
-  const state = createOAuthState('youtube', clientIdStr, groupId);
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
