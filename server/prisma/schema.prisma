@@ -13,6 +13,9 @@ model User {
   username              String?                @unique
   passwordHash          String                 @map("password_hash")
   mustChangePassword    Boolean                @default(false) @map("must_change_password")
+  /// False once the account is disabled (e.g. employee terminated). Checked on
+  /// login, refresh and every authenticated request.
+  isActive              Boolean                @default(true) @map("is_active")
   passwordResetToken    String?                @unique @map("password_reset_token") @db.VarChar(512)
   passwordResetExpiry   DateTime?              @map("password_reset_expiry")
   role                  UserRole               @default(CLIENT)
@@ -310,7 +313,7 @@ model Invoice {
   reminderSentAt            DateTime?           @map("reminder_sent_at")
   overdueSentAt             DateTime?           @map("overdue_sent_at")
   dueSoonNotifiedAt         DateTime?           @map("due_soon_notified_at")
-  client                    Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client                    Client              @relation(fields: [clientId], references: [id], onDelete: Restrict )
   verificationTokens        VerificationToken[]
 
   @@index([clientId])
@@ -353,7 +356,7 @@ model Proforma {
   deliveryNoteEnabled Boolean             @default(false) @map("delivery_note_enabled")
   deliveryNoteTitle   String?             @map("delivery_note_title")
   deliveryNoteContent String?             @map("delivery_note_content") @db.Text
-  client              Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client              Client              @relation(fields: [clientId], references: [id], onDelete: Restrict )
   verificationTokens  VerificationToken[]
 
   @@index([clientId])
@@ -388,7 +391,7 @@ model Subscription {
   notes              String?             @db.Text
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
-  client             Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client             Client              @relation(fields: [clientId], references: [id], onDelete: Restrict )
   package            Package?            @relation(fields: [packageId], references: [id])
   cycles             SubscriptionCycle[]
   deliverableTasks   DeliverableTask[]
@@ -1984,4 +1987,14 @@ model WebhookLog {
   @@index([eventType])
   @@index([resendId])
   @@map("email_webhook_logs")
+}
+
+/// Monotonic per-prefix/per-year counters for human-facing document numbers
+/// (INV-2026-00001, PRO-2026-00001). Incremented atomically inside a
+/// transaction by lib/document-number.ts so concurrent creations never collide.
+model DocumentCounter {
+  key   String @id @db.VarChar(32)
+  value Int    @default(0)
+
+  @@map("document_counters")
 }
