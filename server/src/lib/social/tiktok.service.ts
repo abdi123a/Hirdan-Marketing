@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { createHash } from 'crypto';
 
 /**
  * TikTok's user/info endpoint requires the `fields` query param to contain
@@ -13,7 +14,39 @@ function buildTikTokUserInfoUrl(fields: string[]): string {
   return `https://open.tiktokapis.com/v2/user/info/?fields=${fields.join(',')}`;
 }
 
-export function getTikTokAuthorizationUrl(state: string): string {
+/**
+ * PKCE for TikTok — why it is opt-in (TIKTOK_USE_PKCE=true) rather than on:
+ *
+ * TikTok's Login Kit docs scope PKCE to the public-client flows (Desktop, iOS,
+ * Android). The Login Kit for *Web* page documents the authorize request as
+ * client_key / scope / redirect_uri / state / response_type only, and relies
+ * on `state` plus the server-held client_secret (a confidential client) — it
+ * does not list code_challenge / code_challenge_method or a code_verifier on
+ * the token exchange. This app uses that web flow, so PKCE stays off by
+ * default. Our `state` is already a single-use, user-bound, server-side row
+ * (oauth-state.service), which is the CSRF/replay protection the web flow
+ * relies on.
+ *
+ * Some TikTok apps are nonetheless answered with errCode=10007
+ * (error_type=code_challenge) on this same authorize URL, e.g. when the app is
+ * registered with a desktop platform. Setting TIKTOK_USE_PKCE=true sends a
+ * challenge and the matching code_verifier, with the verifier kept encrypted
+ * in the social_oauth_states row exactly like X's.
+ *
+ * Note TikTok's challenge encoding differs from RFC 7636: TikTok documents it
+ * as the HEX encoding of SHA-256(verifier) (Desktop docs:
+ * `CryptoJS.SHA256(code_verifier).toString(CryptoJS.enc.Hex)`), not base64url.
+ */
+export function isTikTokPkceEnabled(): boolean {
+  return /^(1|true|yes)$/i.test(process.env.TIKTOK_USE_PKCE ?? '');
+}
+
+/** TikTok's S256 code_challenge: hex(SHA-256(verifier)) — see above. */
+export function tiktokPkceChallenge(verifier: string): string {
+  return createHash('sha256').update(verifier, 'ascii').digest('hex');
+}
+
+export function getTikTokAuthorizationUrl(state: string, codeVerifier?: string): string {
   const clientKey = process.env.TIKTOK_CLIENT_KEY;
   if (!clientKey) {
     throw new Error('TIKTOK_CLIENT_KEY is not configured');
@@ -31,11 +64,15 @@ export function getTikTokAuthorizationUrl(state: string): string {
     scope: 'user.info.basic,user.info.stats,video.publish,video.upload,video.list',
     state,
   });
+  if (codeVerifier) {
+    params.set('code_challenge', tiktokPkceChallenge(codeVerifier));
+    params.set('code_challenge_method', 'S256');
+  }
 
   return `https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`;
 }
 
-export async function exchangeTikTokCodeForToken(code: string): Promise<{ access_token: string; refresh_token: string; expires_in: number; open_id: string; username: string; avatarUrl?: string | null }> {
+export async function exchangeTikTokCodeForToken(code: string, codeVerifier?: string): Promise<{ access_token: string; refresh_token: string; expires_in: number; open_id: string; username: string; avatarUrl?: string | null }> {
   const clientKey = process.env.TIKTOK_CLIENT_KEY;
   const clientSecret = process.env.TIKTOK_CLIENT_SECRET;
   const redirectUri = process.env.TIKTOK_REDIRECT_URI || '';
@@ -45,13 +82,15 @@ export async function exchangeTikTokCodeForToken(code: string): Promise<{ access
   }
 
   try {
-    const { data } = await axios.post('https://open.tiktokapis.com/v2/oauth/token/', new URLSearchParams({
+    const body = new URLSearchParams({
       client_key: clientKey,
       client_secret: clientSecret,
       code,
       grant_type: 'authorization_code',
       redirect_uri: redirectUri,
-    }).toString(), {
+    });
+    if (codeVerifier) body.set('code_verifier', codeVerifier);
+    const { data } = await axios.post('https://open.tiktokapis.com/v2/oauth/token/', body.toString(), {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
 

@@ -104,13 +104,14 @@ router.get('/oauth/connect', authenticate, requirePermission('social_media', 'WR
       return;
     }
 
-    // Persisted server-side and single-use; X's PKCE verifier stays with it.
+    // Persisted server-side and single-use; the PKCE verifier (X always,
+    // TikTok when TIKTOK_USE_PKCE is set — see tiktok.service) stays with it.
     const { state, codeVerifier } = await createOAuthState({
       platform,
       clientId,
       groupId,
       userId: req.user!.userId,
-      withPkce: platform === 'x',
+      withPkce: platform === 'x' || (platform === 'tiktok' && tiktok.isTikTokPkceEnabled()),
     });
 
     let authUrl = '';
@@ -126,7 +127,7 @@ router.get('/oauth/connect', authenticate, requirePermission('social_media', 'WR
         /* ignore URL parse errors */
       }
     } else if (platform === 'tiktok') {
-      authUrl = tiktok.getTikTokAuthorizationUrl(state);
+      authUrl = tiktok.getTikTokAuthorizationUrl(state, codeVerifier);
     } else if (platform === 'linkedin') {
       authUrl = linkedin.getLinkedInAuthorizationUrl(state);
     } else if (platform === 'youtube') {
@@ -257,7 +258,9 @@ router.get('/oauth/callback/:platform', async (req, res, _next) => {
         followers: profile.followers,
       };
     } else if (platform === 'tiktok') {
-      const d = await tiktok.exchangeTikTokCodeForToken(code);
+      // A verifier is present only when the connect started with PKCE on, so
+      // flipping TIKTOK_USE_PKCE mid-handshake can't strand a callback.
+      const d = await tiktok.exchangeTikTokCodeForToken(code, verified.codeVerifier);
       tokenData = { 
         accessToken: d.access_token, 
         refreshToken: d.refresh_token, 
