@@ -5,7 +5,7 @@ import { sendEmail, generateEmailHtml } from './email.js';
 import { createNotification } from './notifications.js';
 import { formatCents } from './money.js';
 import { nextDocumentNumber } from './document-number.js';
-import { dueBillingPeriod } from './billing-period.js';
+import { dueBillingPeriod, firstAutoBillingPeriod } from './billing-period.js';
 
 // Held back until the server is up. This is the heaviest thing that used to run
 // at boot — it generates invoices, writes notifications and sends reminder
@@ -136,7 +136,10 @@ async function runBillingCycleUnlocked(): Promise<BillingRunResult> {
     for (const sub of activeSubscriptions) {
       const client = sub.client;
       // If invoiceGenerationDay is null/undefined, default to 1st of the month
-      const due = dueBillingPeriod(sub, client.invoiceGenerationDay ?? 1, now);
+      // Rows created before firstBillingPeriod existed: derive it from createdAt
+      // (never auto-bill a period that began before the subscription was entered).
+      const firstBillingPeriod = sub.firstBillingPeriod ?? firstAutoBillingPeriod(sub, sub.createdAt);
+      const due = dueBillingPeriod({ ...sub, firstBillingPeriod }, client.invoiceGenerationDay ?? 1, now);
       if (!due) continue;
 
       const alreadyBilled = await prisma.invoice.findFirst({

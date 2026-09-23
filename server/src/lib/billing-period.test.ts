@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { billingDateInMonth, dueBillingPeriod, recurringPeriodKey } from './billing-period.js';
+import { billingDateInMonth, dueBillingPeriod, firstAutoBillingPeriod, recurringPeriodKey } from './billing-period.js';
 
 const d = (s: string) => new Date(s);
 
@@ -58,6 +58,59 @@ describe('dueBillingPeriod', () => {
     expect(dueBillingPeriod(e, 1, d('2026-09-05'))).toBeNull();
     const e2 = { ...e, endDate: d('2026-09-15') };
     expect(dueBillingPeriod(e2, 1, d('2026-09-05'))?.billingPeriod).toBe('2026-09');
+  });
+});
+
+describe('firstAutoBillingPeriod', () => {
+  it('monthly created mid-period: first bill is the next month', () => {
+    const m = { billingCycle: 'MONTHLY', startDate: d('2026-01-01') };
+    const first = firstAutoBillingPeriod(m, d('2026-09-23T10:00Z'));
+    expect(first).toBe('2026-10');
+    const sub = { ...m, endDate: null, firstBillingPeriod: first };
+    expect(dueBillingPeriod(sub, 1, d('2026-09-28'))).toBeNull();
+    expect(dueBillingPeriod(sub, 1, d('2026-10-01'))?.billingPeriod).toBe('2026-10');
+  });
+
+  it('monthly whose start date is mid-month and earlier this month waits for next month', () => {
+    const m = { billingCycle: 'MONTHLY', startDate: d('2026-09-05') };
+    expect(firstAutoBillingPeriod(m, d('2026-09-23T10:00Z'))).toBe('2026-10');
+  });
+
+  it('created on the 1st: the period starting that day is billable', () => {
+    const m = { billingCycle: 'MONTHLY', startDate: d('2026-01-01') };
+    expect(firstAutoBillingPeriod(m, d('2026-09-01T08:00Z'))).toBe('2026-09');
+  });
+
+  it('annual created 10 months into its year: first bill at renewal', () => {
+    const a = { billingCycle: 'ANNUAL', startDate: d('2025-11-03') };
+    const first = firstAutoBillingPeriod(a, d('2026-09-23T10:00Z'));
+    expect(first).toBe('2026-11');
+    const sub = { ...a, endDate: null, firstBillingPeriod: first };
+    // Previously this billed 2025-11 immediately.
+    expect(dueBillingPeriod(sub, 3, d('2026-09-23T11:00Z'))).toBeNull();
+    expect(dueBillingPeriod(sub, 3, d('2026-11-03'))?.billingPeriod).toBe('2026-11');
+  });
+
+  it('opt-in bills the period running at creation', () => {
+    const a = { billingCycle: 'ANNUAL', startDate: d('2025-11-03') };
+    const first = firstAutoBillingPeriod(a, d('2026-09-23T10:00Z'), true);
+    expect(first).toBe('2025-11');
+    const sub = { ...a, endDate: null, firstBillingPeriod: first };
+    expect(dueBillingPeriod(sub, 3, d('2026-09-23T11:00Z'))?.billingPeriod).toBe('2025-11');
+
+    const q = { billingCycle: 'QUARTERLY', startDate: d('2026-02-15') };
+    expect(firstAutoBillingPeriod(q, d('2026-09-23T10:00Z'), true)).toBe('2026-08');
+    expect(firstAutoBillingPeriod(q, d('2026-09-23T10:00Z'))).toBe('2026-11');
+  });
+
+  it('start date in the future (or today) bills from the first period', () => {
+    const f = { billingCycle: 'MONTHLY', startDate: d('2026-10-15') };
+    expect(firstAutoBillingPeriod(f, d('2026-09-23T10:00Z'))).toBe('2026-10');
+    expect(firstAutoBillingPeriod(f, d('2026-09-23T10:00Z'), true)).toBe('2026-10');
+    const today = { billingCycle: 'ANNUAL', startDate: d('2026-09-23') };
+    expect(firstAutoBillingPeriod(today, d('2026-09-23T15:00Z'))).toBe('2026-09');
+    // Date-only "today" entered west of UTC lands a day behind the UTC creation day.
+    expect(firstAutoBillingPeriod(today, d('2026-09-24T02:00Z'))).toBe('2026-09');
   });
 });
 
