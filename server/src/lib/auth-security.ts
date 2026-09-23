@@ -49,3 +49,62 @@ export async function deactivateUser(userId: string): Promise<void> {
   // Stop push notifications to the disabled account's devices.
   await prisma.deviceToken.deleteMany({ where: { userId } });
 }
+
+// ─── Session-bound access tokens ────────────────────────────────
+
+/**
+ * Access tokens carry the refresh-token family they were issued for as `sid`.
+ * A session is revoked by deleting its refresh-token rows (logout, reuse
+ * detection, password change/reset, deactivation), so "no unexpired row left
+ * in the family" means the session is over and its access tokens must die too.
+ *
+ * Tokens issued before `sid` existed have no claim; they are accepted until
+ * their own (short) expiry so a deploy doesn't sign everyone out.
+ */
+export type AccessSessionDecision = 'allow' | 'legacy' | 'revoked' | 'invalid';
+
+export function decideAccessSession(sid: unknown, familyIsLive: boolean | undefined): AccessSessionDecision {
+  if (sid === undefined) return 'legacy';
+  if (typeof sid !== 'string' || sid.length === 0) return 'invalid';
+  return familyIsLive ? 'allow' : 'revoked';
+}
+
+/** True while at least one unexpired refresh token of the family still exists. */
+export async function isSessionFamilyLive(userId: string, familyId: string): Promise<boolean> {
+  const row = await prisma.refreshToken.findFirst({
+    where: { familyId, userId, expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  return !!row;
+}
+
+// ─── Refresh rotation / reuse ───────────────────────────────────
+
+/**
+ * A rotated refresh token presented again within this window is treated as a
+ * benign race (two tabs refreshing at once) rather than token theft.
+ */
+export const REFRESH_REUSE_GRACE_MS = 60 * 1000;
+
+export type RefreshReuseDecision = 'rotate' | 'grace' | 'reuse-detected';
+
+/**
+ * `claimed` is whether this request atomically marked the token used.
+ * Otherwise it was already rotated at `usedAt`: within the grace window the
+ * caller re-issues tokens for the *same* family; past it, the family is revoked.
+ */
+export function decideRefreshReuse(
+  claimed: boolean,
+  usedAt: Date | null,
+  now: Date,
+  graceMs = REFRESH_REUSE_GRACE_MS
+): RefreshReuseDecision {
+  if (claimed) return 'rotate';
+  const rotatedAt = usedAt ?? now;
+  return now.getTime() - rotatedAt.getTime() > graceMs ? 'reuse-detected' : 'grace';
+}
+
+/** Family a refresh continues. Legacy rows without a family use their own id. */
+export function refreshFamilyOf(stored: { id: string; familyId: string | null }): string {
+  return stored.familyId ?? stored.id;
+}

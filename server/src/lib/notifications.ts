@@ -1,4 +1,11 @@
 import { prisma } from './prisma.js';
+import {
+  hasPermission,
+  resolvePermissions,
+  type AccessLevel,
+  type ModuleKey,
+  type PermissionMap,
+} from './permissions.js';
 
 export type NotificationCategory = 'ACTION_REQUIRED' | 'INFORMATION' | 'SUCCESS' | 'WARNING';
 
@@ -32,36 +39,86 @@ export async function createNotification(data: CreateNotificationInput): Promise
       },
     });
 
-    // Fire-and-forget push channels
-    sendPushNotification(data).catch((err) => {
-      console.warn('[OneSignal] Push notification failed:', err?.message);
-    });
-    sendExpoPushNotification(data).catch((err) => {
-      console.warn('[ExpoPush] Push notification failed:', err?.message);
-    });
+    // Fire-and-forget push channels, both addressed to the same resolved users.
+    void resolvePushRecipients(data)
+      .then((recipients) => {
+        if (recipients.length === 0) return;
+        sendPushNotification(data, recipients).catch((err) => {
+          console.warn('[OneSignal] Push notification failed:', err?.message);
+        });
+        sendExpoPushNotification(data, recipients).catch((err) => {
+          console.warn('[ExpoPush] Push notification failed:', err?.message);
+        });
+      })
+      .catch((err) => {
+        console.warn('[Notifications] Failed to resolve push recipients:', err?.message);
+      });
   } catch (err) {
     console.error('[Notifications] Failed to create notification:', err);
   }
 }
 
-/** Active agency staff (broadcast notifications never go to client logins). */
-async function activeStaffIds(): Promise<string[]> {
+// ─── Broadcast visibility (shared with GET /api/notifications) ──
+
+/** Which permission module a broadcast notification's entity belongs to. */
+export const NOTIFICATION_ENTITY_MODULE: Record<string, ModuleKey> = {
+  INVOICE: 'invoices',
+  PROFORMA: 'proforma',
+  SUBSCRIPTION: 'subscriptions',
+  CLIENT: 'clients',
+  PROJECT: 'projects',
+  EMPLOYEE: 'team',
+  LEAD: 'leads',
+  REPORT: 'monthly_reports',
+};
+
+/** Modules a staff member needs READ on to see a broadcast (userId = null) notification. */
+export function broadcastModules(n: { type: string; entityType?: string | null }): ModuleKey[] {
+  const modules: ModuleKey[] = [];
+  const entityModule = n.entityType ? NOTIFICATION_ENTITY_MODULE[n.entityType] : undefined;
+  if (entityModule) modules.push(entityModule);
+  if (n.type.startsWith('HR_')) modules.push('hr');
+  return modules;
+}
+
+/** Whether a staff member with these resolved permissions may see/receive the broadcast. */
+export function canReceiveBroadcast(
+  perms: Record<ModuleKey, AccessLevel>,
+  n: { type: string; entityType?: string | null }
+): boolean {
+  return broadcastModules(n).every((mod) => hasPermission(perms, mod, 'READ'));
+}
+
+/**
+ * User ids a push should go to. Targeted: that user, if still active.
+ * Broadcast: active staff (never client logins) who can read the
+ * notification's module — the same rule the in-app list applies.
+ */
+async function resolvePushRecipients(data: CreateNotificationInput): Promise<string[]> {
+  if (data.userId) {
+    const active = await prisma.user.count({ where: { id: data.userId, isActive: true } });
+    return active > 0 ? [data.userId] : [];
+  }
   const staff = await prisma.user.findMany({
     where: { isActive: true, role: { not: 'CLIENT' } },
-    select: { id: true },
+    select: { id: true, role: true, permissions: true },
   });
-  return staff.map((u) => u.id);
+  return staff
+    .filter((u) =>
+      canReceiveBroadcast(resolvePermissions(u.role, (u.permissions as PermissionMap | null) ?? null), data)
+    )
+    .map((u) => u.id);
 }
 
 /**
  * Sends a web push via OneSignal to the notification's recipient(s).
  * Recipients are addressed by OneSignal external_id = our user id (the web app
  * calls OneSignal.login(user.id) after sign-in). A targeted notification goes
- * to that user only; a broadcast goes to active staff — never the "All" segment,
- * which would include client-portal subscribers.
+ * to that user only; a broadcast goes to active staff who can read its module —
+ * never the "All" segment, which would include client-portal subscribers.
  * Requires oneSignalEnabled + oneSignalAppId + oneSignalApiKey in AgencySettings.
  */
-async function sendPushNotification(data: CreateNotificationInput): Promise<void> {
+async function sendPushNotification(data: CreateNotificationInput, recipients: string[]): Promise<void> {
   const settings = await prisma.agencySettings.findFirst({
     select: {
       oneSignalEnabled: true,
@@ -74,12 +131,6 @@ async function sendPushNotification(data: CreateNotificationInput): Promise<void
     return; // OneSignal not configured
   }
 
-  const recipients = data.userId
-    ? (await prisma.user.count({ where: { id: data.userId, isActive: true } })) > 0
-      ? [data.userId]
-      : []
-    : await activeStaffIds();
-  if (recipients.length === 0) return;
 
   const appUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -122,15 +173,17 @@ async function sendPushNotification(data: CreateNotificationInput): Promise<void
 }
 
 /**
- * Sends Expo Push notifications to registered native device tokens.
- * When userId is set, only that user's devices are targeted; otherwise all
- * active staff devices (never client logins or disabled accounts).
+ * Sends Expo Push notifications to the recipients' registered native devices
+ * (see resolvePushRecipients: never client logins for broadcasts, never
+ * disabled accounts, never staff without access to the module).
  */
-async function sendExpoPushNotification(data: CreateNotificationInput): Promise<void> {
+async function sendExpoPushNotification(data: CreateNotificationInput, recipients: string[]): Promise<void> {
   const devices = await prisma.deviceToken.findMany({
-    where: data.userId
-      ? { userId: data.userId, platform: { in: ['ios', 'android'] }, user: { isActive: true } }
-      : { platform: { in: ['ios', 'android'] }, user: { isActive: true, role: { not: 'CLIENT' } } },
+    where: {
+      userId: { in: recipients },
+      platform: { in: ['ios', 'android'] },
+      user: data.userId ? { isActive: true } : { isActive: true, role: { not: 'CLIENT' } },
+    },
     select: { token: true, id: true },
   });
 

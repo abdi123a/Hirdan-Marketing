@@ -32,7 +32,12 @@ export interface AuthUser {
   permissions?: Record<ModuleKey, AccessLevel> | null;
   company?: string;
   clientId?: string;
+  /** Temporary/admin-set password: the API refuses everything but a change until replaced. */
+  mustChangePassword?: boolean;
 }
+
+/** Self-service password change (any role). Not in the shared endpoint map yet. */
+const CHANGE_PASSWORD_ENDPOINT = '/auth/change-password';
 
 interface AuthState {
   user: AuthUser | null;
@@ -48,6 +53,11 @@ interface AuthState {
     options?: { fromBiometric?: boolean }
   ) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+    confirmPassword: string
+  ) => Promise<{ success: boolean; message?: string }>;
   hydrate: () => Promise<void>;
   unlock: () => void;
   setBiometricEnabled: (enabled: boolean) => Promise<void>;
@@ -81,6 +91,7 @@ function normalizeUser(apiUser: any): AuthUser {
     permissions,
     company: raw?.company || raw?.client?.company,
     clientId: raw?.clientId || raw?.client?.id,
+    mustChangePassword: Boolean(raw?.mustChangePassword || raw?.requiresPasswordChange),
   };
 }
 
@@ -133,28 +144,48 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (role === 'CLIENT') {
         return { success: false, message: 'Client accounts are not supported in this app yet.' };
       }
-      if (data.user?.mustChangePassword || data.user?.requiresPasswordChange) {
-        // The API refuses everything else until the temporary password is replaced,
-        // and this app has no change-password screen yet.
-        return {
-          success: false,
-          message: 'Your password must be changed first. Sign in to the web dashboard to set a new one.',
-        };
-      }
-
       await setTokens(data.accessToken, data.refreshToken);
       const user = normalizeUser(data.user);
       await saveUserJson(user);
       // Email is remembered for prefill; the password stays in memory and is
       // only persisted (behind biometrics) when biometric sign-in is enabled.
       await saveCredentials(email, password).catch(() => undefined);
-      if (get().biometricEnabled && !options?.fromBiometric) {
+      // A temporary password is never stored for biometrics; the new one is,
+      // once changePassword succeeds.
+      if (get().biometricEnabled && !options?.fromBiometric && !user.mustChangePassword) {
         await persistBiometricPassword().catch(() => undefined);
       }
       set({ user, isAuthenticated: true, isLocked: false });
       return { success: true };
     } catch (e: any) {
       return { success: false, message: e?.message || 'Login failed' };
+    }
+  },
+
+  changePassword: async (currentPassword, newPassword, confirmPassword) => {
+    try {
+      const data = await apiFetch<{ accessToken?: string; refreshToken?: string; message?: string }>(
+        CHANGE_PASSWORD_ENDPOINT,
+        {
+          method: 'POST',
+          body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+        }
+      );
+      // Every other session was revoked server-side; this device continues on
+      // the fresh session returned here.
+      if (data.accessToken) await setTokens(data.accessToken, data.refreshToken);
+
+      const current = get().user;
+      if (current) {
+        const user = { ...current, mustChangePassword: false };
+        await saveUserJson(user);
+        await saveCredentials(user.email, newPassword).catch(() => undefined);
+        if (get().biometricEnabled) await persistBiometricPassword().catch(() => undefined);
+        set({ user });
+      }
+      return { success: true, message: data.message };
+    } catch (e: any) {
+      return { success: false, message: e?.message || 'Could not change password' };
     }
   },
 

@@ -2,22 +2,11 @@ import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
-import { resolvePermissions, type ModuleKey, type PermissionMap } from '../lib/permissions.js';
+import { resolvePermissions, type PermissionMap } from '../lib/permissions.js';
+import { NOTIFICATION_ENTITY_MODULE } from '../lib/notifications.js';
 
 const router = Router();
 router.use(authenticate);
-
-/** Which permission module a broadcast notification's entity belongs to. */
-const ENTITY_MODULE: Record<string, ModuleKey> = {
-  INVOICE: 'invoices',
-  PROFORMA: 'proforma',
-  SUBSCRIPTION: 'subscriptions',
-  CLIENT: 'clients',
-  PROJECT: 'projects',
-  EMPLOYEE: 'team',
-  LEAD: 'leads',
-  REPORT: 'monthly_reports',
-};
 
 /**
  * Notifications the current user may see: their own, plus (staff only)
@@ -32,7 +21,8 @@ async function visibleNotificationsFilter(req: Request): Promise<Record<string, 
     select: { permissions: true },
   });
   const perms = resolvePermissions(me.role, (account?.permissions as PermissionMap | null) ?? null);
-  const hiddenEntityTypes = Object.entries(ENTITY_MODULE)
+  // Same module mapping lib/notifications.ts uses to pick broadcast push recipients.
+  const hiddenEntityTypes = Object.entries(NOTIFICATION_ENTITY_MODULE)
     .filter(([, mod]) => perms[mod] === 'NONE')
     .map(([entityType]) => entityType);
 

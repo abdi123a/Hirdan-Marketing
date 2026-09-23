@@ -13,7 +13,11 @@ import { validate } from '../middleware/validate.js';
 import { auditLog } from '../lib/audit.js';
 import { sendEmail, generateEmailHtml } from '../lib/email.js';
 import { getShortDomainBase } from '../lib/short-url.js';
-import { passwordSchema } from '../lib/auth-security.js';
+import {
+  passwordSchema,
+  decideRefreshReuse,
+  refreshFamilyOf,
+} from '../lib/auth-security.js';
 
 const router = Router();
 
@@ -82,11 +86,6 @@ const resetPasswordSchema = z.object({
 
 /** A login session can never outlive this, however often it is refreshed. */
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-/**
- * A rotated refresh token presented again within this window is treated as a
- * benign race (two tabs refreshing at once) rather than token theft.
- */
-const REFRESH_REUSE_GRACE_MS = 60 * 1000;
 /** Failed logins allowed before the account is temporarily locked. */
 const LOCKOUT_THRESHOLD = 5;
 const LOCKOUT_MAX_MINUTES = 60;
@@ -216,10 +215,12 @@ async function issueSession(
   family?: { familyId: string; sessionStartedAt: Date }
 ) {
   const payload = buildTokenPayload(user);
-  const accessToken = generateAccessToken(payload);
+  const familyId = family?.familyId ?? crypto.randomUUID();
+  // `sid` binds the access token to this session: once the family's refresh
+  // tokens are revoked, `authenticate` rejects the access token as well.
+  const accessToken = generateAccessToken({ ...payload, sid: familyId });
   const refreshToken = generateRefreshToken(payload);
 
-  const familyId = family?.familyId ?? crypto.randomUUID();
   const sessionStartedAt = family?.sessionStartedAt ?? new Date();
   const sessionEnd = new Date(sessionStartedAt.getTime() + SESSION_MAX_AGE_MS);
   const slidingExpiry = getRefreshTokenExpiry();
@@ -240,10 +241,13 @@ async function issueSession(
 }
 
 async function revokeFamily(stored: { id: string; familyId: string | null; userId: string }) {
+  // A legacy row (no familyId) seeds a family keyed by its own id on refresh,
+  // so revoke both the row itself and anything rotated from it.
   await prisma.refreshToken.deleteMany({
-    where: stored.familyId
-      ? { familyId: stored.familyId, userId: stored.userId }
-      : { id: stored.id },
+    where: {
+      userId: stored.userId,
+      OR: [{ id: stored.id }, { familyId: refreshFamilyOf(stored) }],
+    },
   });
 }
 
@@ -579,13 +583,15 @@ router.post('/refresh', refreshLimiter, async (req: Request, res: Response, next
     if (claimed.count === 0) {
       const usedAt = storedToken.usedAt
         ?? (await prisma.refreshToken.findUnique({ where: { id: storedToken.id }, select: { usedAt: true } }))?.usedAt
-        ?? now;
-      if (now.getTime() - usedAt.getTime() > REFRESH_REUSE_GRACE_MS) {
+        ?? null;
+      if (decideRefreshReuse(false, usedAt, now) === 'reuse-detected') {
         // A rotated token came back: assume it was stolen and kill the whole session.
         await revokeFamily(storedToken);
         console.warn('[auth] Refresh token reuse detected; session family revoked for user %s', storedToken.userId);
         throw AppError.unauthorized('Invalid or expired refresh token');
       }
+      // Within the grace window (two tabs refreshing at once): fall through and
+      // issue tokens for the SAME family — never a new, independent session.
     }
 
     // Fetch user to ensure they are still active
@@ -609,7 +615,7 @@ router.post('/refresh', refreshLimiter, async (req: Request, res: Response, next
     await prisma.refreshToken.deleteMany({ where: { userId: user.id, expiresAt: { lt: now } } });
 
     const { accessToken, refreshToken } = await issueSession(res, user, {
-      familyId: storedToken.familyId ?? storedToken.id,
+      familyId: refreshFamilyOf(storedToken),
       sessionStartedAt: storedToken.sessionStartedAt,
     });
 

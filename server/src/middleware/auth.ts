@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { AppError } from '../lib/errors.js';
 import { prisma } from '../lib/prisma.js';
+import { decideAccessSession, isSessionFamilyLive } from '../lib/auth-security.js';
 
 export interface JwtPayload {
   userId: string;
@@ -11,6 +12,8 @@ export interface JwtPayload {
   clientId?: string;
   company?: string;
   mustChangePassword?: boolean;
+  /** Refresh-token family (login session) this access token belongs to. */
+  sid?: string;
 }
 
 // Extend Express Request to include user
@@ -56,19 +59,32 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       throw AppError.unauthorized('Invalid token');
     }
 
-    const account = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        email: true,
-        role: true,
-        isActive: true,
-        mustChangePassword: true,
-        client: { select: { id: true, company: true, status: true } },
-      },
-    });
+    const sid: unknown = decoded.sid;
+    const [account, familyIsLive] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: {
+          email: true,
+          role: true,
+          isActive: true,
+          mustChangePassword: true,
+          client: { select: { id: true, company: true, status: true } },
+        },
+      }),
+      // Indexed lookup on refresh_tokens.family_id; skipped for pre-`sid` tokens.
+      typeof sid === 'string' && sid.length > 0 ? isSessionFamilyLive(decoded.userId, sid) : undefined,
+    ]);
 
     if (!account || !account.isActive) {
       throw AppError.unauthorized('Account is disabled');
+    }
+    const session = decideAccessSession(sid, familyIsLive);
+    if (session === 'invalid') {
+      throw AppError.unauthorized('Invalid token');
+    }
+    if (session === 'revoked') {
+      // Logged out, password changed, or session revoked by an admin.
+      throw AppError.unauthorized('Session has ended. Please log in again.');
     }
     if (account.role === 'CLIENT') {
       if (!account.client || account.client.status === 'PAUSED' || account.client.status === 'CHURNED') {
@@ -83,6 +99,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       clientId: account.client?.id,
       company: account.client?.company,
       mustChangePassword: account.mustChangePassword,
+      sid: typeof sid === 'string' ? sid : undefined,
     };
 
     const path = req.originalUrl.split('?')[0];
