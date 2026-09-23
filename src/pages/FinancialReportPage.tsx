@@ -59,6 +59,8 @@ interface IncomeStatementData {
   grossProfit: number;
   netProfit: number;
   profitMargin: number;
+  /** Manual revenue deposits left out as likely duplicates of paid invoices. */
+  dedupedManualDeposits?: { count: number; amount: number };
 }
 
 interface BalanceSheetData {
@@ -527,6 +529,14 @@ export default function FinancialReportPage() {
                               <span>Other Revenue Deposits</span>
                               <span className="text-foreground">{formatVal(incomeStatement.revenue.otherRevenue)}</span>
                             </div>
+                          )}
+                          {(incomeStatement.dedupedManualDeposits?.count ?? 0) > 0 && (
+                            <p className="text-xs italic pt-1">
+                              Note: {incomeStatement.dedupedManualDeposits!.count} manual revenue deposit
+                              {incomeStatement.dedupedManualDeposits!.count === 1 ? "" : "s"} totalling{" "}
+                              {formatVal(incomeStatement.dedupedManualDeposits!.amount)} excluded — each matches a paid
+                              invoice (same amount, within 7 days) that is already counted above.
+                            </p>
                           )}
                         </div>
                       </div>

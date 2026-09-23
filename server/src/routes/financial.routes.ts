@@ -11,6 +11,7 @@ import {
   parseReportRange,
   straightLineDepreciation,
 } from '../lib/report-period.js';
+import { matchManualDepositsToInvoices } from '../lib/manual-deposit-dedup.js';
 
 const router = Router();
 
@@ -138,7 +139,7 @@ async function invoicePaymentsInPeriod(from: Date, to: Date) {
     if (inv.subscriptionId) subscriptionRevenue += amount;
     else invoiceRevenue += amount;
   }
-  return { invoiceRevenue, subscriptionRevenue };
+  return { invoiceRevenue, subscriptionRevenue, revenueDeposits, invoicesWithDeposit };
 }
 
 // ─── GET /api/financial/income-statement ───────────────────────────
@@ -150,19 +151,42 @@ router.get('/income-statement', async (req: Request, res: Response, next: NextFu
 
     // 1. Revenue: invoice payments (subscription invoices reported separately;
     //    the old pro-rated subscription estimate double counted them).
-    const { invoiceRevenue, subscriptionRevenue } = await invoicePaymentsInPeriod(fromDate, toExclusive);
+    const { invoiceRevenue, subscriptionRevenue, revenueDeposits, invoicesWithDeposit } =
+      await invoicePaymentsInPeriod(fromDate, toExclusive);
 
-    // 2. Manual revenue deposits (not created from an invoice) in base-currency accounts
-    const periodRevenueDeposits = await prisma.deposit.findMany({
+    // 2. Manual revenue deposits (not created from an invoice) in base-currency accounts,
+    //    minus legacy duplicates: a hand-recorded payment of an invoice that was
+    //    also marked paid (and has no deposit of its own) is already counted in
+    //    invoice revenue. Matched over all history so the result is stable.
+    const baseIds = new Set(ctx.baseAccountIds);
+    const manualDeposits = revenueDeposits.filter((d) => baseIds.has(d.accountId) && !invoiceIdOfDeposit(d));
+    const legacyPaidInvoices = await prisma.invoice.findMany({
       where: {
-        date: { gte: fromDate, lt: toExclusive },
-        category: 'REVENUE',
-        accountId: { in: ctx.baseAccountIds },
+        status: { in: ['PAID', 'PARTIALLY_PAID'] },
+        id: { notIn: [...invoicesWithDeposit] },
       },
+      select: { id: true, amount: true, deposit: true, status: true, date: true },
     });
-    const otherRevenue = periodRevenueDeposits
-      .filter((d) => !invoiceIdOfDeposit(d))
-      .reduce((sum, d) => sum + d.amount, 0);
+    const duplicateOf = matchManualDepositsToInvoices(
+      manualDeposits,
+      legacyPaidInvoices.map((inv) => ({
+        id: inv.id,
+        paidAmount: inv.status === 'PAID' ? inv.amount : (inv.deposit ?? 0),
+        date: inv.date,
+      })),
+    );
+
+    let otherRevenue = 0;
+    const dedupedManualDeposits = { count: 0, amount: 0 };
+    for (const d of manualDeposits) {
+      if (d.date < fromDate || d.date >= toExclusive) continue;
+      if (duplicateOf.has(d.id)) {
+        dedupedManualDeposits.count += 1;
+        dedupedManualDeposits.amount += d.amount;
+      } else {
+        otherRevenue += d.amount;
+      }
+    }
 
     const totalRevenue = invoiceRevenue + subscriptionRevenue + otherRevenue;
 
@@ -237,6 +261,9 @@ router.get('/income-statement', async (req: Request, res: Response, next: NextFu
       },
       // Expenses from accounts in other currencies, excluded from the totals above.
       otherCurrencyExpenses,
+      // Manual REVENUE deposits left out of otherRevenue because they look like a
+      // hand-recorded payment of an invoice already counted (same amount, ±7 days).
+      dedupedManualDeposits,
       grossProfit,
       netProfit,
       profitMargin: totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0,
