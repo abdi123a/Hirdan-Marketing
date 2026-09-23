@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { createOAuthState } from './oauth-state.service.js';
 
 /**
  * TikTok's user/info endpoint requires the `fields` query param to contain
@@ -14,14 +13,13 @@ function buildTikTokUserInfoUrl(fields: string[]): string {
   return `https://open.tiktokapis.com/v2/user/info/?fields=${fields.join(',')}`;
 }
 
-export function getTikTokAuthorizationUrl(clientId: string, groupId: string): string {
+export function getTikTokAuthorizationUrl(state: string): string {
   const clientKey = process.env.TIKTOK_CLIENT_KEY;
   if (!clientKey) {
     throw new Error('TIKTOK_CLIENT_KEY is not configured');
   }
 
   const redirectUri = process.env.TIKTOK_REDIRECT_URI || '';
-  const state = createOAuthState('tiktok', clientId, groupId);
 
   const params = new URLSearchParams({
     client_key: clientKey,

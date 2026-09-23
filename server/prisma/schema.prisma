@@ -1433,9 +1433,30 @@ model SocialPostDestination {
   socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
   importedPost  ImportedPost? @relation(fields: [importedPostId], references: [id], onDelete: Cascade)
 
+  @@unique([postId, socialAccountId])
   @@index([postId])
   @@index([status, lockedAt])
   @@map("social_post_destinations")
+}
+
+// Server-side OAuth handshake state for social account connections. One row
+// per in-flight connect (kind='state': single-use, holds the PKCE verifier) or
+// per Meta account-picker session (kind='picker': encrypted page list). Rows
+// are short-lived and deleted on use; expired rows are purged opportunistically.
+model SocialOAuthState {
+  id           String   @id @db.VarChar(64)
+  kind         String   @db.VarChar(16)
+  platform     String   @db.VarChar(32)
+  clientId     String   @map("client_id")
+  groupId      String?  @map("group_id")
+  userId       String   @map("user_id")
+  codeVerifier String?  @map("code_verifier") @db.Text
+  payloadEnc   String?  @map("payload_enc") @db.LongText
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("social_oauth_states")
 }
 
 model AccountInsightDaily {

@@ -91,8 +91,28 @@ export async function ensureFreshAccessToken(account: SocialAccount, force = fal
   }
 }
 
+/**
+ * Refuse to publish through an account that was disconnected, or for a client
+ * whose engagement is paused/churned. Re-read from the database rather than
+ * trusting the caller's copy, which may have been loaded minutes earlier.
+ */
+async function assertAccountMayPublish(account: SocialAccount): Promise<void> {
+  const { prisma } = await import('../prisma.js');
+  const current = await prisma.socialAccount.findUnique({
+    where: { id: account.id },
+    select: { isActive: true, client: { select: { status: true } } },
+  });
+  if (!current || !current.isActive) {
+    throw new Error('This social account is disconnected — reconnect it before publishing.');
+  }
+  if (current.client.status !== 'ACTIVE') {
+    throw new Error(`Publishing is disabled because this client is ${current.client.status.toLowerCase()}.`);
+  }
+}
+
 export async function publishPostToPlatform(post: SocialPost, account: SocialAccount): Promise<string> {
   const platform = account.platform.toLowerCase();
+  await assertAccountMayPublish(account);
   account = await ensureFreshAccessToken(account);
   
   // Resolve per-platform caption override if present

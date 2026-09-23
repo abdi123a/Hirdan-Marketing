@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { createOAuthState } from './oauth-state.service.js';
 import { getMediaBuffer } from './storage.service.js';
 
 async function registerLinkedInUpload(
@@ -39,14 +38,13 @@ async function uploadLinkedInBinary(uploadUrl: string, accessToken: string, medi
   });
 }
 
-export function getLinkedInAuthorizationUrl(clientIdStr: string, groupId: string): string {
+export function getLinkedInAuthorizationUrl(state: string): string {
   const clientId = process.env.LINKEDIN_CLIENT_ID;
   if (!clientId) {
     throw new Error('LINKEDIN_CLIENT_ID is not configured');
   }
 
   const redirectUri = process.env.LINKEDIN_REDIRECT_URI || '';
-  const state = createOAuthState('linkedin', clientIdStr, groupId);
 
   const params = new URLSearchParams({
     response_type: 'code',

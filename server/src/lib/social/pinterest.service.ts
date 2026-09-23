@@ -1,11 +1,9 @@
 import axios from 'axios';
-import { createOAuthState } from './oauth-state.service.js';
 
-export function getPinterestAuthorizationUrl(clientIdStr: string, groupId: string): string {
+export function getPinterestAuthorizationUrl(state: string): string {
   const appId = process.env.PINTEREST_APP_ID;
   if (!appId) throw new Error('PINTEREST_APP_ID is not configured');
   const redirectUri = process.env.PINTEREST_REDIRECT_URI || '';
-  const state = createOAuthState('pinterest', clientIdStr, groupId);
   const params = new URLSearchParams({ client_id: appId, redirect_uri: redirectUri, response_type: 'code', scope: 'boards:read,pins:read,pins:write', state });
   return `https://www.pinterest.com/oauth/?${params.toString()}`;
 }

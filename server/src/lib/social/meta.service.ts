@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { createOAuthState } from './oauth-state.service.js';
 import { getMediaBuffer, openMediaStream } from './storage.service.js';
 
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v20.0';
@@ -77,7 +76,8 @@ export function isRateLimitError(err: any): boolean {
   return false;
 }
 
-export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'threads', clientId: string, groupId: string): string {
+/** `state` comes from createOAuthState() — persisted server-side, single-use. */
+export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'threads', state: string): string {
   const appId = process.env.META_APP_ID;
   if (!appId) {
     throw new Error('META_APP_ID is not configured in environment variables');
@@ -111,8 +111,6 @@ export function getMetaAuthorizationUrl(platform: 'facebook' | 'instagram' | 'th
         'Set it from App Dashboard → Facebook Login for Business → Configurations.',
     );
   }
-
-  const state = createOAuthState(platform, clientId, groupId);
 
   // Put config_id early so it cannot be lost if a client truncates long query strings.
   const params = new URLSearchParams();

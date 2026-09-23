@@ -8,28 +8,82 @@ import {
 import { decryptToken } from './token-crypto.service.js';
 import { resolvePendingPermalinks } from './permalink.service.js';
 import { extractSocialApiError, isSoftInsightSkip, logSocialError } from './safe-error.js';
-import { publishDestination } from './publish-destination.service.js';
+import { publishDestination, claimDestination, finalizePostStatus } from './publish-destination.service.js';
 
-export async function processDuePosts(): Promise<void> {
+/**
+ * Run `fn` only if no other run of the same job is in progress — in this
+ * process (an in-memory flag, since node-cron happily starts a tick while the
+ * previous one is still running) or on any other instance (a MySQL named lock).
+ *
+ * GET_LOCK is held by a database session, so it is taken and released inside
+ * one interactive transaction, which pins a single pooled connection for the
+ * duration; the job itself uses the normal client. If the process dies, MySQL
+ * drops the session and the lock with it.
+ */
+const runningJobs = new Set<string>();
+const JOB_LOCK_MAX_MS = 2 * 60 * 60 * 1000;
+
+async function withJobLock(name: string, fn: () => Promise<void>): Promise<void> {
+  if (runningJobs.has(name)) {
+    console.warn(`[social-scheduler] ${name} still running from a previous tick — skipping this one`);
+    return;
+  }
+  runningJobs.add(name);
+  const lockName = `hirdan:social:${name}`;
   try {
-    // 0. Reclaim destinations abandoned mid-publish (server crash/restart while
-    // PUBLISHING). Nothing legitimate holds a lock this long — the slowest known
-    // step (Meta video container polling) tops out around 100s. A stuck
-    // destination never re-matches the claim query below on its own, since that
-    // only looks at status='QUEUED': without this, it would sit in PUBLISHING
-    // forever with no error and no retry path. This also covers destinations
-    // claimed by the publish-now/retry routes, whose post status is 'PUBLISHING'
-    // rather than 'SCHEDULED' — reclaiming pushes the post back to SCHEDULED (due
-    // now) so the claim step below picks it back up the normal way.
-    const staleCutoff = new Date(Date.now() - 15 * 60 * 1000);
-    const stalePublishing = await prisma.socialPostDestination.findMany({
-      where: { status: 'PUBLISHING', lockedAt: { lt: staleCutoff } },
-    });
-    for (const dest of stalePublishing) {
+    await prisma.$transaction(
+      async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ got: unknown }>>`SELECT GET_LOCK(${lockName}, 0) AS got`;
+        if (Number(rows[0]?.got) !== 1) {
+          console.warn(`[social-scheduler] ${name} is running on another instance — skipping`);
+          return;
+        }
+        try {
+          await fn();
+        } finally {
+          await tx.$queryRaw`SELECT RELEASE_LOCK(${lockName})`.catch(() => {});
+        }
+      },
+      { maxWait: 30_000, timeout: JOB_LOCK_MAX_MS },
+    );
+  } catch (err: unknown) {
+    logSocialError(`Error in ${name} job`, err);
+  } finally {
+    runningJobs.delete(name);
+  }
+}
+
+/** A destination held longer than this is treated as abandoned (crash/restart). */
+const STALE_LOCK_MS = 30 * 60 * 1000;
+
+async function recoverStalePublishing(): Promise<void> {
+  // Reclaim destinations abandoned mid-publish (server crash/restart while
+  // PUBLISHING). Destinations are now claimed one at a time right before their
+  // own publish, so lockedAt is the start of that single attempt; nothing
+  // legitimate holds one this long (the slowest known step, Meta video
+  // container polling, tops out around 100s; large YouTube uploads a few
+  // minutes). A stuck destination never re-matches the claim query on its own,
+  // so without this it would sit in PUBLISHING forever.
+  const staleCutoff = new Date(Date.now() - STALE_LOCK_MS);
+  const stalePublishing = await prisma.socialPostDestination.findMany({
+    where: { status: 'PUBLISHING', lockedAt: { lt: staleCutoff } },
+  });
+  for (const dest of stalePublishing) {
+    try {
+      // It went live but the PUBLISHED write was lost — never publish it again.
+      if (dest.platformPostId) {
+        await prisma.socialPostDestination.updateMany({
+          where: { id: dest.id, status: 'PUBLISHING', lockedAt: dest.lockedAt },
+          data: { status: 'PUBLISHED', lockedAt: null, publishedAt: dest.publishedAt ?? new Date() },
+        });
+        continue;
+      }
       const nextAttempts = dest.attempts + 1;
       const failedPermanently = nextAttempts >= 3;
-      await prisma.socialPostDestination.update({
-        where: { id: dest.id },
+      // Conditional on the lock we saw, so a destination another run just
+      // re-claimed is not yanked out from under it.
+      const { count } = await prisma.socialPostDestination.updateMany({
+        where: { id: dest.id, status: 'PUBLISHING', lockedAt: dest.lockedAt },
         data: {
           status: failedPermanently ? 'FAILED' : 'QUEUED',
           attempts: nextAttempts,
@@ -37,125 +91,136 @@ export async function processDuePosts(): Promise<void> {
           lastError: 'Recovered after being stuck in PUBLISHING (likely a server restart mid-publish).',
         },
       });
-      if (!failedPermanently) {
+      if (count === 1 && !failedPermanently) {
+        // Covers destinations claimed by publish-now/retry too, whose post is
+        // PUBLISHING rather than SCHEDULED — push the post back to SCHEDULED
+        // (due now) so the claim step below picks it back up the normal way.
         await prisma.socialPost.updateMany({
           where: { id: dest.postId, status: { not: 'SCHEDULED' } },
           data: { status: 'SCHEDULED', scheduledFor: new Date(Date.now() - 60 * 1000) },
         });
       }
+    } catch (err: unknown) {
+      logSocialError(`Could not recover stale destination ${dest.id}`, err);
     }
+  }
 
-    // 1. Atomically claim destinations that are QUEUED and whose post is scheduled for <= now.
-    // FIX (rate-limit retry race): previously this claimed a destination even if its
-    // account was currently rate_limited, then immediately threw it back with an
-    // attempts+1 penalty and no backoff — 3 claims (15 min at a 5-min cron) could
-    // exhaust the retry budget and permanently FAIL a post before the rate-limit
-    // cooldown even finished. Now the claim query itself excludes accounts that are
-    // still within their rateLimitedUntil window.
-    //
-    // FIX (double-publish on overlapping ticks): this used to UPDATE then re-SELECT
-    // by status='PUBLISHING', which also picked up destinations a STILL-RUNNING
-    // previous tick had claimed (easy to outlast the 5-min interval while waiting on
-    // video container processing) — publishing them a second time. SELECT ... FOR
-    // UPDATE inside a transaction locks the candidate rows first: a concurrent tick's
-    // own FOR UPDATE query blocks on those rows until this transaction commits, then
-    // re-evaluates its WHERE clause against the now-committed data and correctly
-    // excludes them. Step 2 then fetches exactly the IDs this run claimed, nothing else.
-    const claimedIds = await prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRawUnsafe<Array<{ id: string }>>(`
-        SELECT spd.id
-        FROM social_post_destinations spd
-        JOIN social_posts sp ON sp.id = spd.post_id
-        JOIN social_accounts sa ON sa.id = spd.social_account_id
-        WHERE spd.status = 'QUEUED'
-          AND spd.locked_at IS NULL
-          AND sp.status = 'SCHEDULED'
-          AND sp.scheduled_for <= UTC_TIMESTAMP()
-          AND (sa.rate_limited_until IS NULL OR sa.rate_limited_until <= UTC_TIMESTAMP())
-        FOR UPDATE
-      `);
-      const ids = rows.map((r) => r.id);
-      if (ids.length === 0) return ids;
-
-      await tx.socialPostDestination.updateMany({
-        where: { id: { in: ids } },
-        data: { status: 'PUBLISHING', lockedAt: new Date(), lastAttemptAt: new Date() },
-      });
-      return ids;
-    });
-
-    if (claimedIds.length === 0) return;
-
-    // 2. Fetch exactly the destinations this run claimed.
-    const destinations = await prisma.socialPostDestination.findMany({
-      where: { id: { in: claimedIds } },
-      include: {
-        post: true,
-        socialAccount: true,
-      },
-    });
-
-    // 3. Process each destination.
-    // The claim query above already excludes rate-limited accounts, but an
-    // account can become rate-limited in the window between claiming and
-    // processing — publishDestination() re-checks and releases it back to QUEUED
-    // without counting a failed attempt, since it never actually tried.
-    for (const dest of destinations) {
-      await publishDestination(dest, dest.post, { maxAttempts: 3, skippedStatus: 'QUEUED' });
-    }
-
-    // 4. Update the main SocialPost status based on destinations results
-    const uniquePostIds = Array.from(new Set(destinations.map(d => d.postId)));
-    for (const postId of uniquePostIds) {
-      const allDests = await prisma.socialPostDestination.findMany({
-        where: { postId },
-      });
-
-      const total = allDests.length;
-      const published = allDests.filter(d => d.status === 'PUBLISHED').length;
-      const failed = allDests.filter(d => d.status === 'FAILED').length;
-
-      if (published === total) {
-        await prisma.socialPost.update({
-          where: { id: postId },
-          data: {
-            status: 'PUBLISHED',
-            publishedAt: new Date(),
-            errorMessage: null,
-          },
-        });
-        for (const dest of allDests) {
-          if (dest.status === 'PUBLISHED') {
-            await prisma.postInsight.upsert({
-              where: { postId_platform: { postId, platform: dest.platform } },
-              create: { postId, platform: dest.platform, likes: 0, comments: 0, shares: 0, saved: 0, views: 0, impressions: 0, reach: 0 },
-              update: {},
-            }).catch(() => {});
-          }
-        }
-      } else if (published + failed === total && failed > 0) {
-        // Partial success (some live, some failed) vs total failure
-        const failedErrors = allDests
-          .filter((d) => d.status === 'FAILED' && d.lastError)
-          .map((d) => `${d.platform}: ${d.lastError}`)
-          .join('; ');
-        await prisma.socialPost.update({
-          where: { id: postId },
-          data: {
-            status: published > 0 ? 'PARTIAL' : 'FAILED',
-            publishedAt: published > 0 ? new Date() : undefined,
-            errorMessage: failedErrors || `Failed to publish to ${failed} out of ${total} platforms.`,
-          },
+  // Posts a manual publish left in PUBLISHING (crash before its finally ran)
+  // with nothing actually in flight: re-derive their status. Queued
+  // destinations there were ones the user asked to publish now, so they go to
+  // the scheduler as due.
+  const stuckPosts = await prisma.socialPost.findMany({
+    where: {
+      status: 'PUBLISHING',
+      updatedAt: { lt: staleCutoff },
+      destinations: { none: { status: 'PUBLISHING' } },
+    },
+    select: { id: true, scheduledFor: true },
+    take: 200,
+  });
+  for (const post of stuckPosts) {
+    try {
+      const hasQueued = await prisma.socialPostDestination.count({ where: { postId: post.id, status: 'QUEUED' } });
+      if (hasQueued > 0 && (!post.scheduledFor || post.scheduledFor > new Date())) {
+        await prisma.socialPost.updateMany({
+          where: { id: post.id, status: 'PUBLISHING' },
+          data: { scheduledFor: new Date(Date.now() - 60 * 1000) },
         });
       }
-      // If there are still QUEUED ones, we keep the post status as SCHEDULED so it retries
+      await finalizePostStatus(post.id, 'SCHEDULED');
+    } catch (err: unknown) {
+      logSocialError(`Could not recover stuck post ${post.id}`, err);
     }
+  }
+}
+
+export async function processDuePosts(): Promise<void> {
+  await withJobLock('processDuePosts', runDuePosts);
+}
+
+async function runDuePosts(): Promise<void> {
+  try {
+    await recoverStalePublishing();
   } catch (err: unknown) {
-    logSocialError('Error in processDuePosts scheduler', err);
+    logSocialError('Error recovering stale social publishes', err);
+  }
+
+  // 1. Find candidates: QUEUED destinations of due SCHEDULED posts, on accounts
+  // that are still connected, not rate limited (claiming a throttled account
+  // used to burn its retry budget before the cooldown even ended), and whose
+  // client is ACTIVE — a PAUSED or CHURNED client, or a disconnected account,
+  // must never keep publishing.
+  //
+  // This is only a candidate list. Each destination is claimed individually,
+  // right before it is published (step 2): this used to claim the whole batch
+  // with one lockedAt and then publish sequentially, so a long run outlived the
+  // stale-lock cutoff and the next tick re-queued and republished destinations
+  // that were simply waiting their turn.
+  const candidates = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT spd.id
+    FROM social_post_destinations spd
+    JOIN social_posts sp ON sp.id = spd.post_id
+    JOIN social_accounts sa ON sa.id = spd.social_account_id
+    JOIN clients c ON c.id = sp.client_id
+    WHERE spd.status = 'QUEUED'
+      AND spd.locked_at IS NULL
+      AND sp.status = 'SCHEDULED'
+      AND sp.scheduled_for <= UTC_TIMESTAMP()
+      AND sa.is_active = 1
+      AND sa.client_id = sp.client_id
+      AND c.status = 'ACTIVE'
+      AND (sa.rate_limited_until IS NULL OR sa.rate_limited_until <= UTC_TIMESTAMP())
+    ORDER BY sp.scheduled_for ASC
+    LIMIT 500
+  `;
+  if (candidates.length === 0) return;
+
+  // 2. Claim → publish, one destination at a time, each isolated so one
+  // failure (or a DB error) doesn't abort the rest of the run.
+  const touchedPostIds = new Set<string>();
+  for (const { id } of candidates) {
+    try {
+      if (!(await claimDestination(id, ['QUEUED']))) continue; // someone else has it
+      const dest = await prisma.socialPostDestination.findUnique({
+        where: { id },
+        include: { post: true, socialAccount: true },
+      });
+      if (!dest) continue;
+      touchedPostIds.add(dest.postId);
+
+      // The post may have been unscheduled/edited between the candidate query
+      // and the claim — release rather than publish it.
+      if (dest.post.status !== 'SCHEDULED') {
+        await prisma.socialPostDestination.update({
+          where: { id },
+          data: { status: 'QUEUED', lockedAt: null },
+        });
+        continue;
+      }
+
+      // The claim query already excludes rate-limited accounts, but one can
+      // become rate-limited in between — publishDestination() re-checks and
+      // releases it back to QUEUED without counting a failed attempt.
+      await publishDestination(dest, dest.post, { maxAttempts: 3, skippedStatus: 'QUEUED' });
+    } catch (err: unknown) {
+      logSocialError(`Error processing social destination ${id}`, err);
+    }
+  }
+
+  // 3. Roll destination outcomes up to each post. Still-QUEUED destinations
+  // leave the post SCHEDULED so the next tick retries them.
+  for (const postId of touchedPostIds) {
+    await finalizePostStatus(postId, null);
   }
 }
 
 export async function refreshExpiringTokens(): Promise<void> {
+  // X and TikTok rotate refresh tokens on use: two instances refreshing the
+  // same account at once would leave one of them holding a dead token.
+  await withJobLock('refreshExpiringTokens', runRefreshExpiringTokens);
+}
+
+async function runRefreshExpiringTokens(): Promise<void> {
   try {
     // Meta/TikTok: refresh within 7 days. YouTube access tokens last ~1h, so
     // also pick up any YouTube account whose token is already expired / near expiry.
