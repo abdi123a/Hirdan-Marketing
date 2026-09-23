@@ -1,3 +1,5 @@
+import 'dotenv/config'; // same as prisma.config.ts — `npm run db:seed` needs DATABASE_URL
+import crypto from 'crypto';
 import { PrismaClient, UserRole, ClientStatus, ProjectStatus, Priority, MemberStatus, InvoiceStatus, DiscountType, ProformaStatus, BillingCycle, SubscriptionStatus, PackageType, ServiceStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
@@ -24,7 +26,53 @@ const addDays = (date: Date, days: number) => {
   return result;
 };
 
+const isProduction = process.env.NODE_ENV === 'production';
+const allowProduction = process.env.SEED_ALLOW_PRODUCTION === '1';
+
+/** Random password that satisfies the app's password policy. */
+function generateAdminPassword(): string {
+  return `${crypto.randomBytes(12).toString('base64url')}-Aa1!`;
+}
+
+async function ensureAdmin() {
+  const email = process.env.SEED_ADMIN_EMAIL || 'admin@hirdan.com';
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    // Never reset an existing account's password from a seed run.
+    console.log(`✅ Admin user already exists: ${email} (password unchanged)`);
+    return;
+  }
+
+  const provided = process.env.SEED_ADMIN_PASSWORD;
+  const password = provided || generateAdminPassword();
+  const admin = await prisma.user.create({
+    data: {
+      email,
+      passwordHash: await bcrypt.hash(password, 12),
+      role: UserRole.ADMIN,
+      name: 'Admin',
+      mustChangePassword: true,
+    },
+  });
+  console.log(`✅ Admin user created: ${admin.email}`);
+  if (!provided) {
+    console.log('\n📋 Generated admin password (shown once — change it at first login):');
+    console.log(`   ${password}\n`);
+  }
+}
+
 async function main() {
+  if (isProduction && !allowProduction) {
+    console.error('❌ Refusing to seed with NODE_ENV=production. Set SEED_ALLOW_PRODUCTION=1 to only create the admin account (no data is deleted or faked).');
+    process.exit(1);
+  }
+
+  if (isProduction) {
+    // Production: never delete or insert demo business data.
+    await ensureAdmin();
+    return;
+  }
+
   console.log('🌱 Clearing existing data...');
   
   // Delete in order to satisfy foreign key constraints
@@ -45,18 +93,7 @@ async function main() {
   console.log('🌱 Seeding database with 4,000,000 DJF over 3 months...\n');
 
   // ─── Create Admin User ──────────────────────────────────────────
-  const adminPasswordHash = await bcrypt.hash('admin123', 12);
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@hirdan.com' },
-    update: {},
-    create: {
-      email: 'admin@hirdan.com',
-      passwordHash: adminPasswordHash,
-      role: UserRole.ADMIN,
-      name: 'Admin',
-    },
-  });
-  console.log(`✅ Admin user created: ${admin.email}`);
+  await ensureAdmin();
 
   // ─── Create Agency Settings ─────────────────────────────────────
   const existingSettings = await prisma.agencySettings.findFirst();
@@ -229,9 +266,6 @@ async function main() {
   console.log('📊 Actual Seeded Revenue: 4,000,000 DJF Paid');
   console.log('📈 Distribution: Jan(1M), Feb(1.2M), Mar(1.8M)');
 
-  console.log('\n📋 Admin credentials:');
-  console.log('   Email:    admin@hirdan.com');
-  console.log('   Password: admin123');
   console.log('\n⚠️  Ensure you use the provided currency and timezone in Agency Settings.\n');
 }
 

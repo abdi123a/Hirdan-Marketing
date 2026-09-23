@@ -2,9 +2,57 @@ import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
+import { resolvePermissions, type ModuleKey, type PermissionMap } from '../lib/permissions.js';
 
 const router = Router();
 router.use(authenticate);
+
+/** Which permission module a broadcast notification's entity belongs to. */
+const ENTITY_MODULE: Record<string, ModuleKey> = {
+  INVOICE: 'invoices',
+  PROFORMA: 'proforma',
+  SUBSCRIPTION: 'subscriptions',
+  CLIENT: 'clients',
+  PROJECT: 'projects',
+  EMPLOYEE: 'team',
+  LEAD: 'leads',
+  REPORT: 'monthly_reports',
+};
+
+/**
+ * Notifications the current user may see: their own, plus (staff only)
+ * broadcasts whose module they can read.
+ */
+async function visibleNotificationsFilter(req: Request): Promise<Record<string, unknown>> {
+  const me = req.user!;
+  if (me.role === 'CLIENT') return { userId: me.userId };
+
+  const account = await prisma.user.findUnique({
+    where: { id: me.userId },
+    select: { permissions: true },
+  });
+  const perms = resolvePermissions(me.role, (account?.permissions as PermissionMap | null) ?? null);
+  const hiddenEntityTypes = Object.entries(ENTITY_MODULE)
+    .filter(([, mod]) => perms[mod] === 'NONE')
+    .map(([entityType]) => entityType);
+
+  const broadcastConditions: Record<string, unknown>[] = [];
+  if (hiddenEntityTypes.length > 0) {
+    broadcastConditions.push({
+      OR: [{ entityType: null }, { entityType: { notIn: hiddenEntityTypes } }],
+    });
+  }
+  if (perms.hr === 'NONE') {
+    broadcastConditions.push({ NOT: { type: { startsWith: 'HR_' } } });
+  }
+
+  return {
+    OR: [
+      { userId: me.userId },
+      { userId: null, ...(broadcastConditions.length ? { AND: broadcastConditions } : {}) },
+    ],
+  };
+}
 
 // ─── GET /api/notifications ──────────────────────────────────────
 router.get('/', async (req: Request, res: Response, next) => {
@@ -14,14 +62,7 @@ router.get('/', async (req: Request, res: Response, next) => {
     if (category) where.category = category as string;
     if (unreadOnly === 'true') where.read = false;
 
-    if (req.user!.role === 'CLIENT') {
-      where.userId = req.user!.userId;
-    } else {
-      where.OR = [
-        { userId: null },
-        { userId: req.user!.userId }
-      ];
-    }
+    Object.assign(where, await visibleNotificationsFilter(req));
 
     const notifications = await prisma.notification.findMany({
       where,
@@ -38,10 +79,7 @@ router.get('/', async (req: Request, res: Response, next) => {
 // ─── GET /api/notifications/counts ───────────────────────────────
 router.get('/counts', async (req: Request, res: Response, next) => {
   try {
-    const isClient = req.user!.role === 'CLIENT';
-    const userFilter = isClient
-      ? { userId: req.user!.userId }
-      : { OR: [{ userId: null }, { userId: req.user!.userId }] };
+    const userFilter = await visibleNotificationsFilter(req);
 
     const [total, unread, actionRequired, information, success, warning] = await Promise.all([
       prisma.notification.count({ where: userFilter }),
@@ -97,14 +135,12 @@ router.post('/', requireAdmin, async (req: Request, res: Response, next) => {
 // ─── PUT /api/notifications/:id/read ─────────────────────────────
 router.put('/:id/read', async (req: Request, res: Response, next) => {
   try {
-    const notif = await prisma.notification.findUnique({
-      where: { id: req.params.id as string }
+    // Only the recipient (or, for broadcasts, a staff member allowed to see it) may mark it read.
+    const notif = await prisma.notification.findFirst({
+      where: { id: req.params.id as string, ...(await visibleNotificationsFilter(req)) },
+      select: { id: true },
     });
     if (!notif) throw AppError.notFound('Notification not found');
-
-    if (req.user!.role === 'CLIENT' && notif.userId !== req.user!.userId) {
-      throw AppError.forbidden('You do not have permission to modify this notification');
-    }
 
     const notification = await prisma.notification.update({
       where: { id: req.params.id as string },
@@ -121,11 +157,7 @@ router.put('/:id/read', async (req: Request, res: Response, next) => {
 router.post('/mark-all-read', async (req: Request, res: Response, next) => {
   try {
     const { category } = req.body;
-    const isClient = req.user!.role === 'CLIENT';
-    
-    const userFilter = isClient
-      ? { userId: req.user!.userId }
-      : { OR: [{ userId: null }, { userId: req.user!.userId }] };
+    const userFilter = await visibleNotificationsFilter(req);
 
     const where: any = {
       ...userFilter,
@@ -145,10 +177,7 @@ router.post('/mark-all-read', async (req: Request, res: Response, next) => {
 // Kept for backward compat
 router.post('/clear-all', async (req: Request, res: Response, next) => {
   try {
-    const isClient = req.user!.role === 'CLIENT';
-    const userFilter = isClient
-      ? { userId: req.user!.userId }
-      : { OR: [{ userId: null }, { userId: req.user!.userId }] };
+    const userFilter = await visibleNotificationsFilter(req);
 
     await prisma.notification.updateMany({
       where: { ...userFilter, read: false },

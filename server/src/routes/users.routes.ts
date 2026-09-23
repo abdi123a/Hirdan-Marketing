@@ -7,6 +7,7 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { AppError } from '../lib/errors.js';
 import { parsePagination } from '../lib/pagination.js';
+import { passwordSchema, deactivateUser, revokeUserSessions } from '../lib/auth-security.js';
 import {
   ACCESS_LEVELS,
   PERMISSION_MODULES,
@@ -17,12 +18,6 @@ import {
 
 const router = Router();
 
-const passwordSchema = z.string()
-  .min(8, 'Password must be at least 8 characters')
-  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-  .regex(/[0-9]/, 'Password must contain at least one number')
-  .regex(/[\W_]/, 'Password must contain at least one special character');
 
 const permissionMapSchema = z.record(z.string(), z.enum(ACCESS_LEVELS)).optional().nullable();
 
@@ -34,12 +29,16 @@ const userSchema = z.object({
   teamMemberId: z.string().optional().nullable(),
   clientId: z.string().optional().nullable(),
   permissions: permissionMapSchema,
+  /** false disables the login (and ends its sessions); true re-enables it. */
+  isActive: z.boolean().optional(),
 });
 
 function shapeUser(user: any) {
   const overrides = (user.permissions as PermissionMap | null) || null;
+  // Never return credential material, even to admins.
+  const { passwordHash: _passwordHash, passwordResetToken: _resetToken, passwordResetExpiry: _resetExpiry, ...safe } = user;
   return {
-    ...user,
+    ...safe,
     permissions: overrides,
     resolvedPermissions: resolvePermissions(user.role, overrides),
   };
@@ -60,7 +59,10 @@ router.get('/permission-catalog', (_req: Request, res: Response) => {
 router.get('/', async (_req: Request, res: Response, next) => {
   try {
     const { take, skip } = parsePagination(_req.query, { maxTake: 100, defaultTake: 50 });
+    // Deactivated ("deleted") accounts are hidden unless explicitly requested.
+    const includeInactive = _req.query.includeInactive === 'true';
     const users = await prisma.user.findMany({
+      where: includeInactive ? undefined : { isActive: true },
       include: {
         teamMember: {
           select: {
@@ -92,30 +94,46 @@ router.post('/', validate({ body: userSchema.extend({ password: passwordSchema }
     const { name, email, password, role, teamMemberId, clientId, permissions } = req.body;
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
-    if (existingUser) {
+    if (existingUser && existingUser.isActive) {
       throw AppError.badRequest('Email already in use');
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
     const sanitized = permissions != null ? sanitizePermissionMap(permissions) : null;
 
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        passwordHash,
-        role,
-        permissions: role === 'ADMIN' || sanitized === null
-          ? Prisma.DbNull
-          : sanitized,
-        ...(teamMemberId ? { teamMember: { connect: { id: teamMemberId } } } : {}),
-        ...(clientId ? { client: { connect: { id: clientId } } } : {}),
-      },
-      include: {
-        teamMember: { select: { id: true, name: true, role: true } },
-        client: { select: { id: true, company: true } },
-      }
-    });
+    const fields = {
+      name,
+      email,
+      passwordHash,
+      role,
+      permissions: role === 'ADMIN' || sanitized === null
+        ? Prisma.DbNull
+        : sanitized,
+      ...(teamMemberId ? { teamMember: { connect: { id: teamMemberId } } } : {}),
+      ...(clientId ? { client: { connect: { id: clientId } } } : {}),
+    };
+    const include = {
+      teamMember: { select: { id: true, name: true, role: true } },
+      client: { select: { id: true, company: true } },
+    };
+
+    // Re-adding a previously deleted (deactivated) account revives its row,
+    // which keeps its audit history attached.
+    const user = existingUser
+      ? await prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            ...fields,
+            isActive: true,
+            mustChangePassword: false,
+            failedLoginAttempts: 0,
+            lockedUntil: null,
+            passwordResetToken: null,
+            passwordResetExpiry: null,
+          },
+          include,
+        })
+      : await prisma.user.create({ data: fields, include });
 
     res.status(201).json({ user: shapeUser(user) });
   } catch (error) {
@@ -128,7 +146,11 @@ router.post('/', validate({ body: userSchema.extend({ password: passwordSchema }
 router.put('/:id', validate({ body: userSchema.partial() }), async (req: Request, res: Response, next) => {
   try {
     const id = req.params.id as string;
-    const { name, email, password, role, teamMemberId, clientId, permissions } = req.body;
+    const { name, email, password, role, teamMemberId, clientId, permissions, isActive } = req.body;
+
+    if (id === req.user?.userId && (isActive === false || (role !== undefined && role !== 'ADMIN'))) {
+      throw AppError.badRequest('You cannot deactivate or demote your own account');
+    }
 
     // Check email uniqueness if email is being changed
     if (email) {
@@ -150,7 +172,10 @@ router.put('/:id', validate({ body: userSchema.partial() }), async (req: Request
     
     if (password) {
       data.passwordHash = await bcrypt.hash(password, 12);
+      data.failedLoginAttempts = 0;
+      data.lockedUntil = null;
     }
+    if (isActive !== undefined) data.isActive = isActive;
 
     if (permissions !== undefined) {
       const effectiveRole = role ?? (await prisma.user.findUnique({ where: { id }, select: { role: true } }))?.role;
@@ -188,6 +213,11 @@ router.put('/:id', validate({ body: userSchema.partial() }), async (req: Request
       }
     });
 
+    // A password reset by an admin, or a disabled account, ends every session.
+    if (password || isActive === false) {
+      await revokeUserSessions(id);
+    }
+
     res.json({ user: shapeUser(user) });
   } catch (error) {
     next(error);
@@ -195,14 +225,19 @@ router.put('/:id', validate({ body: userSchema.partial() }), async (req: Request
 });
 
 // ─── DELETE /api/users/:id ────────────────────────────────────────
+// Deactivates rather than deletes: the row is referenced by audit history
+// (shared files, HR approvals, conversation notes…) that must survive.
 router.delete('/:id', async (req: Request, res: Response, next) => {
   try {
-    // Prevent deleting self?
-    if (req.params.id === req.user?.userId) {
+    const id = req.params.id as string;
+    if (id === req.user?.userId) {
       throw AppError.badRequest('Cannot delete your own account');
     }
 
-    await prisma.user.delete({ where: { id: req.params.id as string } });
+    const existing = await prisma.user.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) throw AppError.notFound('User not found');
+
+    await deactivateUser(id);
     res.json({ message: 'User deleted' });
   } catch (error) {
     next(error);

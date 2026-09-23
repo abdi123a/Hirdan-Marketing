@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 import bcrypt from 'bcryptjs';
+import { passwordSchema, deactivateUser } from '../lib/auth-security.js';
 
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
@@ -185,6 +186,17 @@ router.put('/:id', validate({ body: teamDtoSchema.partial() }), async (req: Requ
       data: updateData,
     });
 
+    // Keep the linked login in step with employment status: terminating an
+    // employee disables their account and ends every session; bringing them
+    // back re-enables it.
+    if (member.userId && req.body.status && req.body.status !== currentMember.status) {
+      if (req.body.status === 'TERMINATED') {
+        await deactivateUser(member.userId);
+      } else if (currentMember.status === 'TERMINATED') {
+        await prisma.user.update({ where: { id: member.userId }, data: { isActive: true } });
+      }
+    }
+
     // Check what was updated to log meaningful activities
     const logs = [];
     if (req.body.status && req.body.status !== currentMember.status) {
@@ -242,6 +254,11 @@ router.delete('/:id', async (req: Request, res: Response, next) => {
       },
     });
 
+    // A terminated employee must not keep system access.
+    if (currentMember.userId) {
+      await deactivateUser(currentMember.userId);
+    }
+
     await prisma.employeeActivity.create({
       data: {
         employeeId: memberId,
@@ -265,8 +282,13 @@ router.post('/:id/provision-access', async (req: Request, res: Response, next) =
     const { password, role } = req.body;
     const userEmail = (req.user as any)?.email || 'Admin';
 
-    if (!password || password.length < 6) {
-      throw AppError.badRequest('Password must be at least 6 characters');
+    const parsedPassword = passwordSchema.safeParse(password);
+    if (!parsedPassword.success) {
+      throw AppError.badRequest(parsedPassword.error.issues[0]?.message || 'Password does not meet the password policy');
+    }
+    const assignedRole = role || 'STAFF';
+    if (!['ADMIN', 'MANAGER', 'STAFF'].includes(assignedRole)) {
+      throw AppError.badRequest('Role must be ADMIN, MANAGER or STAFF');
     }
 
     const member = await prisma.teamMember.findUnique({
@@ -274,44 +296,43 @@ router.post('/:id/provision-access', async (req: Request, res: Response, next) =
       include: { user: true },
     });
     if (!member) throw AppError.notFound('Team member not found');
+    if (member.status === 'TERMINATED') {
+      throw AppError.badRequest('Cannot provision access for a terminated team member');
+    }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const assignedRole = role || 'STAFF';
 
     let user;
     if (member.userId && member.user) {
       // Update existing user account
       user = await prisma.user.update({
         where: { id: member.userId },
-        data: { passwordHash, role: assignedRole, mustChangePassword: true },
+        data: { passwordHash, role: assignedRole, mustChangePassword: true, isActive: true, failedLoginAttempts: 0, lockedUntil: null },
       });
     } else {
-      // Check if there's already a user with this email
+      // Never take over an account that belongs to someone/something else
+      // (e.g. a client portal login or another staff account).
       const existing = await prisma.user.findUnique({ where: { email: member.email } });
       if (existing) {
-        // Link existing user and update password
-        user = await prisma.user.update({
-          where: { id: existing.id },
-          data: { passwordHash, role: assignedRole, mustChangePassword: true },
-        });
-        await prisma.teamMember.update({
-          where: { id: memberId },
-          data: { userId: existing.id },
-        });
-      } else {
-        // Create new user account
-        user = await prisma.user.create({
-          data: {
-            email: member.email,
-            name: member.name,
-            passwordHash,
-            role: assignedRole,
-            mustChangePassword: true,
-            teamMember: { connect: { id: memberId } },
-          },
-        });
+        throw AppError.conflict(
+          'A user account with this email already exists and is not linked to this team member. Link it from User Access instead.'
+        );
       }
+      // Create new user account
+      user = await prisma.user.create({
+        data: {
+          email: member.email,
+          name: member.name,
+          passwordHash,
+          role: assignedRole,
+          mustChangePassword: true,
+          teamMember: { connect: { id: memberId } },
+        },
+      });
     }
+
+    // A new password set by an admin ends every existing session.
+    await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
 
     // Log activity
     await prisma.employeeActivity.create({

@@ -491,7 +491,8 @@ export default function ClientPortalPage() {
       }
     } catch (error) {
       console.error(error);
-      setPasswordMessage('Unable to change password. Please verify your current password and try again.');
+      // Server messages cover a wrong current password and the password policy.
+      setPasswordMessage(error instanceof Error && error.message ? error.message : 'Unable to change password. Please verify your current password and try again.');
     } finally {
       setIsChangingPassword(false);
     }

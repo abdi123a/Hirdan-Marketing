@@ -16,6 +16,9 @@ model User {
   /// False once the account is disabled (e.g. employee terminated). Checked on
   /// login, refresh and every authenticated request.
   isActive              Boolean                @default(true) @map("is_active")
+  /// Consecutive failed logins; drives the temporary lockout below. Reset on success.
+  failedLoginAttempts   Int                    @default(0) @map("failed_login_attempts")
+  lockedUntil           DateTime?              @map("locked_until")
   passwordResetToken    String?                @unique @map("password_reset_token") @db.VarChar(512)
   passwordResetExpiry   DateTime?              @map("password_reset_expiry")
   role                  UserRole               @default(CLIENT)
@@ -54,9 +57,16 @@ model RefreshToken {
   userId    String   @map("user_id")
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
+  /// All tokens rotated from one login share a family; reuse of a rotated token revokes the family.
+  familyId  String?  @map("family_id") @db.VarChar(36)
+  /// Original login time of the family — caps the session's absolute lifetime.
+  sessionStartedAt DateTime @default(now()) @map("session_started_at")
+  /// Set when the token is rotated (kept for reuse detection until it expires).
+  usedAt    DateTime? @map("used_at")
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([familyId])
   @@map("refresh_tokens")
 }
 
