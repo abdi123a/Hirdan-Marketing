@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import QRCode from 'qrcode';
-import sanitizeHtml from 'sanitize-html';
+import { escapeHtml, sanitizeRichHtml } from '../rich-text.js';
 import { resolveAssetUrl } from './content-plan-html.js';
 import { getShortVerificationUrl } from '../short-url.js';
 import {
@@ -65,21 +65,9 @@ export type InvoicePdfInput = {
   verificationToken?: string | null;
 };
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function sanitizeRichHtml(html: string): string {
-  return sanitizeHtml(html, {
-    allowedTags: ['b', 'strong', 'i', 'em', 'br', 'p', 'ul', 'ol', 'li', 'div', 'span'],
-    allowedAttributes: { '*': ['style'] },
-  });
-}
+// Re-exported so existing importers keep working; the implementation lives in
+// ../rich-text.ts so routes can use it without pulling in the PDF stack.
+export { escapeHtml, sanitizeRichHtml };
 
 function parseAmountNumber(amount: string | number | null | undefined): number {
   if (amount === undefined || amount === null) return 0;
@@ -137,6 +125,9 @@ export async function buildInvoiceHtml(input: InvoicePdfInput): Promise<string> 
   const discount = input.discount ?? 0;
   const depositCents = input.deposit ?? 0;
 
+  // Item-less documents: `amount` is the stored post-discount total, so the
+  // helper derives the base subtotal with the discount added back rather
+  // than discounting that total a second time.
   const totals = computeInvoiceTotalsCents({
     items: input.items,
     amountCents: parseAmountNumber(input.amount ?? 0),

@@ -14,6 +14,28 @@ export function deriveSubtotalFromTotal(total: number, taxRate: number): number 
   return rate ? total / (1 + rate) : total;
 }
 
+/**
+ * Invert `computeDocTotals` for a document without line items: the stored
+ * amount is the tax-inclusive, post-discount total, so the pre-tax subtotal
+ * must add the discount back (otherwise it would be subtracted twice).
+ * Mirrors the server's `deriveBaseSubtotalCents`.
+ */
+export function deriveBaseSubtotal(
+  total: number,
+  taxRate?: number | null,
+  discount?: number | null,
+  discountType?: string | null,
+): number {
+  const rate = (taxRate ?? 0) / 100;
+  const disc = discount ?? 0;
+  if (!disc) return total / (1 + rate);
+  if (String(discountType || "").toLowerCase() === "percentage") {
+    const factor = 1 + rate - disc / 100;
+    return factor > 0 ? total / factor : total;
+  }
+  return (total + disc) / (1 + rate);
+}
+
 export function sumItems(items?: InvoiceItem[]): number {
   if (!items?.length) return 0;
   return items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
@@ -53,7 +75,7 @@ export function computeDocTotals(input: {
 
   const subtotalCents = items.length
     ? items.reduce((sum, it) => sum + itemCents(it), 0)
-    : toCents(deriveSubtotalFromTotal(parseAmountNumber(input.amount), taxRate));
+    : toCents(deriveBaseSubtotal(parseAmountNumber(input.amount), taxRate, input.discount, input.discountType));
   const discountBaseCents = items.length
     ? items.reduce((sum, it) => (it.discountable !== false ? sum + itemCents(it) : sum), 0)
     : subtotalCents;
@@ -64,7 +86,10 @@ export function computeDocTotals(input: {
     isPct ? Math.round((discountBaseCents * (input.discount ?? 0)) / 100) : toCents(input.discount ?? 0),
     discountBaseCents
   );
-  const totalCents = Math.max(0, subtotalCents + taxCents - discountCents);
+  // Without items the stored amount is the authoritative total.
+  const totalCents = items.length
+    ? Math.max(0, subtotalCents + taxCents - discountCents)
+    : Math.max(0, toCents(parseAmountNumber(input.amount)));
   const depositCents = toCents(input.deposit ?? 0);
 
   return {

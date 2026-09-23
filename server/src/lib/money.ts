@@ -76,9 +76,38 @@ export function deriveSubtotalCentsFromTotal(totalCents: number, taxRatePercent:
   return rate ? Math.round(totalCents / (1 + rate)) : totalCents;
 }
 
+/**
+ * Invert {@link computeInvoiceTotalsCents} for a document without line items:
+ * given its stored tax-inclusive, post-discount total, return the pre-tax,
+ * pre-discount subtotal that produces it. Without this the discount would be
+ * applied a second time to an amount that already includes it.
+ */
+export function deriveBaseSubtotalCents(
+  totalCents: number,
+  taxRatePercent?: number | null,
+  discount?: number | null,
+  discountType?: string | null
+): number {
+  const rate = (taxRatePercent ?? 0) / 100;
+  const disc = discount ?? 0;
+  if (!disc) return Math.round(totalCents / (1 + rate));
+  if (String(discountType || '').toUpperCase() === 'PERCENTAGE') {
+    const factor = 1 + rate - disc / 100;
+    return factor > 0 ? Math.round(totalCents / factor) : totalCents;
+  }
+  return Math.round((totalCents + dollarsToCents(disc)) / (1 + rate));
+}
+
 export function computeInvoiceTotalsCents(input: {
   items?: TotalsItem[] | null;
+  /** Stored tax-inclusive, post-discount total — used when there are no items. */
   amountCents?: number | null;
+  /**
+   * Explicit pre-tax, pre-discount subtotal for an item-less document (e.g.
+   * when re-pricing it with a new tax rate / discount). Takes precedence over
+   * `amountCents`.
+   */
+  baseSubtotalCents?: number | null;
   taxRate?: number | null;
   /** Fixed discount is in major units (dollars); percentage is 0–100. */
   discount?: number | null;
@@ -95,9 +124,12 @@ export function computeInvoiceTotalsCents(input: {
   const discount = input.discount ?? 0;
   const depositCents = input.depositCents ?? 0;
   const fromItems = sumItemCents(input.items);
-  const subtotalCents = fromItems
+  const hasItems = !!input.items?.length;
+  const subtotalCents = hasItems
     ? fromItems
-    : deriveSubtotalCentsFromTotal(input.amountCents ?? 0, taxRate);
+    : input.baseSubtotalCents != null
+      ? input.baseSubtotalCents
+      : deriveBaseSubtotalCents(input.amountCents ?? 0, taxRate, discount, input.discountType);
   // The discount may be restricted to a subset of line items (discountable
   // defaults to true). Without items the base is the whole subtotal.
   const discountBaseCents = input.items?.length
@@ -109,7 +141,12 @@ export function computeInvoiceTotalsCents(input: {
     isPct ? Math.round((discountBaseCents * discount) / 100) : dollarsToCents(discount),
     discountBaseCents
   );
-  const totalCents = Math.max(0, subtotalCents + taxCents - discountCents);
+  // An item-less document's stored amount is authoritative: pin the total to
+  // it so per-line rounding can never make the PDF disagree with the ledger.
+  const totalCents =
+    !hasItems && input.baseSubtotalCents == null && input.amountCents != null
+      ? Math.max(0, input.amountCents)
+      : Math.max(0, subtotalCents + taxCents - discountCents);
   return {
     subtotalCents,
     taxCents,
