@@ -8,14 +8,22 @@ import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { parsePagination } from '../lib/pagination.js';
 
+// Accepts ISO timestamps and date-only strings ("2026-07-01", as sent by
+// <input type="date">) and hands Prisma a real Date.
+const dateInput = z.coerce.date();
+const optionalDateInput = z.preprocess(
+  (v) => (v === '' ? null : v),
+  z.union([z.null(), dateInput]).optional(),
+);
+
 const subscriptionDtoSchema = z.object({
   clientId: z.string().uuid(),
   packageId: z.string().uuid().optional().nullable(),
   plan: z.string().min(1),
   amount: z.number().int().nonnegative(),
   billingCycle: z.enum(['MONTHLY', 'QUARTERLY', 'ANNUAL']).optional(),
-  startDate: z.string().or(z.date()),
-  endDate: z.string().or(z.date()).optional().nullable(),
+  startDate: dateInput,
+  endDate: optionalDateInput,
   status: z.enum(['ACTIVE', 'PAUSED', 'CANCELLED', 'TRIAL']).optional(),
   features: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
