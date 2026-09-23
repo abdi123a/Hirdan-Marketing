@@ -60,6 +60,62 @@ const CLIENT_SELF_SERVICE_MODULES: ReadonlySet<ModuleKey> = new Set([
 ] as ModuleKey[]);
 
 /**
+ * The only mutating requests a CLIENT may make through the staff API. Each
+ * handler re-scopes to the caller's own client record and strips every field
+ * a client may not change. Everything else a client can do is read-only.
+ * Matched against `req.baseUrl + req.path` (case-insensitive and
+ * trailing-slash tolerant, like Express routing itself).
+ */
+const CLIENT_WRITE_ALLOWLIST: ReadonlyArray<{ method: string; path: RegExp }> = [
+  { method: 'PUT', path: /^(?:\/api)?\/invoices\/[^/]+\/?$/i },
+  { method: 'PUT', path: /^(?:\/api)?\/proformas\/[^/]+\/?$/i },
+  { method: 'PUT', path: /^(?:\/api)?\/clients\/me\/?$/i },
+];
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/** Whether a CLIENT may issue `method` against `fullPath` (baseUrl + path). */
+export function isClientRequestAllowed(method: string, fullPath: string): boolean {
+  const m = method.toUpperCase();
+  if (SAFE_METHODS.has(m)) return true;
+  // Collapse duplicate slashes so `//invoices//x` cannot dodge the patterns.
+  const normalized = fullPath.replace(/\/{2,}/g, '/');
+  return CLIENT_WRITE_ALLOWLIST.some((rule) => rule.method === m && rule.path.test(normalized));
+}
+
+/**
+ * Client-portal section (see `Client.portalAccess`, toggled per client by an
+ * admin and mirrored in ClientPortalPage) that gates each self-service module.
+ * `clients` is not gated: it serves the client's own profile (/clients/me).
+ */
+const PORTAL_SECTION_BY_MODULE: Partial<Record<ModuleKey, string>> = {
+  invoices: 'financials',
+  proforma: 'financials',
+  subscriptions: 'subscriptions',
+  projects: 'projects',
+};
+
+/**
+ * Whether the admin left the portal section behind `module` enabled.
+ * Missing / null / malformed settings mean "everything enabled" (the portal's
+ * default); a section is off only when explicitly set to `false`.
+ */
+export function isPortalSectionEnabled(portalAccess: unknown, module: ModuleKey): boolean {
+  const section = PORTAL_SECTION_BY_MODULE[module];
+  if (!section) return true;
+  let access = portalAccess;
+  if (typeof access === 'string') {
+    try {
+      access = JSON.parse(access);
+    } catch {
+      return true;
+    }
+  }
+  if (!access || typeof access !== 'object' || Array.isArray(access)) return true;
+  return (access as Record<string, unknown>)[section] !== false;
+}
+
+/**
  * Express middleware: require at least `minimum` access on `module`.
  * ADMIN always passes.
  */
@@ -77,11 +133,25 @@ export function requirePermission(module: ModuleKey, minimum: AccessLevel = 'REA
       // Client portal uses its own access model for a known allowlist of
       // self-service modules; every other module is denied for CLIENT.
       if (req.user.role === 'CLIENT') {
-        if (CLIENT_SELF_SERVICE_MODULES.has(module)) {
-          next();
+        if (!CLIENT_SELF_SERVICE_MODULES.has(module)) {
+          next(AppError.forbidden(`You do not have access to ${module}`));
           return;
         }
-        next(AppError.forbidden(`You do not have access to ${module}`));
+        if (!isClientRequestAllowed(req.method, `${req.baseUrl}${req.path}`)) {
+          next(AppError.forbidden(`You do not have write access to ${module}`));
+          return;
+        }
+        if (PORTAL_SECTION_BY_MODULE[module]) {
+          const client = await prisma.client.findUnique({
+            where: { userId: req.user.userId },
+            select: { portalAccess: true },
+          });
+          if (client && !isPortalSectionEnabled(client.portalAccess, module)) {
+            next(AppError.forbidden(`Access to ${module} is disabled for your portal`));
+            return;
+          }
+        }
+        next();
         return;
       }
 

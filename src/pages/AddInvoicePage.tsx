@@ -19,8 +19,6 @@ import { DeliveryNoteEditor } from "@/components/DeliveryNoteEditor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 
-const generateInvoiceId = () => `INV-${Math.floor(Math.random() * 9000 + 1000)}`;
-
 export default function AddInvoicePage() {
   const navigate = useNavigate();
   const { clients, addInvoice, settings, services, packages, fetchServices, fetchPackages, fetchClients } = useAgencyStore();
@@ -32,8 +30,6 @@ export default function AddInvoicePage() {
     fetchPackages();
     fetchClients();
   }, [fetchServices, fetchPackages, fetchClients]);
-
-  const invoiceId = useState(generateInvoiceId)[0];
 
   const [form, setForm] = useState<Partial<Invoice>>({
     client: "",
@@ -139,9 +135,10 @@ export default function AddInvoicePage() {
         finalStatus = 'Paid';
       }
 
-      await addInvoice({ ...(form as Omit<Invoice, "id">), status: finalStatus as any, amount: totalStr, items, id: invoiceId });
-      toast({ title: "Invoice created!", description: `Invoice ${invoiceId} has been saved.` });
-      navigate(`/dashboard/invoices/view/${invoiceId}`);
+      // The server assigns the sequential invoice number.
+      const created = await addInvoice({ ...(form as Omit<Invoice, "id">), status: finalStatus as any, amount: totalStr, items });
+      toast({ title: "Invoice created!", description: created ? `Invoice ${created.id} has been saved.` : "The invoice has been saved." });
+      navigate(created ? `/dashboard/invoices/view/${encodeURIComponent(created.id)}` : "/dashboard/invoices");
     } catch (e) {
       console.error("Failed to create invoice:", e);
       const errMsg = e instanceof Error ? e.message : "Failed to create invoice.";
@@ -191,7 +188,7 @@ export default function AddInvoicePage() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between p-3 bg-primary/5 rounded-xl border border-primary/10">
                   <span className="text-sm text-muted-foreground font-medium">Invoice Number</span>
-                  <span className="font-bold text-primary text-lg">{invoiceId}</span>
+                  <span className="text-sm font-medium text-muted-foreground">Assigned on save</span>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Client <span className="text-destructive">*</span></Label>

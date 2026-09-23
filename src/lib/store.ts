@@ -494,7 +494,8 @@ interface AgencyStore {
   rejectHrDocument: (id: string, comment: string) => Promise<HrDocument>;
   sendHrDocumentEmail: (id: string, payload: { to: string; cc?: string; subject: string; body: string; filename?: string }) => Promise<any>;
 
-  addInvoice: (invoice: Omit<Invoice, 'id'> & { id?: string }) => Promise<void>;
+  /** Resolves with the created invoice (its `id` is the server-assigned number). */
+  addInvoice: (invoice: Omit<Invoice, 'id'> & { id?: string }) => Promise<Invoice | undefined>;
   updateInvoice: (id: string, invoice: Partial<Invoice>) => Promise<void>;
   deleteInvoice: (id: string) => Promise<void>;
   fetchInvoiceById: (id: string) => Promise<Invoice | null>;
@@ -504,7 +505,8 @@ interface AgencyStore {
   updateSubscription: (id: string, subscription: Partial<Subscription>) => Promise<void>;
   deleteSubscription: (id: string) => Promise<void>;
 
-  addProforma: (proforma: Omit<Proforma, 'id'> & { id?: string }) => Promise<void>;
+  /** Resolves with the created proforma (its `id` is the server-assigned number). */
+  addProforma: (proforma: Omit<Proforma, 'id'> & { id?: string }) => Promise<Proforma | undefined>;
   updateProforma: (id: string, proforma: Partial<Proforma>) => Promise<any>;
   deleteProforma: (id: string) => Promise<void>;
 
@@ -1673,10 +1675,10 @@ export const useAgencyStore = create<AgencyStore>()(
             position: item.position !== undefined ? item.position : index,
             discountable: item.discountable !== false,
           }));
-          await apiFetch('/invoices', {
+          // No invoiceNumber: the server allocates the next sequential one.
+          const res = await apiFetch<{ invoice?: any }>('/invoices', {
             method: 'POST',
             body: JSON.stringify({
-              invoiceNumber: (invoice as any).id || invoice.id,
               clientId,
               ...(amountCents !== undefined ? { amount: amountCents } : {}),
               status: invoice.status.toUpperCase().replace(/\s+/g, '_'),
@@ -1697,6 +1699,7 @@ export const useAgencyStore = create<AgencyStore>()(
             }),
           });
           await get().fetchInvoices();
+          return res?.invoice ? mapApiInvoice(res.invoice) : undefined;
         } catch (error) {
           console.error("Failed to add invoice:", error);
           throw error;
@@ -1740,6 +1743,9 @@ export const useAgencyStore = create<AgencyStore>()(
               discountable: item.discountable !== false,
             }));
           }
+          // `id` is the display number (legacy INV-1234 or server-assigned
+          // INV-2026-00001); the server only renumbers when it differs and
+          // answers 409 if the new number is taken.
           if (invoice.id && invoice.id.startsWith('INV-')) {
             payload.invoiceNumber = invoice.id;
           }
@@ -1861,10 +1867,10 @@ export const useAgencyStore = create<AgencyStore>()(
             position: item.position !== undefined ? item.position : index,
             discountable: item.discountable !== false,
           }));
-          await apiFetch('/proformas', {
+          // No proformaNumber: the server allocates the next sequential one.
+          const res = await apiFetch<{ proforma?: any }>('/proformas', {
             method: 'POST',
             body: JSON.stringify({
-              proformaNumber: (proforma as any).id || proforma.id,
               clientId: matched.id,
               amount: amountCents,
               status: proforma.status.toUpperCase().replace(/\s+/g, '_'),
@@ -1884,6 +1890,7 @@ export const useAgencyStore = create<AgencyStore>()(
             }),
           });
           await get().fetchProformas();
+          return res?.proforma ? mapApiProforma(res.proforma) : undefined;
         } catch (error) {
           console.error("Failed to add proforma:", error);
           throw error;

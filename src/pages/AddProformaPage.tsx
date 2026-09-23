@@ -20,7 +20,6 @@ import { Switch } from "@/components/ui/switch";
 import { Shield } from "lucide-react";
 import { DeliveryNoteEditor } from "@/components/DeliveryNoteEditor";
 
-const generateProformaId = () => `PRO-${Math.floor(Math.random() * 9000 + 1000)}`;
 
 export default function AddProformaPage() {
   const navigate = useNavigate();
@@ -33,7 +32,6 @@ export default function AddProformaPage() {
     fetchClients();
   }, [fetchServices, fetchPackages, fetchClients]);
 
-  const proformaId = useState(generateProformaId)[0];
   const [form, setForm] = useState<Partial<Proforma>>({
     client: "",
     clientEmail: "",
@@ -139,16 +137,16 @@ export default function AddProformaPage() {
         finalStatus = 'Accepted'; // Proformas use 'Accepted' instead of 'Paid' usually, but let's allow Partially Paid mapping
       }
       
-      await addProforma({ 
+      // The server assigns the sequential proforma number.
+      const created = await addProforma({ 
         ...form as Omit<Proforma, "id">, 
         status: finalStatus as any,
         amount: totalStr, 
         items, 
-        id: proformaId,
         createdAt: new Date().toISOString()
       });
-      toast({ title: "Proforma created!", description: `Proforma ${proformaId} has been saved.` });
-      navigate(`/dashboard/proforma/view/${proformaId}`);
+      toast({ title: "Proforma created!", description: created ? `Proforma ${created.id} has been saved.` : "The proforma has been saved." });
+      navigate(created ? `/dashboard/proforma/view/${encodeURIComponent(created.id)}` : "/dashboard/proforma");
     } catch (e) {
       console.error("Failed to create proforma:", e);
       const errMsg = e instanceof Error ? e.message : "Failed to create proforma.";
@@ -186,7 +184,7 @@ export default function AddProformaPage() {
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between p-3 bg-primary/5 rounded-xl border border-primary/10">
                 <span className="text-sm text-muted-foreground font-medium">Proforma Number</span>
-                <span className="font-bold text-primary text-lg">{proformaId}</span>
+                <span className="text-sm font-medium text-muted-foreground">Assigned on save</span>
               </div>
               <div className="space-y-1.5">
                 <Label>Client <span className="text-destructive">*</span></Label>
