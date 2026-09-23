@@ -15,10 +15,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           # Pinned to match the VPS (node v20.20.2) so CI builds on the same
           # runtime that runs the code. Bumping this alone would only hide the
@@ -29,7 +29,9 @@ jobs:
       # Step 1: Build the static Frontend (CRM Dashboard → app.hirdanmarketing.com)
       - name: Build Frontend
         run: |
-          npm install --legacy-peer-deps
+          # npm ci installs exactly what package-lock.json records (and fails
+          # if package.json and the lock disagree) instead of re-resolving.
+          npm ci
           npm run build
 
       # Step 2: Build the Landing Page (Next.js → hirdanmarketing.com)
@@ -43,7 +45,7 @@ jobs:
       - name: Build Backend
         run: |
           cd server
-          npm install --legacy-peer-deps
+          PUPPETEER_SKIP_DOWNLOAD=1 npm ci
           npx prisma generate
           npm run build
           # Local money-helper smoke (no DB / no running server required for that part)
@@ -58,19 +60,38 @@ jobs:
 
       # Step 3: Setup SSH key + allow GitHub Actions IPs on VPS firewall
       - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          # Output of `ssh-keyscan -p <port> <host>` captured ONCE from a trusted
+          # network (or copied from the server's /etc/ssh/ssh_host_*_key.pub),
+          # stored as a repository secret.
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          # Pre-trust the VPS host key to avoid interactive prompt
-          ssh-keyscan -p ${{ env.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$SSH_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+            echo "SSH_STRICT=yes" >> "$GITHUB_ENV"
+            echo "🔐 Using pinned host key from SSH_KNOWN_HOSTS (StrictHostKeyChecking=yes)."
+          else
+            # Fallback = previous behaviour: trust whatever key the host
+            # presents right now. A MITM on this connection would receive the
+            # deploy key's session and could feed us a malicious server.
+            echo "::warning title=SSH host key not pinned::SSH_KNOWN_HOSTS secret is not set, so the VPS host key is trusted blindly via ssh-keyscan. Add a SSH_KNOWN_HOSTS repository secret containing the output of 'ssh-keyscan -p <port> <host>' (verified against the server) to enable StrictHostKeyChecking."
+            ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+            echo "SSH_STRICT=no" >> "$GITHUB_ENV"
+          fi
+          chmod 600 ~/.ssh/known_hosts
 
       # Step 4: Verify SSH connectivity before deploying
       - name: Test SSH Connection
         run: |
           echo "🔌 Testing SSH connection to VPS..."
           ssh -p ${{ env.SSH_PORT }} \
-            -o StrictHostKeyChecking=no \
+            -o StrictHostKeyChecking=${SSH_STRICT:-no} \
             -o BatchMode=yes \
             -o PreferredAuthentications=publickey \
             -o ConnectTimeout=30 \
@@ -85,7 +106,7 @@ jobs:
         run: |
           echo "📁 Copying Frontend static files to app.hirdanmarketing.com..."
           rsync -avz --delete \
-            -e "ssh -p ${{ env.SSH_PORT }} -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30 -i ~/.ssh/id_ed25519" \
+            -e "ssh -p ${{ env.SSH_PORT }} -o StrictHostKeyChecking=${SSH_STRICT:-no} -o BatchMode=yes -o ConnectTimeout=30 -i ~/.ssh/id_ed25519" \
             dist/ \
             root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-app/htdocs/app.hirdanmarketing.com/
 
@@ -93,7 +114,7 @@ jobs:
         run: |
           echo "📁 Copying Landing Page static files to hirdanmarketing.com..."
           rsync -avz --delete \
-            -e "ssh -p ${{ env.SSH_PORT }} -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30 -i ~/.ssh/id_ed25519" \
+            -e "ssh -p ${{ env.SSH_PORT }} -o StrictHostKeyChecking=${SSH_STRICT:-no} -o BatchMode=yes -o ConnectTimeout=30 -i ~/.ssh/id_ed25519" \
             landing-page/dist/ \
             root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing/htdocs/hirdanmarketing.com/
 
@@ -101,15 +122,18 @@ jobs:
         run: |
           echo "📁 Copying Backend compiled files to api.hirdanmarketing.com..."
           rsync -avz \
-            -e "ssh -p ${{ env.SSH_PORT }} -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30 -i ~/.ssh/id_ed25519" \
+            -e "ssh -p ${{ env.SSH_PORT }} -o StrictHostKeyChecking=${SSH_STRICT:-no} -o BatchMode=yes -o ConnectTimeout=30 -i ~/.ssh/id_ed25519" \
             server/dist server/package.json server/package-lock.json server/prisma server/scripts server/templates \
             root@${{ secrets.SSH_HOST }}:/home/hirdanmarketing-api/htdocs/api.hirdanmarketing.com/
 
       # Step 6: Run server commands (dependencies install & restart service)
       - name: Execute Server Commands
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
+          # SHA256 host-key fingerprint (`ssh-keygen -lf <(ssh-keyscan host)`,
+          # the part after "SHA256:"). Empty = not verified (old behaviour).
+          fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ env.SSH_PORT }}
@@ -172,6 +196,36 @@ jobs:
 
             echo "🗄️ Applying database migrations..."
             ./node_modules/.bin/prisma migrate deploy
+            # NOTE: this deploy must never run `prisma db push`, `migrate reset`
+            # or the seed (`db:seed` / prisma.config.ts migrations.seed).
+            # `migrate deploy` does not trigger the seed.
+
+            # Drift check: does the live database match schema.prisma after all
+            # committed migrations were applied? Drift means someone changed the
+            # DB by hand / via the old `db push`, or a model change shipped
+            # without a migration. Warning-only for now — make it blocking
+            # (exit 1) once production has been confirmed clean.
+            # The URL is read from .env by prisma.config.ts (dotenv) via
+            # --from-schema-datasource, so the DB password never appears in argv.
+            echo "🔍 Checking for schema drift (live DB vs prisma/schema.prisma)..."
+            DRIFT_RC=0
+            DRIFT_OUT=$(mktemp)
+            ./node_modules/.bin/prisma migrate diff \
+              --from-schema-datasource prisma/schema.prisma \
+              --to-schema-datamodel prisma/schema.prisma \
+              --exit-code > "$DRIFT_OUT" 2>&1 || DRIFT_RC=$?
+            if [ "$DRIFT_RC" -eq 0 ]; then
+              echo "✅ No schema drift."
+            elif [ "$DRIFT_RC" -eq 2 ]; then
+              echo "::warning::⚠️ SCHEMA DRIFT: the production database does not match prisma/schema.prisma after migrate deploy."
+              echo "   SQL needed to bring the DB in line with the schema (first 80 lines):"
+              head -n 80 "$DRIFT_OUT"
+              echo "   Review and turn this into a migration (prisma migrate diff ... --script) — do NOT db push."
+            else
+              echo "::warning::Drift check could not run (exit $DRIFT_RC):"
+              head -n 20 "$DRIFT_OUT"
+            fi
+            rm -f "$DRIFT_OUT"
 
             echo "🧹 Pruning dev dependencies..."
             npm prune --production --legacy-peer-deps
