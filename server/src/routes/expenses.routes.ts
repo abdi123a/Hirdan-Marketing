@@ -8,6 +8,17 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { PATHS } from '../lib/paths.js';
+import { exclusiveEnd, addTo, InvalidDateError } from '../lib/report-period.js';
+
+/** Parse an inclusive `to` query param into an exclusive bound (whole last day included). */
+function toExclusive(to: string): Date {
+  try {
+    return exclusiveEnd(to);
+  } catch (error) {
+    if (error instanceof InvalidDateError) throw AppError.badRequest(error.message);
+    throw error;
+  }
+}
 
 const router = Router();
 
@@ -88,7 +99,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     if (from || to) {
       where.date = {};
       if (from) where.date.gte = new Date(from as string);
-      if (to) where.date.lte = new Date(to as string);
+      if (to) where.date.lt = toExclusive(to as string);
     }
 
     const [expenses, total] = await Promise.all([
@@ -132,37 +143,66 @@ router.get('/summary', async (req: Request, res: Response, next: NextFunction) =
     const { from, to } = req.query;
     const now = new Date();
     const fromDate = from ? new Date(from as string) : new Date(now.getFullYear(), now.getMonth(), 1);
-    const toDate = to ? new Date(to as string) : now;
+    const toEnd = to ? toExclusive(to as string) : new Date(now.getTime() + 1);
+    if (isNaN(fromDate.getTime())) throw AppError.badRequest('Invalid date format. Use YYYY-MM-DD.');
+
+    // Amounts are cents in each account's own currency, so totals must not be
+    // summed across currencies. `total`/`count`/`byCategory` cover the
+    // agency's base currency; `byCurrency` has one total per currency.
+    const [settings, accounts] = await Promise.all([
+      prisma.agencySettings.findFirst({ select: { currency: true } }),
+      prisma.account.findMany({ select: { id: true, currency: true } }),
+    ]);
+    const baseCurrency = settings?.currency || 'USD';
+    const currencyOf = new Map(accounts.map((a) => [a.id, a.currency]));
+    const baseAccountIds = accounts.filter((a) => a.currency === baseCurrency).map((a) => a.id);
+    const inPeriod = { date: { gte: fromDate, lt: toEnd } };
+    const inBase = { ...inPeriod, accountId: { in: baseAccountIds } };
 
     const [totalAgg, byCategory, byAccount] = await Promise.all([
       prisma.expense.aggregate({
-        where: { date: { gte: fromDate, lte: toDate } },
+        where: inBase,
         _sum: { amount: true },
         _count: { id: true },
       }),
       prisma.expense.groupBy({
         by: ['category'],
-        where: { date: { gte: fromDate, lte: toDate } },
+        where: inBase,
         _sum: { amount: true },
         _count: { id: true },
         orderBy: { _sum: { amount: 'desc' } },
       }),
       prisma.expense.groupBy({
         by: ['accountId'],
-        where: { date: { gte: fromDate, lte: toDate } },
+        where: inPeriod,
         _sum: { amount: true },
         _count: { id: true },
       }),
     ]);
 
+    const totals: Record<string, number> = {};
+    const counts: Record<string, number> = {};
+    for (const row of byAccount) {
+      const currency = currencyOf.get(row.accountId) ?? baseCurrency;
+      addTo(totals, currency, row._sum.amount ?? 0);
+      addTo(counts, currency, row._count.id ?? 0);
+    }
+    const byCurrency = Object.keys(totals).map((currency) => ({
+      currency,
+      total: totals[currency],
+      count: counts[currency],
+    }));
+
     res.json({
+      currency: baseCurrency,
       total: totalAgg._sum.amount ?? 0,
       count: totalAgg._count.id ?? 0,
       byCategory,
       byAccount,
+      byCurrency,
       period: {
         from: fromDate.toISOString().split('T')[0],
-        to: toDate.toISOString().split('T')[0],
+        to: new Date(toEnd.getTime() - 1).toISOString().split('T')[0],
       },
     });
   } catch (error) {

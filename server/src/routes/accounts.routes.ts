@@ -16,6 +16,8 @@ const createAccountSchema = z.object({
   name: z.string().min(1, 'Account name is required'),
   type: z.enum(['BANK', 'MOBILE_WALLET', 'CASH']),
   currency: z.string().default('USD'),
+  // Whole currency units (like transfer/deposit amounts); stored as cents.
+  openingBalance: z.number().optional(),
   color: z.string().optional().nullable(),
   icon: z.string().optional().nullable(),
   image: z.string().optional().nullable(),
@@ -28,6 +30,8 @@ const transferSchema = z.object({
   fromAccountId: z.string().min(1),
   toAccountId: z.string().min(1),
   amount: z.number().positive('Amount must be greater than 0'),
+  // Destination units per 1 source unit; required when the currencies differ.
+  exchangeRate: z.number().positive().optional(),
   note: z.string().optional().nullable(),
   date: z.string().optional(),
 });
@@ -43,7 +47,8 @@ const createDepositSchema = z.object({
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 /**
- * Calculates account balance dynamically:
+ * Calculates account balance dynamically (cents, in the account's currency):
+ * - Opening balance
  * - Expenses deducted from account
  * - Transfers out deducted
  * - Transfers in added
@@ -60,7 +65,11 @@ async function getAccountBalances(accountIds: string[]): Promise<Map<string, num
   for (const id of accountIds) map.set(id, 0);
   if (accountIds.length === 0) return map;
 
-  const [expenses, transfersOut, transfersIn, deposits] = await Promise.all([
+  const [openings, expenses, transfersOut, transfersIn, transfersInConverted, deposits] = await Promise.all([
+    prisma.account.findMany({
+      where: { id: { in: accountIds } },
+      select: { id: true, openingBalance: true },
+    }),
     prisma.expense.groupBy({
       by: ['accountId'],
       where: { accountId: { in: accountIds } },
@@ -71,10 +80,16 @@ async function getAccountBalances(accountIds: string[]): Promise<Map<string, num
       where: { fromAccountId: { in: accountIds } },
       _sum: { amount: true },
     }),
+    // Destination is credited toAmount (its own currency) when set, else amount.
     prisma.accountTransfer.groupBy({
       by: ['toAccountId'],
-      where: { toAccountId: { in: accountIds } },
+      where: { toAccountId: { in: accountIds }, toAmount: null },
       _sum: { amount: true },
+    }),
+    prisma.accountTransfer.groupBy({
+      by: ['toAccountId'],
+      where: { toAccountId: { in: accountIds }, toAmount: { not: null } },
+      _sum: { toAmount: true },
     }),
     prisma.deposit.groupBy({
       by: ['accountId'],
@@ -83,6 +98,12 @@ async function getAccountBalances(accountIds: string[]): Promise<Map<string, num
     }),
   ]);
 
+  for (const row of openings) {
+    map.set(row.id, (map.get(row.id) ?? 0) + row.openingBalance);
+  }
+  for (const row of transfersInConverted) {
+    map.set(row.toAccountId, (map.get(row.toAccountId) ?? 0) + (row._sum.toAmount ?? 0));
+  }
   for (const row of deposits) {
     if (!row.accountId) continue;
     map.set(row.accountId, (map.get(row.accountId) ?? 0) + (row._sum.amount ?? 0));
@@ -143,11 +164,15 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
 // ─── POST /api/accounts ───────────────────────────────────────────────
 router.post('/', validate({ body: createAccountSchema }), async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const { openingBalance, ...data } = req.body;
     const account = await prisma.account.create({
-      data: req.body,
+      data: {
+        ...data,
+        openingBalance: openingBalance !== undefined ? Math.round(openingBalance * 100) : 0,
+      },
     });
 
-    res.status(201).json({ account: { ...account, balance: 0 } });
+    res.status(201).json({ account: { ...account, balance: account.openingBalance } });
   } catch (error) {
     next(error);
   }
@@ -159,11 +184,15 @@ router.put('/:id', validate({ body: updateAccountSchema }), async (req: Request,
     const existing = await prisma.account.findUnique({ where: { id: req.params.id as string } });
     if (!existing) throw AppError.notFound('Account not found');
 
-    const { id: _id, createdAt: _c, updatedAt: _u, ...data } = req.body;
+    const { id: _id, createdAt: _c, updatedAt: _u, openingBalance, ...data } = req.body;
 
     const account = await prisma.account.update({
       where: { id: req.params.id as string },
-      data,
+      data: {
+        ...data,
+        // Whole units in, cents stored (see createAccountSchema)
+        ...(openingBalance !== undefined ? { openingBalance: Math.round(openingBalance * 100) } : {}),
+      },
     });
 
     const balance = await getAccountBalance(account.id);
@@ -194,7 +223,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
 // ─── POST /api/accounts/transfer ──────────────────────────────────────
 router.post('/transfer', validate({ body: transferSchema }), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { fromAccountId, toAccountId, amount, note, date } = req.body;
+    const { fromAccountId, toAccountId, amount, exchangeRate, note, date } = req.body;
 
     if (fromAccountId === toAccountId) {
       throw AppError.badRequest('Cannot transfer to the same account');
@@ -207,15 +236,31 @@ router.post('/transfer', validate({ body: transferSchema }), async (req: Request
 
     if (!from) throw AppError.notFound('Source account not found');
     if (!to) throw AppError.notFound('Destination account not found');
+    if (from.isArchived || to.isArchived) {
+      throw AppError.badRequest('Cannot transfer to or from an archived account');
+    }
+    // No balance check on purpose: balances are derived, the UI shows negative
+    // balances (overdraft) in red, and expenses are not balance-checked either.
 
-    // Amount comes in as dollars from frontend, store as cents
+    // Amount comes in as whole units (source currency) from frontend, store as cents
     const amountCents = Math.round(amount * 100);
+
+    let toAmountCents = amountCents;
+    if (from.currency !== to.currency) {
+      if (!exchangeRate) {
+        throw AppError.badRequest(
+          `Accounts use different currencies (${from.currency} → ${to.currency}); provide exchangeRate (${to.currency} per 1 ${from.currency}).`,
+        );
+      }
+      toAmountCents = Math.round(amountCents * exchangeRate);
+    }
 
     const transfer = await prisma.accountTransfer.create({
       data: {
         fromAccountId,
         toAccountId,
         amount: amountCents,
+        toAmount: toAmountCents,
         note: note || null,
         date: date ? new Date(date) : new Date(),
       },

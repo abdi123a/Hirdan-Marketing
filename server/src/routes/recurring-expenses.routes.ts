@@ -4,6 +4,8 @@ import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { AppError } from '../lib/errors.js';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
+import { recurringPeriodKey } from '../lib/billing-period.js';
 
 const router = Router();
 
@@ -131,11 +133,18 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
 });
 
 // ─── POST /api/recurring-expenses/:id/post ───────────────────────────
-// Creates a real Expense entry from this recurring template for the current month
+// Creates a real Expense entry from this recurring template for the current
+// period (month for MONTHLY, week for WEEKLY, …). Idempotent per period: the
+// (recurringExpenseId, recurringPeriod) unique index rejects a second posting.
 router.post('/:id/post', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const recurring = await prisma.recurringExpense.findUnique({ where: { id: req.params.id as string } });
     if (!recurring) throw AppError.notFound('Recurring expense template not found');
+
+    const now = new Date();
+    if (!recurring.isActive) throw AppError.badRequest('This recurring expense is inactive.');
+    if (recurring.startDate > now) throw AppError.badRequest('This recurring expense has not started yet.');
+    if (recurring.endDate && recurring.endDate < now) throw AppError.badRequest('This recurring expense has ended.');
 
     let finalAccountId = recurring.accountId;
     if (!finalAccountId) {
@@ -146,26 +155,38 @@ router.post('/:id/post', async (req: Request, res: Response, next: NextFunction)
       finalAccountId = defaultAcc.id;
     }
 
-    const now = new Date();
     const monthNames = [
       'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
-    const periodLabel = `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+    const recurringPeriod = recurringPeriodKey(recurring.frequency, now);
+    const periodLabel = recurring.frequency === 'MONTHLY'
+      ? `${monthNames[now.getUTCMonth()]} ${now.getUTCFullYear()}`
+      : recurringPeriod ?? now.toISOString().split('T')[0];
 
-    const expense = await prisma.expense.create({
-      data: {
-        accountId: finalAccountId,
-        amount: recurring.amount,
-        category: recurring.category,
-        description: `${recurring.name} — ${periodLabel}`,
-        date: now,
-        notes: recurring.description || `Recorded from monthly recurring template.`,
-      },
-      include: {
-        account: { select: { id: true, name: true, type: true, color: true, currency: true } },
-      },
-    });
+    let expense;
+    try {
+      expense = await prisma.expense.create({
+        data: {
+          accountId: finalAccountId,
+          amount: recurring.amount, // already cents (template stores cents)
+          category: recurring.category,
+          description: `${recurring.name} — ${periodLabel}`,
+          date: now,
+          notes: recurring.description || `Recorded from recurring template.`,
+          recurringExpenseId: recurring.id,
+          recurringPeriod,
+        },
+        include: {
+          account: { select: { id: true, name: true, type: true, color: true, currency: true } },
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw AppError.conflict(`"${recurring.name}" has already been posted for ${periodLabel}.`);
+      }
+      throw error;
+    }
 
     res.status(201).json({ expense });
   } catch (error) {

@@ -46,7 +46,7 @@ import { startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, format } f
 
 interface IncomeStatementData {
   period: { from: string; to: string; months: number };
-  revenue: { invoiceRevenue: number; subscriptionRevenue: number; total: number };
+  revenue: { invoiceRevenue: number; subscriptionRevenue: number; otherRevenue?: number; total: number };
   expenses: {
     payroll: number;
     rent: number;
@@ -519,9 +519,15 @@ export default function FinancialReportPage() {
                             <span className="text-foreground">{formatVal(incomeStatement.revenue.invoiceRevenue)}</span>
                           </div>
                           <div className="flex justify-between py-0.5">
-                            <span>Active Recurring Subscriptions</span>
+                            <span>Subscription Invoices (Paid)</span>
                             <span className="text-foreground">{formatVal(incomeStatement.revenue.subscriptionRevenue)}</span>
                           </div>
+                          {!!incomeStatement.revenue.otherRevenue && (
+                            <div className="flex justify-between py-0.5">
+                              <span>Other Revenue Deposits</span>
+                              <span className="text-foreground">{formatVal(incomeStatement.revenue.otherRevenue)}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -822,9 +828,9 @@ export default function FinancialReportPage() {
                         </span>
                       </div>
                       <div className="pl-4 mt-2 space-y-1.5 text-muted-foreground">
-                        <div className="flex justify-between py-0.5 text-red-500/90 dark:text-red-400/90">
-                          <span>Owner distributions & equity draws</span>
-                          <span>({formatVal(Math.abs(cashFlow.financingActivities.ownerDrawings))})</span>
+                        <div className="flex justify-between py-0.5">
+                          <span>Owner contributions & other deposits</span>
+                          <span className="text-foreground">{formatVal(cashFlow.financingActivities.ownerDrawings)}</span>
                         </div>
                       </div>
                     </div>
