@@ -4,6 +4,7 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 import { PATHS } from '../lib/paths.js';
 import { assertCanAccessEmployee } from '../lib/hr-access.js';
+import { enforceMagicBytes } from '../lib/upload.js';
 import multer from 'multer';
 import path from 'path';
 import crypto from 'crypto';
@@ -53,6 +54,7 @@ router.post(
   '/:employeeId/files',
   requireAdmin,
   uploadEmployeeDoc.single('file'),
+  enforceMagicBytes({ kind: 'document' }),
   async (req: Request, res: Response, next) => {
     try {
       const employeeId = req.params.employeeId as string;

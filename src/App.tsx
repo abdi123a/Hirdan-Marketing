@@ -153,6 +153,13 @@ function AppRoutes() {
               allowLocalhostAsSecureOrigin: true,
             }).then(() => {
               console.log('[OneSignal] Initialized successfully');
+              // Pushes are targeted by external_id, so bind the signed-in user
+              // (identity changes after this are synced by auth-store).
+              const userId = useAuthStore.getState().user?.id;
+              if (userId) {
+                Promise.resolve(w.OneSignal.login(userId)).catch((err: unknown) =>
+                  console.warn('[OneSignal] identity sync failed:', err));
+              }
             }).catch((err: any) => {
               console.warn('[OneSignal] Initialization error:', err);
             });

@@ -1,3 +1,4 @@
+import { escapeHtml } from './rich-text.js';
 import { Resend } from 'resend';
 import { prisma } from './prisma.js';
 import { logSystemEmail } from './mail/system-log.js';
@@ -202,7 +203,7 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
   }
 
   const preheaderHtml = options.preheader
-    ? `<span style="display: none; max-height: 0px; overflow: hidden;">${options.preheader}</span>`
+    ? `<span style="display: none; max-height: 0px; overflow: hidden;">${escapeHtml(options.preheader)}</span>`
     : '';
 
   const taglineHtml = `
@@ -230,7 +231,7 @@ export async function generateEmailHtml(options: EmailWrapperOptions): Promise<s
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${options.title}</title>
+  <title>${escapeHtml(options.title)}</title>
   <style>
     body {
       background-color: #f6f9fc;

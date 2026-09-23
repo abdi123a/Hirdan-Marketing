@@ -125,7 +125,8 @@ app.use(cors({
 // Svix signature verification. Everything else uses the JSON parser below.
 app.use(
   '/api/email/webhooks',
-  express.raw({ type: '*/*', limit: '30mb' }),
+  // Resend webhooks carry metadata only (bodies/attachments are fetched via API).
+  express.raw({ type: '*/*', limit: '1mb' }),
   emailWebhookRoutes
 );
 

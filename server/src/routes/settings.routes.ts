@@ -143,9 +143,17 @@ router.get('/', async (req: Request, res: Response, next) => {
       if (authHeader && authHeader.startsWith('Bearer ')) {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, env.JWT_SECRET) as any;
-        if (['ADMIN', 'MANAGER', 'STAFF'].includes(decoded.role)) {
+        // Trust the database, not the token: a demoted or disabled account
+        // must lose staff-level settings immediately.
+        const dbUser = decoded?.userId
+          ? await prisma.user.findUnique({
+              where: { id: decoded.userId },
+              select: { role: true, isActive: true },
+            })
+          : null;
+        if (dbUser?.isActive && ['ADMIN', 'MANAGER', 'STAFF'].includes(dbUser.role)) {
           isStaffOrAdmin = true;
-          isAdmin = decoded.role === 'ADMIN';
+          isAdmin = dbUser.role === 'ADMIN';
         }
       }
     } catch (e) {

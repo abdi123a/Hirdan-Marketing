@@ -23,6 +23,6 @@ export function sanitizeEmailHtml(html: string | null | undefined): string {
   if (!html) return "";
   return DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
-    FORBID_TAGS: ["form", "input", "button", "textarea", "select"],
+    FORBID_TAGS: ["style", "form", "input", "button", "textarea", "select"],
   });
 }

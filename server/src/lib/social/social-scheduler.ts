@@ -838,14 +838,17 @@ export function startSocialScheduler(): void {
 
   // 3. Collect daily insights every day at 2 AM
   cron.schedule('0 2 * * *', () => {
-    collectDailyInsights().catch(err => console.error('social scheduler collectDailyInsights error:', err));
+    // Cron-triggered runs take the cross-instance lock; manual per-client runs don't need it.
+    withJobLock('collectDailyInsights', async () => { await collectDailyInsights(); })
+      .catch(err => console.error('social scheduler collectDailyInsights error:', err));
   });
 
   // 4. Fill in missing public post URLs every 15 minutes. Mainly TikTok: at
   //    publish time we only have a publish_id and the video is still processing,
   //    so the real video link only becomes available a few minutes later.
   cron.schedule('*/15 * * * *', () => {
-    resolvePendingPermalinks().catch(err => console.error('social scheduler resolvePendingPermalinks error:', err));
+    withJobLock('resolvePendingPermalinks', async () => { await resolvePendingPermalinks(); })
+      .catch(err => console.error('social scheduler resolvePendingPermalinks error:', err));
   });
 
   console.log('✔ Social media scheduler jobs successfully initialized');

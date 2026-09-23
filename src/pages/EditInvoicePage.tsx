@@ -139,7 +139,8 @@ export default function EditInvoicePage() {
       toast({ title: "Invoice updated!", description: `Invoice ${id} has been updated.` });
       navigate(`/dashboard/invoices/view/${id}`);
     } catch (e) {
-      toast({ title: "Error", description: "Failed to update invoice.", variant: "destructive" });
+      const message = e instanceof Error && e.message ? e.message : "Failed to update invoice.";
+      toast({ title: "Error", description: message, variant: "destructive" });
     }
   };
 

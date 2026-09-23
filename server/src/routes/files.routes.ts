@@ -3,6 +3,8 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { authenticate } from '../middleware/auth.js';
+import { getRequestPermissions } from '../lib/permission-guard.js';
+import { hasPermission } from '../lib/permissions.js';
 import { AppError } from '../lib/errors.js';
 import { prisma } from '../lib/prisma.js';
 import { canAccessEmployee, employeeAccessSelect } from '../lib/hr-access.js';
@@ -78,6 +80,14 @@ router.get('/:folder/:filename', authenticate, (req: Request, res: Response, nex
           select: { id: true },
         });
         if (!record) throw AppError.forbidden('Access denied');
+      }
+    }
+
+    // Staff reach client documents/media only with access to the clients module.
+    if (user?.role !== 'CLIENT' && user?.role !== 'ADMIN' && (folder === 'documents' || folder === 'media')) {
+      const permissions = await getRequestPermissions(req);
+      if (!hasPermission(permissions, 'clients', 'READ')) {
+        throw AppError.forbidden('Access denied');
       }
     }
 

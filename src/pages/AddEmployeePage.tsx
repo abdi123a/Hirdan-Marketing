@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { generateStrongPassword, PASSWORD_POLICY_HINT } from "@/lib/password";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1433,7 +1434,7 @@ export default function AddEmployeePage() {
                           <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60" />
                           <Input 
                             type="text" 
-                            placeholder={form.userId ? "Enter new password to reset" : "Enter minimum 6 characters"} 
+                            placeholder={form.userId ? "Enter new password to reset" : PASSWORD_POLICY_HINT} 
                             value={systemAccessPassword} 
                             onChange={(e) => setSystemAccessPassword(e.target.value)}
                             className="pl-9 bg-background border-muted-foreground/20"
@@ -1444,9 +1445,7 @@ export default function AddEmployeePage() {
                           variant="outline" 
                           size="sm"
                           onClick={() => {
-                            const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()";
-                            let pass = "Hirdan-";
-                            for (let i = 0; i < 8; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
+                            const pass = generateStrongPassword();
                             setSystemAccessPassword(pass);
                             navigator.clipboard.writeText(pass);
                             toast({
