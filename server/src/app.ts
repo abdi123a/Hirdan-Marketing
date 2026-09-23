@@ -114,7 +114,8 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      // AppError → clean 403 via errorHandler instead of a 500 with a stack trace.
+      callback(AppError.forbidden('Not allowed by CORS'));
     }
   },
   credentials: true,

@@ -109,7 +109,9 @@ function AppRoutes() {
           logout();
         }
       } catch (err: any) {
-        console.error("Initialization error:", err);
+        // Being logged out is the normal state on public pages — only log
+        // failures for sessions we expected to restore.
+        if (useAuthStore.getState().token) console.error("Initialization error:", err);
         // We still fetch settings even if auth fails, as login pages need them
         try { await fetchSettings(); } catch (sErr) { console.error("Settings fetch error:", sErr); }
         
