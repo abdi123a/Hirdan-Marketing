@@ -78,6 +78,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAgencyStore, AgencySettings, PaymentMethod, SocialLink, VersionEntry } from "@/lib/store";
 import { usePermissions } from "@/hooks/usePermissions";
+import { AccountTransferDialog, AccountTransfersDialog } from "@/components/accounts/AccountTransferDialogs";
+import { ACCOUNT_CURRENCIES, formatAccountAmount, parseMoneyInput } from "@/lib/account-money";
 import { ProtectedBrandingImage } from "@/components/ProtectedBrandingImage";
 import { Progress } from "@/components/ui/progress";
 import { apiFetch, downloadProtectedFile } from "@/lib/api-client";
@@ -507,21 +509,19 @@ export default function SettingsPage() {
     icon: string | null;
     image: string | null;
     notes: string | null;
+    /** Cents, in the account's currency (part of `balance`). */
+    openingBalance: number;
     balance: number;
   }
+  /** Form state: the opening balance is edited as a whole-units string. */
+  type AccountForm = Partial<SettingsAccount> & { openingBalanceInput?: string };
 
   const [settingsAccounts, setSettingsAccounts] = useState<SettingsAccount[]>([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [showAccountDialog, setShowAccountDialog] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<Partial<SettingsAccount> | null>(null);
+  const [editingAccount, setEditingAccount] = useState<AccountForm | null>(null);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
-  const [transferPayload, setTransferPayload] = useState({
-    fromAccountId: "",
-    toAccountId: "",
-    amount: "",
-    note: "",
-    date: new Date().toISOString().split("T")[0]
-  });
+  const [historyAccount, setHistoryAccount] = useState<SettingsAccount | null>(null);
   const [showDepositDialog, setShowDepositDialog] = useState(false);
   const [depositPayload, setDepositPayload] = useState({
     accountId: "",
@@ -2821,16 +2821,7 @@ export default function SettingsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setTransferPayload({
-                    fromAccountId: "",
-                    toAccountId: "",
-                    amount: "",
-                    note: "",
-                    date: new Date().toISOString().split("T")[0]
-                  });
-                  setShowTransferDialog(true);
-                }}
+                onClick={() => setShowTransferDialog(true)}
                 className="gap-1.5"
               >
                 <ArrowLeftRight className="h-4 w-4" /> Transfer Money
@@ -2838,7 +2829,7 @@ export default function SettingsPage() {
               <Button
                 size="sm"
                 onClick={() => {
-                  setEditingAccount({ name: "", type: "BANK", currency: "USD", notes: "" });
+                  setEditingAccount({ name: "", type: "BANK", currency: settings.currency || "USD", notes: "", openingBalanceInput: "" });
                   setShowAccountDialog(true);
                 }}
                 className="gap-1.5"
@@ -2861,7 +2852,7 @@ export default function SettingsPage() {
                 <Button
                   size="sm"
                   onClick={() => {
-                    setEditingAccount({ name: "", type: "BANK", currency: "USD", notes: "" });
+                    setEditingAccount({ name: "", type: "BANK", currency: settings.currency || "USD", notes: "", openingBalanceInput: "" });
                     setShowAccountDialog(true);
                   }}
                 >
@@ -2890,7 +2881,7 @@ export default function SettingsPage() {
                         <div>
                           <CardTitle className="text-sm font-bold truncate max-w-[140px]">{acc.name}</CardTitle>
                           <span className="text-[10px] text-muted-foreground uppercase font-medium tracking-wide">
-                            {acc.type.replace("_", " ")}
+                            {acc.type.replace("_", " ")} · {acc.currency}
                           </span>
                         </div>
                       </div>
@@ -2900,7 +2891,7 @@ export default function SettingsPage() {
                           size="icon"
                           className="h-7 w-7"
                           onClick={() => {
-                            setEditingAccount(acc);
+                            setEditingAccount({ ...acc, openingBalanceInput: String((acc.openingBalance ?? 0) / 100) });
                             setShowAccountDialog(true);
                           }}
                         >
@@ -2929,7 +2920,7 @@ export default function SettingsPage() {
                       <p className="text-xs text-muted-foreground uppercase font-semibold">Running Balance</p>
                       <div className="flex justify-between items-center mt-1">
                         <p className={`text-2xl font-bold ${acc.balance < 0 ? "text-red-500" : "text-emerald-600"}`}>
-                          {acc.balance < 0 ? "-" : ""}${Math.abs(acc.balance / 100).toFixed(2)}
+                          {formatAccountAmount(acc.balance, acc.currency)}
                         </p>
                         <Button
                           variant="outline"
@@ -2947,6 +2938,14 @@ export default function SettingsPage() {
                         >
                           <PlusCircle className="h-3.5 w-3.5" /> Deposit
                         </Button>
+                      </div>
+                      <div className="flex items-center justify-between mt-1 text-[11px] text-muted-foreground">
+                        <span>
+                          {acc.openingBalance ? <>Opening balance {formatAccountAmount(acc.openingBalance, acc.currency)}</> : "No opening balance"}
+                        </span>
+                        <button type="button" className="underline hover:text-foreground" onClick={() => setHistoryAccount(acc)}>
+                          Transfers
+                        </button>
                       </div>
                       {acc.notes && (
                         <p className="text-xs text-muted-foreground mt-2 line-clamp-2 border-t pt-2">{acc.notes}</p>
@@ -2990,6 +2989,40 @@ export default function SettingsPage() {
                         <SelectItem value="CASH">Cash Pool</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="accCurrency">Currency</Label>
+                      <Select
+                        value={editingAccount?.currency || "USD"}
+                        onValueChange={val => setEditingAccount(p => ({ ...p, currency: val }))}
+                      >
+                        <SelectTrigger id="accCurrency">
+                          <SelectValue placeholder="Currency" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from(new Set([...ACCOUNT_CURRENCIES, settings.currency || "USD", editingAccount?.currency || "USD"])).map(c => (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="accOpening">Opening balance</Label>
+                      <Input
+                        id="accOpening"
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={editingAccount?.openingBalanceInput ?? ""}
+                        onChange={e => setEditingAccount(p => ({ ...p, openingBalanceInput: e.target.value }))}
+                      />
+                    </div>
+                    <p className="col-span-2 text-xs text-muted-foreground -mt-1">
+                      What the account held before you started tracking it here, in {editingAccount?.currency || "USD"}.
+                      Running balance = opening balance + deposits + transfers in − transfers out − expenses.
+                      {editingAccount?.id ? " The currency can only be changed while the account has no transactions." : ""}
+                    </p>
                   </div>
                   <div className="space-y-1.5">
                     <Label>Profile Image / Logo</Label>
@@ -3054,24 +3087,45 @@ export default function SettingsPage() {
                         toast({ title: "Account name is required", variant: "destructive" });
                         return;
                       }
+                      const openingBalance = parseMoneyInput(editingAccount.openingBalanceInput ?? "");
+                      if (openingBalance === null) {
+                        toast({ title: "Opening balance must be a number", variant: "destructive" });
+                        return;
+                      }
+                      // Explicit payload: the API takes the opening balance in whole
+                      // units (it stores cents), so never echo the cents from GET back.
+                      const payload = {
+                        name: editingAccount.name.trim(),
+                        type: editingAccount.type || "BANK",
+                        currency: editingAccount.currency || "USD",
+                        openingBalance,
+                        color: editingAccount.color ?? null,
+                        icon: editingAccount.icon ?? null,
+                        image: editingAccount.image ?? null,
+                        notes: editingAccount.notes ?? null,
+                      };
                       try {
                         if (editingAccount.id) {
                           await apiFetch(`/accounts/${editingAccount.id}`, {
                             method: "PUT",
-                            body: JSON.stringify(editingAccount),
+                            body: JSON.stringify(payload),
                           });
                           toast({ title: "Account updated successfully" });
                         } else {
                           await apiFetch("/accounts", {
                             method: "POST",
-                            body: JSON.stringify(editingAccount),
+                            body: JSON.stringify(payload),
                           });
                           toast({ title: "Account created successfully" });
                         }
                         setShowAccountDialog(false);
                         fetchSettingsAccounts();
-                      } catch {
-                        toast({ title: "Failed to save account", variant: "destructive" });
+                      } catch (e) {
+                        toast({
+                          title: "Failed to save account",
+                          description: e instanceof Error && e.message ? e.message : undefined,
+                          variant: "destructive",
+                        });
                       }
                     }}
                   >
@@ -3084,149 +3138,22 @@ export default function SettingsPage() {
 
           {/* Transfer Dialog */}
           {showTransferDialog && (
-            <Dialog open onOpenChange={() => setShowTransferDialog(false)}>
-              <DialogContent className="sm:max-w-[400px]">
-                <DialogHeader>
-                  <DialogTitle>Transfer Money</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-2">
-                  <div className="space-y-1.5">
-                    <Label>From Account</Label>
-                    <Select
-                      value={transferPayload.fromAccountId}
-                      onValueChange={val => setTransferPayload(p => ({ ...p, fromAccountId: val }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select source account" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {settingsAccounts.map(acc => {
-                          let AccIcon = Banknote;
-                          if (acc.type === "BANK") AccIcon = Building2;
-                          if (acc.type === "MOBILE_WALLET") AccIcon = Smartphone;
-                          return (
-                            <SelectItem key={acc.id} value={acc.id}>
-                              <div className="flex items-center gap-2">
-                                {acc.image ? (
-                                  <img src={acc.image} alt={acc.name} className="h-5 w-5 rounded-full object-cover shrink-0" />
-                                ) : (
-                                  <div className="h-5 w-5 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                                    <AccIcon className="h-3 w-3" />
-                                  </div>
-                                )}
-                                <span>{acc.name}</span>
-                              </div>
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>To Account</Label>
-                    <Select
-                      value={transferPayload.toAccountId}
-                      onValueChange={val => setTransferPayload(p => ({ ...p, toAccountId: val }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select destination account" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {settingsAccounts.map(acc => {
-                          let AccIcon = Banknote;
-                          if (acc.type === "BANK") AccIcon = Building2;
-                          if (acc.type === "MOBILE_WALLET") AccIcon = Smartphone;
-                          return (
-                            <SelectItem key={acc.id} value={acc.id}>
-                              <div className="flex items-center gap-2">
-                                {acc.image ? (
-                                  <img src={acc.image} alt={acc.name} className="h-5 w-5 rounded-full object-cover shrink-0" />
-                                ) : (
-                                  <div className="h-5 w-5 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                                    <AccIcon className="h-3 w-3" />
-                                  </div>
-                                )}
-                                <span>{acc.name}</span>
-                              </div>
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Amount</Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold">$</span>
-                      <Input
-                        type="number"
-                        placeholder="0.00"
-                        value={transferPayload.amount}
-                        onChange={e => setTransferPayload(p => ({ ...p, amount: e.target.value }))}
-                        className="pl-7"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Date</Label>
-                    <Input
-                      type="date"
-                      value={transferPayload.date}
-                      onChange={e => setTransferPayload(p => ({ ...p, date: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Note / Purpose</Label>
-                    <Textarea
-                      placeholder="Reason for transfer..."
-                      value={transferPayload.note}
-                      onChange={e => setTransferPayload(p => ({ ...p, note: e.target.value }))}
-                      rows={2}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setShowTransferDialog(false)}>Cancel</Button>
-                  <Button
-                    onClick={async () => {
-                      const { fromAccountId, toAccountId, amount, note, date } = transferPayload;
-                      if (!fromAccountId || !toAccountId) {
-                        toast({ title: "Please select both accounts", variant: "destructive" });
-                        return;
-                      }
-                      if (fromAccountId === toAccountId) {
-                        toast({ title: "Source and destination accounts must be different", variant: "destructive" });
-                        return;
-                      }
-                      if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-                        toast({ title: "Please enter a valid amount", variant: "destructive" });
-                        return;
-                      }
+            <AccountTransferDialog
+              accounts={settingsAccounts}
+              onClose={() => setShowTransferDialog(false)}
+              onDone={() => {
+                setShowTransferDialog(false);
+                fetchSettingsAccounts();
+              }}
+            />
+          )}
 
-                      try {
-                        await apiFetch("/accounts/transfer", {
-                          method: "POST",
-                          body: JSON.stringify({
-                            fromAccountId,
-                            toAccountId,
-                            amount: parseFloat(amount),
-                            note,
-                            date: new Date(date).toISOString(),
-                          }),
-                        });
-                        toast({ title: "Transfer completed successfully!" });
-                        setShowTransferDialog(false);
-                        fetchSettingsAccounts();
-                      } catch {
-                        toast({ title: "Transfer failed", variant: "destructive" });
-                      }
-                    }}
-                  >
-                    Transfer
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+          {historyAccount && (
+            <AccountTransfersDialog
+              account={historyAccount}
+              openingBalance={historyAccount.openingBalance ?? 0}
+              onClose={() => setHistoryAccount(null)}
+            />
           )}
 
           {/* Deposit Dialog */}
@@ -3270,17 +3197,18 @@ export default function SettingsPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Amount</Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-semibold">$</span>
-                      <Input
-                        type="number"
-                        placeholder="0.00"
-                        value={depositPayload.amount}
-                        onChange={e => setDepositPayload(p => ({ ...p, amount: e.target.value }))}
-                        className="pl-7"
-                      />
-                    </div>
+                    <Label>
+                      Amount
+                      {settingsAccounts.find(a => a.id === depositPayload.accountId)
+                        ? ` (${settingsAccounts.find(a => a.id === depositPayload.accountId)!.currency})`
+                        : ""}
+                    </Label>
+                    <Input
+                      type="number"
+                      placeholder="0.00"
+                      value={depositPayload.amount}
+                      onChange={e => setDepositPayload(p => ({ ...p, amount: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Category</Label>
@@ -3345,8 +3273,12 @@ export default function SettingsPage() {
                         toast({ title: "Deposit recorded successfully!" });
                         setShowDepositDialog(false);
                         fetchSettingsAccounts();
-                      } catch {
-                        toast({ title: "Failed to record deposit", variant: "destructive" });
+                      } catch (e) {
+                        toast({
+                          title: "Failed to record deposit",
+                          description: e instanceof Error && e.message ? e.message : undefined,
+                          variant: "destructive",
+                        });
                       }
                     }}
                   >

@@ -186,6 +186,22 @@ router.put('/:id', validate({ body: updateAccountSchema }), async (req: Request,
 
     const { id: _id, createdAt: _c, updatedAt: _u, openingBalance, ...data } = req.body;
 
+    // Re-denominating an account with history would silently change the value
+    // of every past entry (and of converted cross-currency transfers).
+    if (data.currency !== undefined && data.currency !== existing.currency) {
+      const id = existing.id;
+      const [expenses, deposits, transfers] = await Promise.all([
+        prisma.expense.count({ where: { accountId: id } }),
+        prisma.deposit.count({ where: { accountId: id } }),
+        prisma.accountTransfer.count({ where: { OR: [{ fromAccountId: id }, { toAccountId: id }] } }),
+      ]);
+      if (expenses + deposits + transfers > 0) {
+        throw AppError.badRequest(
+          'Cannot change the currency of an account that already has transactions; create a new account instead.',
+        );
+      }
+    }
+
     const account = await prisma.account.update({
       where: { id: req.params.id as string },
       data: {
@@ -283,8 +299,8 @@ router.get('/:id/transfers', async (req: Request, res: Response, next: NextFunct
         ],
       },
       include: {
-        fromAccount: { select: { id: true, name: true, type: true } },
-        toAccount: { select: { id: true, name: true, type: true } },
+        fromAccount: { select: { id: true, name: true, type: true, currency: true } },
+        toAccount: { select: { id: true, name: true, type: true, currency: true } },
       },
       orderBy: { date: 'desc' },
     });
