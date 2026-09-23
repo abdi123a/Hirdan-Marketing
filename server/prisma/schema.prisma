@@ -315,6 +315,8 @@ model Invoice {
   dueSoonNotifiedAt         DateTime?           @map("due_soon_notified_at")
   client                    Client              @relation(fields: [clientId], references: [id], onDelete: Restrict )
   verificationTokens        VerificationToken[]
+  deposits                  Deposit[]
+  sourceProforma            Proforma?           @relation("ProformaConversion")
 
   @@index([clientId])
   @@index([status])
@@ -356,7 +358,9 @@ model Proforma {
   deliveryNoteEnabled Boolean             @default(false) @map("delivery_note_enabled")
   deliveryNoteTitle   String?             @map("delivery_note_title")
   deliveryNoteContent String?             @map("delivery_note_content") @db.Text
+  convertedInvoiceId  String?             @unique @map("converted_invoice_id")
   client              Client              @relation(fields: [clientId], references: [id], onDelete: Restrict )
+  convertedInvoice    Invoice?            @relation("ProformaConversion", fields: [convertedInvoiceId], references: [id], onDelete: SetNull)
   verificationTokens  VerificationToken[]
 
   @@index([clientId])
@@ -1052,13 +1056,17 @@ model Deposit {
   category    String   @default("OTHER") // e.g. OWNER_INVESTMENT, REVENUE, REFUND, OTHER
   description String?  @db.Text
   date        DateTime
+  /// Set when the deposit is the ledger entry of an invoice payment (see deposit-sync.ts)
+  invoiceId   String?  @map("invoice_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([accountId])
   @@index([date])
+  @@index([invoiceId])
   @@map("deposits")
 }
 
