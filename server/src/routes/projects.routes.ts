@@ -20,6 +20,22 @@ const projectDtoSchema = z.object({
   tags: z.string().optional().nullable(),
 });
 
+// Project responses are visible to CLIENT and STAFF users — never include the
+// full TeamMember row (salary, bank details, national ID, home address, DOB…).
+const safeTeamMemberSelect = {
+  id: true,
+  name: true,
+  role: true,
+  department: true,
+  avatar: true,
+} as const;
+
+const projectTeamInclude = {
+  teamMembers: {
+    select: { id: true, memberId: true, teamMember: { select: safeTeamMemberSelect } },
+  },
+} as const;
+
 const router = Router();
 router.use(authenticate);
 // ─── GET /api/projects ────────────────────────────────────────────
@@ -41,7 +57,7 @@ router.get('/', async (req: Request, res: Response, next) => {
       skip,
       include: {
         client: { select: { id: true, name: true, company: true } },
-        teamMembers: { include: { teamMember: true } },
+        ...projectTeamInclude,
       },
     });
     res.json({ projects });
@@ -64,8 +80,14 @@ router.get('/:id', async (req: Request, res: Response, next) => {
     const project = await prisma.project.findFirst({
       where,
       include: {
-        client: true,
-        teamMembers: { include: { teamMember: true } },
+        client: {
+          select: {
+            id: true, name: true, email: true, phone: true, company: true, type: true,
+            website: true, address: true, city: true, country: true, industry: true,
+            status: true, initials: true,
+          },
+        },
+        ...projectTeamInclude,
       },
     });
 

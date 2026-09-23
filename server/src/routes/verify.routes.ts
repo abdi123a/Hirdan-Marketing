@@ -4,6 +4,9 @@ import { AppError } from '../lib/errors.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import { getRequestPermissions } from '../lib/permission-guard.js';
+import { hasPermission, type ModuleKey } from '../lib/permissions.js';
+import { canAccessEmployee, employeeAccessSelect } from '../lib/hr-access.js';
 
 const router = Router();
 
@@ -47,13 +50,31 @@ function maskClientDisplayName(company: string | null | undefined, name: string 
   return `${prefix}***`;
 }
 
+/** Module a staff user needs (READ) before minting a public token for a document type. */
+const DOCUMENT_MODULE: Record<string, ModuleKey> = {
+  invoice: 'invoices',
+  proforma: 'proforma',
+  subscription: 'subscriptions',
+  monthly_report: 'monthly_reports',
+  hr_document: 'hr',
+};
+
 router.post('/', authenticate, async (req: Request, res: Response, next) => {
   try {
     const { documentType, documentId } = req.body;
     const user = req.user as any;
 
-    if (!['invoice', 'proforma', 'subscription', 'monthly_report', 'hr_document'].includes(documentType)) {
+    if (!Object.prototype.hasOwnProperty.call(DOCUMENT_MODULE, documentType)) {
       throw AppError.badRequest('Invalid document type');
+    }
+
+    // A verification token publishes a summary of the document to anyone with
+    // the link — staff must at least be able to read the underlying module.
+    if (user.role === 'MANAGER' || user.role === 'STAFF') {
+      const permissions = await getRequestPermissions(req);
+      if (!hasPermission(permissions, DOCUMENT_MODULE[documentType], 'READ')) {
+        throw AppError.forbidden('You do not have access to this document');
+      }
     }
 
     if (!documentId) {
@@ -131,9 +152,13 @@ router.post('/', authenticate, async (req: Request, res: Response, next) => {
       dbDoc = await prisma.hrDocument.findUnique({ where: { id: documentId } });
       if (!dbDoc) throw AppError.notFound('HR document not found');
 
-      if (user.role === 'STAFF') {
-        const emp = await prisma.teamMember.findUnique({ where: { id: dbDoc.employeeId } });
-        if (!emp || emp.userId !== user.userId) {
+      if (user.role === 'STAFF' || user.role === 'MANAGER') {
+        // Same rule as hr.routes.ts (see lib/hr-access.ts).
+        const emp = await prisma.teamMember.findUnique({
+          where: { id: dbDoc.employeeId },
+          select: employeeAccessSelect,
+        });
+        if (!emp || !(await canAccessEmployee(user, emp))) {
           throw AppError.forbidden('You do not have permission to verify this HR document');
         }
       } else if (user.role === 'CLIENT') {

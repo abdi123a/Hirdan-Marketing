@@ -1,3 +1,4 @@
+import { sanitizeEmailHtml } from "@/lib/sanitize-html";
 import { useRef, useState, useCallback, useEffect, type ReactNode } from "react";
 import { Bold, Italic, Underline, List, ListOrdered } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -30,7 +31,7 @@ export function HrLetterRichEditor({
 
   useEffect(() => {
     if (editorRef.current && value !== lastEmitted.current) {
-      editorRef.current.innerHTML = value || "";
+      editorRef.current.innerHTML = sanitizeEmailHtml(value);
       lastEmitted.current = value;
     }
   }, [value]);

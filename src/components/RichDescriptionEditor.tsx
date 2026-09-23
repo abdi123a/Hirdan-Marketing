@@ -1,3 +1,4 @@
+import { sanitizeEmailHtml } from "@/lib/sanitize-html";
 import { useRef, useState, useCallback, useEffect } from "react";
 import { Bold, Italic, Underline } from "lucide-react";
 
@@ -40,7 +41,7 @@ export function RichDescriptionEditor({
   // Sync the editor with external value changes (e.g. data loaded asynchronously)
   useEffect(() => {
     if (editorRef.current && value !== lastEmittedValue.current) {
-      editorRef.current.innerHTML = value || "";
+      editorRef.current.innerHTML = sanitizeEmailHtml(value);
       lastEmittedValue.current = value;
     }
   }, [value]);

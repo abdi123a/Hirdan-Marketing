@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import { getShortVerificationUrl } from "@/lib/short-url";
 
 import { ProtectedBrandingImage } from "./ProtectedBrandingImage";
+import { sanitizeHtml } from "@/lib/sanitize-html";
 
 interface InvoiceItem {
   description: string;
@@ -275,7 +276,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
                   wordBreak: 'break-word',
                   lineHeight: 1.6
                 }}
-                  dangerouslySetInnerHTML={{ __html: item.description }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.description) }}
                 />
                 <td style={{ padding: '16px', borderBottom: `1px solid ${borderColor}`, fontSize: '12px', color: secondary, textAlign: 'center', verticalAlign: 'top', fontWeight: 600 }}>
                   {item.quantity}
@@ -317,7 +318,7 @@ export function PremiumInvoice({ type, data, settings, showSignature: propShowSi
               {data.deliveryNoteContent && (
                 <div
                   style={{ fontSize: '12px', color: secondary, lineHeight: 1.6, fontWeight: 500 }}
-                  dangerouslySetInnerHTML={{ __html: data.deliveryNoteContent }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(data.deliveryNoteContent) }}
                 />
               )}
             </div>

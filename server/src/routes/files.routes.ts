@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { authenticate } from '../middleware/auth.js';
 import { AppError } from '../lib/errors.js';
 import { prisma } from '../lib/prisma.js';
+import { canAccessEmployee, employeeAccessSelect } from '../lib/hr-access.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,6 +60,7 @@ router.get('/:folder/:filename', authenticate, (req: Request, res: Response, nex
         const record = await prisma.clientDocument.findFirst({
           where: {
             clientId,
+            clientVisible: true,
             fileUrl: { endsWith: `/uploads/documents/${safeFilename}` },
           },
           select: { id: true },
@@ -70,6 +72,7 @@ router.get('/:folder/:filename', authenticate, (req: Request, res: Response, nex
         const record = await prisma.deliverableTask.findFirst({
           where: {
             clientId,
+            clientVisible: true,
             proofUrl: { endsWith: `/uploads/media/${safeFilename}` },
           },
           select: { id: true },
@@ -78,39 +81,26 @@ router.get('/:folder/:filename', authenticate, (req: Request, res: Response, nex
       }
     }
 
-    if (user?.role === 'STAFF') {
-      if (folder === 'employee-docs') {
-        // Staff can only access their own documents
-        const fileRecord = await prisma.employeeFile.findFirst({
-          where: {
-            fileUrl: { endsWith: `/uploads/employee-docs/${safeFilename}` },
-          },
-          include: {
-            employee: true,
-          },
-        });
-        
-        if (fileRecord) {
-          if (fileRecord.employee.userId !== user.userId) {
-            throw AppError.forbidden('Access denied');
-          }
-        } else {
-          // Check generated HR documents
-          const hrDocRecord = await prisma.hrDocument.findFirst({
-            where: {
-              pdfUrl: { endsWith: `/uploads/employee-docs/${safeFilename}` },
-            },
-            include: {
-              employee: true,
-            },
-          });
-          if (!hrDocRecord) {
-            throw AppError.notFound('Document not found');
-          }
-          if (hrDocRecord.employee.userId !== user.userId) {
-            throw AppError.forbidden('Access denied');
-          }
-        }
+    // Employee files (ID docs, contracts, HR PDFs): ADMIN, the employee
+    // themself, or their direct manager — see lib/hr-access.ts.
+    if (folder === 'employee-docs' && user?.role !== 'ADMIN') {
+      const fileRecord = await prisma.employeeFile.findFirst({
+        where: { fileUrl: { endsWith: `/uploads/employee-docs/${safeFilename}` } },
+        select: { employee: { select: employeeAccessSelect } },
+      });
+      const employee =
+        fileRecord?.employee ??
+        (
+          await prisma.hrDocument.findFirst({
+            where: { pdfUrl: { endsWith: `/uploads/employee-docs/${safeFilename}` } },
+            select: { employee: { select: employeeAccessSelect } },
+          })
+        )?.employee;
+      if (!employee) {
+        throw AppError.notFound('Document not found');
+      }
+      if (!(await canAccessEmployee(user, employee))) {
+        throw AppError.forbidden('Access denied');
       }
     }
 

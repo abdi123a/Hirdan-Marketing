@@ -1,3 +1,4 @@
+import { sanitizeEmailHtml } from "@/lib/sanitize-html";
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDropzone, type FileRejection } from "react-dropzone";
@@ -867,7 +868,7 @@ export default function FileTransfer() {
     setCustomMessage(transfer.message || "");
     setTimeout(() => {
       if (richTextRef.current) {
-        richTextRef.current.innerHTML = transfer.message || "";
+        richTextRef.current.innerHTML = sanitizeEmailHtml(transfer.message);
       }
     }, 100);
     setEmailDialogOpen(true);
@@ -903,7 +904,7 @@ export default function FileTransfer() {
     // Prefill the rich text editor with the upload message
     setTimeout(() => {
       if (richTextRef.current) {
-        richTextRef.current.innerHTML = successUploadMessage || "";
+        richTextRef.current.innerHTML = sanitizeEmailHtml(successUploadMessage);
       }
     }, 100);
 

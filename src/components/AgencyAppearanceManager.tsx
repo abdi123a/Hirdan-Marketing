@@ -41,7 +41,8 @@ export const AgencyAppearanceManager = () => {
   useEffect(() => {
     if (settings.googleAnalyticsEnabled && settings.googleAnalyticsMeasurementId) {
       const measurementId = settings.googleAnalyticsMeasurementId.trim();
-      if (measurementId) {
+      // The id is interpolated into a script tag — only accept real GA ids.
+      if (/^(G|UA|GT|AW)-[A-Z0-9-]{4,20}$/i.test(measurementId)) {
         const scriptId = 'google-analytics-gtag';
         let script = document.getElementById(scriptId) as HTMLScriptElement;
         if (!script) {

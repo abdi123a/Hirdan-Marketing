@@ -9,6 +9,7 @@ import { TemplatePicker } from './TemplatePicker';
 import { useReply } from '@/lib/email/hooks';
 import { fileToAttachment, type PreparedAttachment } from '@/lib/email/attachments';
 import { applyTemplateVars } from '@/lib/email/templateVars';
+import { sanitizeEmailHtml } from '@/lib/sanitize-html';
 import { formatBytes } from '@/lib/email/format';
 import type { Mailbox } from '@/lib/email/types';
 
@@ -121,7 +122,7 @@ export function ReplyBox({ conversationId, mailboxes = [], defaultMailboxId, onS
           onSelect={(t) => {
             if (editorRef.current) {
               const existing = editorRef.current.innerHTML.trim();
-              const rendered = applyTemplateVars(t.body);
+              const rendered = sanitizeEmailHtml(applyTemplateVars(t.body));
               editorRef.current.innerHTML = existing && existing !== '<br>' ? `${existing}<br/>${rendered}` : rendered;
             }
           }}

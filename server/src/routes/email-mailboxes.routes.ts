@@ -13,6 +13,7 @@ import {
 import multer from 'multer';
 import path from 'path';
 import { PATHS } from '../lib/paths.js';
+import { enforceMagicBytes } from '../lib/upload.js';
 
 const router = Router();
 router.use(authenticate, requireStaff);
@@ -54,7 +55,7 @@ const mailboxSchema = z.object({
 });
 
 // ─── POST /api/email/mailboxes/upload-avatar ─────────────────────
-router.post('/mailboxes/upload-avatar', avatarUpload.single('file'), (req: Request, res: Response, next) => {
+router.post('/mailboxes/upload-avatar', avatarUpload.single('file'), enforceMagicBytes({ kind: 'media' }), (req: Request, res: Response, next) => {
   try {
     if (!req.file) {
       throw AppError.badRequest('No image file provided');

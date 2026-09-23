@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useTemplates, useTemplateMutations } from '@/lib/email/hooks';
 import { applyTemplateVars } from '@/lib/email/templateVars';
+import { sanitizeEmailHtml } from '@/lib/sanitize-html';
 import type { EmailTemplate, TemplateCategory } from '@/lib/email/types';
 
 const CATEGORIES: TemplateCategory[] = ['SUPPORT', 'SALES', 'INVOICES', 'MARKETING', 'HR', 'LEGAL', 'SAVED_REPLY'];
@@ -194,7 +195,7 @@ function TemplateFormDialog({ open, onClose, template }: { open: boolean; onClos
             {showPreview ? (
               <div
                 className="prose prose-sm max-h-64 min-h-[160px] max-w-none overflow-auto rounded-md border bg-muted/30 p-3 dark:prose-invert"
-                dangerouslySetInnerHTML={{ __html: applyTemplateVars(body, PREVIEW_CTX) }}
+                dangerouslySetInnerHTML={{ __html: sanitizeEmailHtml(applyTemplateVars(body, PREVIEW_CTX)) }}
               />
             ) : (
               <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={9} placeholder="Hi {{customer}},&#10;&#10;Thanks for reaching out…" />
