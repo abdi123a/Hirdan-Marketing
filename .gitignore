@@ -12,10 +12,11 @@ dist
 dist-ssr
 *.local
 
-# Environment files — never commit real credentials
+# Environment files — never commit real credentials. `.env.*` also catches
+# backups like `.env.bak` / `.env.2026-01-01` that hold the same secrets.
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*
@@ -28,13 +29,22 @@ dist-ssr
 *.sln
 *.sw?
 
-# Uploads
+# Uploads — user files (HR documents, receipts, branding) live on the server
+# only. The API creates these directories at boot (bootstrapStorage in
+# server/src/app.ts), so nothing here needs to be tracked.
 uploads/
 **/uploads/
+server/uploads/
 
-# Database Backups
+# Database Backups (pre-migration SQL dumps written by server/scripts/backup.cjs)
 backups/
 **/backups/
+server/backups/
+*.sql.gz
+
+# Next.js landing page build output
+landing-page/.next/
+landing-page/out/
 
 # Claude local settings
 .claude/

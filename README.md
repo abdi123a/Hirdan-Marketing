@@ -51,7 +51,7 @@ hirdan-marketing/
 ### Prerequisites
 
 - **Node.js** (v20 or higher)
-- **npm** (v10+) or **Bun**
+- **npm** (v10+) — the only supported package manager; CI and deploys use `package-lock.json`
 
 ### 1. CRM Frontend Setup (Root)
 
