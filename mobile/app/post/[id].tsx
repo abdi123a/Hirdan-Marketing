@@ -25,6 +25,7 @@ import {
   postStatusTone,
   publishSocialPostNow,
   retrySocialPost,
+  submitSocialPostForApproval,
   updateSocialPost,
 } from '../../lib/social';
 import { SocialAccountAvatar } from '../../components/social/SocialAccountAvatar';
@@ -71,7 +72,10 @@ export default function SocialPostDetailScreen() {
   const router = useRouter();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { canWrite } = usePermissions();
+  const { canWrite, canManage } = usePermissions();
+  // Approvers (Manage on Social) schedule/publish directly; others submit
+  // drafts for approval and may only publish a post that has been approved.
+  const canApprove = canManage('social_media');
   const { id } = useLocalSearchParams<{ id: string }>();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
@@ -107,6 +111,15 @@ export default function SocialPostDetailScreen() {
     onSuccess: () => {
       invalidate();
       toast('Publish complete', 'success');
+    },
+    onError: (e: Error) => toast(e.message, 'error'),
+  });
+
+  const submitM = useMutation({
+    mutationFn: () => submitSocialPostForApproval(id!),
+    onSuccess: () => {
+      invalidate();
+      toast('Submitted for approval', 'success');
     },
     onError: (e: Error) => toast(e.message, 'error'),
   });
@@ -162,7 +175,9 @@ export default function SocialPostDetailScreen() {
       // Send only what changes. Resending accountIds used to make the server
       // rebuild every destination, wiping retry state and re-queueing FAILED ones.
       return updateSocialPost(post.id, {
-        status: 'SCHEDULED',
+        // A contributor only proposes a time; the server sends an approved
+        // post whose time they move back for approval.
+        ...(canApprove ? { status: 'SCHEDULED' } : {}),
         scheduledFor: dt.toISOString(),
       });
     },
@@ -206,12 +221,16 @@ export default function SocialPostDetailScreen() {
   }
 
   const mediaUrls = Array.isArray(post.mediaUrls) ? post.mediaUrls : [];
-  const canRetry = post.destinations?.some((d) => d.status === 'FAILED');
+  const statusUpper = String(post.status).toUpperCase();
+  const approvedForContributor =
+    !!post.approvedAt && statusUpper !== 'DRAFT' && statusUpper !== 'AWAITING_APPROVAL';
+  const canRetry =
+    post.destinations?.some((d) => d.status === 'FAILED') && (canApprove || approvedForContributor);
   const canPublish =
     canWrite('social_media') &&
-    ['DRAFT', 'SCHEDULED', 'FAILED', 'PARTIAL', 'AWAITING_APPROVAL'].includes(
-      String(post.status).toUpperCase()
-    );
+    (canApprove || approvedForContributor) &&
+    ['DRAFT', 'SCHEDULED', 'FAILED', 'PARTIAL', 'AWAITING_APPROVAL'].includes(statusUpper);
+  const canSubmit = canWrite('social_media') && !canApprove && statusUpper === 'DRAFT';
 
   return (
     <>
@@ -412,8 +431,19 @@ export default function SocialPostDetailScreen() {
         ) : null}
       </ScrollView>
 
-      {canWrite('social_media') && (canPublish || canRetry) ? (
+      {canWrite('social_media') && (canPublish || canRetry || canSubmit) ? (
         <ActionBar>
+          {canSubmit ? (
+            <Button
+              title="Submit for approval"
+              icon="checkmark-done-outline"
+              block
+              haptic="medium"
+              loading={submitM.isPending}
+              onPress={() => submitM.mutate()}
+              style={styles.primaryAction}
+            />
+          ) : null}
           {canPublish ? (
             <Button
               title="Publish now"

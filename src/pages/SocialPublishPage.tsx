@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/lib/auth-store";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useAgencyStore } from "@/lib/store";
 import { contentTypesFor, validateContentTypeMedia, TIKTOK_POST_MODES, type TikTokPostMode, type ContentType } from "@/lib/platform-capabilities";
 import PostGrid from "@/components/social/PostGrid";
@@ -99,6 +100,11 @@ export default function SocialPublishPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuthStore();
+  // Approvers (admin, or Manage on Social Media) schedule and publish directly
+  // and approve / reject; everyone else submits posts for approval. The server
+  // enforces the same rule — this only picks which controls to show.
+  const { canManage } = usePermissions();
+  const canApprove = canManage("social_media");
   const [posts, setPosts] = useState<SocialPost[]>([]);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -143,6 +149,12 @@ export default function SocialPublishPage() {
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
   const [isReschedulingOpen, setIsReschedulingOpen] = useState(false);
+  // Approval actions in the details panel
+  const [approvalBusy, setApprovalBusy] = useState<"submit" | "approve" | "reject" | null>(null);
+  const [isRejectOpen, setIsRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  // A half-typed rejection belongs to the post it was typed for.
+  useEffect(() => { setIsRejectOpen(false); setRejectReason(""); }, [activePostId]);
 
   // Composer modal state
   const [isComposerOpen, setIsComposerOpen] = useState(false);
@@ -681,6 +693,10 @@ export default function SocialPublishPage() {
 
     setIsSubmitting(true);
     setSubmitType(asDraft ? "draft" : "publish");
+    // Contributors can't schedule or publish: their "publish" button submits
+    // for approval, keeping any time they picked as the proposed schedule.
+    const submitForApproval = !asDraft && !canApprove;
+    const publishImmediately = publishNow && !submitForApproval;
     try {
       const payload = {
         clientId: composerClient,
@@ -764,11 +780,11 @@ export default function SocialPublishPage() {
         // interprets it in the browser's timezone (correct), then toISOString()
         // converts to an unambiguous UTC timestamp the server can parse the same
         // way regardless of which timezone it runs in.
-        scheduledFor: (publishNow || asDraft) ? null : (composerScheduledFor ? new Date(composerScheduledFor).toISOString() : null),
-        status: asDraft ? "DRAFT" : (publishNow ? "PUBLISHED" : "SCHEDULED"),
+        scheduledFor: (publishImmediately || asDraft) ? null : (composerScheduledFor ? new Date(composerScheduledFor).toISOString() : null),
+        status: asDraft ? "DRAFT" : submitForApproval ? "AWAITING_APPROVAL" : (publishImmediately ? "PUBLISHED" : "SCHEDULED"),
       };
 
-      if (publishNow && !asDraft) {
+      if (publishImmediately && !asDraft) {
         let createdPostId = editingPostId;
 
         // Already-published destinations must not be re-sent. Backend also skips
@@ -941,7 +957,13 @@ export default function SocialPublishPage() {
             body: JSON.stringify(payload),
           });
         }
-        toast({ title: asDraft ? "Draft Saved" : "Post Scheduled", description: asDraft ? "Your post has been saved as draft" : "Your post has been added to content queue" });
+        toast(
+          asDraft
+            ? { title: "Draft Saved", description: "Your post has been saved as draft" }
+            : submitForApproval
+              ? { title: "Submitted for Approval", description: "An approver will review and schedule your post" }
+              : { title: "Post Scheduled", description: "Your post has been added to content queue" },
+        );
         setIsComposerOpen(false);
         resetComposer();
         fetchData();
@@ -1019,6 +1041,70 @@ export default function SocialPublishPage() {
     } catch (err: any) {
       setPublishStatus((prev) => ({ ...prev, status: "failed" }));
       toast({ title: "Retry Failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  // ── Approval workflow ────────────────────────────────────────────────────
+  const closeReject = () => { setIsRejectOpen(false); setRejectReason(""); };
+
+  const handleSubmitForApproval = async (postId: string) => {
+    if (approvalBusy) return;
+    setApprovalBusy("submit");
+    try {
+      await apiFetch(`/social/posts/${postId}/submit`, { method: "POST" });
+      toast({ title: "Submitted for Approval", description: "An approver will review and schedule this post" });
+      fetchData();
+    } catch (err: any) {
+      toast({ title: "Submit Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setApprovalBusy(null);
+    }
+  };
+
+  const handleApprovePost = async (post: SocialPost) => {
+    if (approvalBusy) return;
+    // No time set: approving publishes it now (the server would otherwise
+    // refuse, since a SCHEDULED post with no time never goes out).
+    const publishNow = !post.scheduledFor;
+    setApprovalBusy("approve");
+    try {
+      const result = await apiFetch<SocialPost>(`/social/posts/${post.id}/approve`, {
+        method: "POST",
+        body: JSON.stringify({ publishNow }),
+      });
+      if (publishNow) {
+        const failed = (result.destinations || []).filter(d => d.status === "FAILED").length;
+        toast({
+          title: failed > 0 ? "Approved — Publishing Had Errors" : "Approved & Published",
+          description: failed > 0 ? `Some destinations failed: ${result.errorMessage || "see destination errors"}` : "The post went out to its accounts",
+          variant: failed > 0 ? "destructive" : undefined,
+        });
+      } else {
+        toast({ title: "Post Approved", description: `Scheduled for ${new Date(post.scheduledFor!).toLocaleString()}` });
+      }
+      fetchData();
+    } catch (err: any) {
+      toast({ title: "Approval Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setApprovalBusy(null);
+    }
+  };
+
+  const handleRejectPost = async (postId: string) => {
+    if (approvalBusy) return;
+    setApprovalBusy("reject");
+    try {
+      await apiFetch(`/social/posts/${postId}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ reason: rejectReason.trim() || undefined }),
+      });
+      toast({ title: "Post Rejected", description: "Sent back to drafts" });
+      closeReject();
+      fetchData();
+    } catch (err: any) {
+      toast({ title: "Reject Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setApprovalBusy(null);
     }
   };
 
@@ -1188,6 +1274,10 @@ export default function SocialPublishPage() {
     }
   };
 
+  // A contributor moving an approved post's time sends it back for approval.
+  const rescheduleNote = (post: SocialPost, base: string) =>
+    !canApprove && post.status === "SCHEDULED" ? `${base} — sent back for approval` : base;
+
   // Rescheduling handler for calendar / panel
   const handleReschedulePost = async (postId: string, date: Date) => {
     const originalPosts = [...posts];
@@ -1212,7 +1302,7 @@ export default function SocialPublishPage() {
         return {
           ...p,
           scheduledFor: targetDate.toISOString(),
-          status: p.status === "DRAFT" ? "SCHEDULED" : p.status
+          status: p.status === "DRAFT" && canApprove ? "SCHEDULED" : p.status
         };
       }
       return p;
@@ -1235,9 +1325,12 @@ export default function SocialPublishPage() {
             }
           ]
         },
-        // Only promote a draft. Re-sending the current status would write a stale
-        // value back over whatever the scheduler has since set.
-        status: postToUpdate.status === "DRAFT" ? "SCHEDULED" : undefined,
+        // Only promote a draft, and only for approvers — a contributor's draft
+        // just gets a proposed time (the server sends an approved post whose
+        // time a contributor moves back for approval). Re-sending the current
+        // status would write a stale value back over whatever the scheduler has
+        // since set.
+        status: postToUpdate.status === "DRAFT" && canApprove ? "SCHEDULED" : undefined,
         scheduledFor: targetDate.toISOString()
       };
 
@@ -1245,7 +1338,7 @@ export default function SocialPublishPage() {
         method: "PUT",
         body: JSON.stringify(payload)
       });
-      toast({ title: "Post Rescheduled", description: `Schedule updated to ${targetDate.toLocaleString()}` });
+      toast({ title: "Post Rescheduled", description: rescheduleNote(postToUpdate, `Schedule updated to ${targetDate.toLocaleString()}`) });
       fetchData();
     } catch (err: any) {
       setPosts(originalPosts);
@@ -1269,7 +1362,7 @@ export default function SocialPublishPage() {
         return {
           ...p,
           scheduledFor: targetDate.toISOString(),
-          status: p.status === "DRAFT" ? "SCHEDULED" : p.status
+          status: p.status === "DRAFT" && canApprove ? "SCHEDULED" : p.status
         };
       }
       return p;
@@ -1292,9 +1385,12 @@ export default function SocialPublishPage() {
             }
           ]
         },
-        // Only promote a draft. Re-sending the current status would write a stale
-        // value back over whatever the scheduler has since set.
-        status: postToUpdate.status === "DRAFT" ? "SCHEDULED" : undefined,
+        // Only promote a draft, and only for approvers — a contributor's draft
+        // just gets a proposed time (the server sends an approved post whose
+        // time a contributor moves back for approval). Re-sending the current
+        // status would write a stale value back over whatever the scheduler has
+        // since set.
+        status: postToUpdate.status === "DRAFT" && canApprove ? "SCHEDULED" : undefined,
         scheduledFor: targetDate.toISOString()
       };
 
@@ -1302,7 +1398,7 @@ export default function SocialPublishPage() {
         method: "PUT",
         body: JSON.stringify(payload)
       });
-      toast({ title: "Post Rescheduled", description: `Scheduled for ${targetDate.toLocaleString()}` });
+      toast({ title: "Post Rescheduled", description: rescheduleNote(postToUpdate, `Scheduled for ${targetDate.toLocaleString()}`) });
       fetchData();
     } catch (err: any) {
       setPosts(originalPosts);
@@ -1810,6 +1906,11 @@ export default function SocialPublishPage() {
     }
   }, [activePost]);
 
+  const awaitingApprovalCount = useMemo(
+    () => posts.filter(p => p.status === "AWAITING_APPROVAL").length,
+    [posts],
+  );
+
   const resetAllFilters = () => {
     setSearchQuery("");
     setClientFilter("ALL");
@@ -1980,6 +2081,19 @@ export default function SocialPublishPage() {
               <SelectItem value="created_asc">Oldest Created</SelectItem>
             </SelectContent>
           </Select>
+          {canApprove && awaitingApprovalCount > 0 && (
+            <Button
+              variant={statusFilter === "AWAITING_APPROVAL" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter(statusFilter === "AWAITING_APPROVAL" ? "ALL" : "AWAITING_APPROVAL")}
+              className="h-8 text-xs font-semibold rounded-lg gap-1.5"
+              title="Show posts waiting for your approval"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Awaiting approval
+              <span className="rounded-full bg-sky-500 text-white px-1.5 text-[10px] leading-4">{awaitingApprovalCount}</span>
+            </Button>
+          )}
           {writerFilter !== "ALL" || clientFilter !== "ALL" || platformFilter !== "ALL" || statusFilter !== "ALL" || campaignFilter !== "ALL" || contentTypeFilter !== "ALL" || dateFilter !== "ALL" || searchQuery ? (
             <Button variant="ghost" size="sm" onClick={resetAllFilters} className="h-8 text-xs font-semibold text-muted-foreground hover:text-foreground px-2 ml-auto">
               Reset
@@ -2122,6 +2236,62 @@ export default function SocialPublishPage() {
               );
             })()}
 
+            {/* Approval */}
+            {activePost.status === "DRAFT" && activePost.rejectionReason && (
+              <div className="bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 rounded-lg p-2.5">
+                <span className="text-[9px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider block">Changes requested</span>
+                <p className="text-xs text-foreground mt-0.5 whitespace-pre-wrap select-text">{activePost.rejectionReason}</p>
+              </div>
+            )}
+            {activePost.status === "AWAITING_APPROVAL" && canApprove && (
+              <div className="bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900/50 rounded-lg p-2.5 space-y-2">
+                <span className="text-[9px] font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider block">Awaiting your approval</span>
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  {activePost.scheduledFor
+                    ? `Approving schedules it for ${new Date(activePost.scheduledFor).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.`
+                    : "No time proposed — approving publishes it now. Reschedule first to approve for later."}
+                </p>
+                {isRejectOpen ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      placeholder="Reason (optional) — shown to the author"
+                      value={rejectReason}
+                      onChange={e => setRejectReason(e.target.value)}
+                      maxLength={1000}
+                      className="text-xs min-h-[60px]"
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <Button variant="ghost" size="sm" onClick={closeReject} className="h-8 text-xs" disabled={approvalBusy !== null}>Cancel</Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleRejectPost(activePost.id)} className="h-8 text-xs font-semibold gap-1.5" disabled={approvalBusy !== null}>
+                        {approvalBusy === "reject" && <Loader2 className="h-3 w-3 animate-spin" />}Reject
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button size="sm" onClick={() => handleApprovePost(activePost)} className="h-8 rounded-lg text-xs font-semibold gap-1.5" disabled={approvalBusy !== null}>
+                      {approvalBusy === "approve" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      {activePost.scheduledFor ? "Approve" : "Approve & Publish"}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setIsRejectOpen(true)} className="h-8 rounded-lg text-xs font-semibold gap-1.5 text-rose-600" disabled={approvalBusy !== null}>
+                      <X className="h-3 w-3" />Reject
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+            {activePost.status === "AWAITING_APPROVAL" && !canApprove && (
+              <p className="text-[11px] text-sky-700 dark:text-sky-400 bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900/50 rounded-lg p-2.5">
+                Waiting for an approver to review this post.
+              </p>
+            )}
+            {activePost.status === "DRAFT" && !canApprove && (
+              <Button size="sm" onClick={() => handleSubmitForApproval(activePost.id)} className="h-8 rounded-lg text-xs font-semibold gap-1.5" disabled={approvalBusy !== null}>
+                {approvalBusy === "submit" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                Submit for Approval
+              </Button>
+            )}
+
             {/* Media */}
             {getMediaUrls(activePost).length > 0 && (
               <div className="aspect-video bg-muted border border-border/40 rounded-xl overflow-hidden">
@@ -2181,7 +2351,7 @@ export default function SocialPublishPage() {
                               "bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-900/30 dark:text-slate-400 dark:border-slate-800"
                           }`}>{d.status}</span>
                       )}
-                      {d.status === "FAILED" && (
+                      {d.status === "FAILED" && (canApprove || !!activePost.approvedAt) && (
                         <Button variant="ghost" size="icon" onClick={() => handleRetryPost(activePost.id)} className="h-6 w-6 rounded-md text-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-950/30" title="Retry">
                           <RefreshCw className="h-2.5 w-2.5" />
                         </Button>
@@ -2324,7 +2494,7 @@ export default function SocialPublishPage() {
                 {/* PUBLISHED intentionally excluded — this just PUTs a status field with
                     no actual publish call, so it would mark posts as live without ever
                     posting them, corrupting publishing stats and client reports. */}
-                {["DRAFT", "AWAITING_APPROVAL", "SCHEDULED"].map(s => <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>)}
+                {(canApprove ? ["DRAFT", "AWAITING_APPROVAL", "SCHEDULED"] : ["DRAFT", "AWAITING_APPROVAL"]).map(s => <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select onValueChange={v => { handleBulkMoveSchedule(Number(v)); }}>
@@ -2456,6 +2626,7 @@ export default function SocialPublishPage() {
         handleCreatePost={handleCreatePost}
         submitType={submitType}
         isUploading={isUploading}
+        requiresApproval={!canApprove}
       />
 
 

@@ -105,6 +105,9 @@ export type SocialPost = {
   publishedAt?: string | null;
   campaignId?: string | null;
   errorMessage?: string | null;
+  // Approval workflow: set while an approver has approved the post.
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
   createdAt?: string;
   updatedAt?: string;
   destinations: SocialDestination[];
@@ -296,6 +299,11 @@ export async function publishSocialPostNow(
     method: 'POST',
     body: JSON.stringify(accountIds?.length ? { accountIds } : {}),
   });
+}
+
+/** Send a draft to an approver (for users without Manage access to Social). */
+export async function submitSocialPostForApproval(id: string): Promise<SocialPost> {
+  return apiFetch<SocialPost>(`${endpoints.social.postById(id)}/submit`, { method: 'POST' });
 }
 
 export async function retrySocialPost(id: string): Promise<SocialPost> {

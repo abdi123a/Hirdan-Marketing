@@ -125,6 +125,12 @@ interface PostComposerProps {
   handleCreatePost: (asDraft?: boolean) => void | Promise<void>;
   submitType: "draft" | "publish" | null;
   isUploading: boolean;
+  /**
+   * The user can't schedule or publish (no Manage access to Social Media): the
+   * primary action submits the post for approval instead, with the picked time
+   * as the proposed schedule.
+   */
+  requiresApproval?: boolean;
 }
 
 export default function PostComposer({
@@ -143,6 +149,7 @@ export default function PostComposer({
   facebookFirstComment, setFacebookFirstComment, linkedinFirstComment, setLinkedinFirstComment,
   tiktokTitle, setTiktokTitle, youtubeTitle, setYoutubeTitle, youtubePrivacy, setYoutubePrivacy, threadsTopic, setThreadsTopic,
   publishNow, setPublishNow, isSubmitting, composerScheduledFor, setComposerScheduledFor, handleCreatePost, submitType, isUploading,
+  requiresApproval = false,
 }: PostComposerProps) {
   // "processing" counts as in-flight: the bytes are sent but the server is still
   // storing them, so the tile has to stay up until the URL comes back.
@@ -781,16 +788,20 @@ export default function PostComposer({
         {/* Composer Sticky Footer */}
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/40 bg-background px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex flex-1 flex-wrap items-center gap-2 sm:gap-3">
-            <Select value={publishNow ? "now" : "schedule"} onValueChange={v => setPublishNow(v === "now")} disabled={isSubmitting}>
-              <SelectTrigger size="sm" className="w-auto min-w-[130px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="now">Publish Now</SelectItem>
-                <SelectItem value="schedule">Schedule</SelectItem>
-              </SelectContent>
-            </Select>
-            {!publishNow && (
+            {requiresApproval ? (
+              <span className="text-xs font-medium text-muted-foreground">Proposed time</span>
+            ) : (
+              <Select value={publishNow ? "now" : "schedule"} onValueChange={v => setPublishNow(v === "now")} disabled={isSubmitting}>
+                <SelectTrigger size="sm" className="w-auto min-w-[130px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="now">Publish Now</SelectItem>
+                  <SelectItem value="schedule">Schedule</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {(requiresApproval || !publishNow) && (
               <div className="flex items-center gap-2 border border-border/50 bg-muted/20 rounded-xl px-3 py-1.5">
                 <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                 <input type="datetime-local" value={composerScheduledFor} onChange={e => setComposerScheduledFor(e.target.value)}
@@ -820,7 +831,7 @@ export default function PostComposer({
                 : activeUploads.every(f => f.status === "processing")
                   ? "Processing Media..."
                   : `Uploading Media... ${overallUploadPct}%`;
-              const label = !composerClient ? "Select Client" : composerAccounts.length === 0 ? "Select Accounts" : isUploading ? uploadLabel : isSubmitting && submitType === "publish" ? (publishNow ? "Publishing..." : "Scheduling...") : publishNow ? "Publish Now" : "Schedule Post";
+              const label = !composerClient ? "Select Client" : composerAccounts.length === 0 ? "Select Accounts" : isUploading ? uploadLabel : isSubmitting && submitType === "publish" ? (requiresApproval ? "Submitting..." : publishNow ? "Publishing..." : "Scheduling...") : requiresApproval ? "Submit for Approval" : publishNow ? "Publish Now" : "Schedule Post";
               return (
                 <button type="button" disabled={disabled} onClick={() => handleCreatePost()}
                   className={`px-5 py-2 rounded-xl text-sm font-bold transition-colors border-none h-9 flex items-center justify-center gap-2 ${disabled ? "bg-muted text-muted-foreground/40 cursor-not-allowed" : "bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-sm"
