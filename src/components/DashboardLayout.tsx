@@ -25,6 +25,7 @@ import { apiFetch } from "@/lib/api-client";
 import { NotificationCenter } from "./NotificationCenter";
 import { useEmailStream } from "@/lib/email/useEmailStream";
 import { PermissionGate } from "@/components/PermissionGate";
+import { ForcePasswordChangeDialog } from "@/components/ForcePasswordChangeDialog";
 
 export default function DashboardLayout() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -69,6 +70,7 @@ export default function DashboardLayout() {
 
   return (
     <SidebarProvider defaultOpen>
+      {user?.requiresPasswordChange && <ForcePasswordChangeDialog onLogout={handleLogout} />}
       {/*
         The shell owns the viewport height and `main` is the only scroll
         container. Previously the whole document scrolled, and because

@@ -14,7 +14,12 @@ import Animated, {
 import { AuthButton, AuthField, AuthShell, Reveal } from '../../components/auth';
 import { useToast } from '../../components/ui';
 import { useAuthStore } from '../../lib/auth-store';
-import { loadCredentials } from '../../lib/secure-storage';
+import {
+  hasBiometricPassword,
+  isStoreBiometricProtected,
+  loadCredentials,
+  loadSavedEmail,
+} from '../../lib/secure-storage';
 import { getMobileRecaptchaToken } from '../../lib/public-settings';
 import { brand, colors, fontSize } from '../../constants/theme';
 import { duration, ease, stagger } from '../../constants/motion';
@@ -44,14 +49,11 @@ export default function LoginScreen() {
     biometricEnabled && (hasSavedPassword || (isAuthenticated && isLocked));
 
   useEffect(() => {
-    loadCredentials().then((saved) => {
-      if (!saved) return;
-      setEmail(saved.email);
-      if (saved.password) {
-        setPassword(saved.password);
-        setHasSavedPassword(true);
-      }
+    // Prefill the email only — never the password.
+    void loadSavedEmail().then((saved) => {
+      if (saved) setEmail(saved);
     });
+    void hasBiometricPassword().then(setHasSavedPassword);
   }, []);
 
   const reject = useCallback(
@@ -86,7 +88,7 @@ export default function LoginScreen() {
         reject(result.message || 'Login failed');
         return;
       }
-      setHasSavedPassword(true);
+      setHasSavedPassword(await hasBiometricPassword());
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } finally {
       setLoading(false);
@@ -108,19 +110,25 @@ export default function LoginScreen() {
         return;
       }
 
-      const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Unlock Hirdan',
-        fallbackLabel: 'Use password',
-        disableDeviceFallback: false,
-      });
+      const unlockingSession = isAuthenticated && isLocked;
 
-      if (!result.success) {
-        toast('Authentication cancelled', 'error');
-        return;
+      // When the saved password sits behind the OS biometric prompt, reading it
+      // *is* the biometric check — don't prompt twice.
+      if (unlockingSession || !isStoreBiometricProtected()) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: 'Unlock Hirdan',
+          fallbackLabel: 'Use password',
+          disableDeviceFallback: false,
+        });
+
+        if (!result.success) {
+          toast('Authentication cancelled', 'error');
+          return;
+        }
       }
 
       // Existing session — just unlock the gate.
-      if (isAuthenticated && isLocked) {
+      if (unlockingSession) {
         unlock();
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         return;
@@ -128,12 +136,14 @@ export default function LoginScreen() {
 
       const saved = await loadCredentials();
       if (!saved?.email || !saved.password) {
-        toast('No saved password found. Log in once to save it.', 'error');
+        toast('No saved password found. Log in once with your password to use biometrics.', 'error');
         return;
       }
 
       const recaptchaToken = (await getMobileRecaptchaToken()) || undefined;
-      const loginResult = await login(saved.email, saved.password, recaptchaToken);
+      const loginResult = await login(saved.email, saved.password, recaptchaToken, {
+        fromBiometric: true,
+      });
       if (!loginResult.success) {
         reject(loginResult.message || 'Could not unlock with biometrics');
         return;

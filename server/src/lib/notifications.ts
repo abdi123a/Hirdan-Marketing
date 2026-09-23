@@ -44,8 +44,21 @@ export async function createNotification(data: CreateNotificationInput): Promise
   }
 }
 
+/** Active agency staff (broadcast notifications never go to client logins). */
+async function activeStaffIds(): Promise<string[]> {
+  const staff = await prisma.user.findMany({
+    where: { isActive: true, role: { not: 'CLIENT' } },
+    select: { id: true },
+  });
+  return staff.map((u) => u.id);
+}
+
 /**
- * Sends a push notification via OneSignal to all subscribers.
+ * Sends a web push via OneSignal to the notification's recipient(s).
+ * Recipients are addressed by OneSignal external_id = our user id (the web app
+ * calls OneSignal.login(user.id) after sign-in). A targeted notification goes
+ * to that user only; a broadcast goes to active staff — never the "All" segment,
+ * which would include client-portal subscribers.
  * Requires oneSignalEnabled + oneSignalAppId + oneSignalApiKey in AgencySettings.
  */
 async function sendPushNotification(data: CreateNotificationInput): Promise<void> {
@@ -61,36 +74,48 @@ async function sendPushNotification(data: CreateNotificationInput): Promise<void
     return; // OneSignal not configured
   }
 
+  const recipients = data.userId
+    ? (await prisma.user.count({ where: { id: data.userId, isActive: true } })) > 0
+      ? [data.userId]
+      : []
+    : await activeStaffIds();
+  if (recipients.length === 0) return;
+
   const appUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-  const payload = {
-    app_id: settings.oneSignalAppId,
-    included_segments: ['All'], // sends to all subscribed users
-    headings: { en: data.title },
-    contents: { en: data.message },
-    url: data.actionUrl ? `${appUrl}${data.actionUrl}` : appUrl,
-    web_push_topic: data.type,
-    data: {
-      type: data.type,
-      category: data.category,
-      entityType: data.entityType,
-      entityId: data.entityId,
-      actionUrl: data.actionUrl,
-    },
-  };
+  // OneSignal caps include_aliases at 2,000 ids per request.
+  const chunkSize = 2000;
+  for (let i = 0; i < recipients.length; i += chunkSize) {
+    const payload = {
+      app_id: settings.oneSignalAppId,
+      include_aliases: { external_id: recipients.slice(i, i + chunkSize) },
+      target_channel: 'push',
+      headings: { en: data.title },
+      contents: { en: data.message },
+      url: data.actionUrl ? `${appUrl}${data.actionUrl}` : appUrl,
+      web_push_topic: data.type,
+      data: {
+        type: data.type,
+        category: data.category,
+        entityType: data.entityType,
+        entityId: data.entityId,
+        actionUrl: data.actionUrl,
+      },
+    };
 
-  const response = await fetch('https://onesignal.com/api/v1/notifications', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Basic ${settings.oneSignalApiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
+    const response = await fetch('https://onesignal.com/api/v1/notifications', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${settings.oneSignalApiKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`OneSignal API error ${response.status}: ${errorBody}`);
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`OneSignal API error ${response.status}: ${errorBody}`);
+    }
   }
 
   console.log(`[OneSignal] Push notification sent: ${data.type}`);
@@ -98,13 +123,14 @@ async function sendPushNotification(data: CreateNotificationInput): Promise<void
 
 /**
  * Sends Expo Push notifications to registered native device tokens.
- * When userId is set, only that user's devices are targeted; otherwise all staff devices.
+ * When userId is set, only that user's devices are targeted; otherwise all
+ * active staff devices (never client logins or disabled accounts).
  */
 async function sendExpoPushNotification(data: CreateNotificationInput): Promise<void> {
   const devices = await prisma.deviceToken.findMany({
     where: data.userId
-      ? { userId: data.userId, platform: { in: ['ios', 'android'] } }
-      : { platform: { in: ['ios', 'android'] } },
+      ? { userId: data.userId, platform: { in: ['ios', 'android'] }, user: { isActive: true } }
+      : { platform: { in: ['ios', 'android'] }, user: { isActive: true, role: { not: 'CLIENT' } } },
     select: { token: true, id: true },
   });
 

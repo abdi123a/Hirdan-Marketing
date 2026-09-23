@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { AppError } from '../lib/errors.js';
+import { prisma } from '../lib/prisma.js';
 
 export interface JwtPayload {
   userId: string;
@@ -21,10 +22,23 @@ declare global {
   }
 }
 
+/** Auth endpoints a user may still call while a password change is pending. */
+const PASSWORD_CHANGE_ALLOWED_PATHS = [
+  '/api/auth/change-password',
+  '/api/auth/client-change-password',
+  '/api/auth/logout',
+  '/api/auth/refresh',
+  '/api/auth/me',
+];
+
 /**
  * Verify JWT from Authorization header and attach user to request.
+ *
+ * The signature alone is not enough: the account may have been deactivated,
+ * demoted, or (for clients) paused since the token was issued. One primary-key
+ * lookup per request re-checks that state and uses the *current* role.
  */
-export function authenticate(req: Request, _res: Response, next: NextFunction): void {
+export async function authenticate(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
 
@@ -35,19 +49,46 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     const token = authHeader.split(' ')[1];
 
     const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
-    req.user = decoded;
+    // Purpose-specific tokens signed with the same secret (e.g. email-stream
+    // tickets carry `typ`) are not access tokens.
+    if (!decoded || typeof decoded.userId !== 'string' || (decoded as { typ?: unknown }).typ !== undefined) {
+      throw AppError.unauthorized('Invalid token');
+    }
 
-    const isClientForcedToChangePassword =
-      decoded.role === 'CLIENT' &&
-      decoded.mustChangePassword === true;
-    const isAllowedPathWhileForced =
-      req.originalUrl.startsWith('/api/auth/client-change-password') ||
-      req.originalUrl.startsWith('/api/auth/logout') ||
-      req.originalUrl.startsWith('/api/auth/refresh') ||
-      req.originalUrl.startsWith('/api/auth/me');
+    const account = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: {
+        email: true,
+        role: true,
+        isActive: true,
+        mustChangePassword: true,
+        client: { select: { id: true, company: true, status: true } },
+      },
+    });
 
-    if (isClientForcedToChangePassword && !isAllowedPathWhileForced) {
-      throw AppError.forbidden('Password change required before accessing the portal');
+    if (!account || !account.isActive) {
+      throw AppError.unauthorized('Account is disabled');
+    }
+    if (account.role === 'CLIENT') {
+      if (!account.client || account.client.status === 'PAUSED' || account.client.status === 'CHURNED') {
+        throw AppError.unauthorized('Your account is currently inactive. Please contact support.');
+      }
+    }
+
+    req.user = {
+      userId: decoded.userId,
+      email: account.email,
+      role: account.role,
+      clientId: account.client?.id,
+      company: account.client?.company,
+      mustChangePassword: account.mustChangePassword,
+    };
+
+    const path = req.originalUrl.split('?')[0];
+    const isAllowedPathWhileForced = PASSWORD_CHANGE_ALLOWED_PATHS.some((p) => path.startsWith(p));
+
+    if (account.mustChangePassword && !isAllowedPathWhileForced) {
+      throw AppError.forbidden('Password change required before continuing');
     }
 
     next();

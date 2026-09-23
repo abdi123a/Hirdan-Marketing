@@ -13,6 +13,7 @@ import { validate } from '../middleware/validate.js';
 import { auditLog } from '../lib/audit.js';
 import { sendEmail, generateEmailHtml } from '../lib/email.js';
 import { getShortDomainBase } from '../lib/short-url.js';
+import { passwordSchema } from '../lib/auth-security.js';
 
 const router = Router();
 
@@ -61,9 +62,9 @@ const clientLoginSchema = z.object({
   recaptchaToken: z.string().optional(),
 });
 
-const clientChangePasswordSchema = z.object({
+const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  newPassword: passwordSchema,
   confirmPassword: z.string().min(1),
 });
 
@@ -73,9 +74,38 @@ const forgotPasswordSchema = z.object({
 
 const resetPasswordSchema = z.object({
   token: z.string().min(1),
-  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+  newPassword: passwordSchema,
   confirmPassword: z.string().min(1),
 });
+
+// ─── Session / lockout policy ─────────────────────────────────────
+
+/** A login session can never outlive this, however often it is refreshed. */
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+/**
+ * A rotated refresh token presented again within this window is treated as a
+ * benign race (two tabs refreshing at once) rather than token theft.
+ */
+const REFRESH_REUSE_GRACE_MS = 60 * 1000;
+/** Failed logins allowed before the account is temporarily locked. */
+const LOCKOUT_THRESHOLD = 5;
+const LOCKOUT_MAX_MINUTES = 60;
+
+/** One message for every failed login (unknown email, wrong password, locked). */
+const INVALID_LOGIN_MESSAGE =
+  'Invalid email or password. After several failed attempts, sign-in is paused for a few minutes.';
+
+/** Compared against when the email is unknown so response time doesn't reveal it. */
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 12);
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 // ─── Helper: Generate Tokens ─────────────────────────────────────
 
@@ -105,15 +135,23 @@ function getRefreshTokenExpiry(): Date {
   return new Date(Date.now() + ms);
 }
 
+const REFRESH_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax' as const, // Relax for subdomains
+  domain: env.COOKIE_DOMAIN, // Share across subdomains (e.g., '.hirdanmarketing.com')
+  path: '/',
+};
+
 function setRefreshTokenCookie(res: Response, token: string) {
   res.cookie('refreshToken', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax', // Relax for subdomains
+    ...REFRESH_COOKIE_OPTIONS,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    domain: env.COOKIE_DOMAIN, // Share across subdomains (e.g., '.hirdanmarketing.com')
-    path: '/',
   });
+}
+
+function clearRefreshTokenCookie(res: Response) {
+  res.clearCookie('refreshToken', REFRESH_COOKIE_OPTIONS);
 }
 
 /** True when the client is the native mobile app (not the web dashboard). */
@@ -122,26 +160,143 @@ function isMobileClient(req: Request): boolean {
   return platform === 'mobile' || platform === 'ios' || platform === 'android';
 }
 
-/** Prefer httpOnly cookie; fall back to JSON body for native clients. */
-function getRefreshTokenFromRequest(req: Request): string | undefined {
-  const fromCookie = req.cookies?.refreshToken;
-  if (typeof fromCookie === 'string' && fromCookie.length > 0) return fromCookie;
+/**
+ * Native clients send the refresh token in the JSON body; the web dashboard
+ * relies on the httpOnly cookie. `fromBody` tells callers whether the token
+ * may be echoed back in JSON (never for a cookie-borne token).
+ */
+function getRefreshTokenFromRequest(req: Request): { token: string; fromBody: boolean } | undefined {
   const fromBody = req.body?.refreshToken;
-  if (typeof fromBody === 'string' && fromBody.length > 0) return fromBody;
+  if (typeof fromBody === 'string' && fromBody.length > 0) return { token: fromBody, fromBody: true };
+  const fromCookie = req.cookies?.refreshToken;
+  if (typeof fromCookie === 'string' && fromCookie.length > 0) return { token: fromCookie, fromBody: false };
   return undefined;
 }
 
 function authTokenResponse(
-  req: Request,
   accessToken: string,
   refreshToken: string,
+  includeRefreshToken: boolean,
   extra: Record<string, unknown> = {}
 ) {
   const payload: Record<string, unknown> = { accessToken, ...extra };
-  if (isMobileClient(req)) {
+  if (includeRefreshToken) {
     payload.refreshToken = refreshToken;
   }
   return payload;
+}
+
+type SessionUser = {
+  id: string;
+  email: string;
+  role: 'ADMIN' | 'MANAGER' | 'STAFF' | 'CLIENT';
+  mustChangePassword: boolean;
+  client?: { id: string; company: string } | null;
+};
+
+function buildTokenPayload(user: SessionUser) {
+  return {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    clientId: user.client?.id,
+    company: user.client?.company,
+    mustChangePassword: !!user.mustChangePassword,
+  };
+}
+
+/**
+ * Issue an access token + a rotated refresh token. A new login starts a new
+ * family; a refresh continues the presented token's family and keeps its
+ * original start time so the absolute lifetime cap holds.
+ */
+async function issueSession(
+  res: Response,
+  user: SessionUser,
+  family?: { familyId: string; sessionStartedAt: Date }
+) {
+  const payload = buildTokenPayload(user);
+  const accessToken = generateAccessToken(payload);
+  const refreshToken = generateRefreshToken(payload);
+
+  const familyId = family?.familyId ?? crypto.randomUUID();
+  const sessionStartedAt = family?.sessionStartedAt ?? new Date();
+  const sessionEnd = new Date(sessionStartedAt.getTime() + SESSION_MAX_AGE_MS);
+  const slidingExpiry = getRefreshTokenExpiry();
+  const expiresAt = slidingExpiry < sessionEnd ? slidingExpiry : sessionEnd;
+
+  await prisma.refreshToken.create({
+    data: {
+      token: sha256Hex(refreshToken),
+      userId: user.id,
+      expiresAt,
+      familyId,
+      sessionStartedAt,
+    },
+  });
+
+  setRefreshTokenCookie(res, refreshToken);
+  return { accessToken, refreshToken };
+}
+
+async function revokeFamily(stored: { id: string; familyId: string | null; userId: string }) {
+  await prisma.refreshToken.deleteMany({
+    where: stored.familyId
+      ? { familyId: stored.familyId, userId: stored.userId }
+      : { id: stored.id },
+  });
+}
+
+/** Count a failed password for an existing account; lock it with exponential backoff. */
+async function registerFailedLogin(userId: string) {
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { failedLoginAttempts: { increment: 1 } },
+    select: { failedLoginAttempts: true },
+  });
+  const attempts = updated.failedLoginAttempts;
+  if (attempts >= LOCKOUT_THRESHOLD) {
+    const minutes = Math.min(LOCKOUT_MAX_MINUTES, 2 ** (attempts - LOCKOUT_THRESHOLD));
+    await prisma.user.update({
+      where: { id: userId },
+      data: { lockedUntil: new Date(Date.now() + minutes * 60 * 1000) },
+    });
+  }
+}
+
+/**
+ * Verify email + password with uniform timing and error text. Account-state
+ * checks (disabled, wrong portal, paused client) happen only after the caller
+ * has proven the password, so they can't be used to enumerate accounts.
+ */
+async function verifyCredentials(email: string, password: string, ip: string | undefined) {
+  const user = await prisma.user.findUnique({
+    where: { email },
+    include: { client: true },
+  });
+
+  const locked = !!user?.lockedUntil && user.lockedUntil > new Date();
+  const hash = user && !locked ? user.passwordHash : DUMMY_PASSWORD_HASH;
+  const passwordMatches = await bcrypt.compare(password, hash);
+
+  if (!user || locked || !passwordMatches) {
+    if (user && !locked) await registerFailedLogin(user.id);
+    auditLog({ action: 'auth.login', success: false, email, ip });
+    throw AppError.unauthorized(INVALID_LOGIN_MESSAGE);
+  }
+
+  if (user.failedLoginAttempts !== 0 || user.lockedUntil) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
+  }
+
+  if (!user.isActive) {
+    throw AppError.unauthorized('This account has been disabled. Please contact your administrator.');
+  }
+
+  return user;
 }
 
 // ─── Helper: Verify reCAPTCHA ────────────────────────────────────
@@ -230,45 +385,19 @@ router.post(
   async (req: Request, res: Response, next) => {
     try {
       const { email, password, recaptchaToken } = req.body;
-      const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
+      const ip = req.ip;
 
       await verifyRecaptcha(recaptchaToken, { mobile: isMobileClient(req) });
 
-      const user = await prisma.user.findUnique({ 
-        where: { email },
-        include: { client: true }
-      });
-      if (!user) {
-        throw AppError.unauthorized('Invalid email or password');
-      }
+      const user = await verifyCredentials(email, password, ip);
 
-      // Prevent clients from using the admin login portal
+      // Prevent clients from using the admin login portal (only revealed after a correct password)
       if (user.role === 'CLIENT') {
         throw AppError.unauthorized('This login is for agency staff only. Please use the Client Portal to log in.');
       }
 
-      const isValid = await bcrypt.compare(password, user.passwordHash);
-      if (!isValid) {
-        auditLog({ action: 'auth.login', success: false, email, ip });
-        throw AppError.unauthorized('Invalid email or password');
-      }
-
       auditLog({ action: 'auth.login', success: true, userId: user.id, email: user.email, role: user.role, ip });
-      const tokenPayload = { userId: user.id, email: user.email, role: user.role };
-      const accessToken = generateAccessToken(tokenPayload);
-      const refreshToken = generateRefreshToken(tokenPayload);
-
-      // Store refresh token in database
-      const refreshTokenHash = sha256Hex(refreshToken);
-      await prisma.refreshToken.create({
-        data: {
-          token: refreshTokenHash,
-          userId: user.id,
-          expiresAt: getRefreshTokenExpiry(),
-        },
-      });
-
-      setRefreshTokenCookie(res, refreshToken);
+      const { accessToken, refreshToken } = await issueSession(res, user);
 
       const { resolvePermissions } = await import('../lib/permissions.js');
       const resolvedPermissions = resolvePermissions(
@@ -277,7 +406,7 @@ router.post(
       );
 
       res.json(
-        authTokenResponse(req, accessToken, refreshToken, {
+        authTokenResponse(accessToken, refreshToken, isMobileClient(req), {
           user: {
             id: user.id,
             email: user.email,
@@ -305,67 +434,34 @@ router.post(
   async (req: Request, res: Response, next) => {
     try {
       const { email, password, recaptchaToken } = req.body;
-      const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
+      const ip = req.ip;
 
       await verifyRecaptcha(recaptchaToken, { mobile: isMobileClient(req) });
 
-      // Find the specific client user by email
-      const matchedUser = await prisma.user.findFirst({
-        where: { 
-          email: email,
-          role: 'CLIENT' 
-        },
-        include: { client: true },
-      }) as any;
+      const user = await verifyCredentials(email, password, ip);
 
-      if (!matchedUser || !matchedUser.client) {
-        throw AppError.unauthorized('Invalid email or password');
+      if (user.role !== 'CLIENT' || !user.client) {
+        throw AppError.unauthorized('This login is for clients. Agency staff should use the staff login.');
       }
 
-      if (matchedUser.client.status === 'PAUSED' || matchedUser.client.status === 'CHURNED') {
+      if (user.client.status === 'PAUSED' || user.client.status === 'CHURNED') {
         throw AppError.unauthorized('Your account is currently inactive. Please contact support.');
       }
 
-      const isValid = await bcrypt.compare(password, matchedUser.passwordHash);
-      if (!isValid) {
-        auditLog({ action: 'auth.login', success: false, email, ip });
-        throw AppError.unauthorized('Invalid email or password');
-      }
-
-      auditLog({ action: 'auth.login', success: true, userId: matchedUser.id, email: matchedUser.email, role: matchedUser.role, ip });
-      const tokenPayload = { 
-        userId: matchedUser.id, 
-        email: matchedUser.email, 
-        role: matchedUser.role,
-        clientId: matchedUser.client.id,
-        company: matchedUser.client.company,
-        mustChangePassword: !!matchedUser.mustChangePassword,
-      };
-      const accessToken = generateAccessToken(tokenPayload);
-      const refreshToken = generateRefreshToken(tokenPayload);
-
-      const refreshTokenHash = sha256Hex(refreshToken);
-      await prisma.refreshToken.create({
-        data: {
-          token: refreshTokenHash,
-          userId: matchedUser.id,
-          expiresAt: getRefreshTokenExpiry(),
-        },
-      });
-
-      setRefreshTokenCookie(res, refreshToken);
+      auditLog({ action: 'auth.login', success: true, userId: user.id, email: user.email, role: user.role, ip });
+      const { accessToken, refreshToken } = await issueSession(res, user);
 
       res.json(
-        authTokenResponse(req, accessToken, refreshToken, {
+        authTokenResponse(accessToken, refreshToken, isMobileClient(req), {
           user: {
-            id: matchedUser.id,
-            email: matchedUser.email,
-            name: matchedUser.name,
-            role: matchedUser.role,
-            clientId: matchedUser.client.id,
-            company: matchedUser.client.company,
-            requiresPasswordChange: !!matchedUser.mustChangePassword,
-            mustChangePassword: !!matchedUser.mustChangePassword,
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            clientId: user.client.id,
+            company: user.client.company,
+            requiresPasswordChange: !!user.mustChangePassword,
+            mustChangePassword: !!user.mustChangePassword,
           },
         })
       );
@@ -375,177 +471,173 @@ router.post(
   }
 );
 
-// ─── POST /api/auth/client-change-password ────────────────────────
+// ─── POST /api/auth/change-password (any role) ────────────────────
+// ─── POST /api/auth/client-change-password (legacy alias) ─────────
+
+async function changePasswordHandler(req: Request, res: Response, next: (err?: unknown) => void) {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+    const ip = req.ip;
+
+    if (newPassword !== confirmPassword) {
+      throw AppError.badRequest('New passwords do not match');
+    }
+    if (newPassword === currentPassword) {
+      throw AppError.badRequest('New password must be different from the current password');
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.userId },
+      include: { client: true },
+    });
+
+    if (!user) {
+      throw AppError.notFound('User not found');
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isCurrentPasswordValid) {
+      auditLog({ action: 'auth.password_change', success: false, userId: user.id, ip });
+      // 400, not 401: a typo must not look like an expired session to the client.
+      throw AppError.badRequest('Current password is incorrect');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        mustChangePassword: false,
+      },
+      include: { client: true },
+    });
+    auditLog({ action: 'auth.password_change', success: true, userId: user.id, ip });
+
+    // Sign out every other session; this device gets a fresh one below.
+    await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+    const { accessToken, refreshToken } = await issueSession(res, updated);
+
+    res.json(
+      authTokenResponse(accessToken, refreshToken, isMobileClient(req), {
+        message: 'Password changed successfully',
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+}
+
+router.post(
+  '/change-password',
+  authLimiter,
+  authenticate,
+  validate({ body: changePasswordSchema }),
+  changePasswordHandler
+);
 
 router.post(
   '/client-change-password',
+  authLimiter,
   authenticate,
-  validate({ body: clientChangePasswordSchema }),
-  async (req: Request, res: Response, next) => {
-    try {
-      if (req.user!.role !== 'CLIENT') {
-        throw AppError.forbidden('Only client users can change password');
-      }
-
-      const { currentPassword, newPassword } = req.body;
-      const { confirmPassword } = req.body;
-      const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() || req.ip;
-
-      if (newPassword !== confirmPassword) {
-        throw AppError.badRequest('New passwords do not match');
-      }
-
-      const user = await prisma.user.findUnique({
-        where: { id: req.user!.userId },
-      });
-
-      if (!user) {
-        throw AppError.notFound('User not found');
-      }
-
-      const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
-      if (!isCurrentPasswordValid) {
-        auditLog({ action: 'auth.password_change', success: false, userId: user.id, ip });
-        throw AppError.unauthorized('Current password is incorrect');
-      }
-
-      const passwordHash = await bcrypt.hash(newPassword, 12);
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          passwordHash,
-          mustChangePassword: false,
-        },
-      });
-      auditLog({ action: 'auth.password_change', success: true, userId: user.id, ip });
-
-      const tokenPayload = {
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-        mustChangePassword: false,
-      };
-      const accessToken = generateAccessToken(tokenPayload);
-      const refreshToken = generateRefreshToken(tokenPayload);
-
-      const refreshTokenHash = sha256Hex(refreshToken);
-      await prisma.refreshToken.create({
-        data: {
-          token: refreshTokenHash,
-          userId: user.id,
-          expiresAt: getRefreshTokenExpiry(),
-        },
-      });
-
-      setRefreshTokenCookie(res, refreshToken);
-
-      res.json(
-        authTokenResponse(req, accessToken, refreshToken, {
-          message: 'Password changed successfully',
-        })
-      );
-    } catch (error) {
-      next(error);
-    }
-  }
+  validate({ body: changePasswordSchema }),
+  changePasswordHandler
 );
 
 // ─── POST /api/auth/refresh ───────────────────────────────────────
 
 router.post('/refresh', refreshLimiter, async (req: Request, res: Response, next) => {
   try {
-    const refreshToken = getRefreshTokenFromRequest(req);
-    if (!refreshToken) {
+    const presented = getRefreshTokenFromRequest(req);
+    if (!presented) {
       throw AppError.badRequest('Refresh token is required');
     }
 
     // Verify the refresh token
-    const decoded = jwt.verify(refreshToken, env.JWT_REFRESH_SECRET) as any;
+    const decoded = jwt.verify(presented.token, env.JWT_REFRESH_SECRET) as any;
 
     // Check if refresh token exists in database
-    const refreshTokenHash = sha256Hex(refreshToken);
     const storedToken = await prisma.refreshToken.findUnique({
-      where: { token: refreshTokenHash },
+      where: { token: sha256Hex(presented.token) },
     });
 
-    if (!storedToken || storedToken.expiresAt < new Date()) {
+    const now = new Date();
+    if (!storedToken || storedToken.userId !== decoded.userId || storedToken.expiresAt < now) {
       throw AppError.unauthorized('Invalid or expired refresh token');
     }
 
-    // Delete old refresh token (rotation)
-    await prisma.refreshToken.delete({ where: { id: storedToken.id } });
+    if (storedToken.sessionStartedAt.getTime() + SESSION_MAX_AGE_MS < now.getTime()) {
+      await revokeFamily(storedToken);
+      throw AppError.unauthorized('Session expired. Please log in again.');
+    }
+
+    // Rotation: mark the token used (atomically, so concurrent refreshes can't
+    // both claim a fresh token) and keep it around for reuse detection.
+    const claimed = await prisma.refreshToken.updateMany({
+      where: { id: storedToken.id, usedAt: null },
+      data: { usedAt: now },
+    });
+    if (claimed.count === 0) {
+      const usedAt = storedToken.usedAt
+        ?? (await prisma.refreshToken.findUnique({ where: { id: storedToken.id }, select: { usedAt: true } }))?.usedAt
+        ?? now;
+      if (now.getTime() - usedAt.getTime() > REFRESH_REUSE_GRACE_MS) {
+        // A rotated token came back: assume it was stolen and kill the whole session.
+        await revokeFamily(storedToken);
+        console.warn('[auth] Refresh token reuse detected; session family revoked for user %s', storedToken.userId);
+        throw AppError.unauthorized('Invalid or expired refresh token');
+      }
+    }
 
     // Fetch user to ensure they are still active
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: storedToken.userId },
       include: { client: true }
     });
 
-    if (!user) {
-      throw AppError.unauthorized('User not found');
+    if (!user || !user.isActive) {
+      await prisma.refreshToken.deleteMany({ where: { userId: storedToken.userId } });
+      throw AppError.unauthorized('Invalid or expired refresh token');
     }
 
-    if (user.role === 'CLIENT' && user.client) {
-      if (user.client.status === 'PAUSED' || user.client.status === 'CHURNED') {
+    if (user.role === 'CLIENT') {
+      if (!user.client || user.client.status === 'PAUSED' || user.client.status === 'CHURNED') {
         throw AppError.unauthorized('Your account is currently inactive. Please contact support.');
       }
     }
 
-    // Generate new tokens
-    const tokenPayload = { 
-      userId: user.id, 
-      email: user.email, 
-      role: user.role,
-      clientId: user.client?.id,
-      company: user.client?.company,
-      mustChangePassword: !!user.mustChangePassword,
-    };
-    const newAccessToken = generateAccessToken(tokenPayload);
-    const newRefreshToken = generateRefreshToken(tokenPayload);
+    // Housekeeping: drop this user's expired tokens (used ones included).
+    await prisma.refreshToken.deleteMany({ where: { userId: user.id, expiresAt: { lt: now } } });
 
-    const newRefreshTokenHash = sha256Hex(newRefreshToken);
-    await prisma.refreshToken.create({
-      data: {
-        token: newRefreshTokenHash,
-        userId: decoded.userId,
-        expiresAt: getRefreshTokenExpiry(),
-      },
+    const { accessToken, refreshToken } = await issueSession(res, user, {
+      familyId: storedToken.familyId ?? storedToken.id,
+      sessionStartedAt: storedToken.sessionStartedAt,
     });
 
-    setRefreshTokenCookie(res, newRefreshToken);
-
-    res.json(authTokenResponse(req, newAccessToken, newRefreshToken));
+    // Only echo the refresh token to native clients that sent theirs in the body.
+    res.json(authTokenResponse(accessToken, refreshToken, presented.fromBody));
   } catch (error) {
     next(error);
   }
 });
 
 // ─── POST /api/auth/logout ───────────────────────────────────────
+// No access token required: possession of the refresh token (cookie for web,
+// body for mobile) is what's revoked, so logout works even after the access
+// token has expired.
 
-router.post('/logout', authenticate, async (req: Request, res: Response, next) => {
+router.post('/logout', refreshLimiter, async (req: Request, res: Response, next) => {
   try {
-    const bodyRefresh = typeof req.body?.refreshToken === 'string' ? req.body.refreshToken : null;
+    const presented = getRefreshTokenFromRequest(req);
 
-    if (bodyRefresh) {
-      // Mobile: revoke only the presented refresh token (rotation-safe)
-      const refreshTokenHash = sha256Hex(bodyRefresh);
-      await prisma.refreshToken.deleteMany({
-        where: { token: refreshTokenHash, userId: req.user!.userId },
+    if (presented) {
+      const stored = await prisma.refreshToken.findUnique({
+        where: { token: sha256Hex(presented.token) },
+        select: { id: true, familyId: true, userId: true },
       });
-    } else {
-      // Web: revoke all sessions for this user
-      await prisma.refreshToken.deleteMany({
-        where: { userId: req.user!.userId },
-      });
+      if (stored) await revokeFamily(stored);
     }
 
-    res.clearCookie('refreshToken', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
-      domain: env.COOKIE_DOMAIN,
-      path: '/',
-    });
+    clearRefreshTokenCookie(res);
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     next(error);
@@ -599,6 +691,51 @@ router.get('/me', authenticate, async (req: Request, res: Response, next) => {
 
 // ─── POST /api/auth/forgot-password ──────────────────────────────
 
+async function sendPasswordResetEmail(user: { id: string; name: string; email: string }) {
+  // Generate a cryptographically secure random token
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = sha256Hex(rawToken);
+  const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+  // Store hashed token + expiry in DB
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordResetToken: tokenHash,
+      passwordResetExpiry: expiry,
+    },
+  });
+
+  // Build reset URL using short domain base
+  const appUrl = env.SHORT_LINK_DOMAIN || process.env.APP_URL || getShortDomainBase();
+  const resetUrl = `${appUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`;
+
+  const contentHtml = `
+    <p style="margin: 0 0 16px 0;">Hi <strong>${escapeHtml(user.name)}</strong>,</p>
+    <p style="margin: 0 0 16px 0;">We received a request to reset the password for your account associated with <strong>${escapeHtml(user.email)}</strong>.</p>
+    <p style="margin: 0 0 16px 0;">Click the button below to set a new password. This link is valid for <strong>1 hour</strong>.</p>
+    <p style="margin: 0 0 16px 0;">If you did not request a password reset, you can safely ignore this email — your password will remain unchanged.</p>
+  `;
+
+  const html = await generateEmailHtml({
+    title: 'Reset Your Password',
+    preheader: 'You requested a password reset. Click to set a new password.',
+    contentHtml,
+    actionButton: {
+      label: 'Reset Password',
+      url: resetUrl,
+    },
+  });
+
+  await sendEmail({
+    to: user.email,
+    subject: 'Reset Your Password',
+    html,
+  });
+
+  auditLog({ action: 'auth.forgot_password', success: true, email: user.email });
+}
+
 router.post(
   '/forgot-password',
   passwordResetLimiter,
@@ -608,51 +745,17 @@ router.post(
       const { email } = req.body;
 
       // Always return 200 — never reveal whether an email exists (prevents enumeration)
-      const user = await prisma.user.findUnique({ where: { email } });
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, name: true, email: true, isActive: true },
+      });
 
-      if (user) {
-        // Generate a cryptographically secure random token
-        const rawToken = crypto.randomBytes(32).toString('hex');
-        const tokenHash = sha256Hex(rawToken);
-        const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-        // Store hashed token + expiry in DB
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            passwordResetToken: tokenHash,
-            passwordResetExpiry: expiry,
-          },
+      if (user && user.isActive) {
+        // Fire-and-forget so the response time doesn't depend on whether the
+        // account exists (token write + template render + mail relay).
+        void sendPasswordResetEmail(user).catch((err) => {
+          console.error('[auth] Failed to send password reset email:', err?.message || err);
         });
-
-        // Build reset URL using short domain base
-        const appUrl = env.SHORT_LINK_DOMAIN || process.env.APP_URL || getShortDomainBase();
-        const resetUrl = `${appUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`;
-
-        const contentHtml = `
-          <p style="margin: 0 0 16px 0;">Hi <strong>${user.name}</strong>,</p>
-          <p style="margin: 0 0 16px 0;">We received a request to reset the password for your account associated with <strong>${user.email}</strong>.</p>
-          <p style="margin: 0 0 16px 0;">Click the button below to set a new password. This link is valid for <strong>1 hour</strong>.</p>
-          <p style="margin: 0 0 16px 0;">If you did not request a password reset, you can safely ignore this email — your password will remain unchanged.</p>
-        `;
-
-        const html = await generateEmailHtml({
-          title: 'Reset Your Password',
-          preheader: 'You requested a password reset. Click to set a new password.',
-          contentHtml,
-          actionButton: {
-            label: 'Reset Password',
-            url: resetUrl,
-          },
-        });
-
-        await sendEmail({
-          to: user.email,
-          subject: 'Reset Your Password',
-          html,
-        });
-
-        auditLog({ action: 'auth.forgot_password', success: true, email: user.email });
       }
 
       // Always respond with the same message
@@ -707,6 +810,8 @@ router.post(
           mustChangePassword: false,
           passwordResetToken: null,
           passwordResetExpiry: null,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
         },
       });
 

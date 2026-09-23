@@ -8,12 +8,53 @@ import bcrypt from 'bcryptjs';
 import { parsePagination } from '../lib/pagination.js';
 import { createNotification } from '../lib/notifications.js';
 import { sendEmail, generateWelcomeEmailHtml } from '../lib/email.js';
+import { Prisma } from '@prisma/client';
+import { deactivateUser, generateTempPassword, revokeUserSessions } from '../lib/auth-security.js';
+
+/** Remove agency-internal fields before a client sees their own record. */
+function toClientFacing<T extends Record<string, any>>(client: T) {
+  const { notes: _notes, ...rest } = client;
+  return rest;
+}
 
 
 const router = Router();
 
 // All client routes require authentication
 router.use(authenticate);
+
+// ─── Schemas ─────────────────────────────────────────────────────
+
+const clientDtoSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email().or(z.literal('')).nullable().transform(val => val === '' ? null : val),
+  phone: z.string().optional().nullable().transform(val => val || null),
+  company: z.string().optional().nullable().transform(val => val || ''), // Prisma needs non-null
+  type: z.enum(['BUSINESS', 'INDIVIDUAL']).optional(),
+  website: z.string().optional().nullable().transform(val => val || null),
+  address: z.string().optional().nullable().transform(val => val || null),
+  city: z.string().optional().nullable().transform(val => val || null),
+  country: z.string().optional().nullable().transform(val => val || null),
+  industry: z.string().optional().nullable().transform(val => val || null),
+  notes: z.string().optional().nullable().transform(val => val || null),
+  status: z.enum(['ACTIVE', 'PAUSED', 'CHURNED']).optional(),
+  initials: z.string().optional().nullable().transform(val => val || null),
+  invoiceGenerationDay: z.number().int().min(1).max(28).optional().nullable(),
+  paymentReminderDelay: z.number().int().min(0).max(30).optional().nullable(),
+  overdueNoticeDelay: z.number().int().min(0).max(60).optional().nullable(),
+  portalAccess: z.any().optional().nullable(),
+});
+
+const clientSelfUpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  email: z.string().email().or(z.literal('')).nullable().optional().transform(val => val === '' ? null : val),
+  phone: z.string().optional().nullable().transform(val => val || null),
+  company: z.string().optional().nullable().transform(val => val || ''),
+  website: z.string().optional().nullable().transform(val => val || null),
+  address: z.string().optional().nullable().transform(val => val || null),
+  city: z.string().optional().nullable().transform(val => val || null),
+  country: z.string().optional().nullable().transform(val => val || null),
+});
 
 // ─── GET /api/clients ─────────────────────────────────────────────
 
@@ -56,7 +97,8 @@ router.get('/', async (req: Request, res: Response, next) => {
         return sum;
       }, 0) ?? 0;
       const { invoices, ...rest } = client as any;
-      return { ...rest, role: req.user!.role, revenue };
+      const shaped = req.user!.role === 'CLIENT' ? toClientFacing(rest) : rest;
+      return { ...shaped, role: req.user!.role, revenue };
     });
 
     res.json({ clients: clientsWithRevenue });
@@ -89,66 +131,7 @@ router.get('/portal/next-meeting', async (req: Request, res: Response, next) => 
   }
 });
 
-// ─── GET /api/clients/:id ─────────────────────────────────────────
-
-router.get('/:id', requireAdmin, async (req: Request, res: Response, next) => {
-  try {
-    const id = req.params.id as string;
-    const client = await prisma.client.findUnique({
-      where: { id },
-      include: {
-        projects: true,
-        invoices: { include: { items: { orderBy: { position: 'asc' } } } },
-        proformas: { include: { items: { orderBy: { position: 'asc' } } } },
-        subscriptions: { include: { package: true } },
-        socialProfiles: { orderBy: { platform: 'asc' } },
-        documents: { orderBy: { createdAt: 'desc' } },
-      },
-    });
-
-    if (!client) {
-      throw AppError.notFound('Client not found');
-    }
-
-    res.json({ client });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// ─── POST /api/clients ───────────────────────────────────────────
-
-const clientDtoSchema = z.object({
-  name: z.string().min(1),
-  email: z.string().email().or(z.literal('')).nullable().transform(val => val === '' ? null : val),
-  phone: z.string().optional().nullable().transform(val => val || null),
-  company: z.string().optional().nullable().transform(val => val || ''), // Prisma needs non-null
-  type: z.enum(['BUSINESS', 'INDIVIDUAL']).optional(),
-  website: z.string().optional().nullable().transform(val => val || null),
-  address: z.string().optional().nullable().transform(val => val || null),
-  city: z.string().optional().nullable().transform(val => val || null),
-  country: z.string().optional().nullable().transform(val => val || null),
-  industry: z.string().optional().nullable().transform(val => val || null),
-  notes: z.string().optional().nullable().transform(val => val || null),
-  status: z.enum(['ACTIVE', 'PAUSED', 'CHURNED']).optional(),
-  initials: z.string().optional().nullable().transform(val => val || null),
-  invoiceGenerationDay: z.number().int().min(1).max(28).optional().nullable(),
-  paymentReminderDelay: z.number().int().min(0).max(30).optional().nullable(),
-  overdueNoticeDelay: z.number().int().min(0).max(60).optional().nullable(),
-  portalAccess: z.any().optional().nullable(),
-});
-
-const clientSelfUpdateSchema = z.object({
-  name: z.string().min(1).optional(),
-  email: z.string().email().or(z.literal('')).nullable().optional().transform(val => val === '' ? null : val),
-  phone: z.string().optional().nullable().transform(val => val || null),
-  company: z.string().optional().nullable().transform(val => val || ''),
-  website: z.string().optional().nullable().transform(val => val || null),
-  address: z.string().optional().nullable().transform(val => val || null),
-  city: z.string().optional().nullable().transform(val => val || null),
-  country: z.string().optional().nullable().transform(val => val || null),
-});
-
+// NOTE: /me routes must be declared before /:id so they aren't shadowed.
 // ─── GET /api/clients/me ──────────────────────────────────────────
 
 router.get('/me', async (req: Request, res: Response, next) => {
@@ -165,7 +148,7 @@ router.get('/me', async (req: Request, res: Response, next) => {
       throw AppError.notFound('Client account not found');
     }
 
-    res.json({ client });
+    res.json({ client: toClientFacing(client) });
   } catch (error) {
     next(error);
   }
@@ -205,12 +188,40 @@ router.put('/me', validate({ body: clientSelfUpdateSchema }), async (req: Reques
       });
     }
 
+    res.json({ client: toClientFacing(client) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─── GET /api/clients/:id ─────────────────────────────────────────
+
+router.get('/:id', requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const id = req.params.id as string;
+    const client = await prisma.client.findUnique({
+      where: { id },
+      include: {
+        projects: true,
+        invoices: { include: { items: { orderBy: { position: 'asc' } } } },
+        proformas: { include: { items: { orderBy: { position: 'asc' } } } },
+        subscriptions: { include: { package: true } },
+        socialProfiles: { orderBy: { platform: 'asc' } },
+        documents: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+
+    if (!client) {
+      throw AppError.notFound('Client not found');
+    }
+
     res.json({ client });
   } catch (error) {
     next(error);
   }
 });
 
+// ─── POST /api/clients ───────────────────────────────────────────
 
 router.post('/', requireAdmin, validate({ body: clientDtoSchema }), async (req: Request, res: Response, next) => {
   try {
@@ -252,7 +263,23 @@ router.put('/:id', requireAdmin, validate({ body: clientDtoSchema.partial() }), 
 router.delete('/:id', requireAdmin, async (req: Request, res: Response, next) => {
   try {
     const id = req.params.id as string;
-    await prisma.client.delete({ where: { id } });
+    const existing = await prisma.client.findUnique({ where: { id }, select: { userId: true } });
+    if (!existing) throw AppError.notFound('Client not found');
+    try {
+      await prisma.client.delete({ where: { id } });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+        throw AppError.conflict(
+          'This client has invoices, proformas or subscriptions and cannot be deleted. Set the client status to CHURNED instead.'
+        );
+      }
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        throw AppError.notFound('Client not found');
+      }
+      throw err;
+    }
+    // The portal login has nothing left to access.
+    if (existing.userId) await deactivateUser(existing.userId);
     res.json({ message: 'Client deleted' });
   } catch (error) {
     next(error);
@@ -328,38 +355,36 @@ router.post('/:id/portal-access', requireAdmin, async (req: Request, res: Respon
     }
 
     // Generate a temporary password for first login/reset.
-    const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
-    let tempPassword = '';
-    for (let i = 0; i < 10; i++) {
-      tempPassword += charset.charAt(Math.floor(Math.random() * charset.length));
-    }
+    const tempPassword = generateTempPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 12);
 
     let user = client.user;
     if (!user) {
-      // Check if a user with this email already exists but isn't linked to this client
-      user = await prisma.user.findUnique({ where: { email: client.email } });
+      // Never convert an unrelated account (e.g. staff/admin) into this client's login.
+      const existing = await prisma.user.findUnique({ where: { email: client.email } });
+      if (existing) {
+        throw AppError.conflict(
+          'A user account with this email already exists and is not linked to this client. Use a different email for the portal login.'
+        );
+      }
     }
 
     if (user) {
+      if (user.role !== 'CLIENT') {
+        throw AppError.conflict('The linked user account is not a client account; refusing to reset it.');
+      }
       user = await prisma.user.update({
         where: { id: user.id },
-        data: { 
-          passwordHash, 
-          role: 'CLIENT',
+        data: {
+          passwordHash,
           mustChangePassword: true,
-          // If the user wasn't linked to the client yet, we might want to ensure they are
-          // but the link is on the Client side (userId)
+          isActive: true,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
         },
       });
-      
-      // Ensure the client is linked to this user
-      if (client.userId !== user.id) {
-        await prisma.client.update({
-          where: { id },
-          data: { userId: user.id },
-        });
-      }
+      // New credentials end every existing portal session.
+      await revokeUserSessions(user.id);
     } else {
       user = await prisma.user.create({
         data: {

@@ -8,11 +8,14 @@ import {
 import { endpoints } from '@hirdan/shared';
 import { apiFetch, setUnauthorizedHandler } from './api-client';
 import {
+  clearBiometricPassword,
+  clearCredentials,
   clearTokens,
   getAccessToken,
   getBiometricPreference,
-  loadCredentials,
   loadUserJson,
+  migrateLegacyCredentials,
+  persistBiometricPassword,
   saveCredentials,
   saveUserJson,
   setBiometricPreference,
@@ -41,7 +44,8 @@ interface AuthState {
   login: (
     email: string,
     password: string,
-    recaptchaToken?: string
+    recaptchaToken?: string,
+    options?: { fromBiometric?: boolean }
   ) => Promise<{ success: boolean; message?: string }>;
   logout: () => Promise<void>;
   hydrate: () => Promise<void>;
@@ -90,6 +94,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   unlock: () => set({ isLocked: false }),
 
   setBiometricEnabled: async (enabled) => {
+    if (enabled) {
+      // Store this session's password behind biometrics (if we have it).
+      await persistBiometricPassword();
+    } else {
+      await clearBiometricPassword().catch(() => undefined);
+    }
     await setBiometricPreference(enabled);
     set({ biometricEnabled: enabled, isLocked: enabled ? get().isLocked : false });
   },
@@ -103,7 +113,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return rank[level] >= rank[minimum];
   },
 
-  login: async (email, password, recaptchaToken) => {
+  login: async (email, password, recaptchaToken, options) => {
     try {
       const data = await apiFetch<{
         accessToken: string;
@@ -123,12 +133,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (role === 'CLIENT') {
         return { success: false, message: 'Client accounts are not supported in this app yet.' };
       }
+      if (data.user?.mustChangePassword || data.user?.requiresPasswordChange) {
+        // The API refuses everything else until the temporary password is replaced,
+        // and this app has no change-password screen yet.
+        return {
+          success: false,
+          message: 'Your password must be changed first. Sign in to the web dashboard to set a new one.',
+        };
+      }
 
       await setTokens(data.accessToken, data.refreshToken);
       const user = normalizeUser(data.user);
       await saveUserJson(user);
-      // Always persist credentials so autofill + biometrics work next time.
+      // Email is remembered for prefill; the password stays in memory and is
+      // only persisted (behind biometrics) when biometric sign-in is enabled.
       await saveCredentials(email, password).catch(() => undefined);
+      if (get().biometricEnabled && !options?.fromBiometric) {
+        await persistBiometricPassword().catch(() => undefined);
+      }
       set({ user, isAuthenticated: true, isLocked: false });
       return { success: true };
     } catch (e: any) {
@@ -145,6 +167,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }).catch(() => undefined);
     } finally {
       await clearTokens();
+      await clearCredentials().catch(() => undefined);
       set({ user: null, isAuthenticated: false, isLocked: false });
     }
   },
@@ -155,26 +178,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
 
     try {
-      const [token, cached, biometricEnabled, savedCreds] = await Promise.all([
+      // Older installs stored the password in plain SecureStore; keep only the email.
+      await migrateLegacyCredentials();
+
+      const [token, cached, biometricEnabled] = await Promise.all([
         getAccessToken(),
         loadUserJson<AuthUser>(),
         getBiometricPreference(),
-        loadCredentials(),
       ]);
-
-      // Migrate older "remember email" installs into the credentials shape if needed.
-      if (!savedCreds) {
-        try {
-          const legacy = await import('expo-secure-store').then((m) =>
-            m.getItemAsync('hirdan_remember_email'),
-          );
-          if (legacy) {
-            await saveCredentials(legacy, '');
-          }
-        } catch {
-          // ignore
-        }
-      }
 
       if (!token || !cached) {
         set({
