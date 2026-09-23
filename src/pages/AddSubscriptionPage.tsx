@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft, Save, RefreshCw, Banknote, Calendar, Users, FileText, Plus, X, Package as PackageIcon, ShieldCheck } from "lucide-react";
 import { useAgencyStore, Subscription } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
@@ -81,6 +82,10 @@ export default function AddSubscriptionPage() {
   const [invoiceGenerationDay, setInvoiceGenerationDay] = useState<number>(1);
   const [paymentReminderDelay, setPaymentReminderDelay] = useState<number>(5);
   const [overdueNoticeDelay, setOverdueNoticeDelay] = useState<number>(10);
+  // Off by default: a back-dated subscription is first billed for the next period.
+  const [billCurrentPeriod, setBillCurrentPeriod] = useState(false);
+  const todayStr = new Date().toISOString().split("T")[0];
+  const startsInPast = !!form.startDate && form.startDate < todayStr;
 
   useEffect(() => {
     if (preselectedPackageId && packages.length > 0) {
@@ -147,7 +152,7 @@ export default function AddSubscriptionPage() {
       await addSubscription({
         ...form,
         features: form.features || [],
-      } as Omit<Subscription, "id">);
+      } as Omit<Subscription, "id">, { billCurrentPeriod: startsInPast && billCurrentPeriod });
 
       // Save/update the client's automated billing settings
       if (form.clientId) {
@@ -161,7 +166,11 @@ export default function AddSubscriptionPage() {
       toast({ title: "Subscription added!", description: `${form.plan} plan for ${form.client} has been created.` });
       navigate("/dashboard/subscriptions");
     } catch (e) {
-      toast({ title: "Error", description: "Failed to create subscription.", variant: "destructive" });
+      toast({
+        title: "Failed to create subscription",
+        description: e instanceof Error && e.message ? e.message : undefined,
+        variant: "destructive",
+      });
     }
   };
 
@@ -359,6 +368,25 @@ export default function AddSubscriptionPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="sub-renewal">End Date</Label>
                 <Input id="sub-renewal" type="date" value={form.endDate} onChange={(e) => setField("endDate", e.target.value)} />
+              </div>
+              <div className="sm:col-span-2 flex items-start gap-3 rounded-lg border border-border p-3">
+                <Checkbox
+                  id="sub-bill-current"
+                  checked={startsInPast && billCurrentPeriod}
+                  disabled={!startsInPast}
+                  onCheckedChange={(v) => setBillCurrentPeriod(v === true)}
+                  className="mt-0.5"
+                />
+                <div className="space-y-0.5">
+                  <Label htmlFor="sub-bill-current" className={startsInPast ? "cursor-pointer" : "text-muted-foreground"}>
+                    Bill the current period now
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {startsInPast
+                      ? "The start date is in the past. By default the first automatic invoice is for the next billing period; tick this to also invoice the period that is already running."
+                      : "Only applies to back-dated subscriptions. With a start date of today or later, the first period is billed automatically."}
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>

@@ -151,8 +151,8 @@ export default function MoneyScreen() {
 
   const invoiceStats = useMemo(() => computeInvoiceListStats(invoiceList), [invoiceList]);
   const expenseStats = useMemo(
-    () => computeExpenseListStats(expenseList, accountList),
-    [expenseList, accountList]
+    () => computeExpenseListStats(expenseList, accountList, currency),
+    [expenseList, accountList, currency]
   );
 
   const deleteMutation = useMutation({
@@ -367,7 +367,11 @@ export default function MoneyScreen() {
                 <KpiCard
                   label="Accounts balance"
                   value={formatMoney(expenseStats.totalBalance, currency)}
-                  hint="Across accounts"
+                  hint={
+                    expenseStats.otherCurrencyAccounts > 0
+                      ? `${currency} accounts only (+${expenseStats.otherCurrencyAccounts} in other currencies)`
+                      : 'Across accounts'
+                  }
                   hintTone="success"
                   icon="wallet-outline"
                   tone="success"

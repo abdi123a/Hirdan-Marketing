@@ -7,6 +7,7 @@ import { createNotification } from '../lib/notifications.js';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { parsePagination } from '../lib/pagination.js';
+import { firstAutoBillingPeriod } from '../lib/billing-period.js';
 
 // Accepts ISO timestamps and date-only strings ("2026-07-01", as sent by
 // <input type="date">) and hands Prisma a real Date.
@@ -27,6 +28,12 @@ const subscriptionDtoSchema = z.object({
   status: z.enum(['ACTIVE', 'PAUSED', 'CANCELLED', 'TRIAL']).optional(),
   features: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+});
+
+const createSubscriptionSchema = subscriptionDtoSchema.extend({
+  // Opt-in: also auto-bill the period already running at creation when the
+  // start date is in the past (default: first bill is the next period).
+  billCurrentPeriod: z.boolean().optional(),
 });
 
 const router = Router();
@@ -109,10 +116,16 @@ router.get('/:id', async (req: Request, res: Response, next) => {
 
 // ─── POST /api/subscriptions ────────────────────────────────────
 
-router.post('/', requireAdmin, validate({ body: subscriptionDtoSchema }), async (req: Request, res: Response, next) => {
+router.post('/', requireAdmin, validate({ body: createSubscriptionSchema }), async (req: Request, res: Response, next) => {
   try {
+    const { billCurrentPeriod, ...data } = req.body as z.infer<typeof createSubscriptionSchema>;
+    const firstBillingPeriod = firstAutoBillingPeriod(
+      { billingCycle: data.billingCycle ?? 'MONTHLY', startDate: data.startDate },
+      new Date(),
+      billCurrentPeriod ?? false,
+    );
     const subscription = await prisma.subscription.create({
-      data: req.body,
+      data: { ...data, firstBillingPeriod },
       include: { client: { select: { name: true, company: true } } },
     });
     const clientName = (subscription as any).client?.company || (subscription as any).client?.name || 'Unknown';

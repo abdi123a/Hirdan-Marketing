@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch } from "@/lib/api-client";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatAccountAmount } from "@/lib/account-money";
 import { useAgencyStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -318,11 +319,18 @@ export default function ExpensesPage() {
       .slice(0, 5);
   }, [expenses]);
 
-  // Total balance across all accounts
-  const totalBalance = useMemo(
-    () => accounts.reduce((s, a) => s + a.balance, 0),
-    [accounts]
-  );
+  // Total balance of the accounts held in the agency's base currency (balances
+  // include opening balances); other currencies cannot be summed without FX.
+  const baseCurrency = useAgencyStore((s) => s.settings.currency) || "USD";
+  const { totalBalance, otherCurrencyAccounts } = useMemo(() => {
+    let total = 0;
+    let other = 0;
+    for (const a of accounts) {
+      if (a.currency && a.currency !== baseCurrency) other += 1;
+      else total += a.balance;
+    }
+    return { totalBalance: total, otherCurrencyAccounts: other };
+  }, [accounts, baseCurrency]);
 
   const handleScanComplete = (data: {
     receiptUrl: string;
@@ -427,6 +435,11 @@ export default function ExpensesPage() {
             <p className="text-2xl font-bold text-foreground mt-1">
               {formatCurrency(centsToAmount(totalBalance))}
             </p>
+            {otherCurrencyAccounts > 0 && (
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {baseCurrency} accounts only · {otherCurrencyAccounts} in other currencies
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -469,7 +482,7 @@ export default function ExpensesPage() {
                       <span className="truncate max-w-[80px]">{acc.name}</span>
                     </div>
                     <span className={`text-xs font-semibold ${acc.balance < 0 ? "text-red-500" : "text-emerald-600"}`}>
-                      {formatCurrency(centsToAmount(acc.balance))}
+                      {formatAccountAmount(acc.balance, acc.currency)}
                     </span>
                   </div>
                 );

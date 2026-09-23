@@ -501,7 +501,8 @@ interface AgencyStore {
   fetchInvoiceById: (id: string) => Promise<Invoice | null>;
   fetchProformaById: (id: string) => Promise<Proforma | null>;
 
-  addSubscription: (subscription: Omit<Subscription, 'id'>) => Promise<void>;
+  /** `billCurrentPeriod`: also auto-bill the period already running when the start date is in the past. */
+  addSubscription: (subscription: Omit<Subscription, 'id'>, options?: { billCurrentPeriod?: boolean }) => Promise<void>;
   updateSubscription: (id: string, subscription: Partial<Subscription>) => Promise<void>;
   deleteSubscription: (id: string) => Promise<void>;
 
@@ -1776,7 +1777,7 @@ export const useAgencyStore = create<AgencyStore>()(
         }
       },
 
-      addSubscription: async (subscription) => {
+      addSubscription: async (subscription, options) => {
         try {
           const clients = get().clients;
           const matched = clients.find(c => c.company === subscription.client || c.name === subscription.client);
@@ -1799,6 +1800,7 @@ export const useAgencyStore = create<AgencyStore>()(
               status: subscription.status === 'Ended' ? 'ACTIVE' : subscription.status.toUpperCase(),
               features: featuresJson,
               notes: subscription.notes,
+              ...(options?.billCurrentPeriod ? { billCurrentPeriod: true } : {}),
             }),
           });
           await get().fetchSubscriptions();

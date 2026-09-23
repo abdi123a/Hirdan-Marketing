@@ -313,11 +313,22 @@ export function computeInvoiceListStats(
   return { paid, paidCount, pending, pendingCount, overdue, overdueCount };
 }
 
+/**
+ * `totalBalance` only sums accounts held in `baseCurrency` (balances already
+ * include each account's opening balance); accounts in other currencies cannot
+ * be added without an FX rate and are counted in `otherCurrencyAccounts`.
+ */
 export function computeExpenseListStats(
   expenses: Array<{ amount?: number }>,
-  accounts: Array<{ balance?: number }> = []
+  accounts: Array<{ balance?: number; currency?: string }> = [],
+  baseCurrency?: string
 ) {
   const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0);
-  const totalBalance = accounts.reduce((s, a) => s + (a.balance || 0), 0);
-  return { totalExpenses, totalBalance };
+  let totalBalance = 0;
+  let otherCurrencyAccounts = 0;
+  for (const a of accounts) {
+    if (baseCurrency && a.currency && a.currency !== baseCurrency) otherCurrencyAccounts += 1;
+    else totalBalance += a.balance || 0;
+  }
+  return { totalExpenses, totalBalance, otherCurrencyAccounts };
 }

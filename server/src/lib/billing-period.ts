@@ -37,6 +37,13 @@ export interface BillableSubscription {
   billingCycle: BillingCycleName | string;
   startDate: Date;
   endDate: Date | null;
+  /**
+   * "YYYY-MM" key of the first period that may be auto-billed (periods with a
+   * smaller key are never billed). Null/undefined for rows created before the
+   * column existed: the caller then derives it from createdAt via
+   * firstAutoBillingPeriod().
+   */
+  firstBillingPeriod?: string | null;
 }
 
 export interface DueBillingPeriod {
@@ -75,11 +82,57 @@ export function dueBillingPeriod(
 
   if (sub.endDate && sub.endDate.getTime() <= periodStart.getTime()) return null;
 
+  const billingPeriod = `${year}-${pad(month0 + 1)}`;
+  if (sub.firstBillingPeriod && billingPeriod < sub.firstBillingPeriod) return null;
+
   let billingDate = billingDateInMonth(year, month0, targetDay);
   if (billingDate.getTime() < sub.startDate.getTime()) billingDate = sub.startDate;
   if (now.getTime() < billingDate.getTime()) return null;
 
-  return { billingPeriod: `${year}-${pad(month0 + 1)}`, periodStart, billingDate, cycleMonths };
+  return { billingPeriod, periodStart, billingDate, cycleMonths };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function utcDay(d: Date): number {
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/**
+ * Key of the first billing period a subscription may be auto-billed for,
+ * decided once when the subscription is created.
+ *
+ * Default: the first period that starts on/after the day the subscription was
+ * created (date-level, UTC). A period "starts" on the 1st of its first month,
+ * except the very first period, which starts on the start date. So a
+ * subscription back-dated into a running period (e.g. ANNUAL from 2025-11-03
+ * entered in 2026-09) is first billed at its next renewal (2026-11), not
+ * immediately for a period that began long ago. The first period gets one day
+ * of grace because a date-only "today" start date can be a day behind UTC.
+ *
+ * `billCurrentPeriod` (admin opt-in): also bill the period running at creation.
+ */
+export function firstAutoBillingPeriod(
+  sub: Pick<BillableSubscription, 'billingCycle' | 'startDate'>,
+  createdAt: Date,
+  billCurrentPeriod = false,
+): string {
+  const cycleMonths = CYCLE_MONTHS[sub.billingCycle as BillingCycleName] ?? 1;
+  const startMi = monthIndex(sub.startDate);
+  const keyOf = (mi: number) => `${Math.floor(mi / 12)}-${pad((mi % 12) + 1)}`;
+
+  const createdDay = utcDay(createdAt);
+  // Start date on/after creation (future start, or "today" ±1 day): first period.
+  if (utcDay(sub.startDate) >= createdDay - DAY_MS) return keyOf(startMi);
+
+  // Period running on the creation day.
+  const elapsed = monthIndex(createdAt) - startMi;
+  const currentMi = startMi + Math.floor(elapsed / cycleMonths) * cycleMonths;
+  if (billCurrentPeriod) return keyOf(currentMi);
+
+  // Current period's effective start: its 1st day, or the start date for the first one.
+  const currentStart = currentMi === startMi ? utcDay(sub.startDate) : Date.UTC(Math.floor(currentMi / 12), currentMi % 12, 1);
+  return keyOf(currentStart >= createdDay ? currentMi : currentMi + cycleMonths);
 }
 
 /** ISO-8601 week key, e.g. "2026-W39". */
