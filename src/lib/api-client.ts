@@ -42,6 +42,42 @@ export function getFullUrl(endpoint: string): string {
 
 let refreshPromise: Promise<string | null> | null = null;
 
+/**
+ * Refresh the access token using the HttpOnly refresh cookie.
+ *
+ * One refresh at a time, shared by every caller: the server rotates refresh
+ * tokens, so two refreshes in flight together (a background poll and an upload
+ * both hitting 401 as the token expires) make the second one fail and log the
+ * user out. Resolves to the new token, or null after logging out.
+ */
+function refreshAccessToken(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const store = useAuthStore.getState();
+      try {
+        const refreshRes = await fetch(getFullUrl('/auth/refresh'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+        });
+        if (!refreshRes.ok) {
+          store.logout();
+          return null;
+        }
+        const data = await refreshRes.json();
+        store.setToken(data.accessToken);
+        return data.accessToken as string;
+      } catch {
+        store.logout();
+        return null;
+      } finally {
+        refreshPromise = null;
+      }
+    })();
+  }
+  return refreshPromise;
+}
+
 export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const store = useAuthStore.getState();
   const token = store.token;
@@ -64,50 +100,16 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   });
 
   if (response.status === 401 && store.isAuthenticated && !endpoint.includes('/auth/refresh')) {
-    // Attempt to refresh token using HttpOnly cookie
-    try {
-      if (!refreshPromise) {
-        refreshPromise = (async () => {
-          try {
-            const refreshRes = await fetch(getFullUrl('/auth/refresh'), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-            });
+    const newToken = await refreshAccessToken();
+    if (!newToken) throw new Error('Session expired. Please log in again.');
 
-            if (refreshRes.ok) {
-              const data = await refreshRes.json();
-              store.setToken(data.accessToken);
-              return data.accessToken as string;
-            } else {
-              store.logout();
-              return null;
-            }
-          } catch (e) {
-            store.logout();
-            return null;
-          } finally {
-            refreshPromise = null;
-          }
-        })();
-      }
-
-      const newToken = await refreshPromise;
-      if (!newToken) {
-        throw new Error('Session expired. Please log in again.');
-      }
-
-      // Retry original request with new token
-      headers['Authorization'] = `Bearer ${newToken}`;
-      response = await fetch(url, {
-        ...options,
-        headers,
-        credentials: 'include',
-      });
-    } catch (refreshError) {
-      store.logout();
-      throw refreshError;
-    }
+    // Retry original request with new token
+    headers['Authorization'] = `Bearer ${newToken}`;
+    response = await fetch(url, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
   }
 
   if (!response.ok) {
@@ -142,48 +144,16 @@ export async function apiFetchBlob(endpoint: string, options: RequestInit = {}):
   });
 
   if (response.status === 401 && store.isAuthenticated && !endpoint.includes('/auth/refresh')) {
-    try {
-      if (!refreshPromise) {
-        refreshPromise = (async () => {
-          try {
-            const refreshRes = await fetch(getFullUrl('/auth/refresh'), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-            });
+    const newToken = await refreshAccessToken();
+    if (!newToken) throw new Error('Session expired. Please log in again.');
 
-            if (refreshRes.ok) {
-              const data = await refreshRes.json();
-              store.setToken(data.accessToken);
-              return data.accessToken as string;
-            } else {
-              store.logout();
-              return null;
-            }
-          } catch (e) {
-            store.logout();
-            return null;
-          } finally {
-            refreshPromise = null;
-          }
-        })();
-      }
-
-      const newToken = await refreshPromise;
-      if (!newToken) {
-        throw new Error('Session expired');
-      }
-
-      headers['Authorization'] = `Bearer ${newToken}`;
-      response = await fetch(url, {
-        ...options,
-        headers,
-        credentials: 'include',
-      });
-    } catch (refreshError) {
-      store.logout();
-      throw refreshError;
-    }
+    // Retry original request with new token
+    headers['Authorization'] = `Bearer ${newToken}`;
+    response = await fetch(url, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
   }
 
   if (!response.ok) {
@@ -283,28 +253,13 @@ export function apiUpload<T>(
           resolve({} as T);
         }
       } else if (xhr.status === 401 && store.isAuthenticated && !endpoint.includes('/auth/refresh')) {
-        // Attempt to refresh token using HttpOnly cookie (using fetch for the refresh)
-        try {
-          const refreshRes = await fetch(getFullUrl('/auth/refresh'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-          });
-
-          if (refreshRes.ok) {
-            const data = await refreshRes.json();
-            store.setToken(data.accessToken);
-            
-            // Retry original upload with new token
-            apiUpload<T>(endpoint, formData, onProgress).then(resolve).catch(reject);
-          } else {
-            store.logout();
-            reject(new Error('Session expired. Please log in again.'));
-          }
-        } catch (refreshError) {
-          store.logout();
-          reject(refreshError);
+        const newToken = await refreshAccessToken();
+        if (!newToken) {
+          reject(new Error('Session expired. Please log in again.'));
+          return;
         }
+        // Retry the upload with the new token (re-sends the file)
+        apiUpload<T>(endpoint, formData, onProgress).then(resolve).catch(reject);
       } else {
         try {
           const errorData = JSON.parse(xhr.responseText);

@@ -23,6 +23,7 @@ import {
   Plus, Calendar, RefreshCw, Trash2, Sparkles, Image as ImageIcon, Loader2, Heart, Share2, HelpCircle, X,
   MoreHorizontal, Search, FileText, Bookmark, ThumbsUp, ThumbsDown, MessageCircle, Repeat2, Send, Play, BarChart2,
   SquarePen, Grid, List, Copy, type LucideIcon,
+  Volume2, VolumeX,
 } from "lucide-react";
 
 type Destination = SocialPost["destinations"][number];
@@ -308,6 +309,8 @@ export default function SocialPublishPage() {
   const [tiktokPostMode, setTiktokPostMode] = useState<TikTokPostMode>("direct");
   // Frame (ms into the video) used as the Reel/TikTok cover; null = platform default.
   const [coverTimeMs, setCoverTimeMs] = useState<number | null>(null);
+  // Uploaded image used as the cover instead of a frame; null = use coverTimeMs.
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
   const [tiktokType, setTiktokType] = useState<"video" | "photo">("video");
 
   const [linkedinFirstComment, setLinkedinFirstComment] = useState("");
@@ -462,6 +465,7 @@ export default function SocialPublishPage() {
         if (isVideo) {
           setComposerMediaType("video");
           setCoverTimeMs(null);
+          setCoverImageUrl(null);
         }
 
         setUploadProgressFiles(prev => prev.map(f =>
@@ -539,6 +543,7 @@ export default function SocialPublishPage() {
     setComposerMediaUrls([]);
     setComposerMediaType("image");
     setCoverTimeMs(null);
+    setCoverImageUrl(null);
     setComposerAccounts([]);
     setComposerScheduledFor("");
     setPublishNow(true);
@@ -578,7 +583,11 @@ export default function SocialPublishPage() {
   };
 
   const handleOpenChange = (open: boolean) => {
-    if (isSubmitting) return;
+    if (isSubmitting || isUploading) return;
+    // Closing throws the draft away. Make sure that is deliberate when there is
+    // something to lose, such as a video that just spent a minute uploading.
+    const hasDraft = composerMediaUrls.length > 0 || composerCaption.trim().length > 0;
+    if (!open && hasDraft && !window.confirm("Close and discard this post? The caption and uploaded media will be lost.")) return;
     setIsComposerOpen(open);
     if (!open) resetComposer();
   };
@@ -727,6 +736,7 @@ export default function SocialPublishPage() {
           tags: postTags,
           syncedPlatforms,
           coverTimeMs,
+          coverImageUrl,
           comments: editingPostId ? (editingPost?.platformContent?.comments || []) : [],
           activities: editingPostId ? (editingPost?.platformContent?.activities || []) : [activity("Draft post created in Publisher")]
         },
@@ -954,6 +964,7 @@ export default function SocialPublishPage() {
     setComposerMediaUrls(post.mediaUrls || []);
     setComposerMediaType(post.mediaType || "image");
     setCoverTimeMs(post.platformContent?.coverTimeMs ?? null);
+    setCoverImageUrl(post.platformContent?.coverImageUrl ?? null);
     setComposerScheduledFor(post.scheduledFor ? toLocalISOString(post.scheduledFor) : "");
     setPublishNow(!post.scheduledFor);
 
@@ -1802,6 +1813,8 @@ export default function SocialPublishPage() {
         tiktokPostMode={tiktokPostMode}
         coverTimeMs={coverTimeMs}
         setCoverTimeMs={setCoverTimeMs}
+        coverImageUrl={coverImageUrl}
+        setCoverImageUrl={setCoverImageUrl}
         setTiktokPostMode={setTiktokPostMode}
         instagramMusic={instagramMusic}
         setInstagramMusic={setInstagramMusic}
@@ -1919,6 +1932,8 @@ export interface PreviewCardProps {
   platform: string;
   text: string;
   image: string | null;
+  /** Uploaded cover image, shown as the video poster. */
+  poster?: string | null;
   mediaType?: string;
   accountName?: string;
   platformUsername?: string;
@@ -1930,27 +1945,40 @@ const VERTICAL_FRAME = "bg-black rounded-3xl overflow-hidden relative w-full max
 const VERTICAL_FRAME_LEFT = "bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800 text-left";
 const PORTRAIT = { aspectRatio: "9/16" };
 
-/** Feed media gets player controls; full-screen formats autoplay on loop. */
-function PreviewMedia({ src, mediaType, className, alt, feed, style }: {
-  src: string; mediaType: string; className: string; alt: string; feed?: boolean; style?: React.CSSProperties;
+/**
+ * Feed media gets player controls; full-screen formats autoplay muted on loop
+ * with a sound toggle, since browsers refuse unmuted autoplay. `poster` is the
+ * uploaded cover image, shown until playback starts.
+ */
+function PreviewMedia({ src, mediaType, className, alt, feed, style, poster }: {
+  src: string; mediaType: string; className: string; alt: string; feed?: boolean; style?: React.CSSProperties; poster?: string | null;
 }) {
-  return mediaType === "video"
-    ? <video src={src} controls={feed} className={className} style={style} muted loop={!feed} autoPlay={!feed} playsInline />
-    : <img src={src} className={className} style={style} alt={alt} />;
+  const [muted, setMuted] = useState(true);
+  if (mediaType !== "video") return <img src={src} className={className} style={style} alt={alt} />;
+  if (feed) return <video src={src} poster={poster || undefined} controls className={className} style={style} playsInline />;
+  return (
+    <>
+      <video src={src} poster={poster || undefined} className={className} style={style} muted={muted} loop autoPlay playsInline />
+      <button type="button" onClick={() => setMuted(m => !m)} aria-label={muted ? "Unmute preview" : "Mute preview"}
+        className="absolute top-8 right-3 z-20 h-8 w-8 rounded-full bg-black/50 text-white flex items-center justify-center border-none cursor-pointer hover:bg-black/70">
+        {muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+      </button>
+    </>
+  );
 }
 
 function NoMedia({ icon: Icon, iconClassName, label }: { icon: LucideIcon; iconClassName: string; label: string }) {
   return <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><Icon className={iconClassName} /><span className="text-[10px]">{label}</span></div>;
 }
 
-type FrameProps = { image: string | null; mediaType: string; avatar: string; name: string; text: string };
+type FrameProps = { image: string | null; mediaType: string; avatar: string; name: string; text: string; poster?: string | null };
 
-function ReelPreview({ image, mediaType, avatar, name, text, mediaClassName, alt, gradient, badge, actionsClassName }: FrameProps & {
+function ReelPreview({ image, mediaType, avatar, name, text, poster, mediaClassName, alt, gradient, badge, actionsClassName }: FrameProps & {
   mediaClassName: string; alt: string; gradient: string; badge: React.ReactNode; actionsClassName: string;
 }) {
   return (
     <div className={VERTICAL_FRAME} style={PORTRAIT}>
-      {image ? <PreviewMedia src={image} mediaType={mediaType} className={mediaClassName} alt={alt} />
+      {image ? <PreviewMedia poster={poster} src={image} mediaType={mediaType} className={mediaClassName} alt={alt} />
         : <NoMedia icon={Play} iconClassName="h-10 w-10" label="Upload a video for Reel" />}
       <div className={gradient} />
       {badge}
@@ -1968,12 +1996,12 @@ function ReelPreview({ image, mediaType, avatar, name, text, mediaClassName, alt
   );
 }
 
-function StoryPreview({ image, mediaType, avatar, name, alt, gradient, progress, reply }: Omit<FrameProps, "text"> & {
+function StoryPreview({ image, mediaType, avatar, name, poster, alt, gradient, progress, reply }: Omit<FrameProps, "text"> & {
   alt: string; gradient: string; progress: string; reply: string;
 }) {
   return (
     <div className={VERTICAL_FRAME} style={PORTRAIT}>
-      {image ? <PreviewMedia src={image} mediaType={mediaType} className="absolute inset-0 w-full h-full object-cover" alt={alt} />
+      {image ? <PreviewMedia poster={poster} src={image} mediaType={mediaType} className="absolute inset-0 w-full h-full object-cover" alt={alt} />
         : <NoMedia icon={ImageIcon} iconClassName="h-10 w-10" label="Upload media for Story" />}
       <div className={gradient} />
       <div className="absolute top-3 left-3 right-3 h-0.5 bg-white/30 rounded-full z-10"><div className={progress} /></div>
@@ -1983,11 +2011,11 @@ function StoryPreview({ image, mediaType, avatar, name, alt, gradient, progress,
   );
 }
 
-export function PreviewCard({ platform, text, image, mediaType = "image", accountName, platformUsername, avatarUrl, postType = "post" }: PreviewCardProps) {
+export function PreviewCard({ platform, text, image, mediaType = "image", accountName, platformUsername, avatarUrl, postType = "post", poster = null }: PreviewCardProps) {
   const avatar = avatarUrl || "https://api.dicebear.com/7.x/identicon/svg?seed=hirdanmarketing";
   const displayName = accountName || "Your Account";
   const handle = platformUsername || displayName.toLowerCase().replace(/\s+/g, "");
-  const frame = { image, mediaType, avatar, text };
+  const frame = { image, mediaType, avatar, text, poster };
 
   if (platform === "x" || platform === "twitter") {
     return (
@@ -1997,7 +2025,7 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
           <div className="flex-1 min-w-0">
             <div className="text-sm"><span className="font-semibold text-neutral-900">{displayName}</span>{" "}<span className="text-neutral-400">@{handle}</span></div>
             <p className="text-sm text-neutral-800 mt-1 whitespace-pre-wrap">{text}</p>
-            {image && <PreviewMedia feed src={image} mediaType={mediaType} className="mt-3 rounded-xl w-full object-cover max-h-64" alt="X preview" />}
+            {image && <PreviewMedia poster={poster} feed src={image} mediaType={mediaType} className="mt-3 rounded-xl w-full object-cover max-h-64" alt="X preview" />}
             <div className="flex justify-between mt-3 text-neutral-400 max-w-[280px]">
               <MessageCircle size={16} /><Repeat2 size={16} /><Heart size={16} /><BarChart2 size={16} /><Bookmark size={16} /><Share2 size={16} />
             </div>
@@ -2029,7 +2057,7 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
           <div><div className="text-sm font-semibold text-neutral-900">{displayName}</div><div className="text-xs text-neutral-400">Just Now · 🌐</div></div>
         </div>
         <p className="px-4 pb-3 text-sm text-neutral-800 whitespace-pre-wrap">{text}</p>
-        {image && <PreviewMedia feed src={image} mediaType={mediaType} className="w-full object-cover max-h-64" alt="Facebook preview" />}
+        {image && <PreviewMedia poster={poster} feed src={image} mediaType={mediaType} className="w-full object-cover max-h-64" alt="Facebook preview" />}
         <div className="flex justify-around py-2 border-t border-neutral-100 text-sm text-neutral-500 font-medium bg-neutral-50/50">
           <span className="flex items-center gap-1"><ThumbsUp size={15} />Like</span>
           <span className="flex items-center gap-1"><MessageCircle size={15} />Comment</span>
@@ -2060,7 +2088,7 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
           <div className="flex items-center gap-2"><img src={avatar} className="w-8 h-8 rounded-full" alt="Avatar" /><span className="text-sm font-semibold">@{handle}</span></div>
           <MoreHorizontal size={16} className="text-neutral-500" />
         </div>
-        {image ? <PreviewMedia feed src={image} mediaType={mediaType} className="w-full aspect-square object-cover" alt="Instagram preview" />
+        {image ? <PreviewMedia poster={poster} feed src={image} mediaType={mediaType} className="w-full aspect-square object-cover" alt="Instagram preview" />
           : <div className="w-full aspect-square bg-neutral-100 flex items-center justify-center text-neutral-300"><ImageIcon size={36} /></div>}
         <div className="flex items-center gap-3 px-3 pt-3 text-neutral-700"><Heart size={19} /><MessageCircle size={19} /><Send size={19} /><div className="flex-1" /><Bookmark size={19} /></div>
         <p className="px-3 pb-3 pt-1 text-sm"><span className="font-semibold mr-1.5">@{handle}</span><span className="whitespace-pre-wrap">{text}</span></p>
@@ -2076,7 +2104,7 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
           <div><div className="text-sm font-semibold text-neutral-900">{displayName}</div><div className="text-xs text-neutral-400">1h · 🌐</div></div>
         </div>
         <p className="text-sm text-neutral-800 mb-3 whitespace-pre-wrap">{text}</p>
-        {image && <PreviewMedia feed src={image} mediaType={mediaType} className="w-full rounded-lg object-cover max-h-64" alt="LinkedIn preview" />}
+        {image && <PreviewMedia poster={poster} feed src={image} mediaType={mediaType} className="w-full rounded-lg object-cover max-h-64" alt="LinkedIn preview" />}
         <div className="flex justify-around pt-3 mt-3 border-t border-neutral-100 text-xs text-neutral-500">
           <span className="flex flex-col items-center gap-1"><ThumbsUp size={16} />Like</span>
           <span className="flex flex-col items-center gap-1"><MessageCircle size={16} />Comment</span>
@@ -2095,7 +2123,7 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
           <span className="font-semibold border-b-2 border-white pb-1">For You</span>
           <Search size={14} className="text-white ml-2" />
         </div>
-        {image ? <PreviewMedia src={image} mediaType={mediaType} className="absolute inset-0 w-full h-full object-cover top-12" style={{ height: "calc(100% - 3rem)", top: "3rem" }} alt="TikTok preview" />
+        {image ? <PreviewMedia poster={poster} src={image} mediaType={mediaType} className="absolute inset-0 w-full h-full object-cover top-12" style={{ height: "calc(100% - 3rem)", top: "3rem" }} alt="TikTok preview" />
           : <NoMedia icon={ImageIcon} iconClassName="h-8 w-8" label="No media attached" />}
         <div className="absolute right-3 bottom-24 flex flex-col items-center gap-4 text-white z-10">
           <img src={avatar} className="w-9 h-9 rounded-full border-2 border-white" alt="Avatar" />
@@ -2113,7 +2141,7 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
     if (postType === "short" || postType === "post") {
       return (
         <div className={VERTICAL_FRAME_LEFT} style={PORTRAIT}>
-          {image ? <PreviewMedia src={image} mediaType={mediaType} className="absolute inset-0 w-full h-full object-cover opacity-80" alt="YouTube Short" />
+          {image ? <PreviewMedia poster={poster} src={image} mediaType={mediaType} className="absolute inset-0 w-full h-full object-cover opacity-80" alt="YouTube Short" />
             : <NoMedia icon={Play} iconClassName="h-8 w-8" label="Upload a video for Short" />}
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
           <div className="absolute top-3 left-3 text-white text-[10px] font-bold flex items-center gap-1 z-10"><YouTubeIcon className="w-5 h-5" style={{ color: "#FF0000" }} />Shorts</div>
@@ -2137,7 +2165,7 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
     return (
       <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden w-full select-none text-left">
         <div className="relative bg-black aspect-video flex items-center justify-center">
-          {image ? <PreviewMedia src={image} mediaType={mediaType} className="w-full h-full object-cover opacity-80" alt="YouTube Video" />
+          {image ? <PreviewMedia poster={poster} src={image} mediaType={mediaType} className="w-full h-full object-cover opacity-80" alt="YouTube Video" />
             : <div className="flex flex-col items-center justify-center text-neutral-500 gap-2 w-full h-full"><Play className="h-10 w-10" /><span className="text-[10px]">Upload a thumbnail or video</span></div>}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center shadow"><Play size={18} className="text-black ml-0.5 fill-black" /></div>
@@ -2170,7 +2198,7 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
           <div className="flex-1 min-w-0">
             <div className="text-sm"><span className="font-semibold text-neutral-900">{displayName}</span>{" "}<span className="text-neutral-400 text-xs">21h</span></div>
             <p className="text-sm text-neutral-800 mt-0.5 whitespace-pre-wrap">{text}</p>
-            {image && <PreviewMedia feed src={image} mediaType={mediaType} className="mt-3 rounded-xl w-full object-cover max-h-64" alt="Threads preview" />}
+            {image && <PreviewMedia poster={poster} feed src={image} mediaType={mediaType} className="mt-3 rounded-xl w-full object-cover max-h-64" alt="Threads preview" />}
             <div className="flex gap-4 mt-3 text-neutral-500 max-w-[200px]">
               <Heart size={17} /><MessageCircle size={17} /><Repeat2 size={17} /><Send size={17} />
             </div>

@@ -191,6 +191,7 @@ async function initTikTokPublish({
   caption,
   privacyLevel,
   creatorInfo,
+  coverTimeMs = 1000,
 }: {
   accessToken: string;
   mediaUrls: string[];
@@ -198,6 +199,7 @@ async function initTikTokPublish({
   caption: string;
   privacyLevel: string;
   creatorInfo: TikTokCreatorInfo;
+  coverTimeMs?: number;
 }): Promise<{ ok: boolean; publishId?: string; errorCode?: string; errorMessage?: string }> {
   const isVideo = mediaType === 'video';
   const endpoint = isVideo
@@ -215,7 +217,7 @@ async function initTikTokPublish({
   };
 
   if (isVideo) {
-    payload.post_info.video_cover_timestamp_ms = 1000;
+    payload.post_info.video_cover_timestamp_ms = coverTimeMs;
     payload.source_info = {
       source: 'PULL_FROM_URL',
       video_url: mediaUrls[0],
@@ -286,6 +288,7 @@ export async function publishToTikTok({
   caption,
   privacyLevel = 'PUBLIC_TO_EVERYONE',
   postMode = 'direct',
+  coverTimeMs,
 }: {
   accessToken: string;
   videoUrl?: string;
@@ -294,6 +297,7 @@ export async function publishToTikTok({
   caption: string;
   privacyLevel?: string;
   postMode?: 'direct' | 'draft';
+  coverTimeMs?: number;
 }): Promise<string> {
   const resolvedMediaUrls = mediaUrls && mediaUrls.length > 0
     ? mediaUrls
@@ -341,6 +345,7 @@ export async function publishToTikTok({
     caption,
     privacyLevel: resolvedPrivacyLevel,
     creatorInfo,
+    coverTimeMs,
   });
 
   // Safety net: retry once with SELF_ONLY if the first attempt fails for being unaudited.
@@ -356,6 +361,7 @@ export async function publishToTikTok({
       caption,
       privacyLevel: fallbackLevel,
       creatorInfo,
+      coverTimeMs,
     });
   }
 

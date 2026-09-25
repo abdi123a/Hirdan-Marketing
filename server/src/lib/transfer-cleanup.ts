@@ -4,7 +4,8 @@
  * Hourly background job that physically removes transfer files from
  * disk once they are expired (expiresAt < NOW) or soft-deleted.
  *
- * This prevents unbounded disk growth on the server.
+ * This prevents unbounded disk growth on the server. The same tick also
+ * purges abandoned social upload temp files (see temp-upload-cleanup.ts).
  *
  * Usage: call `startTransferCleanupJob()` once at server startup
  * (imported in app.ts).
@@ -14,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import { prisma } from './prisma.js';
 import { PATHS } from './paths.js';
+import { purgeAbandonedUploads } from './social/temp-upload-cleanup.js';
 
 const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 // Hold the first run back until after the server is listening. This job used to
@@ -27,9 +29,11 @@ export function startTransferCleanupJob(): void {
   // floating promise: anything that ever escapes it would reach the
   // unhandledRejection handler in index.ts, which shuts the whole API down.
   const safeRun = () =>
-    runCleanup().catch(err =>
-      console.error('🗑️  [TransferCleanup] Cleanup run failed:', err)
-    );
+    Promise.all([runCleanup(), purgeAbandonedUploads()])
+      .then(([, purged]) => {
+        if (purged > 0) console.log(`🗑️  [TransferCleanup] Purged ${purged} abandoned social upload(s).`);
+      })
+      .catch(err => console.error('🗑️  [TransferCleanup] Cleanup run failed:', err));
 
   setTimeout(safeRun, STARTUP_DELAY_MS);
   setInterval(safeRun, INTERVAL_MS);

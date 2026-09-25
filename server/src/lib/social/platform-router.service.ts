@@ -129,6 +129,11 @@ export async function publishPostToPlatform(post: SocialPost, account: SocialAcc
   }
 
   const mediaType = post.mediaType || 'image';
+  const rawCover = (post.platformContent as any)?.coverTimeMs;
+  const coverTimeMs = Number.isFinite(rawCover) && rawCover >= 0 ? Math.round(rawCover) : undefined;
+  // Uploaded cover image; the platforms fetch it themselves, so it must be a public URL.
+  const rawCoverImage = (post.platformContent as any)?.coverImageUrl;
+  const coverImageUrl = typeof rawCoverImage === 'string' && /^https?:\/\//.test(rawCoverImage) ? rawCoverImage : undefined;
 
   switch (platform) {
     case 'facebook': {
@@ -145,6 +150,7 @@ export async function publishPostToPlatform(post: SocialPost, account: SocialAcc
         mediaUrls,
         mediaType,
         postType: fbType as 'post' | 'reel' | 'story',
+        coverImageUrl,
       });
     }
 
@@ -161,6 +167,8 @@ export async function publishPostToPlatform(post: SocialPost, account: SocialAcc
         mediaUrls,
         mediaType,
         postType: igType as 'post' | 'reel' | 'story',
+        coverTimeMs,
+        coverImageUrl,
       });
     }
 
@@ -187,6 +195,7 @@ export async function publishPostToPlatform(post: SocialPost, account: SocialAcc
         mediaType,
         caption,
         postMode: tiktokContent.postMode || 'direct',
+        coverTimeMs,
       });
     }
 
@@ -213,6 +222,7 @@ export async function publishPostToPlatform(post: SocialPost, account: SocialAcc
           videoUrl: mediaUrls[0],
           caption,
           privacy,
+          coverImageUrl,
         });
       } catch (err: unknown) {
         // Hostinger logs: YouTube often fails with 401 even when cron "refreshed"

@@ -158,7 +158,10 @@ app.get('/api/health', async (_req, res) => {
 app.use('/api', routes);
 
 // Serve social media assets publicly for external platforms (Meta/TikTok/etc) to download
-app.use('/public-uploads', express.static(path.join(PATHS.UPLOADS_ROOT, 'social')));
+// File names are random UUIDs and a file never changes once written, so the
+// browser may cache aggressively: the composer's tile, cover picker and preview
+// all play the same video and should hit the cache instead of the network.
+app.use('/public-uploads', express.static(path.join(PATHS.UPLOADS_ROOT, 'social'), { maxAge: '7d', immutable: true }));
 
 // Handle protected file access first
 app.use('/uploads', fileRoutes);

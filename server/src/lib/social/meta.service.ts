@@ -430,6 +430,32 @@ async function publishVideoToMetaResumable({
   return video_id || publishRes.data.video_id || publishRes.data.post_id || publishRes.data.id;
 }
 
+/**
+ * Best-effort custom thumbnail for a Page video or Reel. Right after publishing
+ * the video is usually still processing, so one retry after a pause covers the
+ * common "not ready" rejection. A failure here must never undo a live post.
+ */
+async function setFacebookVideoThumbnail(videoId: string, pageAccessToken: string, coverImageUrl?: string): Promise<void> {
+  if (!coverImageUrl) return;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const image = await getMediaBuffer(coverImageUrl);
+      const form = new FormData();
+      form.append('source', new Blob([new Uint8Array(image)]), 'cover.jpg');
+      form.append('is_preferred', 'true');
+      form.append('access_token', pageAccessToken);
+      await axios.post(`${GRAPH_URL}/${videoId}/thumbnails`, form);
+      return;
+    } catch (err: any) {
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 15000));
+        continue;
+      }
+      console.warn(`[Meta] Could not set the custom thumbnail on video ${videoId}:`, err?.response?.data?.error?.message || err.message);
+    }
+  }
+}
+
 export async function publishToFacebookPage({
   pageId,
   pageAccessToken,
@@ -437,6 +463,7 @@ export async function publishToFacebookPage({
   mediaUrls,
   mediaType = 'image',
   postType = 'post',
+  coverImageUrl,
 }: {
   pageId: string;
   pageAccessToken: string;
@@ -444,6 +471,7 @@ export async function publishToFacebookPage({
   mediaUrls?: string[];
   mediaType?: string;
   postType?: 'post' | 'reel' | 'story';
+  coverImageUrl?: string;
 }): Promise<string> {
   const url = mediaUrls && mediaUrls.length > 0 ? mediaUrls[0] : null;
 
@@ -451,13 +479,15 @@ export async function publishToFacebookPage({
   if (postType === 'reel') {
     console.log('[DEBUG] Entering REEL branch');
     if (!url) throw new Error('Facebook Reel requires a video URL');
-    return await publishVideoToMetaResumable({
+    const reelId = await publishVideoToMetaResumable({
       pageId,
       pageAccessToken,
       url,
       caption,
       endpointType: 'video_reels',
     });
+    await setFacebookVideoThumbnail(reelId, pageAccessToken, coverImageUrl);
+    return reelId;
   }
 
   // --- STORY ---
@@ -507,6 +537,7 @@ export async function publishToFacebookPage({
 
   // --- SINGLE VIDEO ---
   if (mediaType === 'video' && url) {
+    let videoId: string;
     if (isPubliclyReachableMediaUrl(url)) {
       const videoParams: Record<string, any> = { file_url: url, access_token: pageAccessToken };
       if (caption) {
@@ -515,9 +546,12 @@ export async function publishToFacebookPage({
       const { data } = await axios.post(`${GRAPH_URL}/${pageId}/videos`, null, {
         params: videoParams,
       });
-      return data.id || data.video_id;
+      videoId = data.id || data.video_id;
+    } else {
+      videoId = await uploadFacebookVideoBinary(pageId, pageAccessToken, url, caption);
     }
-    return await uploadFacebookVideoBinary(pageId, pageAccessToken, url, caption);
+    await setFacebookVideoThumbnail(videoId, pageAccessToken, coverImageUrl);
+    return videoId;
   }
 
   // --- SINGLE IMAGE ---
@@ -546,6 +580,8 @@ export async function publishToInstagram({
   mediaUrls,
   mediaType = 'image',
   postType = 'post',
+  coverTimeMs,
+  coverImageUrl,
 }: {
   igAccountId: string;
   pageAccessToken: string;
@@ -553,6 +589,9 @@ export async function publishToInstagram({
   mediaUrls?: string[];
   mediaType?: string;
   postType?: 'post' | 'reel' | 'story';
+  coverTimeMs?: number;
+  /** Public image URL; when set it wins over coverTimeMs (Meta ignores thumb_offset alongside cover_url). */
+  coverImageUrl?: string;
 }): Promise<string> {
   const url = mediaUrls && mediaUrls.length > 0 ? mediaUrls[0] : '';
   const containerParams: Record<string, any> = { caption, access_token: pageAccessToken };
@@ -571,6 +610,8 @@ export async function publishToInstagram({
     containerParams.media_type = 'REELS';
     containerParams.video_url = url;
     containerParams.share_to_feed = true;
+    if (coverImageUrl) containerParams.cover_url = coverImageUrl;
+    else if (coverTimeMs !== undefined) containerParams.thumb_offset = coverTimeMs;
   } else if (postType === 'story') {
     assertPublicMedia(url, 'Instagram Story');
     containerParams.media_type = 'STORIES';
@@ -581,6 +622,8 @@ export async function publishToInstagram({
     containerParams.media_type = 'REELS';
     containerParams.video_url = url;
     containerParams.share_to_feed = true;
+    if (coverImageUrl) containerParams.cover_url = coverImageUrl;
+    else if (coverTimeMs !== undefined) containerParams.thumb_offset = coverTimeMs;
   } else if (mediaType === 'video') {
     assertPublicMedia(url, 'Instagram video');
     containerParams.media_type = 'VIDEO';
@@ -645,7 +688,10 @@ export async function publishToThreads({
   return published.id;
 }
 
-async function waitForMetaContainerReady(containerId: string, accessToken: string, maxAttempts = 20): Promise<void> {
+// Meta keeps a video container IN_PROGRESS for as long as transcoding takes; a
+// 90 MB reel routinely needs more than the 100 s this used to allow. Five
+// minutes (60 x 5 s) matches Meta's own guidance for polling.
+async function waitForMetaContainerReady(containerId: string, accessToken: string, maxAttempts = 60): Promise<void> {
   for (let i = 0; i < maxAttempts; i++) {
     const { data } = await axios.get(`${GRAPH_URL}/${containerId}`, {
       params: { fields: 'status_code', access_token: accessToken },
@@ -654,10 +700,10 @@ async function waitForMetaContainerReady(containerId: string, accessToken: strin
     if (data.status_code === 'ERROR') throw new Error('Instagram media container failed to process');
     await new Promise((r) => setTimeout(r, 5000));
   }
-  throw new Error('Instagram media container timed out');
+  throw new Error('Instagram is still processing the video after 5 minutes; use Retry in a few minutes');
 }
 
-async function waitForThreadsContainerReady(containerId: string, accessToken: string, maxAttempts = 20): Promise<void> {
+async function waitForThreadsContainerReady(containerId: string, accessToken: string, maxAttempts = 60): Promise<void> {
   for (let i = 0; i < maxAttempts; i++) {
     const { data } = await axios.get(`https://graph.threads.net/v1.0/${containerId}`, {
       params: { fields: 'status', access_token: accessToken },
@@ -666,7 +712,7 @@ async function waitForThreadsContainerReady(containerId: string, accessToken: st
     if (data.status === 'ERROR') throw new Error('Threads media container failed to process');
     await new Promise((r) => setTimeout(r, 5000));
   }
-  throw new Error('Threads media container timed out');
+  throw new Error('Threads is still processing the video after 5 minutes; use Retry in a few minutes');
 }
 
 export async function getMetaInsights(accountId: string, token: string, platform: 'facebook' | 'instagram'): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number | null }> {

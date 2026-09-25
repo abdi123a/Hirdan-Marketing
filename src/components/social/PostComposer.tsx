@@ -1,3 +1,4 @@
+import { useRef, useState, type ChangeEvent } from "react";
 import {
   Plus, Clock, Sparkles, Loader2, HelpCircle, X,
   Tags, ChevronDown, Music, ShoppingBag, Eye, Link2, Link2Off, Maximize2, Minimize2, Smile, Check,
@@ -5,6 +6,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { apiUpload } from "@/lib/api-client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { contentTypesFor, TIKTOK_POST_MODES, type TikTokPostMode } from "@/lib/platform-capabilities";
@@ -97,6 +99,10 @@ interface PostComposerProps {
   setPinterestBoard: (accountId: string, boardId: string | null) => void;
   setPinterestType: (v: string) => void;
   tiktokPostMode: TikTokPostMode;
+  coverTimeMs: number | null;
+  setCoverTimeMs: (v: number | null) => void;
+  coverImageUrl: string | null;
+  setCoverImageUrl: (v: string | null) => void;
   setTiktokPostMode: (v: TikTokPostMode) => void;
   instagramMusic: boolean;
   setInstagramMusic: (v: boolean) => void;
@@ -138,7 +144,7 @@ export default function PostComposer({
   linkedinType, setLinkedinType, xType, setXType, threadsType, setThreadsType, pinterestType, setPinterestType,
   pinterestTitle, setPinterestTitle, pinterestLink, setPinterestLink,
   pinterestBoards, loadPinterestBoards, setPinterestBoard,
-  tiktokPostMode, setTiktokPostMode,
+  tiktokPostMode, setTiktokPostMode, coverTimeMs, setCoverTimeMs, coverImageUrl, setCoverImageUrl,
   instagramMusic, setInstagramMusic, instagramTagProducts, setInstagramTagProducts, instagramFirstComment, setInstagramFirstComment,
   facebookFirstComment, setFacebookFirstComment, linkedinFirstComment, setLinkedinFirstComment,
   tiktokTitle, setTiktokTitle, youtubeTitle, setYoutubeTitle, youtubePrivacy, setYoutubePrivacy, threadsTopic, setThreadsTopic,
@@ -155,6 +161,9 @@ export default function PostComposer({
     <Dialog open={isComposerOpen} onOpenChange={handleOpenChange}>
       <DialogContent
         hideCloseButton
+        // A click outside the composer (a toast, the sidebar) used to close it
+        // and wipe the draft. Closing now goes through the X / Cancel buttons only.
+        onInteractOutside={(e) => e.preventDefault()}
         className={`flex h-[100dvh] max-h-[100dvh] w-full max-w-none flex-col overflow-hidden rounded-none border-border bg-background p-0 transition-all duration-200 sm:h-auto sm:max-h-[92vh] sm:rounded-2xl sm:border ${
           isFullscreen
             ? "sm:h-[95vh] sm:max-w-[98vw]"
@@ -445,7 +454,7 @@ export default function PostComposer({
                   <div className="flex gap-2 flex-wrap">
                     {composerMediaUrls.map((url, i) => (
                       <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden group border border-border/50 shrink-0">
-                        {composerMediaType === "video" ? <video src={url} className="w-full h-full object-cover" /> : <img src={url} alt="" className="w-full h-full object-cover" />}
+                        {composerMediaType === "video" ? <video src={url} preload="metadata" muted playsInline className="w-full h-full object-cover" /> : <img src={url} alt="" className="w-full h-full object-cover" />}
                         <button type="button" onClick={() => setComposerMediaUrls(prev => prev.filter((_, idx) => idx !== i))}
                           className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 border-none cursor-pointer">×</button>
                       </div>
@@ -462,6 +471,11 @@ export default function PostComposer({
                       from one that is nearly finished. */}
                   <UploadProgressDetails files={activeUploads} />
                 </div>
+              )}
+
+              {composerMediaType === "video" && composerMediaUrls[0] && (
+                <CoverPicker url={composerMediaUrls[0]} coverTimeMs={coverTimeMs} setCoverTimeMs={setCoverTimeMs}
+                  coverImageUrl={coverImageUrl} setCoverImageUrl={setCoverImageUrl} />
               )}
 
               {/* Platform Accordion Editors */}
@@ -751,6 +765,7 @@ export default function PostComposer({
                       platform={activePlatform}
                       text={getPlatformCaption(activePlatform) || "What would you like to share?"}
                       image={composerMediaUrls[0] || null}
+                      poster={coverImageUrl}
                       mediaType={composerMediaType}
                       accountName={previewAccount?.displayName || activePlatform}
                       platformUsername={previewAccount?.platformUsername}
@@ -839,5 +854,80 @@ export default function PostComposer({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Choose the cover: scrub to a frame, and optionally upload an image instead.
+ * Instagram Reels and Facebook take the uploaded image (Instagram also takes a
+ * frame); TikTok only takes a frame, so the slider stays even with an image.
+ */
+function CoverPicker({ url, coverTimeMs, setCoverTimeMs, coverImageUrl, setCoverImageUrl }: {
+  url: string; coverTimeMs: number | null; setCoverTimeMs: (v: number | null) => void;
+  coverImageUrl: string | null; setCoverImageUrl: (v: string | null) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [durationMs, setDurationMs] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const seek = (ms: number) => { if (videoRef.current) videoRef.current.currentTime = ms / 1000; };
+  const thumbClass = "w-16 h-28 rounded-lg object-cover border border-border/50 bg-black shrink-0";
+
+  const uploadCover = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const { url: imageUrl } = await apiUpload<{ url: string }>("/social/media/upload", formData);
+      setCoverImageUrl(imageUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Cover</label>
+      <div className="flex gap-3 items-center">
+        <video ref={videoRef} src={url} muted playsInline preload="metadata" className={thumbClass}
+          onLoadedMetadata={e => {
+            const d = Math.floor(e.currentTarget.duration * 1000);
+            setDurationMs(d);
+            seek(Math.min(coverTimeMs ?? 0, d));
+          }} />
+        {coverImageUrl && <img src={coverImageUrl} alt="Uploaded cover" className={thumbClass} />}
+        <div className="flex-1 space-y-1.5 min-w-0">
+          <input type="range" min={0} max={durationMs} step={100} value={Math.min(coverTimeMs ?? 0, durationMs)}
+            disabled={!durationMs} aria-label="Cover frame"
+            onChange={e => { const ms = Number(e.target.value); setCoverTimeMs(ms); seek(ms); }}
+            className="w-full accent-primary cursor-pointer" />
+          <p className="text-[11px] text-muted-foreground">
+            {coverTimeMs == null ? "Drag to choose the cover frame" : `Frame at ${(coverTimeMs / 1000).toFixed(1)}s`}
+            {coverImageUrl ? " · used by TikTok" : " · used by Instagram Reels & TikTok"}
+          </p>
+          {coverImageUrl && <p className="text-[11px] text-muted-foreground">Uploaded image · used by Instagram Reels & Facebook</p>}
+          {error && <p className="text-[11px] text-destructive">{error}</p>}
+          <div className="flex gap-3">
+            <input id="cover-file" type="file" accept="image/*" className="hidden" onChange={uploadCover} />
+            <button type="button" disabled={uploading} onClick={() => document.getElementById("cover-file")?.click()}
+              className="text-[11px] font-semibold text-primary hover:underline bg-transparent border-none cursor-pointer p-0 disabled:opacity-50">
+              {uploading ? "Uploading…" : coverImageUrl ? "Change image" : "Upload a cover image"}
+            </button>
+            {coverImageUrl && (
+              <button type="button" onClick={() => setCoverImageUrl(null)}
+                className="text-[11px] font-semibold text-muted-foreground hover:underline bg-transparent border-none cursor-pointer p-0">
+                Remove image
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

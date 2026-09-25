@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { createOAuthState } from './oauth-state.service.js';
-import { openMediaStream } from './storage.service.js';
+import { getMediaBuffer, openMediaStream } from './storage.service.js';
 
 export function getYouTubeAuthorizationUrl(clientIdStr: string, groupId: string): string {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -52,11 +52,14 @@ export async function publishToYouTube({
   videoUrl,
   caption,
   privacy = 'public', // Added privacy parameter
+  coverImageUrl,
 }: {
   accessToken: string;
   videoUrl: string;
   caption: string;
   privacy?: 'public' | 'unlisted' | 'private';
+  /** Public image URL to set as the custom thumbnail (needs a verified channel). */
+  coverImageUrl?: string;
 }): Promise<string> {
   // Opened here, inside the function the platform router retries after a token
   // refresh — a Buffer can be re-sent, a consumed stream cannot, so hoisting this
@@ -93,7 +96,28 @@ export async function publishToYouTube({
     maxBodyLength: Infinity,
     maxContentLength: Infinity,
   });
-  return uploadResponse.data.id;
+  const videoId: string = uploadResponse.data.id;
+
+  if (coverImageUrl) {
+    // YouTube only allows custom thumbnails on verified channels; a rejection
+    // here must not undo the upload that just succeeded.
+    try {
+      const image = await getMediaBuffer(coverImageUrl);
+      const contentType = /\.png(\?|$)/i.test(coverImageUrl) ? 'image/png' : 'image/jpeg';
+      await axios.post(
+        `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}&uploadType=media`,
+        image,
+        {
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': contentType, 'Content-Length': image.length.toString() },
+          maxBodyLength: Infinity,
+        }
+      );
+    } catch (err: any) {
+      console.warn(`[YouTube] Could not set the custom thumbnail on ${videoId}:`, err?.response?.data?.error?.message || err.message);
+    }
+  }
+
+  return videoId;
 }
 
 export async function getYouTubeInsights(accessToken: string): Promise<{ followers: number; reach: number; impressions: number; profileVisits: number | null }> {
