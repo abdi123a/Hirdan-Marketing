@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+/* eslint-disable @typescript-eslint/no-explicit-any -- untyped API payloads (platformContent, team, errors) */
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,92 +8,182 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { useToast } from "@/components/ui/use-toast";
 import { apiFetch, apiUpload } from "@/lib/api-client";
 import { CardGridSkeleton } from "@/components/ui/PageSkeleton";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/lib/auth-store";
-import { useAgencyStore } from "@/lib/store";
-import { contentTypesFor, validateContentTypeMedia, TIKTOK_POST_MODES, type TikTokPostMode, type ContentType } from "@/lib/platform-capabilities";
+import { contentTypesFor, validateContentTypeMedia, type TikTokPostMode } from "@/lib/platform-capabilities";
 import PostGrid from "@/components/social/PostGrid";
 import CalendarViews from "@/components/social/CalendarViews";
 import PostComposer, { type PinterestBoardState } from "@/components/social/PostComposer";
 import { PublishProgressDialog } from "@/components/social/PublishProgressDialog";
-import {
-  WEEK_VIEW_SLOTS,
-  type SocialPost, type SocialAccount, type Client, type SocialCampaign, type UploadProgressFile,
-} from "@/lib/social/types";
-import { PLATFORMS_CONFIG, FacebookGlyph, InstagramGlyph, YouTubeIcon } from "@/lib/social/platform";
+import type { SocialPost, SocialAccount, Client, SocialCampaign, UploadProgressFile } from "@/lib/social/types";
+import { FacebookGlyph, InstagramGlyph, YouTubeIcon } from "@/lib/social/platform";
 import { getStatusStyle, formatPostStatus } from "@/lib/social/post-status";
 import { createUploadTracker } from "@/lib/social/upload-progress";
 import {
-  Plus, Calendar, RefreshCw, Trash2, Sparkles, Image as ImageIcon, Loader2, Heart, MessageSquare, Share2, HelpCircle, ArrowLeft, X, Settings,
-  Tag, Link as LinkIcon, ChevronUp, MoreHorizontal, Search, Disc, Volume2, FileText, Check, Bookmark,
-  Hash, ThumbsUp, ThumbsDown, MessageCircle, Repeat2, Send, Play, BarChart2, MapPin, Info, SquarePen, Grid, List, ArrowUpDown, User, Copy, AlertCircle, CheckCircle2
+  Plus, Calendar, RefreshCw, Trash2, Sparkles, Image as ImageIcon, Loader2, Heart, Share2, HelpCircle, X,
+  MoreHorizontal, Search, FileText, Bookmark, ThumbsUp, ThumbsDown, MessageCircle, Repeat2, Send, Play, BarChart2,
+  SquarePen, Grid, List, Copy, type LucideIcon,
 } from "lucide-react";
 
-// Helpers
-const hexToRgba = (hex: string, alpha: number) => {
-  if (!hex || !hex.startsWith("#") || hex.length < 7) return `rgba(90, 66, 138, ${alpha})`;
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${isNaN(r) ? 80 : r}, ${isNaN(g) ? 65 : g}, ${isNaN(b) ? 136 : b}, ${alpha})`;
-};
+type Destination = SocialPost["destinations"][number];
 
-function inferContentType(title: string, platforms: string[]): string {
-  const t = title.toLowerCase();
-  if (/\bvideo\b|\breel\b|\btiktok\b|\bshort\b|\bfilm\b|\bfilmed\b|\brecord/.test(t)) return "video";
-  if (/\bstory\b|\bstories\b/.test(t)) return "story";
-  if (/\bphoto\b|\bpicture\b|\bimage\b|\bpic\b|\bshot\b/.test(t)) return "photo";
-  if (platforms.some(p => p === "TIKTOK" || p === "YOUTUBE")) return "video";
-  return "graphic";
-}
+const ALL_SYNCED: Record<string, boolean> = {
+  x: true, facebook: true, instagram: true, linkedin: true, tiktok: true, youtube: true, threads: true
+};
+const CAPTION_PLATFORMS = Object.keys(ALL_SYNCED);
 
 function isTikTokDraft(dest: { platform?: string; platformPostId?: string | null; error?: string | null }, platformContent?: any): boolean {
   if ((dest.platform || "").toLowerCase() !== "tiktok") return false;
   if (dest.platformPostId?.includes("v_inbox_url") || dest.platformPostId?.includes("v_inbox_")) return true;
   if (/^v_(pub|inbox)_/i.test(dest.platformPostId || "")) return true;
-  if (platformContent?.tiktok?.postMode === "draft") return true;
-  return false;
+  return platformContent?.tiktok?.postMode === "draft";
 }
 
 function buildCalendarGrid(month: number, year: number) {
-  const firstDay = new Date(year, month, 1).getDay();
+  const cells: (Date | null)[] = Array(new Date(year, month, 1).getDay()).fill(null);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: (Date | null)[] = [];
-
-  for (let i = 0; i < firstDay; i++) {
-    cells.push(null);
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    cells.push(new Date(year, month, d));
-  }
-  while (cells.length % 7 !== 0) {
-    cells.push(null);
-  }
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+  while (cells.length % 7 !== 0) cells.push(null);
 
   const weeks: (Date | null)[][] = [];
-  for (let i = 0; i < cells.length; i += 7) {
-    weeks.push(cells.slice(i, i + 7));
-  }
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
   return weeks;
 }
 
 export function getWeekDays(date: Date) {
   const startOfWeek = new Date(date);
   const day = startOfWeek.getDay();
-  const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1); // Monday start
-  startOfWeek.setDate(diff);
-
-  const days = [];
-  for (let i = 0; i < 7; i++) {
+  startOfWeek.setDate(startOfWeek.getDate() - day + (day === 0 ? -6 : 1)); // Monday start
+  return Array.from({ length: 7 }, (_, i) => {
     const nextDay = new Date(startOfWeek);
     nextDay.setDate(startOfWeek.getDate() + i);
-    days.push(nextDay);
-  }
-  return days;
+    return nextDay;
+  });
 }
+
+const PLATFORM_ICONS = new Map(Object.entries({
+  facebook: ["Facebook.png", "Facebook"], instagram: ["instagram.png", "Instagram"], threads: ["Threads.png", "Threads"],
+  tiktok: ["tiktok.png", "TikTok"], linkedin: ["linkedin.png", "LinkedIn"], youtube: ["youtube.png", "YouTube"],
+  x: ["twitter.png", "Twitter"], twitter: ["twitter.png", "Twitter"], pinterest: ["pinterest.png", "Pinterest"],
+}));
+
+const getPlatformIcon = (platform?: string, className = "h-4 w-4 rounded-sm object-contain") => {
+  const icon = platform ? PLATFORM_ICONS.get(platform.toLowerCase()) : undefined;
+  return icon
+    ? <img src={`/social-icons/${icon[0]}`} className={className} alt={icon[1]} />
+    : <HelpCircle className={`${className} text-muted-foreground`} />;
+};
+
+const CHAR_LIMITS = new Map(Object.entries({ x: 280, twitter: 280, pinterest: 500, tiktok: 2200, instagram: 2200, facebook: 63206, threads: 500 }));
+const getCharLimitForPlatform = (platformName: string) => (platformName && CHAR_LIMITS.get(platformName.toLowerCase())) || 3000;
+
+// Helper to securely parse JSON media urls safely
+const getMediaUrls = (post: SocialPost): string[] => {
+  if (!post.mediaUrls) return [];
+  const isStr = (item: unknown): item is string => typeof item === "string";
+  if (Array.isArray(post.mediaUrls)) return post.mediaUrls.filter(isStr);
+  if (typeof post.mediaUrls === "string") {
+    try {
+      const parsed = JSON.parse(post.mediaUrls);
+      if (Array.isArray(parsed)) return parsed.filter(isStr);
+    } catch { /* not JSON: a single bare URL */ }
+    return [post.mediaUrls];
+  }
+  return [];
+};
+
+const getContentTypeLabel = (post: SocialPost) => {
+  if (post.mediaType === "video") return post.platformContent?.instagram?.type === "reel" ? "Reel" : "Video";
+  return getMediaUrls(post).length > 1 ? "Carousel" : "Image";
+};
+
+const toLocalISOString = (dateString: string | Date) => {
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000).toISOString().slice(0, 16);
+};
+
+const newId = () => Math.random().toString(36).substring(7);
+const activity = (message: string, type = "system") => ({ id: newId(), type, message, createdAt: new Date().toISOString() });
+/** The post's platformContent with `extra` merged in and one activity entry appended. */
+const withActivity = (post: SocialPost, message: string, extra?: Record<string, unknown>) => ({
+  ...(post.platformContent || {}),
+  ...extra,
+  activities: [...(post.platformContent?.activities || []), activity(message)],
+});
+
+const putPost = (id: string, body: unknown) => apiFetch(`/social/posts/${id}`, { method: "PUT", body: JSON.stringify(body) });
+const createPost = <T,>(body: unknown) => apiFetch<T>("/social/posts", { method: "POST", body: JSON.stringify(body) });
+
+const duplicatePayload = (post: SocialPost, activities: unknown[]) => ({
+  clientId: post.clientId,
+  campaignId: post.campaignId,
+  caption: post.caption,
+  platformContent: { ...(post.platformContent || {}), comments: [], activities },
+  mediaUrls: getMediaUrls(post),
+  mediaType: post.mediaType,
+  accountIds: post.destinations.map(d => d.socialAccountId),
+  scheduledFor: post.scheduledFor,
+  status: "DRAFT",
+});
+
+const toProgressDest = (d: Destination) => ({
+  id: d.id,
+  platform: d.platform,
+  accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || "Unknown Account",
+  avatarUrl: d.socialAccount?.avatarUrl ?? null,
+  status: d.status,
+  error: d.lastError,
+  platformPostId: d.platformPostId,
+});
+const tally = (dests: Destination[]) => ({
+  completed: dests.filter(d => d.status === "PUBLISHED").length,
+  failed: dests.filter(d => d.status === "FAILED").length,
+});
+
+type PublishStatus = {
+  postId: string | null;
+  status: 'idle' | 'publishing' | 'success' | 'failed';
+  totalDestinations: number;
+  completedDestinations: number;
+  failedDestinations: number;
+  destinations: Array<{
+    id: string;
+    platform: string;
+    accountName: string;
+    /** The client's own logo, so the modal shows who is being posted for. */
+    avatarUrl?: string | null;
+    status: string;
+    error: string | null;
+    platformPostId?: string | null;
+  }>;
+};
+
+const FILTER_TRIGGER = "h-8 text-xs rounded-lg border-border/50 bg-muted/20 w-auto min-w-[100px]";
+const BULK_TRIGGER = "w-auto bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700 hover:border-slate-600 shadow-none";
+
+type Option = [value: string, label: string, className?: string];
+
+function OptionSelect({ value, onChange, placeholder, options, triggerClassName = FILTER_TRIGGER }: {
+  value: string; onChange: (v: string) => void; placeholder: string; options: Option[]; triggerClassName?: string;
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className={triggerClassName}>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map(([v, label, className]) => <SelectItem key={v} value={v} className={className}>{label}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  );
+}
+
+const PLATFORM_OPTIONS: Option[] = [["ALL", "All Platforms"], ...["instagram", "facebook", "linkedin", "tiktok", "youtube", "threads", "x"].map((p): Option => [p, p, "capitalize"])];
+const STATUS_OPTIONS: Option[] = [["ALL", "All Statuses"], ...["DRAFT", "AWAITING_APPROVAL", "SCHEDULED", "PUBLISHED", "PARTIAL", "FAILED"].map((s): Option => [s, s.replace(/_/g, " ")])];
+const TYPE_OPTIONS: Option[] = [["ALL", "All Types"], ...["image", "video", "reel", "story", "carousel"].map((t): Option => [t, t, "capitalize"])];
+const DATE_OPTIONS: Option[] = [["ALL", "All Time"], ["today", "Today"], ["week", "This Week"], ["month", "This Month"]];
+const SORT_OPTIONS: Option[] = [["scheduled_desc", "Newest Scheduled"], ["scheduled_asc", "Oldest Scheduled"], ["created_desc", "Recently Created"], ["created_asc", "Oldest Created"]];
 
 export default function SocialPublishPage() {
   const navigate = useNavigate();
@@ -105,14 +195,10 @@ export default function SocialPublishPage() {
   const [clientIdsWithAccounts, setClientIdsWithAccounts] = useState<Set<string>>(new Set());
   const [campaigns, setCampaigns] = useState<SocialCampaign[]>([]);
 
-  const clientsWithAccounts = useMemo(() => {
-    return clients.filter(c => {
-      const hasInSet = clientIdsWithAccounts.has(c.id);
-      const count = (c as any)._count?.socialAccounts;
-      const hasInCount = typeof count === "number" && count > 0;
-      return hasInSet || hasInCount;
-    });
-  }, [clients, clientIdsWithAccounts]);
+  const clientsWithAccounts = useMemo(() => clients.filter(c => {
+    const count = (c as any)._count?.socialAccounts;
+    return clientIdsWithAccounts.has(c.id) || (typeof count === "number" && count > 0);
+  }), [clients, clientIdsWithAccounts]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -138,7 +224,6 @@ export default function SocialPublishPage() {
   // Selection & Details Side panel
   const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
   const [activePostId, setActivePostId] = useState<string | null>(null);
-  const [isDetailsLoading, setIsDetailsLoading] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [rescheduleDate, setRescheduleDate] = useState("");
   const [rescheduleTime, setRescheduleTime] = useState("");
@@ -163,11 +248,7 @@ export default function SocialPublishPage() {
   const [submitType, setSubmitType] = useState<"draft" | "publish" | null>(null);
 
   // platform overrides
-  const [showOverrides, setShowOverrides] = useState(false);
   const [platformOverrides, setPlatformOverrides] = useState<Record<string, string>>({});
-
-  // Preview account selection state
-  const [activePreviewAccount, setActivePreviewAccount] = useState<string>("");
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
 
   // AI helper state
@@ -182,23 +263,7 @@ export default function SocialPublishPage() {
 
   // Publishing progress modal state
   const [isPublishProgressOpen, setIsPublishProgressOpen] = useState(false);
-  const [publishStatus, setPublishStatus] = useState<{
-    postId: string | null;
-    status: 'idle' | 'publishing' | 'success' | 'failed';
-    totalDestinations: number;
-    completedDestinations: number;
-    failedDestinations: number;
-    destinations: Array<{
-      id: string;
-      platform: string;
-      accountName: string;
-      /** The client's own logo, so the modal shows who is being posted for. */
-      avatarUrl?: string | null;
-      status: string;
-      error: string | null;
-      platformPostId?: string | null;
-    }>;
-  }>({
+  const [publishStatus, setPublishStatus] = useState<PublishStatus>({
     postId: null,
     status: 'idle',
     totalDestinations: 0,
@@ -209,16 +274,10 @@ export default function SocialPublishPage() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (isPublishProgressOpen && publishStatus.status === 'publishing') {
-      setElapsedSeconds(0);
-      timer = setInterval(() => {
-        setElapsedSeconds(prev => prev + 1);
-      }, 1000);
-    }
-    return () => {
-      if (timer) clearInterval(timer);
-    };
+    if (!isPublishProgressOpen || publishStatus.status !== 'publishing') return;
+    setElapsedSeconds(0);
+    const timer = setInterval(() => setElapsedSeconds(prev => prev + 1), 1000);
+    return () => clearInterval(timer);
   }, [isPublishProgressOpen, publishStatus.status]);
 
   // Redesigned composer states
@@ -231,28 +290,24 @@ export default function SocialPublishPage() {
   const [postTags, setPostTags] = useState<string[]>([]);
 
   // Platform-specific content link/sync state
-  const [syncedPlatforms, setSyncedPlatforms] = useState<Record<string, boolean>>({
-    x: true, facebook: true, instagram: true, linkedin: true, tiktok: true, youtube: true, threads: true
-  });
+  const [syncedPlatforms, setSyncedPlatforms] = useState<Record<string, boolean>>(ALL_SYNCED);
 
   // Platform specific options states
   const [instagramType, setInstagramType] = useState<"post" | "reel" | "story">("post");
   const [instagramMusic, setInstagramMusic] = useState(false);
   const [instagramTagProducts, setInstagramTagProducts] = useState(false);
-  const [instagramStickerMode, setInstagramStickerMode] = useState("automatic");
   const [instagramFirstComment, setInstagramFirstComment] = useState("");
   const [instagramAiGenerated, setInstagramAiGenerated] = useState(false);
 
   const [facebookType, setFacebookType] = useState<"post" | "reel" | "story">("post");
-  const [facebookMusic, setFacebookMusic] = useState(false);
-  const [facebookTagProducts, setFacebookTagProducts] = useState(false);
-  const [facebookStickerMode, setFacebookStickerMode] = useState("automatic");
   const [facebookFirstComment, setFacebookFirstComment] = useState("");
   const [facebookAiGenerated, setFacebookAiGenerated] = useState(false);
 
   const [tiktokTitle, setTiktokTitle] = useState("");
   const [tiktokAutomatic, setTiktokAutomatic] = useState("automatic");
   const [tiktokPostMode, setTiktokPostMode] = useState<TikTokPostMode>("direct");
+  // Frame (ms into the video) used as the Reel/TikTok cover; null = platform default.
+  const [coverTimeMs, setCoverTimeMs] = useState<number | null>(null);
   const [tiktokType, setTiktokType] = useState<"video" | "photo">("video");
 
   const [linkedinFirstComment, setLinkedinFirstComment] = useState("");
@@ -269,21 +324,14 @@ export default function SocialPublishPage() {
   const [youtubeType, setYoutubeType] = useState<"short" | "video">("short");
   const [youtubePrivacy, setYoutubePrivacy] = useState<string>("public");
   const [threadsTopic, setThreadsTopic] = useState("");
-  const [threadsLocation, setThreadsLocation] = useState("");
   const [threadsType, setThreadsType] = useState<string>("post");
   const [xType, setXType] = useState<string>("post");
 
   // Debounce search input
   useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-    }, 300);
+    const handler = setTimeout(() => setDebouncedSearch(searchQuery), 300);
     return () => clearTimeout(handler);
   }, [searchQuery]);
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -296,21 +344,12 @@ export default function SocialPublishPage() {
         apiFetch<any>("/social/accounts?limit=1000").catch(() => null),
       ]);
       setPosts(postsData?.posts || []);
-      const clientsList = Array.isArray(clientsData)
-        ? clientsData
-        : (clientsData && Array.isArray(clientsData.clients) ? clientsData.clients : []);
-      setClients(clientsList);
+      setClients(Array.isArray(clientsData) ? clientsData : (Array.isArray(clientsData?.clients) ? clientsData.clients : []));
       setCampaigns(campaignsData || []);
       setTeamMembers(teamData?.team || []);
 
-      const accs = Array.isArray(socialAccountsData)
-        ? socialAccountsData
-        : (socialAccountsData?.accounts || []);
-      const accountClientIds = new Set<string>();
-      accs.forEach((acc: any) => {
-        if (acc.clientId) accountClientIds.add(acc.clientId);
-      });
-      setClientIdsWithAccounts(accountClientIds);
+      const accs: any[] = Array.isArray(socialAccountsData) ? socialAccountsData : (socialAccountsData?.accounts || []);
+      setClientIdsWithAccounts(new Set(accs.filter(acc => acc.clientId).map(acc => acc.clientId)));
     } catch (err: any) {
       toast({
         title: "Error loading publisher workspace",
@@ -322,44 +361,37 @@ export default function SocialPublishPage() {
     }
   };
 
+  useEffect(() => {
+    fetchData();
+  }, []);
+
   // Load client's connected accounts in composer
   useEffect(() => {
-    if (composerClient) {
-      apiFetch<SocialAccount[]>(`/social/accounts/by-client/${composerClient}`)
-        .then((res) => {
-          setAccounts(res || []);
-          if (!editingPostId) {
-            if (res && res.length > 0) {
-              const connectedPlatforms = Array.from(new Set(res.map(acc => acc.platform.toLowerCase())));
-              setSelectedPlatforms(connectedPlatforms);
-              setComposerAccounts(res.map(acc => acc.id));
-              setActivePlatform(connectedPlatforms[0]);
-              setActivePreviewAccount(res[0].id);
-            } else {
-              setSelectedPlatforms(["instagram"]);
-              setActivePlatform("instagram");
-              setComposerAccounts([]);
-              setActivePreviewAccount("");
-            }
-          }
-        })
-        .catch(() => {
-          if (!editingPostId) {
-            setSelectedPlatforms(["instagram"]);
-            setActivePlatform("instagram");
-            setComposerAccounts([]);
-            setActivePreviewAccount("");
-          }
-        });
-    } else {
+    const selectNone = (platforms: string[]) => {
+      if (editingPostId) return;
+      setSelectedPlatforms(platforms);
+      setActivePlatform(platforms[0] || "");
+      setComposerAccounts([]);
+    };
+    if (!composerClient) {
       setAccounts([]);
-      if (!editingPostId) {
-        setSelectedPlatforms([]);
-        setComposerAccounts([]);
-        setActivePlatform("");
-        setActivePreviewAccount("");
-      }
+      selectNone([]);
+      return;
     }
+    apiFetch<SocialAccount[]>(`/social/accounts/by-client/${composerClient}`)
+      .then((res) => {
+        setAccounts(res || []);
+        if (editingPostId) return;
+        if (res && res.length > 0) {
+          const connectedPlatforms = Array.from(new Set(res.map(acc => acc.platform.toLowerCase())));
+          setSelectedPlatforms(connectedPlatforms);
+          setComposerAccounts(res.map(acc => acc.id));
+          setActivePlatform(connectedPlatforms[0]);
+        } else {
+          selectNone(["instagram"]);
+        }
+      })
+      .catch(() => selectNone(["instagram"]));
   }, [composerClient, editingPostId]);
 
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -367,13 +399,12 @@ export default function SocialPublishPage() {
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
-    const fileArray = Array.from(files);
 
-    for (const file of fileArray) {
-      const uploadId = Math.random().toString(36).substring(7);
+    for (const file of Array.from(files)) {
+      const uploadId = newId();
       const isVideo = file.type.startsWith("video/");
 
-      const newUploadFile: UploadProgressFile = {
+      setUploadProgressFiles(prev => [...prev, {
         id: uploadId,
         name: file.name,
         progress: 0,
@@ -383,9 +414,7 @@ export default function SocialPublishPage() {
         totalBytes: file.size,
         speedBps: null,
         etaSeconds: null,
-      };
-
-      setUploadProgressFiles(prev => [...prev, newUploadFile]);
+      }]);
 
       const formData = new FormData();
       formData.append("file", file);
@@ -432,14 +461,12 @@ export default function SocialPublishPage() {
         setComposerMediaUrls(prev => [...prev, data.url]);
         if (isVideo) {
           setComposerMediaType("video");
+          setCoverTimeMs(null);
         }
 
-        setUploadProgressFiles(prev => prev.map(f => {
-          if (f.id === uploadId) {
-            return { ...f, progress: 100, status: "done", url: data.url, etaSeconds: null };
-          }
-          return f;
-        }));
+        setUploadProgressFiles(prev => prev.map(f =>
+          f.id === uploadId ? { ...f, progress: 100, status: "done", url: data.url, etaSeconds: null } : f
+        ));
 
         toast({ title: "Media Attached", description: "File successfully added to post draft" });
       } catch (err: any) {
@@ -458,29 +485,17 @@ export default function SocialPublishPage() {
       ...prev,
       [accountId]: { boards: [], selectedId: null, ...prev[accountId], loading: true, error: null },
     }));
+    const settle = (boards: { id: string; name: string }[], error: string | null) => setPinterestBoards(prev => ({
+      ...prev,
+      [accountId]: { boards, selectedId: prev[accountId]?.selectedId ?? null, loading: false, error },
+    }));
     try {
       const res = await apiFetch<{ boards: { id: string; name: string }[] }>(
         `/social/accounts/${accountId}/pinterest/boards`
       );
-      setPinterestBoards(prev => ({
-        ...prev,
-        [accountId]: {
-          boards: res.boards || [],
-          selectedId: prev[accountId]?.selectedId ?? null,
-          loading: false,
-          error: null,
-        },
-      }));
+      settle(res.boards || [], null);
     } catch (err: any) {
-      setPinterestBoards(prev => ({
-        ...prev,
-        [accountId]: {
-          boards: [],
-          selectedId: prev[accountId]?.selectedId ?? null,
-          loading: false,
-          error: err.message || "Could not load boards",
-        },
-      }));
+      settle([], err.message || "Could not load boards");
     }
   }, []);
 
@@ -495,34 +510,23 @@ export default function SocialPublishPage() {
   useEffect(() => {
     if (!isComposerOpen) return;
     for (const acct of accounts) {
-      if (acct.platform.toLowerCase() !== "pinterest") continue;
-      if (!composerAccounts.includes(acct.id)) continue;
-      if (pinterestBoards[acct.id]) continue;
-      loadPinterestBoards(acct.id);
+      if (acct.platform.toLowerCase() === "pinterest" && composerAccounts.includes(acct.id) && !pinterestBoards[acct.id]) {
+        loadPinterestBoards(acct.id);
+      }
     }
   }, [isComposerOpen, composerAccounts, accounts, pinterestBoards, loadPinterestBoards]);
 
-  const getPlatformCaption = (platform: string) => {
-    const isSynced = syncedPlatforms[platform] ?? true;
-    if (isSynced) {
-      return composerCaption;
-    }
-    return platformOverrides[platform] ?? "";
-  };
+  const getPlatformCaption = (platform: string) =>
+    (syncedPlatforms[platform] ?? true) ? composerCaption : (platformOverrides[platform] ?? "");
 
   const setPlatformCaption = (platform: string, text: string) => {
-    const isSynced = syncedPlatforms[platform] ?? true;
-    if (isSynced) {
-      setComposerCaption(text);
-    } else {
-      setPlatformOverrides(prev => ({ ...prev, [platform]: text }));
-    }
+    if (syncedPlatforms[platform] ?? true) setComposerCaption(text);
+    else setPlatformOverrides(prev => ({ ...prev, [platform]: text }));
   };
 
   const togglePlatformSync = (platform: string) => {
     setSyncedPlatforms(prev => {
-      const isSynced = prev[platform] ?? true;
-      const nextSynced = !isSynced;
+      const nextSynced = !(prev[platform] ?? true);
       if (!nextSynced) {
         setPlatformOverrides(o => ({ ...o, [platform]: composerCaption }));
       }
@@ -534,17 +538,15 @@ export default function SocialPublishPage() {
     setComposerCaption("");
     setComposerMediaUrls([]);
     setComposerMediaType("image");
+    setCoverTimeMs(null);
     setComposerAccounts([]);
     setComposerScheduledFor("");
     setPublishNow(true);
-    setShowOverrides(false);
     setPlatformOverrides({});
     setUploadProgressFiles([]);
     setSelectedPlatforms([]);
     setActivePlatform("");
-    setSyncedPlatforms({
-      x: true, facebook: true, instagram: true, linkedin: true, tiktok: true, youtube: true, threads: true
-    });
+    setSyncedPlatforms(ALL_SYNCED);
     setInstagramType("post");
     setInstagramMusic(false);
     setInstagramTagProducts(false);
@@ -561,7 +563,6 @@ export default function SocialPublishPage() {
     setLinkedinType("post");
     setXType("post");
     setThreadsTopic("");
-    setThreadsLocation("");
     setThreadsType("post");
     setPinterestTitle("");
     setPinterestLink("");
@@ -579,25 +580,7 @@ export default function SocialPublishPage() {
   const handleOpenChange = (open: boolean) => {
     if (isSubmitting) return;
     setIsComposerOpen(open);
-    if (!open) {
-      resetComposer();
-    }
-  };
-
-  const getPlatformIcon = (platform?: string, className = "h-4 w-4 rounded-sm object-contain") => {
-    if (!platform) return <HelpCircle className={`${className} text-muted-foreground`} />;
-    switch (platform.toLowerCase()) {
-      case "facebook": return <img src="/social-icons/Facebook.png" className={className} alt="Facebook" />;
-      case "instagram": return <img src="/social-icons/instagram.png" className={className} alt="Instagram" />;
-      case "threads": return <img src="/social-icons/Threads.png" className={className} alt="Threads" />;
-      case "tiktok": return <img src="/social-icons/tiktok.png" className={className} alt="TikTok" />;
-      case "linkedin": return <img src="/social-icons/linkedin.png" className={className} alt="LinkedIn" />;
-      case "youtube": return <img src="/social-icons/youtube.png" className={className} alt="YouTube" />;
-      case "x":
-      case "twitter": return <img src="/social-icons/twitter.png" className={className} alt="Twitter" />;
-      case "pinterest": return <img src="/social-icons/pinterest.png" className={className} alt="Pinterest" />;
-      default: return <HelpCircle className={`${className} text-muted-foreground`} />;
-    }
+    if (!open) resetComposer();
   };
 
   const handleCreateCampaign = async () => {
@@ -681,6 +664,7 @@ export default function SocialPublishPage() {
 
     setIsSubmitting(true);
     setSubmitType(asDraft ? "draft" : "publish");
+    const editingPost = editingPostId ? posts.find(p => p.id === editingPostId) : undefined;
     try {
       const payload = {
         clientId: composerClient,
@@ -692,16 +676,16 @@ export default function SocialPublishPage() {
             type: instagramType,
             music: instagramMusic,
             tagProducts: instagramTagProducts,
-            stickerMode: instagramStickerMode,
+            stickerMode: "automatic",
             firstComment: instagramFirstComment,
             aiGenerated: instagramAiGenerated
           },
           facebook: {
             caption: getPlatformCaption("facebook"),
             type: facebookType,
-            music: facebookMusic,
-            tagProducts: facebookTagProducts,
-            stickerMode: facebookStickerMode,
+            music: false,
+            tagProducts: false,
+            stickerMode: "automatic",
             firstComment: facebookFirstComment,
             aiGenerated: facebookAiGenerated
           },
@@ -738,23 +722,13 @@ export default function SocialPublishPage() {
             type: youtubeType,
             privacy: youtubePrivacy
           },
-          x: {
-            caption: getPlatformCaption("x")
-          },
-          threads: {
-            caption: getPlatformCaption("threads")
-          },
+          x: { caption: getPlatformCaption("x") },
+          threads: { caption: getPlatformCaption("threads") },
           tags: postTags,
           syncedPlatforms,
-          comments: editingPostId ? (posts.find(p => p.id === editingPostId)?.platformContent?.comments || []) : [],
-          activities: editingPostId ? (posts.find(p => p.id === editingPostId)?.platformContent?.activities || []) : [
-            {
-              id: Math.random().toString(36).substring(7),
-              type: "system",
-              message: "Draft post created in Publisher",
-              createdAt: new Date().toISOString()
-            }
-          ]
+          coverTimeMs,
+          comments: editingPostId ? (editingPost?.platformContent?.comments || []) : [],
+          activities: editingPostId ? (editingPost?.platformContent?.activities || []) : [activity("Draft post created in Publisher")]
         },
         mediaUrls: composerMediaUrls,
         mediaType: composerMediaType,
@@ -768,183 +742,138 @@ export default function SocialPublishPage() {
         status: asDraft ? "DRAFT" : (publishNow ? "PUBLISHED" : "SCHEDULED"),
       };
 
-      if (publishNow && !asDraft) {
-        let createdPostId = editingPostId;
-
-        // Already-published destinations must not be re-sent. Backend also skips
-        // them, but we only target unpublished accounts from the client.
-        const publishTargetAccountIds = composerAccounts.filter(
-          (id) => !alreadyPublishedAccountIds.includes(id),
-        );
-
-        if (editingPostId && publishTargetAccountIds.length === 0) {
-          toast({
-            title: "Nothing to publish",
-            description: "All selected accounts were already published. Use Retry only for failed platforms, or pick additional accounts.",
-          });
-          return;
-        }
-        
-        if (editingPostId) {
-          await apiFetch<any>(`/social/posts/${editingPostId}`, {
-            method: "PUT",
-            body: JSON.stringify({ ...payload, status: "DRAFT" }),
-          });
-        } else {
-          const post = await apiFetch<SocialPost>("/social/posts", {
-            method: "POST",
-            body: JSON.stringify({ ...payload, status: "DRAFT" }),
-          });
-          createdPostId = post.id;
-        }
-
-        if (!createdPostId) {
-          throw new Error("Could not determine post ID");
-        }
-
-        const progressAccountIds =
-          publishTargetAccountIds.length > 0 ? publishTargetAccountIds : composerAccounts;
-
-        // Close composer, reset form, and reload background list immediately
-        setIsComposerOpen(false);
-        resetComposer();
-        fetchData();
-
-        // Initialize and open publishing progress modal
-        setIsPublishProgressOpen(true);
-        setPublishStatus({
-          postId: createdPostId,
-          status: 'publishing',
-          totalDestinations: progressAccountIds.length,
-          completedDestinations: 0,
-          failedDestinations: 0,
-          destinations: progressAccountIds.map(accId => {
-            const acc = accounts.find(a => a.id === accId);
-            return {
-              id: accId,
-              platform: acc?.platform || 'UNKNOWN',
-              accountName: acc?.displayName || acc?.platformUsername || 'Unknown Account',
-              avatarUrl: acc?.avatarUrl ?? null,
-              status: 'QUEUED',
-              error: null
-            };
-          })
-        });
-
-        // Start background status polling
-        const pollInterval = setInterval(async () => {
-          try {
-            const updatedPost = await apiFetch<SocialPost>(`/social/posts/${createdPostId}`);
-            if (updatedPost && updatedPost.destinations) {
-              const relevant = updatedPost.destinations.filter(
-                (d) => progressAccountIds.includes(d.socialAccountId) || d.status === 'PUBLISHING' || d.status === 'FAILED',
-              );
-              const tracked = relevant.length > 0 ? relevant : updatedPost.destinations;
-              const total = tracked.length;
-              const completed = tracked.filter(d => d.status === 'PUBLISHED').length;
-              const failed = tracked.filter(d => d.status === 'FAILED').length;
-              
-              setPublishStatus(prev => ({
-                ...prev,
-                postId: createdPostId,
-                totalDestinations: total,
-                completedDestinations: completed,
-                failedDestinations: failed,
-                destinations: tracked.map(d => ({
-                  id: d.id,
-                  platform: d.platform,
-                  accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || 'Unknown Account',
-                  avatarUrl: d.socialAccount?.avatarUrl ?? null,
-                  status: d.status,
-                  error: d.lastError,
-                  platformPostId: d.platformPostId
-                }))
-              }));
-            }
-          } catch (pollErr) {
-            console.error("Polling error", pollErr);
-          }
-        }, 1500);
-
-        try {
-          // Trigger the synchronous publish-now API call (unpublished targets only)
-          const finalPost = await apiFetch<SocialPost>(`/social/posts/${createdPostId}/publish-now`, {
-            method: "POST",
-            body: JSON.stringify({ accountIds: progressAccountIds }),
-          });
-          clearInterval(pollInterval);
-
-          const total = finalPost.destinations.length;
-          const completed = finalPost.destinations.filter(d => d.status === 'PUBLISHED').length;
-          const failed = finalPost.destinations.filter(d => d.status === 'FAILED').length;
-          
-          setPublishStatus(prev => ({
-            ...prev,
-            status: failed > 0 ? 'failed' : 'success',
-            completedDestinations: completed,
-            failedDestinations: failed,
-            destinations: finalPost.destinations.map(d => ({
-              id: d.id,
-              platform: d.platform,
-              accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || 'Unknown Account',
-                  avatarUrl: d.socialAccount?.avatarUrl ?? null,
-              status: d.status,
-              error: d.lastError,
-              platformPostId: d.platformPostId
-            }))
-          }));
-
-          fetchData(); // Final refresh of dashboard
-
-          if (failed > 0 && completed > 0) {
-            toast({
-              title: "Partially Published",
-              description: `${completed} platform(s) went live. Failed: ${finalPost.errorMessage || 'see destination errors'}. Use Retry for failed accounts only.`,
-              variant: "destructive",
-            });
-          } else if (failed > 0) {
-            toast({ 
-              title: "Publishing Finished with Errors", 
-              description: `Some destinations failed: ${finalPost.errorMessage || ''}`, 
-              variant: "destructive" 
-            });
-          } else {
-            const hasTikTokDraft = finalPost.destinations?.some(d => isTikTokDraft(d, finalPost.platformContent));
-            toast({ 
-              title: hasTikTokDraft ? "Saved to TikTok Drafts" : "Post Published", 
-              description: hasTikTokDraft 
-                ? "Uploaded to your TikTok mobile inbox! Open the TikTok app on your phone to complete & post."
-                : "Your post has been distributed to selected accounts" 
-            });
-            setTimeout(() => {
-              setIsPublishProgressOpen(false);
-            }, 3000);
-          }
-        } catch (err: any) {
-          clearInterval(pollInterval);
-          setPublishStatus(prev => ({
-            ...prev,
-            status: 'failed'
-          }));
-          fetchData(); // Make sure dashboard is updated
-          throw err;
-        }
-      } else {
-        if (editingPostId) {
-          await apiFetch<any>(`/social/posts/${editingPostId}`, {
-            method: "PUT",
-            body: JSON.stringify(payload),
-          });
-        } else {
-          await apiFetch<any>("/social/posts", {
-            method: "POST",
-            body: JSON.stringify(payload),
-          });
-        }
+      if (!publishNow || asDraft) {
+        if (editingPostId) await putPost(editingPostId, payload);
+        else await createPost(payload);
         toast({ title: asDraft ? "Draft Saved" : "Post Scheduled", description: asDraft ? "Your post has been saved as draft" : "Your post has been added to content queue" });
         setIsComposerOpen(false);
         resetComposer();
         fetchData();
+        return;
+      }
+
+      // Already-published destinations must not be re-sent. Backend also skips
+      // them, but we only target unpublished accounts from the client.
+      const publishTargetAccountIds = composerAccounts.filter(
+        (id) => !alreadyPublishedAccountIds.includes(id),
+      );
+
+      if (editingPostId && publishTargetAccountIds.length === 0) {
+        toast({
+          title: "Nothing to publish",
+          description: "All selected accounts were already published. Use Retry only for failed platforms, or pick additional accounts.",
+        });
+        return;
+      }
+
+      const draft = { ...payload, status: "DRAFT" };
+      let createdPostId = editingPostId;
+      if (editingPostId) await putPost(editingPostId, draft);
+      else createdPostId = (await createPost<SocialPost>(draft)).id;
+
+      if (!createdPostId) {
+        throw new Error("Could not determine post ID");
+      }
+
+      const progressAccountIds =
+        publishTargetAccountIds.length > 0 ? publishTargetAccountIds : composerAccounts;
+
+      // Close composer, reset form, and reload background list immediately
+      setIsComposerOpen(false);
+      resetComposer();
+      fetchData();
+
+      // Initialize and open publishing progress modal
+      setIsPublishProgressOpen(true);
+      setPublishStatus({
+        postId: createdPostId,
+        status: 'publishing',
+        totalDestinations: progressAccountIds.length,
+        completedDestinations: 0,
+        failedDestinations: 0,
+        destinations: progressAccountIds.map(accId => {
+          const acc = accounts.find(a => a.id === accId);
+          return {
+            id: accId,
+            platform: acc?.platform || 'UNKNOWN',
+            accountName: acc?.displayName || acc?.platformUsername || 'Unknown Account',
+            avatarUrl: acc?.avatarUrl ?? null,
+            status: 'QUEUED',
+            error: null
+          };
+        })
+      });
+
+      // Start background status polling
+      const pollInterval = setInterval(async () => {
+        try {
+          const updatedPost = await apiFetch<SocialPost>(`/social/posts/${createdPostId}`);
+          if (updatedPost && updatedPost.destinations) {
+            const relevant = updatedPost.destinations.filter(
+              (d) => progressAccountIds.includes(d.socialAccountId) || d.status === 'PUBLISHING' || d.status === 'FAILED',
+            );
+            const tracked = relevant.length > 0 ? relevant : updatedPost.destinations;
+            const { completed, failed } = tally(tracked);
+            setPublishStatus(prev => ({
+              ...prev,
+              postId: createdPostId,
+              totalDestinations: tracked.length,
+              completedDestinations: completed,
+              failedDestinations: failed,
+              destinations: tracked.map(toProgressDest)
+            }));
+          }
+        } catch (pollErr) {
+          console.error("Polling error", pollErr);
+        }
+      }, 1500);
+
+      try {
+        // Trigger the synchronous publish-now API call (unpublished targets only)
+        const finalPost = await apiFetch<SocialPost>(`/social/posts/${createdPostId}/publish-now`, {
+          method: "POST",
+          body: JSON.stringify({ accountIds: progressAccountIds }),
+        });
+        clearInterval(pollInterval);
+
+        const { completed, failed } = tally(finalPost.destinations);
+        setPublishStatus(prev => ({
+          ...prev,
+          status: failed > 0 ? 'failed' : 'success',
+          completedDestinations: completed,
+          failedDestinations: failed,
+          destinations: finalPost.destinations.map(toProgressDest)
+        }));
+
+        fetchData(); // Final refresh of dashboard
+
+        if (failed > 0 && completed > 0) {
+          toast({
+            title: "Partially Published",
+            description: `${completed} platform(s) went live. Failed: ${finalPost.errorMessage || 'see destination errors'}. Use Retry for failed accounts only.`,
+            variant: "destructive",
+          });
+        } else if (failed > 0) {
+          toast({
+            title: "Publishing Finished with Errors",
+            description: `Some destinations failed: ${finalPost.errorMessage || ''}`,
+            variant: "destructive"
+          });
+        } else {
+          const hasTikTokDraft = finalPost.destinations?.some(d => isTikTokDraft(d, finalPost.platformContent));
+          toast({
+            title: hasTikTokDraft ? "Saved to TikTok Drafts" : "Post Published",
+            description: hasTikTokDraft
+              ? "Uploaded to your TikTok mobile inbox! Open the TikTok app on your phone to complete & post."
+              : "Your post has been distributed to selected accounts"
+          });
+          setTimeout(() => setIsPublishProgressOpen(false), 3000);
+        }
+      } catch (err) {
+        clearInterval(pollInterval);
+        setPublishStatus(prev => ({ ...prev, status: 'failed' }));
+        fetchData(); // Make sure dashboard is updated
+        throw err;
       }
     } catch (err: any) {
       toast({
@@ -960,8 +889,7 @@ export default function SocialPublishPage() {
 
   const handleRetryPost = async (postId: string) => {
     try {
-      const existing = posts.find((p) => p.id === postId);
-      const failedDests = (existing?.destinations || []).filter((d) => d.status === "FAILED");
+      const failedDests = (posts.find((p) => p.id === postId)?.destinations || []).filter((d) => d.status === "FAILED");
       if (failedDests.length === 0) {
         toast({ title: "Nothing to retry", description: "No failed platforms on this post." });
         return;
@@ -974,22 +902,14 @@ export default function SocialPublishPage() {
         totalDestinations: failedDests.length,
         completedDestinations: 0,
         failedDestinations: 0,
-        destinations: failedDests.map((d) => ({
-          id: d.id,
-          platform: d.platform,
-          accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || "Unknown Account",
-          avatarUrl: d.socialAccount?.avatarUrl ?? null,
-          status: "QUEUED",
-          error: null,
-        })),
+        destinations: failedDests.map((d) => ({ ...toProgressDest(d), status: "QUEUED", error: null, platformPostId: undefined })),
       });
 
       const finalPost = await apiFetch<SocialPost>(`/social/posts/${postId}/retry`, { method: "POST" });
       const tracked = finalPost.destinations.filter((d) =>
         failedDests.some((f) => f.socialAccountId === d.socialAccountId) || d.status === "FAILED",
       );
-      const completed = tracked.filter((d) => d.status === "PUBLISHED").length;
-      const failed = tracked.filter((d) => d.status === "FAILED").length;
+      const { completed, failed } = tally(tracked);
 
       setPublishStatus({
         postId,
@@ -997,15 +917,7 @@ export default function SocialPublishPage() {
         totalDestinations: tracked.length,
         completedDestinations: completed,
         failedDestinations: failed,
-        destinations: tracked.map((d) => ({
-          id: d.id,
-          platform: d.platform,
-          accountName: d.socialAccount?.displayName || d.socialAccount?.platformUsername || "Unknown Account",
-          avatarUrl: d.socialAccount?.avatarUrl ?? null,
-          status: d.status,
-          error: d.lastError,
-          platformPostId: d.platformPostId,
-        })),
+        destinations: tracked.map(toProgressDest),
       });
 
       toast({
@@ -1023,15 +935,14 @@ export default function SocialPublishPage() {
   };
 
   const handleDeletePost = async (postId: string) => {
-    if (confirm("Are you sure you want to permanently delete this post?")) {
-      try {
-        await apiFetch<any>(`/social/posts/${postId}`, { method: "DELETE" });
-        toast({ title: "Post Deleted", description: "Scheduled post was successfully removed" });
-        if (activePostId === postId) setActivePostId(null);
-        fetchData();
-      } catch (err: any) {
-        toast({ title: "Delete Failed", description: err.message, variant: "destructive" });
-      }
+    if (!confirm("Are you sure you want to permanently delete this post?")) return;
+    try {
+      await apiFetch(`/social/posts/${postId}`, { method: "DELETE" });
+      toast({ title: "Post Deleted", description: "Scheduled post was successfully removed" });
+      if (activePostId === postId) setActivePostId(null);
+      fetchData();
+    } catch (err: any) {
+      toast({ title: "Delete Failed", description: err.message, variant: "destructive" });
     }
   };
 
@@ -1042,33 +953,17 @@ export default function SocialPublishPage() {
     setComposerCaption(post.caption || "");
     setComposerMediaUrls(post.mediaUrls || []);
     setComposerMediaType(post.mediaType || "image");
-
-    const toLocalISOString = (dateString: string | Date) => {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return "";
-      const offset = date.getTimezoneOffset();
-      const localDate = new Date(date.getTime() - (offset * 60 * 1000));
-      return localDate.toISOString().slice(0, 16);
-    };
-
+    setCoverTimeMs(post.platformContent?.coverTimeMs ?? null);
     setComposerScheduledFor(post.scheduledFor ? toLocalISOString(post.scheduledFor) : "");
     setPublishNow(!post.scheduledFor);
 
-    const pc = (post.platformContent || {}) as any;
+    const pc = post.platformContent || {};
     const overrides: Record<string, string> = {};
-    for (const plat of ["x", "facebook", "instagram", "linkedin", "tiktok", "youtube", "threads"]) {
-      if (pc[plat] && pc[plat].caption !== undefined) {
-        overrides[plat] = pc[plat].caption;
-      }
+    for (const plat of CAPTION_PLATFORMS) {
+      if (pc[plat] && pc[plat].caption !== undefined) overrides[plat] = pc[plat].caption;
     }
     setPlatformOverrides(overrides);
-    if (pc.syncedPlatforms) {
-      setSyncedPlatforms(pc.syncedPlatforms);
-    } else {
-      setSyncedPlatforms({
-        x: true, facebook: true, instagram: true, linkedin: true, tiktok: true, youtube: true, threads: true
-      });
-    }
+    setSyncedPlatforms(pc.syncedPlatforms || ALL_SYNCED);
 
     if (pc.instagram) {
       setInstagramType(pc.instagram.type || "post");
@@ -1092,19 +987,14 @@ export default function SocialPublishPage() {
       setLinkedinFirstComment(pc.linkedin.firstComment || "");
       setLinkedinType(pc.linkedin.type || "post");
     }
-    if (pc.x) {
-      setXType(pc.x.type || "post");
-    }
+    if (pc.x) setXType(pc.x.type || "post");
+    setYoutubePrivacy(pc.youtube?.privacy || "public");
     if (pc.youtube) {
       setYoutubeTitle(pc.youtube.title || "");
       setYoutubeType(pc.youtube.type || "short");
-      setYoutubePrivacy(pc.youtube.privacy || "public");
-    } else {
-      setYoutubePrivacy("public");
     }
     if (pc.threads) {
       setThreadsTopic(pc.threads.topic || "");
-      setThreadsLocation(pc.threads.location || "");
       setThreadsType(pc.threads.type || "post");
     }
     if (pc.pinterest) {
@@ -1113,74 +1003,32 @@ export default function SocialPublishPage() {
       setPinterestType(pc.pinterest.type || "pin");
       // Seed the saved choice; the board list itself is refetched when the
       // composer opens, which then fills in the names.
-      const saved = pc.pinterest.boards || {};
       setPinterestBoards(
         Object.fromEntries(
-          Object.entries(saved).map(([accountId, b]: [string, any]) => [
+          Object.entries(pc.pinterest.boards || {}).map(([accountId, b]: [string, any]) => [
             accountId,
             { boards: b?.name ? [{ id: b.id, name: b.name }] : [], selectedId: b?.id || null, loading: false, error: null },
           ])
         )
       );
     }
-    if (pc.tags) {
-      setPostTags(pc.tags || []);
-    }
+    if (pc.tags) setPostTags(pc.tags);
 
-    const accIds = (post.destinations || []).map(d => d.socialAccountId).filter(Boolean);
-    setComposerAccounts(accIds);
+    const dests = post.destinations || [];
+    setComposerAccounts(dests.map(d => d.socialAccountId).filter(Boolean));
+    setAlreadyPublishedAccountIds(dests.filter(d => d.status === "PUBLISHED").map(d => d.socialAccountId).filter(Boolean));
 
-    const publishedIds = (post.destinations || [])
-      .filter(d => d.status === "PUBLISHED")
-      .map(d => d.socialAccountId)
-      .filter(Boolean);
-    setAlreadyPublishedAccountIds(publishedIds);
-
-    const validPlatforms = ["x", "facebook", "instagram", "linkedin", "tiktok", "youtube", "threads"];
     const platList = Array.from(
-      new Set(
-        post.destinations.map(d => d.platform.toLowerCase()).filter(p => validPlatforms.includes(p))
-      )
+      new Set(post.destinations.map(d => d.platform.toLowerCase()).filter(p => CAPTION_PLATFORMS.includes(p)))
     );
     setSelectedPlatforms(platList);
-    if (platList.length > 0) {
-      setActivePlatform(platList[0]);
-    }
-    if (accIds.length > 0) {
-      setActivePreviewAccount(accIds[0]);
-    }
+    if (platList.length > 0) setActivePlatform(platList[0]);
     setIsComposerOpen(true);
   };
 
   const handleDuplicatePost = async (post: SocialPost) => {
     try {
-      const payload = {
-        clientId: post.clientId,
-        campaignId: post.campaignId,
-        caption: post.caption,
-        platformContent: {
-          ...(post.platformContent || {}),
-          comments: [],
-          activities: [
-            {
-              id: Math.random().toString(36).substring(7),
-              type: "system",
-              message: `Duplicate post created from ${post.id.substring(0, 8)}`,
-              createdAt: new Date().toISOString()
-            }
-          ]
-        },
-        mediaUrls: getMediaUrls(post),
-        mediaType: post.mediaType,
-        accountIds: post.destinations.map(d => d.socialAccountId),
-        scheduledFor: post.scheduledFor,
-        status: "DRAFT"
-      };
-
-      await apiFetch("/social/posts", {
-        method: "POST",
-        body: JSON.stringify(payload)
-      });
+      await createPost(duplicatePayload(post, [activity(`Duplicate post created from ${post.id.substring(0, 8)}`)]));
       toast({ title: "Post Duplicated", description: "Created new Draft clone of this post" });
       fetchData();
     } catch (err: any) {
@@ -1188,172 +1036,61 @@ export default function SocialPublishPage() {
     }
   };
 
-  // Rescheduling handler for calendar / panel
-  const handleReschedulePost = async (postId: string, date: Date) => {
-    const originalPosts = [...posts];
-    const postToUpdate = posts.find(p => p.id === postId);
-    if (!postToUpdate) return;
-
-    let targetDate = new Date(date);
-    if (postToUpdate.scheduledFor) {
-      const orig = new Date(postToUpdate.scheduledFor);
-      targetDate.setHours(orig.getHours());
-      targetDate.setMinutes(orig.getMinutes());
-      targetDate.setSeconds(0);
-    } else {
-      targetDate.setHours(10);
-      targetDate.setMinutes(0);
-      targetDate.setSeconds(0);
-    }
-
-    // Optimistic Update
-    setPosts(prev => prev.map(p => {
-      if (p.id === postId) {
-        return {
-          ...p,
-          scheduledFor: targetDate.toISOString(),
-          status: p.status === "DRAFT" ? "SCHEDULED" : p.status
-        };
-      }
-      return p;
-    }));
-
+  /** Optimistically moves a post's schedule, then saves only what changed. */
+  const saveSchedule = async (
+    post: SocialPost,
+    scheduledFor: string | null,
+    status: string | undefined,
+    message: string,
+    success: { title: string; description: string },
+    failTitle: string,
+  ) => {
+    const originalPosts = posts;
+    setPosts(prev => prev.map(p => p.id === post.id ? { ...p, scheduledFor, status: status ?? p.status } : p));
     try {
       // Send ONLY what this action changes. Anything omitted is left untouched by
       // the server, so a stale copy of the post in local state can no longer
       // clobber a caption, media list or destination someone else just edited.
-      const payload = {
-        platformContent: {
-          ...(postToUpdate.platformContent || {}),
-          activities: [
-            ...(postToUpdate.platformContent?.activities || []),
-            {
-              id: Math.random().toString(36).substring(7),
-              type: "system",
-              message: `Post rescheduled to ${targetDate.toLocaleString()}`,
-              createdAt: new Date().toISOString()
-            }
-          ]
-        },
-        // Only promote a draft. Re-sending the current status would write a stale
-        // value back over whatever the scheduler has since set.
-        status: postToUpdate.status === "DRAFT" ? "SCHEDULED" : undefined,
-        scheduledFor: targetDate.toISOString()
-      };
-
-      await apiFetch(`/social/posts/${postId}`, {
-        method: "PUT",
-        body: JSON.stringify(payload)
-      });
-      toast({ title: "Post Rescheduled", description: `Schedule updated to ${targetDate.toLocaleString()}` });
+      await putPost(post.id, { platformContent: withActivity(post, message), status, scheduledFor });
+      toast(success);
       fetchData();
     } catch (err: any) {
       setPosts(originalPosts);
-      toast({ title: "Reschedule Failed", description: err.message, variant: "destructive" });
+      toast({ title: failTitle, description: err.message, variant: "destructive" });
     }
+  };
+
+  const reschedule = (postId: string, targetDate: Date, describe: (when: string) => string) => {
+    const post = posts.find(p => p.id === postId);
+    if (!post) return;
+    const when = targetDate.toLocaleString();
+    // Only promote a draft. Re-sending the current status would write a stale
+    // value back over whatever the scheduler has since set.
+    return saveSchedule(post, targetDate.toISOString(), post.status === "DRAFT" ? "SCHEDULED" : undefined,
+      `Post rescheduled to ${when}`, { title: "Post Rescheduled", description: describe(when) }, "Reschedule Failed");
+  };
+
+  // Rescheduling handler for calendar / panel: keeps the post's time of day (10:00 if it had none).
+  const handleReschedulePost = async (postId: string, date: Date) => {
+    const orig = posts.find(p => p.id === postId)?.scheduledFor;
+    const targetDate = new Date(date);
+    if (orig) targetDate.setHours(new Date(orig).getHours(), new Date(orig).getMinutes(), 0);
+    else targetDate.setHours(10, 0, 0);
+    await reschedule(postId, targetDate, when => `Schedule updated to ${when}`);
   };
 
   const handleReschedulePostWithTime = async (postId: string, date: Date, timeStr: string) => {
-    const postToUpdate = posts.find(p => p.id === postId);
-    if (!postToUpdate) return;
-
     const [hours, minutes] = timeStr.split(":").map(Number);
     const targetDate = new Date(date);
-    targetDate.setHours(hours || 0);
-    targetDate.setMinutes(minutes || 0);
-    targetDate.setSeconds(0);
-
-    const originalPosts = [...posts];
-    setPosts(prev => prev.map(p => {
-      if (p.id === postId) {
-        return {
-          ...p,
-          scheduledFor: targetDate.toISOString(),
-          status: p.status === "DRAFT" ? "SCHEDULED" : p.status
-        };
-      }
-      return p;
-    }));
-
-    try {
-      // Send ONLY what this action changes. Anything omitted is left untouched by
-      // the server, so a stale copy of the post in local state can no longer
-      // clobber a caption, media list or destination someone else just edited.
-      const payload = {
-        platformContent: {
-          ...(postToUpdate.platformContent || {}),
-          activities: [
-            ...(postToUpdate.platformContent?.activities || []),
-            {
-              id: Math.random().toString(36).substring(7),
-              type: "system",
-              message: `Post rescheduled to ${targetDate.toLocaleString()}`,
-              createdAt: new Date().toISOString()
-            }
-          ]
-        },
-        // Only promote a draft. Re-sending the current status would write a stale
-        // value back over whatever the scheduler has since set.
-        status: postToUpdate.status === "DRAFT" ? "SCHEDULED" : undefined,
-        scheduledFor: targetDate.toISOString()
-      };
-
-      await apiFetch(`/social/posts/${postId}`, {
-        method: "PUT",
-        body: JSON.stringify(payload)
-      });
-      toast({ title: "Post Rescheduled", description: `Scheduled for ${targetDate.toLocaleString()}` });
-      fetchData();
-    } catch (err: any) {
-      setPosts(originalPosts);
-      toast({ title: "Reschedule Failed", description: err.message, variant: "destructive" });
-    }
+    targetDate.setHours(hours || 0, minutes || 0, 0);
+    await reschedule(postId, targetDate, when => `Scheduled for ${when}`);
   };
 
   const handleMovePostToUnscheduled = async (postId: string) => {
-    const postToUpdate = posts.find(p => p.id === postId);
-    if (!postToUpdate) return;
-
-    const originalPosts = [...posts];
-    setPosts(prev => prev.map(p => {
-      if (p.id === postId) {
-        return {
-          ...p,
-          scheduledFor: null,
-          status: "DRAFT"
-        };
-      }
-      return p;
-    }));
-
-    try {
-      const payload = {
-        platformContent: {
-          ...(postToUpdate.platformContent || {}),
-          activities: [
-            ...(postToUpdate.platformContent?.activities || []),
-            {
-              id: Math.random().toString(36).substring(7),
-              type: "system",
-              message: "Post moved to unscheduled drafts pool",
-              createdAt: new Date().toISOString()
-            }
-          ]
-        },
-        status: "DRAFT",
-        scheduledFor: null
-      };
-
-      await apiFetch(`/social/posts/${postId}`, {
-        method: "PUT",
-        body: JSON.stringify(payload)
-      });
-      toast({ title: "Post Unschedulded", description: "Moved post back to Draft sidebar" });
-      fetchData();
-    } catch (err: any) {
-      setPosts(originalPosts);
-      toast({ title: "Operation Failed", description: err.message, variant: "destructive" });
-    }
+    const post = posts.find(p => p.id === postId);
+    if (!post) return;
+    await saveSchedule(post, null, "DRAFT", "Post moved to unscheduled drafts pool",
+      { title: "Post Unschedulded", description: "Moved post back to Draft sidebar" }, "Operation Failed");
   };
 
   const handleAddComment = async (postId: string, text: string) => {
@@ -1362,53 +1099,35 @@ export default function SocialPublishPage() {
     if (!postToUpdate) return;
 
     const newComment = {
-      id: Math.random().toString(36).substring(7),
+      id: newId(),
       author: user?.name || user?.email || "Agency Admin",
       text,
       createdAt: new Date().toISOString()
     };
 
     const currentPc = postToUpdate.platformContent || {};
-    const commentsList = Array.isArray(currentPc.comments) ? currentPc.comments : [];
-    const activitiesList = Array.isArray(currentPc.activities) ? currentPc.activities : [];
-
     const updatedPc = {
       ...currentPc,
-      comments: [...commentsList, newComment],
+      comments: [...(Array.isArray(currentPc.comments) ? currentPc.comments : []), newComment],
       activities: [
-        ...activitiesList,
-        {
-          id: Math.random().toString(36).substring(7),
-          type: "comment",
-          message: `Comment added by ${user?.name || user?.email}`,
-          createdAt: new Date().toISOString()
-        }
+        ...(Array.isArray(currentPc.activities) ? currentPc.activities : []),
+        activity(`Comment added by ${user?.name || user?.email}`, "comment"),
       ]
     };
 
     // Optimistic update
-    setPosts(prev => prev.map(p => {
-      if (p.id === postId) {
-        return { ...p, platformContent: updatedPc };
-      }
-      return p;
-    }));
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, platformContent: updatedPc } : p));
     setCommentText("");
 
     try {
       // A comment changes nothing but platformContent. It used to resend status,
       // scheduledFor and the account list too, which is how commenting on a post
       // whose destinations had already FAILED could quietly re-queue and republish it.
-      const payload = { platformContent: updatedPc };
-      await apiFetch(`/social/posts/${postId}`, {
-        method: "PUT",
-        body: JSON.stringify(payload)
-      });
-      fetchData();
+      await putPost(postId, { platformContent: updatedPc });
     } catch (err: any) {
       toast({ title: "Comment failed", description: err.message, variant: "destructive" });
-      fetchData();
     }
+    fetchData();
   };
 
   // Bulk Selection Operations
@@ -1418,140 +1137,46 @@ export default function SocialPublishPage() {
     );
   };
 
+  /** Runs `action` for every selected post, then clears the selection and reloads. */
+  const runBulk = async (
+    action: (id: string, post: SocialPost | undefined) => Promise<unknown> | undefined,
+    title: string,
+    description: string,
+    failTitle: string,
+  ) => {
+    try {
+      await Promise.all(selectedPostIds.map(id => action(id, posts.find(post => post.id === id))));
+      toast({ title, description });
+      setSelectedPostIds([]);
+      fetchData();
+    } catch (err: any) {
+      toast({ title: failTitle, description: err.message, variant: "destructive" });
+    }
+  };
+
   const handleBulkDelete = async () => {
-    if (confirm(`Are you sure you want to delete ${selectedPostIds.length} selected posts?`)) {
-      try {
-        await Promise.all(selectedPostIds.map(id => apiFetch(`/social/posts/${id}`, { method: "DELETE" })));
-        toast({ title: "Posts Deleted", description: `Successfully deleted ${selectedPostIds.length} posts` });
-        setSelectedPostIds([]);
-        fetchData();
-      } catch (err: any) {
-        toast({ title: "Bulk Delete Failed", description: err.message, variant: "destructive" });
-      }
-    }
+    if (!confirm(`Are you sure you want to delete ${selectedPostIds.length} selected posts?`)) return;
+    await runBulk(id => apiFetch(`/social/posts/${id}`, { method: "DELETE" }),
+      "Posts Deleted", `Successfully deleted ${selectedPostIds.length} posts`, "Bulk Delete Failed");
   };
 
-  const handleBulkDuplicate = async () => {
-    try {
-      await Promise.all(selectedPostIds.map(async (id) => {
-        const p = posts.find(post => post.id === id);
-        if (p) {
-          const payload = {
-            clientId: p.clientId,
-            campaignId: p.campaignId,
-            caption: p.caption,
-            platformContent: { ...(p.platformContent || {}), comments: [], activities: [] },
-            mediaUrls: getMediaUrls(p),
-            mediaType: p.mediaType,
-            accountIds: p.destinations.map(d => d.socialAccountId),
-            status: "DRAFT",
-            scheduledFor: p.scheduledFor
-          };
-          await apiFetch("/social/posts", { method: "POST", body: JSON.stringify(payload) });
-        }
-      }));
-      toast({ title: "Bulk Duplicated", description: `Cloned ${selectedPostIds.length} posts as Drafts` });
-      setSelectedPostIds([]);
-      fetchData();
-    } catch (err: any) {
-      toast({ title: "Duplication Failed", description: err.message, variant: "destructive" });
-    }
-  };
+  const handleBulkDuplicate = () => runBulk((_, p) => p && createPost(duplicatePayload(p, [])),
+    "Bulk Duplicated", `Cloned ${selectedPostIds.length} posts as Drafts`, "Duplication Failed");
 
-  const handleBulkChangeStatus = async (newStatus: string) => {
-    try {
-      await Promise.all(selectedPostIds.map(async (id) => {
-        const p = posts.find(post => post.id === id);
-        if (p) {
-          const payload = {
-            platformContent: {
-              ...(p.platformContent || {}),
-              activities: [
-                ...(p.platformContent?.activities || []),
-                {
-                  id: Math.random().toString(36).substring(7),
-                  type: "system",
-                  message: `Bulk status update to ${newStatus}`,
-                  createdAt: new Date().toISOString()
-                }
-              ]
-            },
-            status: newStatus
-          };
-          await apiFetch(`/social/posts/${id}`, { method: "PUT", body: JSON.stringify(payload) });
-        }
-      }));
-      toast({ title: "Status Updated", description: `Updated status of ${selectedPostIds.length} posts` });
-      setSelectedPostIds([]);
-      fetchData();
-    } catch (err: any) {
-      toast({ title: "Status Update Failed", description: err.message, variant: "destructive" });
-    }
-  };
+  const handleBulkChangeStatus = (newStatus: string) => runBulk(
+    (id, p) => p && putPost(id, { platformContent: withActivity(p, `Bulk status update to ${newStatus}`), status: newStatus }),
+    "Status Updated", `Updated status of ${selectedPostIds.length} posts`, "Status Update Failed");
 
-  const handleBulkMoveSchedule = async (days: number) => {
-    try {
-      await Promise.all(selectedPostIds.map(async (id) => {
-        const p = posts.find(post => post.id === id);
-        if (p && p.scheduledFor) {
-          const date = new Date(p.scheduledFor);
-          date.setDate(date.getDate() + days);
-          const payload = {
-            platformContent: {
-              ...(p.platformContent || {}),
-              activities: [
-                ...(p.platformContent?.activities || []),
-                {
-                  id: Math.random().toString(36).substring(7),
-                  type: "system",
-                  message: `Bulk shifted schedule by ${days} days`,
-                  createdAt: new Date().toISOString()
-                }
-              ]
-            },
-            scheduledFor: date.toISOString()
-          };
-          await apiFetch(`/social/posts/${id}`, { method: "PUT", body: JSON.stringify(payload) });
-        }
-      }));
-      toast({ title: "Schedule Shifted", description: `Moved ${selectedPostIds.length} posts by ${days} days` });
-      setSelectedPostIds([]);
-      fetchData();
-    } catch (err: any) {
-      toast({ title: "Shift Failed", description: err.message, variant: "destructive" });
-    }
-  };
+  const handleBulkMoveSchedule = (days: number) => runBulk((id, p) => {
+    if (!p?.scheduledFor) return;
+    const date = new Date(p.scheduledFor);
+    date.setDate(date.getDate() + days);
+    return putPost(id, { platformContent: withActivity(p, `Bulk shifted schedule by ${days} days`), scheduledFor: date.toISOString() });
+  }, "Schedule Shifted", `Moved ${selectedPostIds.length} posts by ${days} days`, "Shift Failed");
 
-  const handleBulkAssignWriter = async (writer: string) => {
-    try {
-      await Promise.all(selectedPostIds.map(async (id) => {
-        const p = posts.find(post => post.id === id);
-        if (p) {
-          const payload = {
-            platformContent: {
-              ...(p.platformContent || {}),
-              assignedWriter: writer,
-              activities: [
-                ...(p.platformContent?.activities || []),
-                {
-                  id: Math.random().toString(36).substring(7),
-                  type: "system",
-                  message: `Assigned writer: ${writer}`,
-                  createdAt: new Date().toISOString()
-                }
-              ]
-            }
-          };
-          await apiFetch(`/social/posts/${id}`, { method: "PUT", body: JSON.stringify(payload) });
-        }
-      }));
-      toast({ title: "Writer Assigned", description: `Assigned ${writer} to ${selectedPostIds.length} posts` });
-      setSelectedPostIds([]);
-      fetchData();
-    } catch (err: any) {
-      toast({ title: "Assign Writer Failed", description: err.message, variant: "destructive" });
-    }
-  };
+  const handleBulkAssignWriter = (writer: string) => runBulk(
+    (id, p) => p && putPost(id, { platformContent: withActivity(p, `Assigned writer: ${writer}`, { assignedWriter: writer }) }),
+    "Writer Assigned", `Assigned ${writer} to ${selectedPostIds.length} posts`, "Assign Writer Failed");
 
   const generateAiCaption = async () => {
     if (!aiPrompt) return;
@@ -1572,118 +1197,11 @@ export default function SocialPublishPage() {
     }
   };
 
-  const togglePlatformSelection = (platformName: string) => {
-    const plat = platformName.toLowerCase();
-    const isSelected = selectedPlatforms.includes(plat);
+  const getClientDetails = (clientId: string) =>
+    clients.find(c => c.id === clientId) || { name: "Unknown Client", company: "Unassigned Client" };
 
-    if (isSelected) {
-      setSelectedPlatforms(prev => prev.filter(p => p !== plat));
-      const accountsOfPlat = accounts.filter(acc => acc.platform.toLowerCase() === plat).map(acc => acc.id);
-      setComposerAccounts(prev => prev.filter(id => !accountsOfPlat.includes(id)));
-      if (activePlatform === plat) {
-        const remaining = selectedPlatforms.filter(p => p !== plat);
-        setActivePlatform(remaining.length > 0 ? remaining[0] : "");
-      }
-    } else {
-      setSelectedPlatforms(prev => [...prev, plat]);
-      const accountsOfPlat = accounts.filter(acc => acc.platform.toLowerCase() === plat).map(acc => acc.id);
-      if (accountsOfPlat.length > 0) {
-        setComposerAccounts(prev => [...prev, ...accountsOfPlat]);
-      }
-      setActivePlatform(plat);
-    }
-  };
-
-  const activeClientName = clients.find(c => c.id === composerClient)?.company || "Acme Agency";
-  const activeClientInitials = activeClientName ? activeClientName.split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() : "AC";
-
-  // Determine if mockup section should be visible
-  const hasUploadedMedia = composerMediaUrls.length > 0 || uploadProgressFiles.some(f => f.status === "uploading" || f.status === "processing");
-
-  // Get current active preview account platform and caption details
-  const previewAccountObj = accounts.find(a => a.id === activePreviewAccount);
-  const getPreviewCaption = () => {
-    if (!previewAccountObj || !previewAccountObj.platform) return composerCaption || "What's on your mind?";
-    const override = platformOverrides[previewAccountObj.platform.toLowerCase()];
-    return override || composerCaption || "What's on your mind?";
-  };
-
-  const getCharLimit = () => {
-    if (!previewAccountObj || !previewAccountObj.platform) return { limit: 3000, label: "" };
-    switch (previewAccountObj.platform.toLowerCase()) {
-      case "x":
-      case "twitter":
-        return { limit: 280, label: "X" };
-      case "pinterest":
-        return { limit: 500, label: "Pinterest" };
-      case "tiktok":
-        return { limit: 2200, label: "TikTok" };
-      case "instagram":
-        return { limit: 2200, label: "Instagram" };
-      default:
-        return { limit: 3000, label: previewAccountObj.displayName };
-    }
-  };
-
-  const getCharLimitForPlatform = (platformName: string) => {
-    if (!platformName) return 3000;
-    switch (platformName.toLowerCase()) {
-      case "x":
-      case "twitter":
-        return 280;
-      case "pinterest":
-        return 500;
-      case "tiktok":
-      case "instagram":
-        return 2200;
-      case "facebook":
-        return 63206;
-      case "threads":
-        return 500;
-      default:
-        return 3000;
-    }
-  };
-
-  const charInfo = getCharLimit();
-
-  // Helper to securely parse JSON media urls safely
-  const getMediaUrls = (post: SocialPost): string[] => {
-    if (!post.mediaUrls) return [];
-    if (Array.isArray(post.mediaUrls)) {
-      return post.mediaUrls.filter(item => typeof item === "string");
-    }
-    if (typeof post.mediaUrls === "string") {
-      try {
-        const parsed = JSON.parse(post.mediaUrls);
-        if (Array.isArray(parsed)) {
-          return parsed.filter(item => typeof item === "string");
-        }
-      } catch (e) { }
-      return [post.mediaUrls];
-    }
-    return [];
-  };
-
-  const getContentTypeLabel = (post: SocialPost) => {
-    const mediaUrls = getMediaUrls(post);
-    if (post.mediaType === "video") {
-      const pc = post.platformContent as any;
-      if (pc?.instagram?.type === "reel") return "Reel";
-      return "Video";
-    }
-    if (mediaUrls.length > 1) return "Carousel";
-    return "Image";
-  };
-
-  const getClientDetails = (clientId: string) => {
-    return clients.find(c => c.id === clientId) || { name: "Unknown Client", company: "Unassigned Client" };
-  };
-
-  const getCampaignName = (campaignId?: string | null) => {
-    if (!campaignId) return "";
-    return campaigns.find(c => c.id === campaignId)?.name || "";
-  };
+  const getCampaignName = (campaignId?: string | null) =>
+    (campaignId && campaigns.find(c => c.id === campaignId)?.name) || "";
 
   const getWriterName = (post: SocialPost) => {
     const writerId = post.platformContent?.assignedWriter;
@@ -1693,121 +1211,61 @@ export default function SocialPublishPage() {
 
   // Filter posts instantly in memory (Sub-millisecond)
   const filteredPosts = useMemo(() => {
-    let result = [...posts];
-
-    // 1. Search Query
-    if (debouncedSearch.trim()) {
-      const q = debouncedSearch.toLowerCase();
-      result = result.filter(post => {
-        const captionMatch = post.caption?.toLowerCase().includes(q);
-        const cDetails = getClientDetails(post.clientId);
-        const clientMatch = cDetails.company?.toLowerCase().includes(q) || cDetails.name?.toLowerCase().includes(q);
-        const campaignMatch = getCampaignName(post.campaignId).toLowerCase().includes(q);
-        return captionMatch || clientMatch || campaignMatch;
-      });
-    }
-
-    // 2. Client Filter
-    if (clientFilter !== "ALL") {
-      result = result.filter(post => post.clientId === clientFilter);
-    }
-
-    // 3. Platform Filter
-    if (platformFilter !== "ALL") {
-      result = result.filter(post =>
-        (post.destinations || []).some(d => d.platform?.toLowerCase() === platformFilter.toLowerCase())
-      );
-    }
-
-    // 4. Status Filter
-    if (statusFilter !== "ALL") {
-      result = result.filter(post => post.status === statusFilter);
-    }
-
-    // 5. Campaign Filter
-    if (campaignFilter !== "ALL") {
-      result = result.filter(post => post.campaignId === campaignFilter);
-    }
-
-    // 6. Content Type Filter
-    if (contentTypeFilter !== "ALL") {
-      result = result.filter(post => getContentTypeLabel(post).toLowerCase() === contentTypeFilter.toLowerCase());
-    }
-
-    // 7. Writer Filter
-    if (writerFilter !== "ALL") {
-      result = result.filter(post => post.platformContent?.assignedWriter === writerFilter);
-    }
-
-    // 8. Date Range Filter
-    if (dateFilter !== "ALL") {
-      const now = new Date();
-      result = result.filter(post => {
-        const dateStr = post.scheduledFor || post.publishedAt || post.createdAt;
-        if (!dateStr) return false;
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return false;
-
-        if (dateFilter === "today") {
-          return d.toDateString() === now.toDateString();
-        } else if (dateFilter === "week") {
-          const oneWeekAgo = new Date();
-          oneWeekAgo.setDate(now.getDate() - 7);
-          return d >= oneWeekAgo && d <= now;
-        } else if (dateFilter === "month") {
-          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-        }
-        return true;
-      });
-    }
-
-    // 9. Sorting
-    result.sort((a, b) => {
-      if (sortBy === "scheduled_desc") {
-        const da = a.scheduledFor ? new Date(a.scheduledFor).getTime() : 0;
-        const db = b.scheduledFor ? new Date(b.scheduledFor).getTime() : 0;
-        return db - da;
-      } else if (sortBy === "scheduled_asc") {
-        const da = a.scheduledFor ? new Date(a.scheduledFor).getTime() : Infinity;
-        const db = b.scheduledFor ? new Date(b.scheduledFor).getTime() : Infinity;
-        return da - db;
-      } else if (sortBy === "created_desc") {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      } else if (sortBy === "created_asc") {
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    const q = debouncedSearch.trim() ? debouncedSearch.toLowerCase() : "";
+    const now = new Date();
+    const inDateRange = (post: SocialPost) => {
+      const dateStr = post.scheduledFor || post.publishedAt || post.createdAt;
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return false;
+      if (dateFilter === "today") return d.toDateString() === now.toDateString();
+      if (dateFilter === "week") {
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(now.getDate() - 7);
+        return d >= oneWeekAgo && d <= now;
       }
-      return 0;
+      if (dateFilter === "month") return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      return true;
+    };
+
+    const result = posts.filter(post => {
+      if (q) {
+        const cDetails = getClientDetails(post.clientId);
+        if (!(post.caption?.toLowerCase().includes(q) || cDetails.company?.toLowerCase().includes(q) ||
+          cDetails.name?.toLowerCase().includes(q) || getCampaignName(post.campaignId).toLowerCase().includes(q))) return false;
+      }
+      return (clientFilter === "ALL" || post.clientId === clientFilter)
+        && (platformFilter === "ALL" || (post.destinations || []).some(d => d.platform?.toLowerCase() === platformFilter.toLowerCase()))
+        && (statusFilter === "ALL" || post.status === statusFilter)
+        && (campaignFilter === "ALL" || post.campaignId === campaignFilter)
+        && (contentTypeFilter === "ALL" || getContentTypeLabel(post).toLowerCase() === contentTypeFilter.toLowerCase())
+        && (writerFilter === "ALL" || post.platformContent?.assignedWriter === writerFilter)
+        && (dateFilter === "ALL" || inDateRange(post));
     });
 
-    return result;
+    const time = (s: string | null, fallback: number) => (s ? new Date(s).getTime() : fallback);
+    return result.sort((a, b) => {
+      if (sortBy === "scheduled_desc") return time(b.scheduledFor, 0) - time(a.scheduledFor, 0);
+      if (sortBy === "scheduled_asc") return time(a.scheduledFor, Infinity) - time(b.scheduledFor, Infinity);
+      if (sortBy === "created_desc") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (sortBy === "created_asc") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      return 0;
+    });
   }, [posts, debouncedSearch, clientFilter, platformFilter, statusFilter, campaignFilter, contentTypeFilter, writerFilter, dateFilter, sortBy, campaigns]);
 
   // Unscheduled drafts list (drafts with no date)
-  const unscheduledDrafts = useMemo(() => {
-    return posts.filter(p => !p.scheduledFor && p.status === "DRAFT");
-  }, [posts]);
+  const unscheduledDrafts = useMemo(() => posts.filter(p => !p.scheduledFor && p.status === "DRAFT"), [posts]);
 
-  // Calendar cells generation
-  const calendarCells = useMemo(() => {
-    return buildCalendarGrid(calendarDate.getMonth(), calendarDate.getFullYear());
-  }, [calendarDate]);
+  const calendarCells = useMemo(() => buildCalendarGrid(calendarDate.getMonth(), calendarDate.getFullYear()), [calendarDate]);
 
-  const activePost = useMemo(() => {
-    return posts.find(p => p.id === activePostId) || null;
-  }, [posts, activePostId]);
+  const activePost = useMemo(() => posts.find(p => p.id === activePostId) || null, [posts, activePostId]);
 
   // Initialize reschedule inputs when panel post changes
   useEffect(() => {
-    if (activePost) {
-      if (activePost.scheduledFor) {
-        const dateObj = new Date(activePost.scheduledFor);
-        setRescheduleDate(dateObj.toISOString().split("T")[0]);
-        setRescheduleTime(dateObj.toTimeString().slice(0, 5));
-      } else {
-        setRescheduleDate("");
-        setRescheduleTime("");
-      }
-    }
+    if (!activePost) return;
+    const dateObj = activePost.scheduledFor ? new Date(activePost.scheduledFor) : null;
+    setRescheduleDate(dateObj ? dateObj.toISOString().split("T")[0] : "");
+    setRescheduleTime(dateObj ? dateObj.toTimeString().slice(0, 5) : "");
   }, [activePost]);
 
   const resetAllFilters = () => {
@@ -1822,6 +1280,7 @@ export default function SocialPublishPage() {
     setSortBy("scheduled_desc");
   };
 
+  const activeMedia = activePost ? getMediaUrls(activePost) : [];
 
   return (
     <div className="flex flex-col min-h-screen text-left gap-0">
@@ -1855,35 +1314,30 @@ export default function SocialPublishPage() {
       {/* ── TABS + VIEW TOGGLE ── */}
       <div className="flex justify-between items-center border-b border-border/60 pb-0 shrink-0 mb-3">
         <div className="flex">
-          <button
-            onClick={() => setActiveTab("posts")}
-            className={`px-5 py-3 text-sm font-semibold border-b-2 -mb-px transition-all flex items-center gap-2 ${activeTab === "posts" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-          >
-            <Grid className="h-4 w-4" />
-            Posts
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${activeTab === "posts" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-              {filteredPosts.length}
-            </span>
-          </button>
-          <button
-            onClick={() => setActiveTab("calendar")}
-            className={`px-5 py-3 text-sm font-semibold border-b-2 -mb-px transition-all flex items-center gap-2 ${activeTab === "calendar" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-          >
-            <Calendar className="h-4 w-4" />
-            Calendar
-          </button>
+          {([["posts", Grid, "Posts"], ["calendar", Calendar, "Calendar"]] as const).map(([tab, Icon, label]) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-5 py-3 text-sm font-semibold border-b-2 -mb-px transition-all flex items-center gap-2 ${activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+            >
+              <Icon className="h-4 w-4" />
+              {label}
+              {tab === "posts" && (
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${activeTab === "posts" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                  {filteredPosts.length}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
         <div className="flex items-center gap-2 pb-2">
           {activeTab === "posts" ? (
             <div className="flex border border-border rounded-lg p-0.5 bg-muted/30">
-              <button onClick={() => setViewMode("grid")} className={`p-1.5 rounded-md transition-all ${viewMode === "grid" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`} title="Grid View">
-                <Grid className="h-3.5 w-3.5" />
-              </button>
-              <button onClick={() => setViewMode("list")} className={`p-1.5 rounded-md transition-all ${viewMode === "list" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`} title="List View">
-                <List className="h-3.5 w-3.5" />
-              </button>
+              {([["grid", Grid, "Grid View"], ["list", List, "List View"]] as const).map(([mode, Icon, title]) => (
+                <button key={mode} onClick={() => setViewMode(mode)} className={`p-1.5 rounded-md transition-all ${viewMode === mode ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`} title={title}>
+                  <Icon className="h-3.5 w-3.5" />
+                </button>
+              ))}
             </div>
           ) : (
             <div className="flex border border-border rounded-lg p-0.5 bg-muted/30 text-xs font-semibold">
@@ -1907,79 +1361,16 @@ export default function SocialPublishPage() {
               className="pl-9 h-8 text-xs rounded-lg border-border/50 bg-muted/20"
             />
           </div>
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger className="h-8 text-xs rounded-lg border-border/50 bg-muted/20 w-auto min-w-[100px]">
-              <SelectValue placeholder="Client" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Clients</SelectItem>
-              {clientsWithAccounts.map(c => <SelectItem key={c.id} value={c.id}>{c.company || c.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={platformFilter} onValueChange={setPlatformFilter}>
-            <SelectTrigger className="h-8 text-xs rounded-lg border-border/50 bg-muted/20 w-auto min-w-[100px]">
-              <SelectValue placeholder="Platform" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Platforms</SelectItem>
-              {["instagram", "facebook", "linkedin", "tiktok", "youtube", "threads", "x"].map(p => (
-                <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-8 text-xs rounded-lg border-border/50 bg-muted/20 w-auto min-w-[100px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Statuses</SelectItem>
-              {["DRAFT", "AWAITING_APPROVAL", "SCHEDULED", "PUBLISHED", "PARTIAL", "FAILED"].map(s => (
-                <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={campaignFilter} onValueChange={setCampaignFilter}>
-            <SelectTrigger className="h-8 text-xs rounded-lg border-border/50 bg-muted/20 w-auto min-w-[100px]">
-              <SelectValue placeholder="Campaign" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Campaigns</SelectItem>
-              {campaigns.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={contentTypeFilter} onValueChange={setContentTypeFilter}>
-            <SelectTrigger className="h-8 text-xs rounded-lg border-border/50 bg-muted/20 w-auto min-w-[100px]">
-              <SelectValue placeholder="Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Types</SelectItem>
-              {["image", "video", "reel", "story", "carousel"].map(t => (
-                <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={dateFilter} onValueChange={setDateFilter}>
-            <SelectTrigger className="h-8 text-xs rounded-lg border-border/50 bg-muted/20 w-auto min-w-[100px]">
-              <SelectValue placeholder="Date" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Time</SelectItem>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="week">This Week</SelectItem>
-              <SelectItem value="month">This Month</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="h-8 text-xs rounded-lg border-border/50 bg-muted/20 w-auto min-w-[110px]">
-              <SelectValue placeholder="Sort By" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="scheduled_desc">Newest Scheduled</SelectItem>
-              <SelectItem value="scheduled_asc">Oldest Scheduled</SelectItem>
-              <SelectItem value="created_desc">Recently Created</SelectItem>
-              <SelectItem value="created_asc">Oldest Created</SelectItem>
-            </SelectContent>
-          </Select>
+          <OptionSelect value={clientFilter} onChange={setClientFilter} placeholder="Client"
+            options={[["ALL", "All Clients"], ...clientsWithAccounts.map((c): Option => [c.id, c.company || c.name])]} />
+          <OptionSelect value={platformFilter} onChange={setPlatformFilter} placeholder="Platform" options={PLATFORM_OPTIONS} />
+          <OptionSelect value={statusFilter} onChange={setStatusFilter} placeholder="Status" options={STATUS_OPTIONS} />
+          <OptionSelect value={campaignFilter} onChange={setCampaignFilter} placeholder="Campaign"
+            options={[["ALL", "All Campaigns"], ...campaigns.map((c): Option => [c.id, c.name])]} />
+          <OptionSelect value={contentTypeFilter} onChange={setContentTypeFilter} placeholder="Type" options={TYPE_OPTIONS} />
+          <OptionSelect value={dateFilter} onChange={setDateFilter} placeholder="Date" options={DATE_OPTIONS} />
+          <OptionSelect value={sortBy} onChange={setSortBy} placeholder="Sort By" options={SORT_OPTIONS}
+            triggerClassName="h-8 text-xs rounded-lg border-border/50 bg-muted/20 w-auto min-w-[110px]" />
           {writerFilter !== "ALL" || clientFilter !== "ALL" || platformFilter !== "ALL" || statusFilter !== "ALL" || campaignFilter !== "ALL" || contentTypeFilter !== "ALL" || dateFilter !== "ALL" || searchQuery ? (
             <Button variant="ghost" size="sm" onClick={resetAllFilters} className="h-8 text-xs font-semibold text-muted-foreground hover:text-foreground px-2 ml-auto">
               Reset
@@ -2046,54 +1437,46 @@ export default function SocialPublishPage() {
         <div className="flex-1 min-w-0">
           {isLoading ? (
             <CardGridSkeleton />
+          ) : activeTab === "posts" ? (
+            <PostGrid
+              filteredPosts={filteredPosts}
+              viewMode={viewMode}
+              selectedPostIds={selectedPostIds}
+              activePostId={activePostId}
+              setActivePostId={setActivePostId}
+              setIsReschedulingOpen={setIsReschedulingOpen}
+              setIsComposerOpen={setIsComposerOpen}
+              resetAllFilters={resetAllFilters}
+              resetComposer={resetComposer}
+              handleToggleSelect={handleToggleSelect}
+              handleEditPost={handleEditPost}
+              handleDuplicatePost={handleDuplicatePost}
+              handleDeletePost={handleDeletePost}
+              getMediaUrls={getMediaUrls}
+              getClientDetails={getClientDetails}
+              getContentTypeLabel={getContentTypeLabel}
+              getCampaignName={getCampaignName}
+              getWriterName={getWriterName}
+              getPlatformIcon={getPlatformIcon}
+            />
           ) : (
-            <>
-              {/* ── POSTS LIST ── */}
-              {activeTab === "posts" && (
-                <PostGrid
-                  filteredPosts={filteredPosts}
-                  viewMode={viewMode}
-                  selectedPostIds={selectedPostIds}
-                  activePostId={activePostId}
-                  setActivePostId={setActivePostId}
-                  setIsReschedulingOpen={setIsReschedulingOpen}
-                  setIsComposerOpen={setIsComposerOpen}
-                  resetAllFilters={resetAllFilters}
-                  resetComposer={resetComposer}
-                  handleToggleSelect={handleToggleSelect}
-                  handleEditPost={handleEditPost}
-                  handleDuplicatePost={handleDuplicatePost}
-                  handleDeletePost={handleDeletePost}
-                  getMediaUrls={getMediaUrls}
-                  getClientDetails={getClientDetails}
-                  getContentTypeLabel={getContentTypeLabel}
-                  getCampaignName={getCampaignName}
-                  getWriterName={getWriterName}
-                  getPlatformIcon={getPlatformIcon}
-                />
-              )}
-
-              {/* ── CALENDAR VIEW ── */}
-              {activeTab === "calendar" && (
-                <CalendarViews
-                  calendarView={calendarView}
-                  calendarDate={calendarDate}
-                  setCalendarDate={setCalendarDate}
-                  calendarCells={calendarCells}
-                  filteredPosts={filteredPosts}
-                  activePostId={activePostId}
-                  setActivePostId={setActivePostId}
-                  resetComposer={resetComposer}
-                  setComposerScheduledFor={setComposerScheduledFor}
-                  setPublishNow={setPublishNow}
-                  setIsComposerOpen={setIsComposerOpen}
-                  handleReschedulePost={handleReschedulePost}
-                  handleReschedulePostWithTime={handleReschedulePostWithTime}
-                  getClientDetails={getClientDetails}
-                  getPlatformIcon={getPlatformIcon}
-                />
-              )}
-            </>
+            <CalendarViews
+              calendarView={calendarView}
+              calendarDate={calendarDate}
+              setCalendarDate={setCalendarDate}
+              calendarCells={calendarCells}
+              filteredPosts={filteredPosts}
+              activePostId={activePostId}
+              setActivePostId={setActivePostId}
+              resetComposer={resetComposer}
+              setComposerScheduledFor={setComposerScheduledFor}
+              setPublishNow={setPublishNow}
+              setIsComposerOpen={setIsComposerOpen}
+              handleReschedulePost={handleReschedulePost}
+              handleReschedulePostWithTime={handleReschedulePostWithTime}
+              getClientDetails={getClientDetails}
+              getPlatformIcon={getPlatformIcon}
+            />
           )}
         </div>
 
@@ -2123,30 +1506,26 @@ export default function SocialPublishPage() {
             })()}
 
             {/* Media */}
-            {getMediaUrls(activePost).length > 0 && (
+            {activeMedia.length > 0 && (
               <div className="aspect-video bg-muted border border-border/40 rounded-xl overflow-hidden">
                 {activePost.mediaType === "video" ? (
-                  <video src={getMediaUrls(activePost)[0]} className="w-full h-full object-cover" controls preload="metadata" />
+                  <video src={activeMedia[0]} className="w-full h-full object-cover" controls preload="metadata" />
                 ) : (
-                  <img src={getMediaUrls(activePost)[0]} className="w-full h-full object-cover" alt="Media preview" />
+                  <img src={activeMedia[0]} className="w-full h-full object-cover" alt="Media preview" />
                 )}
               </div>
             )}
 
             {/* Meta */}
             <div className="grid grid-cols-2 gap-2">
-              <div className="bg-muted/20 border border-border/30 rounded-lg p-2.5">
-                <span className="text-[9px] font-bold text-muted-foreground/70 uppercase tracking-wider block">Campaign</span>
-                <span className="text-xs font-semibold text-foreground block mt-0.5 truncate">
-                  {getCampaignName(activePost.campaignId) || <span className="italic text-muted-foreground/40 font-normal">None</span>}
-                </span>
-              </div>
-              <div className="bg-muted/20 border border-border/30 rounded-lg p-2.5">
-                <span className="text-[9px] font-bold text-muted-foreground/70 uppercase tracking-wider block">Writer</span>
-                <span className="text-xs font-semibold text-foreground block mt-0.5 truncate">
-                  {getWriterName(activePost) || <span className="italic text-muted-foreground/40 font-normal">Unassigned</span>}
-                </span>
-              </div>
+              {[["Campaign", getCampaignName(activePost.campaignId), "None"], ["Writer", getWriterName(activePost), "Unassigned"]].map(([label, value, empty]) => (
+                <div key={label} className="bg-muted/20 border border-border/30 rounded-lg p-2.5">
+                  <span className="text-[9px] font-bold text-muted-foreground/70 uppercase tracking-wider block">{label}</span>
+                  <span className="text-xs font-semibold text-foreground block mt-0.5 truncate">
+                    {value || <span className="italic text-muted-foreground/40 font-normal">{empty}</span>}
+                  </span>
+                </div>
+              ))}
             </div>
 
             {/* Caption */}
@@ -2196,25 +1575,17 @@ export default function SocialPublishPage() {
             <div>
               <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest block border-b border-border/20 pb-1 mb-2">Timeline</span>
               <div className="space-y-1.5 text-xs pl-4 border-l-2 border-border/30 ml-1">
-                <div className="relative">
-                  <span className="absolute -left-[17px] top-1 h-2 w-2 rounded-full bg-slate-400 border-2 border-background" />
-                  <span className="text-muted-foreground">Created · </span>
-                  <span className="font-semibold text-foreground">{new Date(activePost.createdAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
-                </div>
-                {activePost.scheduledFor && (
-                  <div className="relative">
-                    <span className="absolute -left-[17px] top-1 h-2 w-2 rounded-full bg-amber-500 border-2 border-background" />
-                    <span className="text-muted-foreground">Scheduled · </span>
-                    <span className="font-semibold text-foreground">{new Date(activePost.scheduledFor).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
+                {([
+                  ["Created", activePost.createdAt, "absolute -left-[17px] top-1 h-2 w-2 rounded-full bg-slate-400 border-2 border-background"],
+                  ["Scheduled", activePost.scheduledFor, "absolute -left-[17px] top-1 h-2 w-2 rounded-full bg-amber-500 border-2 border-background"],
+                  ["Published", activePost.publishedAt, "absolute -left-[17px] top-1 h-2 w-2 rounded-full bg-emerald-500 border-2 border-background"],
+                ] as const).map(([label, date, dot]) => (label === "Created" || date) && (
+                  <div key={label} className="relative">
+                    <span className={dot} />
+                    <span className="text-muted-foreground">{label} · </span>
+                    <span className="font-semibold text-foreground">{new Date(date as string).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
                   </div>
-                )}
-                {activePost.publishedAt && (
-                  <div className="relative">
-                    <span className="absolute -left-[17px] top-1 h-2 w-2 rounded-full bg-emerald-500 border-2 border-background" />
-                    <span className="text-muted-foreground">Published · </span>
-                    <span className="font-semibold text-foreground">{new Date(activePost.publishedAt).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
-                  </div>
-                )}
+                ))}
               </div>
             </div>
 
@@ -2316,8 +1687,8 @@ export default function SocialPublishPage() {
             <span className="text-xs font-semibold text-slate-300">selected</span>
           </div>
           <div className="flex items-center gap-2">
-            <Select onValueChange={v => { handleBulkChangeStatus(v); }}>
-              <SelectTrigger size="xs" className="w-auto bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700 hover:border-slate-600 shadow-none">
+            <Select onValueChange={handleBulkChangeStatus}>
+              <SelectTrigger size="xs" className={BULK_TRIGGER}>
                 <SelectValue placeholder="Change Status..." />
               </SelectTrigger>
               <SelectContent>
@@ -2327,8 +1698,8 @@ export default function SocialPublishPage() {
                 {["DRAFT", "AWAITING_APPROVAL", "SCHEDULED"].map(s => <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select onValueChange={v => { handleBulkMoveSchedule(Number(v)); }}>
-              <SelectTrigger size="xs" className="w-auto bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700 hover:border-slate-600 shadow-none">
+            <Select onValueChange={v => handleBulkMoveSchedule(Number(v))}>
+              <SelectTrigger size="xs" className={BULK_TRIGGER}>
                 <SelectValue placeholder="Shift Schedule..." />
               </SelectTrigger>
               <SelectContent>
@@ -2336,8 +1707,8 @@ export default function SocialPublishPage() {
                 <SelectItem value="-1">-1 Day</SelectItem><SelectItem value="-7">-1 Week</SelectItem>
               </SelectContent>
             </Select>
-            <Select onValueChange={v => { handleBulkAssignWriter(v); }}>
-              <SelectTrigger size="xs" className="w-auto bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700 hover:border-slate-600 shadow-none">
+            <Select onValueChange={handleBulkAssignWriter}>
+              <SelectTrigger size="xs" className={BULK_TRIGGER}>
                 <SelectValue placeholder="Assign Writer..." />
               </SelectTrigger>
               <SelectContent>
@@ -2429,6 +1800,8 @@ export default function SocialPublishPage() {
         setPinterestBoard={setPinterestBoard}
         setPinterestType={setPinterestType}
         tiktokPostMode={tiktokPostMode}
+        coverTimeMs={coverTimeMs}
+        setCoverTimeMs={setCoverTimeMs}
         setTiktokPostMode={setTiktokPostMode}
         instagramMusic={instagramMusic}
         setInstagramMusic={setInstagramMusic}
@@ -2458,14 +1831,13 @@ export default function SocialPublishPage() {
         isUploading={isUploading}
       />
 
-
       {/* Social Publishing Progress Modal */}
       <PublishProgressDialog
         open={isPublishProgressOpen}
         onClose={() => setIsPublishProgressOpen(false)}
         status={publishStatus}
         elapsedSeconds={elapsedSeconds}
-        isTikTokDraft={(dest) => isTikTokDraft(dest)}
+        isTikTokDraft={isTikTokDraft}
       />
 
       {/* AI Caption Generator Modal */}
@@ -2485,18 +1857,13 @@ export default function SocialPublishPage() {
             </div>
             <div className="space-y-2">
               <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Optimize Tone For</label>
-              <Select value={aiTargetPlatform} onValueChange={setAiTargetPlatform}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="instagram">Instagram (Engaging, hashtags, spacing)</SelectItem>
-                  <SelectItem value="facebook">Facebook (Friendly, informational)</SelectItem>
-                  <SelectItem value="linkedin">LinkedIn (Professional, thought-provoking)</SelectItem>
-                  <SelectItem value="x">X / Twitter (Short, high impact)</SelectItem>
-                  <SelectItem value="tiktok">TikTok (Trendy, short, action-focused)</SelectItem>
-                </SelectContent>
-              </Select>
+              <OptionSelect value={aiTargetPlatform} onChange={setAiTargetPlatform} placeholder="" triggerClassName="w-full" options={[
+                ["instagram", "Instagram (Engaging, hashtags, spacing)"],
+                ["facebook", "Facebook (Friendly, informational)"],
+                ["linkedin", "LinkedIn (Professional, thought-provoking)"],
+                ["x", "X / Twitter (Short, high impact)"],
+                ["tiktok", "TikTok (Trendy, short, action-focused)"],
+              ]} />
             </div>
           </div>
           <DialogFooter>
@@ -2559,10 +1926,68 @@ export interface PreviewCardProps {
   postType?: string;
 }
 
+const VERTICAL_FRAME = "bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800";
+const VERTICAL_FRAME_LEFT = "bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800 text-left";
+const PORTRAIT = { aspectRatio: "9/16" };
+
+/** Feed media gets player controls; full-screen formats autoplay on loop. */
+function PreviewMedia({ src, mediaType, className, alt, feed, style }: {
+  src: string; mediaType: string; className: string; alt: string; feed?: boolean; style?: React.CSSProperties;
+}) {
+  return mediaType === "video"
+    ? <video src={src} controls={feed} className={className} style={style} muted loop={!feed} autoPlay={!feed} playsInline />
+    : <img src={src} className={className} style={style} alt={alt} />;
+}
+
+function NoMedia({ icon: Icon, iconClassName, label }: { icon: LucideIcon; iconClassName: string; label: string }) {
+  return <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><Icon className={iconClassName} /><span className="text-[10px]">{label}</span></div>;
+}
+
+type FrameProps = { image: string | null; mediaType: string; avatar: string; name: string; text: string };
+
+function ReelPreview({ image, mediaType, avatar, name, text, mediaClassName, alt, gradient, badge, actionsClassName }: FrameProps & {
+  mediaClassName: string; alt: string; gradient: string; badge: React.ReactNode; actionsClassName: string;
+}) {
+  return (
+    <div className={VERTICAL_FRAME} style={PORTRAIT}>
+      {image ? <PreviewMedia src={image} mediaType={mediaType} className={mediaClassName} alt={alt} />
+        : <NoMedia icon={Play} iconClassName="h-10 w-10" label="Upload a video for Reel" />}
+      <div className={gradient} />
+      {badge}
+      <div className={actionsClassName}>
+        <img src={avatar} className="w-9 h-9 rounded-full border-2 border-white" alt="Avatar" />
+        <span className="flex flex-col items-center gap-0.5 text-[10px]"><Heart size={22} />Like</span>
+        <span className="flex flex-col items-center gap-0.5 text-[10px]"><MessageCircle size={22} />Comment</span>
+        <span className="flex flex-col items-center gap-0.5 text-[10px]"><Share2 size={22} />Share</span>
+      </div>
+      <div className="absolute left-3 bottom-4 right-16 text-white text-xs z-10">
+        <div className="font-semibold mb-1">{name}</div>
+        <div className="line-clamp-3 leading-snug whitespace-pre-wrap opacity-90">{text}</div>
+      </div>
+    </div>
+  );
+}
+
+function StoryPreview({ image, mediaType, avatar, name, alt, gradient, progress, reply }: Omit<FrameProps, "text"> & {
+  alt: string; gradient: string; progress: string; reply: string;
+}) {
+  return (
+    <div className={VERTICAL_FRAME} style={PORTRAIT}>
+      {image ? <PreviewMedia src={image} mediaType={mediaType} className="absolute inset-0 w-full h-full object-cover" alt={alt} />
+        : <NoMedia icon={ImageIcon} iconClassName="h-10 w-10" label="Upload media for Story" />}
+      <div className={gradient} />
+      <div className="absolute top-3 left-3 right-3 h-0.5 bg-white/30 rounded-full z-10"><div className={progress} /></div>
+      <div className="absolute top-6 left-3 flex items-center gap-2 z-10"><img src={avatar} className="w-8 h-8 rounded-full border-2 border-white" alt="Avatar" /><span className="text-white text-xs font-semibold">{name}</span></div>
+      <div className="absolute bottom-6 left-3 right-3 z-10"><div className="bg-white/20 backdrop-blur-sm rounded-full px-4 py-2 text-white text-xs text-center border border-white/30">{reply}</div></div>
+    </div>
+  );
+}
+
 export function PreviewCard({ platform, text, image, mediaType = "image", accountName, platformUsername, avatarUrl, postType = "post" }: PreviewCardProps) {
   const avatar = avatarUrl || "https://api.dicebear.com/7.x/identicon/svg?seed=hirdanmarketing";
   const displayName = accountName || "Your Account";
   const handle = platformUsername || displayName.toLowerCase().replace(/\s+/g, "");
+  const frame = { image, mediaType, avatar, text };
 
   if (platform === "x" || platform === "twitter") {
     return (
@@ -2572,13 +1997,7 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
           <div className="flex-1 min-w-0">
             <div className="text-sm"><span className="font-semibold text-neutral-900">{displayName}</span>{" "}<span className="text-neutral-400">@{handle}</span></div>
             <p className="text-sm text-neutral-800 mt-1 whitespace-pre-wrap">{text}</p>
-            {image && (
-              mediaType === "video" ? (
-                <video src={image} controls className="mt-3 rounded-xl w-full object-cover max-h-64" muted playsInline />
-              ) : (
-                <img src={image} className="mt-3 rounded-xl w-full object-cover max-h-64" alt="X preview" />
-              )
-            )}
+            {image && <PreviewMedia feed src={image} mediaType={mediaType} className="mt-3 rounded-xl w-full object-cover max-h-64" alt="X preview" />}
             <div className="flex justify-between mt-3 text-neutral-400 max-w-[280px]">
               <MessageCircle size={16} /><Repeat2 size={16} /><Heart size={16} /><BarChart2 size={16} /><Bookmark size={16} /><Share2 size={16} />
             </div>
@@ -2591,48 +2010,16 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
   if (platform === "facebook") {
     if (postType === "reel") {
       return (
-        <div className="bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800" style={{ aspectRatio: "9/16" }}>
-          {image ? (
-            mediaType === "video" ? (
-              <video src={image} className="absolute inset-0 w-full h-full object-cover opacity-80" muted loop autoPlay playsInline />
-            ) : (
-              <img src={image} className="absolute inset-0 w-full h-full object-cover opacity-80" alt="Facebook Reel" />
-            )
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><Play className="h-10 w-10" /><span className="text-[10px]">Upload a video for Reel</span></div>
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
-          <div className="absolute top-4 left-4 text-white text-xs font-bold flex items-center gap-1.5 z-10"><FacebookGlyph className="w-4 h-4" /><span>Reels</span></div>
-          <div className="absolute right-3 bottom-24 flex flex-col items-center gap-4 text-white z-10">
-            <img src={avatar} className="w-9 h-9 rounded-full border-2 border-white" alt="Avatar" />
-            <span className="flex flex-col items-center gap-0.5 text-[10px]"><Heart size={22} />Like</span>
-            <span className="flex flex-col items-center gap-0.5 text-[10px]"><MessageCircle size={22} />Comment</span>
-            <span className="flex flex-col items-center gap-0.5 text-[10px]"><Share2 size={22} />Share</span>
-          </div>
-          <div className="absolute left-3 bottom-4 right-16 text-white text-xs z-10">
-            <div className="font-semibold mb-1">{displayName}</div>
-            <div className="line-clamp-3 leading-snug whitespace-pre-wrap opacity-90">{text}</div>
-          </div>
-        </div>
+        <ReelPreview {...frame} name={displayName} mediaClassName="absolute inset-0 w-full h-full object-cover opacity-80" alt="Facebook Reel"
+          gradient="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20"
+          badge={<div className="absolute top-4 left-4 text-white text-xs font-bold flex items-center gap-1.5 z-10"><FacebookGlyph className="w-4 h-4" /><span>Reels</span></div>}
+          actionsClassName="absolute right-3 bottom-24 flex flex-col items-center gap-4 text-white z-10" />
       );
     }
     if (postType === "story") {
       return (
-        <div className="bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800" style={{ aspectRatio: "9/16" }}>
-          {image ? (
-            mediaType === "video" ? (
-              <video src={image} className="absolute inset-0 w-full h-full object-cover" muted loop autoPlay playsInline />
-            ) : (
-              <img src={image} className="absolute inset-0 w-full h-full object-cover" alt="Facebook Story" />
-            )
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><ImageIcon className="h-10 w-10" /><span className="text-[10px]">Upload media for Story</span></div>
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/30" />
-          <div className="absolute top-3 left-3 right-3 h-0.5 bg-white/30 rounded-full z-10"><div className="h-full w-1/3 bg-white rounded-full" /></div>
-          <div className="absolute top-6 left-3 flex items-center gap-2 z-10"><img src={avatar} className="w-8 h-8 rounded-full border-2 border-white" alt="Avatar" /><span className="text-white text-xs font-semibold">{displayName}</span></div>
-          <div className="absolute bottom-6 left-3 right-3 z-10"><div className="bg-white/20 backdrop-blur-sm rounded-full px-4 py-2 text-white text-xs text-center border border-white/30">Reply to {displayName}...</div></div>
-        </div>
+        <StoryPreview {...frame} name={displayName} alt="Facebook Story" gradient="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/30"
+          progress="h-full w-1/3 bg-white rounded-full" reply={`Reply to ${displayName}...`} />
       );
     }
     return (
@@ -2642,13 +2029,7 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
           <div><div className="text-sm font-semibold text-neutral-900">{displayName}</div><div className="text-xs text-neutral-400">Just Now · 🌐</div></div>
         </div>
         <p className="px-4 pb-3 text-sm text-neutral-800 whitespace-pre-wrap">{text}</p>
-        {image && (
-          mediaType === "video" ? (
-            <video src={image} controls className="w-full object-cover max-h-64" muted playsInline />
-          ) : (
-            <img src={image} className="w-full object-cover max-h-64" alt="Facebook preview" />
-          )
-        )}
+        {image && <PreviewMedia feed src={image} mediaType={mediaType} className="w-full object-cover max-h-64" alt="Facebook preview" />}
         <div className="flex justify-around py-2 border-t border-neutral-100 text-sm text-neutral-500 font-medium bg-neutral-50/50">
           <span className="flex items-center gap-1"><ThumbsUp size={15} />Like</span>
           <span className="flex items-center gap-1"><MessageCircle size={15} />Comment</span>
@@ -2661,48 +2042,16 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
   if (platform === "instagram") {
     if (postType === "reel") {
       return (
-        <div className="bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800" style={{ aspectRatio: "9/16" }}>
-          {image ? (
-            mediaType === "video" ? (
-              <video src={image} className="absolute inset-0 w-full h-full object-cover opacity-90" muted loop autoPlay playsInline />
-            ) : (
-              <img src={image} className="absolute inset-0 w-full h-full object-cover opacity-90" alt="Instagram Reel" />
-            )
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><Play className="h-10 w-10" /><span className="text-[10px]">Upload a video for Reel</span></div>
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-          <div className="absolute top-3 left-3 text-white text-xs font-bold flex items-center gap-1 z-10"><InstagramGlyph className="w-4 h-4" />Reels</div>
-          <div className="absolute right-3 bottom-20 flex flex-col items-center gap-4 text-white z-10">
-            <img src={avatar} className="w-9 h-9 rounded-full border-2 border-white" alt="Avatar" />
-            <span className="flex flex-col items-center gap-0.5 text-[10px]"><Heart size={22} />Like</span>
-            <span className="flex flex-col items-center gap-0.5 text-[10px]"><MessageCircle size={22} />Comment</span>
-            <span className="flex flex-col items-center gap-0.5 text-[10px]"><Share2 size={22} />Share</span>
-          </div>
-          <div className="absolute left-3 bottom-4 right-16 text-white text-xs z-10">
-            <div className="font-semibold mb-1">@{handle}</div>
-            <div className="line-clamp-3 leading-snug whitespace-pre-wrap opacity-90">{text}</div>
-          </div>
-        </div>
+        <ReelPreview {...frame} name={`@${handle}`} mediaClassName="absolute inset-0 w-full h-full object-cover opacity-90" alt="Instagram Reel"
+          gradient="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent"
+          badge={<div className="absolute top-3 left-3 text-white text-xs font-bold flex items-center gap-1 z-10"><InstagramGlyph className="w-4 h-4" />Reels</div>}
+          actionsClassName="absolute right-3 bottom-20 flex flex-col items-center gap-4 text-white z-10" />
       );
     }
     if (postType === "story") {
       return (
-        <div className="bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800" style={{ aspectRatio: "9/16" }}>
-          {image ? (
-            mediaType === "video" ? (
-              <video src={image} className="absolute inset-0 w-full h-full object-cover" muted loop autoPlay playsInline />
-            ) : (
-              <img src={image} className="absolute inset-0 w-full h-full object-cover" alt="Instagram Story" />
-            )
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><ImageIcon className="h-10 w-10" /><span className="text-[10px]">Upload media for Story</span></div>
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/30" />
-          <div className="absolute top-3 left-3 right-3 h-0.5 bg-white/30 rounded-full z-10"><div className="h-full w-1/2 bg-white rounded-full" /></div>
-          <div className="absolute top-6 left-3 flex items-center gap-2 z-10"><img src={avatar} className="w-8 h-8 rounded-full border-2 border-white" alt="Avatar" /><span className="text-white text-xs font-semibold">@{handle}</span></div>
-          <div className="absolute bottom-6 left-3 right-3 z-10"><div className="bg-white/20 backdrop-blur-sm rounded-full px-4 py-2 text-white text-xs text-center border border-white/30">Send message...</div></div>
-        </div>
+        <StoryPreview {...frame} name={`@${handle}`} alt="Instagram Story" gradient="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/30"
+          progress="h-full w-1/2 bg-white rounded-full" reply="Send message..." />
       );
     }
     return (
@@ -2711,15 +2060,8 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
           <div className="flex items-center gap-2"><img src={avatar} className="w-8 h-8 rounded-full" alt="Avatar" /><span className="text-sm font-semibold">@{handle}</span></div>
           <MoreHorizontal size={16} className="text-neutral-500" />
         </div>
-        {image ? (
-          mediaType === "video" ? (
-            <video src={image} controls className="w-full aspect-square object-cover" muted playsInline />
-          ) : (
-            <img src={image} className="w-full aspect-square object-cover" alt="Instagram preview" />
-          )
-        ) : (
-          <div className="w-full aspect-square bg-neutral-100 flex items-center justify-center text-neutral-300"><ImageIcon size={36} /></div>
-        )}
+        {image ? <PreviewMedia feed src={image} mediaType={mediaType} className="w-full aspect-square object-cover" alt="Instagram preview" />
+          : <div className="w-full aspect-square bg-neutral-100 flex items-center justify-center text-neutral-300"><ImageIcon size={36} /></div>}
         <div className="flex items-center gap-3 px-3 pt-3 text-neutral-700"><Heart size={19} /><MessageCircle size={19} /><Send size={19} /><div className="flex-1" /><Bookmark size={19} /></div>
         <p className="px-3 pb-3 pt-1 text-sm"><span className="font-semibold mr-1.5">@{handle}</span><span className="whitespace-pre-wrap">{text}</span></p>
       </div>
@@ -2734,13 +2076,7 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
           <div><div className="text-sm font-semibold text-neutral-900">{displayName}</div><div className="text-xs text-neutral-400">1h · 🌐</div></div>
         </div>
         <p className="text-sm text-neutral-800 mb-3 whitespace-pre-wrap">{text}</p>
-        {image && (
-          mediaType === "video" ? (
-            <video src={image} controls className="w-full rounded-lg object-cover max-h-64" muted playsInline />
-          ) : (
-            <img src={image} className="w-full rounded-lg object-cover max-h-64" alt="LinkedIn preview" />
-          )
-        )}
+        {image && <PreviewMedia feed src={image} mediaType={mediaType} className="w-full rounded-lg object-cover max-h-64" alt="LinkedIn preview" />}
         <div className="flex justify-around pt-3 mt-3 border-t border-neutral-100 text-xs text-neutral-500">
           <span className="flex flex-col items-center gap-1"><ThumbsUp size={16} />Like</span>
           <span className="flex flex-col items-center gap-1"><MessageCircle size={16} />Comment</span>
@@ -2753,21 +2089,14 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
 
   if (platform === "tiktok") {
     return (
-      <div className="bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800 text-left" style={{ aspectRatio: "9/16" }}>
+      <div className={VERTICAL_FRAME_LEFT} style={PORTRAIT}>
         <div className="flex justify-center gap-6 pt-4 text-white text-xs relative z-10">
           <span className="text-neutral-400">Following</span>
           <span className="font-semibold border-b-2 border-white pb-1">For You</span>
           <Search size={14} className="text-white ml-2" />
         </div>
-        {image ? (
-          mediaType === "video" ? (
-            <video src={image} className="absolute inset-0 w-full h-full object-cover top-12" style={{ height: "calc(100% - 3rem)", top: "3rem" }} muted loop autoPlay playsInline />
-          ) : (
-            <img src={image} className="absolute inset-0 w-full h-full object-cover top-12" style={{ height: "calc(100% - 3rem)", top: "3rem" }} alt="TikTok preview" />
-          )
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><ImageIcon className="h-8 w-8" /><span className="text-[10px]">No media attached</span></div>
-        )}
+        {image ? <PreviewMedia src={image} mediaType={mediaType} className="absolute inset-0 w-full h-full object-cover top-12" style={{ height: "calc(100% - 3rem)", top: "3rem" }} alt="TikTok preview" />
+          : <NoMedia icon={ImageIcon} iconClassName="h-8 w-8" label="No media attached" />}
         <div className="absolute right-3 bottom-24 flex flex-col items-center gap-4 text-white z-10">
           <img src={avatar} className="w-9 h-9 rounded-full border-2 border-white" alt="Avatar" />
           <Heart size={24} /><MessageCircle size={24} /><Bookmark size={24} /><Share2 size={24} />
@@ -2783,16 +2112,9 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
   if (platform === "youtube") {
     if (postType === "short" || postType === "post") {
       return (
-        <div className="bg-black rounded-3xl overflow-hidden relative w-full max-w-[270px] mx-auto select-none border border-neutral-800 text-left" style={{ aspectRatio: "9/16" }}>
-          {image ? (
-            mediaType === "video" ? (
-              <video src={image} className="absolute inset-0 w-full h-full object-cover opacity-80" muted loop autoPlay playsInline />
-            ) : (
-              <img src={image} className="absolute inset-0 w-full h-full object-cover opacity-80" alt="YouTube Short" />
-            )
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 gap-2"><Play className="h-8 w-8" /><span className="text-[10px]">Upload a video for Short</span></div>
-          )}
+        <div className={VERTICAL_FRAME_LEFT} style={PORTRAIT}>
+          {image ? <PreviewMedia src={image} mediaType={mediaType} className="absolute inset-0 w-full h-full object-cover opacity-80" alt="YouTube Short" />
+            : <NoMedia icon={Play} iconClassName="h-8 w-8" label="Upload a video for Short" />}
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
           <div className="absolute top-3 left-3 text-white text-[10px] font-bold flex items-center gap-1 z-10"><YouTubeIcon className="w-5 h-5" style={{ color: "#FF0000" }} />Shorts</div>
           <div className="absolute right-3 bottom-20 flex flex-col items-center gap-4 text-white text-[10px] z-10">
@@ -2815,15 +2137,8 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
     return (
       <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden w-full select-none text-left">
         <div className="relative bg-black aspect-video flex items-center justify-center">
-          {image ? (
-            mediaType === "video" ? (
-              <video src={image} className="w-full h-full object-cover opacity-80" muted loop autoPlay playsInline />
-            ) : (
-              <img src={image} className="w-full h-full object-cover opacity-80" alt="YouTube Video" />
-            )
-          ) : (
-            <div className="flex flex-col items-center justify-center text-neutral-500 gap-2 w-full h-full"><Play className="h-10 w-10" /><span className="text-[10px]">Upload a thumbnail or video</span></div>
-          )}
+          {image ? <PreviewMedia src={image} mediaType={mediaType} className="w-full h-full object-cover opacity-80" alt="YouTube Video" />
+            : <div className="flex flex-col items-center justify-center text-neutral-500 gap-2 w-full h-full"><Play className="h-10 w-10" /><span className="text-[10px]">Upload a thumbnail or video</span></div>}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center shadow"><Play size={18} className="text-black ml-0.5 fill-black" /></div>
           </div>
@@ -2855,13 +2170,7 @@ export function PreviewCard({ platform, text, image, mediaType = "image", accoun
           <div className="flex-1 min-w-0">
             <div className="text-sm"><span className="font-semibold text-neutral-900">{displayName}</span>{" "}<span className="text-neutral-400 text-xs">21h</span></div>
             <p className="text-sm text-neutral-800 mt-0.5 whitespace-pre-wrap">{text}</p>
-            {image && (
-              mediaType === "video" ? (
-                <video src={image} controls className="mt-3 rounded-xl w-full object-cover max-h-64" muted playsInline />
-              ) : (
-                <img src={image} className="mt-3 rounded-xl w-full object-cover max-h-64" alt="Threads preview" />
-              )
-            )}
+            {image && <PreviewMedia feed src={image} mediaType={mediaType} className="mt-3 rounded-xl w-full object-cover max-h-64" alt="Threads preview" />}
             <div className="flex gap-4 mt-3 text-neutral-500 max-w-[200px]">
               <Heart size={17} /><MessageCircle size={17} /><Repeat2 size={17} /><Send size={17} />
             </div>
