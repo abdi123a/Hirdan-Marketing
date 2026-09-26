@@ -45,9 +45,12 @@ async function runCleanup(): Promise<void> {
     const now = new Date();
 
     // Fetch all records that are either soft-deleted or past their expiry date
-    // and whose file has not yet been purged from disk.
+    // and whose file has not yet been purged from disk. filePurgedAt is the
+    // job's own marker: without it every handled row was re-fetched and
+    // re-marked every hour, since isDeleted is also what the query selects.
     const stale = await prisma.sharedFile.findMany({
       where: {
+        filePurgedAt: null,
         OR: [
           { isDeleted: true },
           { expiresAt: { lt: now } },
@@ -95,11 +98,11 @@ async function runCleanup(): Promise<void> {
       handledIds.push(record.id);
     }
 
-    // Mark handled records as deleted so we don't reprocess them next cycle
+    // Mark handled records as purged so they drop out of the query for good
     if (handledIds.length > 0) {
       await prisma.sharedFile.updateMany({
         where: { id: { in: handledIds } },
-        data: { isDeleted: true },
+        data: { isDeleted: true, filePurgedAt: now },
       });
     }
 
