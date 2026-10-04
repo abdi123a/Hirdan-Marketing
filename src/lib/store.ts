@@ -33,6 +33,7 @@ export interface Client {
   invoiceGenerationDay?: number | null;
   paymentReminderDelay?: number | null;
   overdueNoticeDelay?: number | null;
+  autoSendReminders?: boolean;
   portalAccess?: Record<string, boolean> | null;
 }
 
@@ -602,7 +603,7 @@ const createDefaultSettings = (): AgencySettings => ({
   oneSignalAppId: "",
   oneSignalApiKey: "",
   oneSignalEnabled: false,
-  appVersion: "2.31.61",
+  appVersion: "2.31.62",
   versionHistory: [
     {
       version: "2.23.0",
@@ -842,7 +843,8 @@ export const useAgencyStore = create<AgencyStore>()(
             userId: c.userId,
             invoiceGenerationDay: c.invoiceGenerationDay,
             paymentReminderDelay: c.paymentReminderDelay,
-            overdueNoticeDelay: c.overdueNoticeDelay
+            overdueNoticeDelay: c.overdueNoticeDelay,
+            autoSendReminders: c.autoSendReminders
           }));
           set({ clients: mappedClients });
         } catch (error) {

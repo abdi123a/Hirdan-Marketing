@@ -42,8 +42,6 @@ export async function runBillingCycle(): Promise<void> {
 
     const settings = await prisma.agencySettings.findFirst();
     const taxRate = settings?.taxRate ?? 0;
-    const currencySymbol = settings?.currency ?? 'USD';
-    const appUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
     for (const sub of activeSubscriptions) {
       const client = sub.client;
@@ -127,162 +125,22 @@ export async function runBillingCycle(): Promise<void> {
       }
     }
 
-    // 2. Send Payment Reminders
-    // Unpaid invoices that are past their due date by client's grace period (default 5 days)
-    const pendingInvoicesForReminder = await prisma.invoice.findMany({
-      where: {
-        status: { in: ['PENDING', 'OVERDUE'] },
-        reminderSentAt: null,
-        client: {
-          email: { not: null },
-        },
-      },
-      include: {
-        client: true,
-        items: true,
-      },
-    });
-
-    for (const inv of pendingInvoicesForReminder) {
-      const client = inv.client;
-      if (!client.email) continue;
-
-      const graceDays = client.paymentReminderDelay ?? 5;
-      const dueDateWithGrace = new Date(inv.dueDate.getTime() + graceDays * 24 * 60 * 60 * 1000);
-
-      if (now >= dueDateWithGrace) {
-        console.log(`Sending payment reminder for invoice ${inv.invoiceNumber} to ${client.email}`);
-
-        const amountFormatted = formatCents(inv.amount, currencySymbol);
-        const dueDateFormatted = inv.dueDate.toISOString().split('T')[0];
-
-        const subject = `Payment Reminder: Invoice ${inv.invoiceNumber} is Unpaid`;
-        const contentHtml = `
-          <h2 style="color: #334155; font-size: 20px; margin-bottom: 16px;">Hello ${client.name},</h2>
-          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
-            This is a friendly reminder that invoice <strong>${inv.invoiceNumber}</strong>, which was due on <strong>${dueDateFormatted}</strong>, is still awaiting payment.
-          </p>
-          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
-            <strong>Amount Due:</strong> ${amountFormatted}<br/>
-            <strong>Subscription Plan:</strong> ${inv.items?.[0]?.description || 'Monthly Subscription'}
-          </p>
-          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
-            Please log in to your portal to make the payment or arrange a bank transfer at your earliest convenience.
-          </p>
-        `;
-
-        const emailHtml = await generateEmailHtml({
-          title: subject,
-          preheader: `Friendly reminder that invoice ${inv.invoiceNumber} is unpaid.`,
-          contentHtml,
-          actionButton: {
-            label: 'View Invoice & Pay',
-            url: `${appUrl}/dashboard/invoices`, // fallback to portal invoices list
-          },
-        });
-
-        const result = await sendEmail({
-          to: client.email,
-          subject,
-          html: emailHtml,
-        });
-
-        if (result.success) {
-          await prisma.invoice.update({
-            where: { id: inv.id },
-            data: { reminderSentAt: now },
-          });
-          console.log(`Successfully sent payment reminder and updated invoice ${inv.invoiceNumber}`);
-        } else {
-          console.error(`Failed to send reminder for invoice ${inv.invoiceNumber}: ${result.error}`);
-        }
-      }
+    // 2–3. Payment reminders and overdue notices. Clients switched to "send
+    // automatically" get them now; everyone else waits in the approval list on
+    // the Invoices page, because unpaid can mean the work isn't finished yet.
+    const due = await findDueReminders(now);
+    const waiting = due.filter(d => !d.invoice.client.autoSendReminders);
+    for (const d of due) {
+      if (d.invoice.client.autoSendReminders) await sendDueReminder(d, now);
     }
-
-    // 3. Send Overdue Notices
-    // Unpaid invoices that are past their generation date by client's overdue threshold (default 10 days)
-    const pendingInvoicesForOverdue = await prisma.invoice.findMany({
-      where: {
-        status: { in: ['PENDING', 'OVERDUE'] },
-        overdueSentAt: null,
-        client: {
-          email: { not: null },
-        },
-      },
-      include: {
-        client: true,
-        items: true,
-      },
-    });
-
-    for (const inv of pendingInvoicesForOverdue) {
-      const client = inv.client;
-      if (!client.email) continue;
-
-      const overdueDays = client.overdueNoticeDelay ?? 10;
-      const overdueDate = new Date(inv.date.getTime() + overdueDays * 24 * 60 * 60 * 1000);
-
-      if (now >= overdueDate) {
-        console.log(`Sending overdue notice for invoice ${inv.invoiceNumber} to ${client.email}`);
-
-        const amountFormatted = formatCents(inv.amount, currencySymbol);
-        const dateFormatted = inv.date.toISOString().split('T')[0];
-
-        const subject = `URGENT: Invoice ${inv.invoiceNumber} is OVERDUE`;
-        const contentHtml = `
-          <h2 style="color: #dc2626; font-size: 20px; margin-bottom: 16px;">Dear ${client.name},</h2>
-          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
-            We are writing to inform you that payment for invoice <strong>${inv.invoiceNumber}</strong>, generated on <strong>${dateFormatted}</strong>, is now significantly overdue.
-          </p>
-          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6; font-weight: 600; color: #dc2626;">
-            Your subscription payment of ${amountFormatted} remains unpaid.
-          </p>
-          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
-            To prevent any disruption to your active subscription and agency services, please complete the payment immediately using the button below.
-          </p>
-          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
-            If you have already made the payment, please disregard this notice or contact our billing team with your proof of payment.
-          </p>
-        `;
-
-        const emailHtml = await generateEmailHtml({
-          title: subject,
-          preheader: `URGENT: Invoice ${inv.invoiceNumber} is overdue.`,
-          contentHtml,
-          actionButton: {
-            label: 'Pay Now',
-            url: `${appUrl}/dashboard/invoices`,
-          },
-        });
-
-        const result = await sendEmail({
-          to: client.email,
-          subject,
-          html: emailHtml,
-        });
-
-        if (result.success) {
-          await prisma.invoice.update({
-            where: { id: inv.id },
-            data: {
-              status: 'OVERDUE',
-              overdueSentAt: now,
-            },
-          });
-          createNotification({
-            title: 'Invoice Overdue ⚠️',
-            message: `Invoice ${inv.invoiceNumber} for ${client.company || client.name} is now overdue.`,
-            type: 'INVOICE_OVERDUE_BILLING',
-            category: 'ACTION_REQUIRED',
-            entityType: 'INVOICE',
-            entityId: inv.invoiceNumber || inv.id,
-            actionUrl: `/dashboard/invoices/view/${inv.invoiceNumber || inv.id}`,
-          });
-          console.log(`Successfully sent overdue notice and marked invoice ${inv.invoiceNumber} as OVERDUE`);
-        } else {
-          console.error(`Failed to send overdue notice for invoice ${inv.invoiceNumber}: ${result.error}`);
-        }
-      }
+    if (waiting.length > 0) {
+      createNotification({
+        title: 'Reminder emails need your approval',
+        message: `${waiting.length} payment reminder email${waiting.length === 1 ? ' is' : 's are'} waiting. Nothing is sent to these clients until you approve.`,
+        type: 'INVOICE_REMINDERS_PENDING',
+        category: 'ACTION_REQUIRED',
+        actionUrl: '/dashboard/invoices',
+      });
     }
 
     // 4. Warning: Invoices due in 3 days (deduplicated — only fire once per invoice)
@@ -347,4 +205,147 @@ export async function runBillingCycle(): Promise<void> {
   } catch (error) {
     console.error('❌ [SubscriptionBilling] Error running billing cycle:', error);
   }
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type ReminderKind = 'reminder' | 'overdue';
+
+/**
+ * Unpaid invoices whose next email is due: first the payment reminder
+ * (due date + client's grace days), then — only once the reminder went out or
+ * was skipped — the overdue notice (invoice date + client's overdue days).
+ * The order matters: with the defaults the overdue date (day 10) comes before
+ * the reminder date (day 19), so clients used to get "URGENT: OVERDUE" before
+ * the invoice was even due.
+ */
+export async function findDueReminders(now = new Date()) {
+  const invoices = await prisma.invoice.findMany({
+    where: {
+      status: { in: ['PENDING', 'OVERDUE'] },
+      OR: [{ reminderSentAt: null }, { overdueSentAt: null }],
+      client: { email: { not: null } },
+    },
+    include: { client: true, items: true },
+    orderBy: { dueDate: 'asc' },
+  });
+
+  const due: { invoice: (typeof invoices)[number]; kind: ReminderKind }[] = [];
+  for (const invoice of invoices) {
+    const kind = nextReminderKind(invoice, invoice.client, now);
+    if (kind) due.push({ invoice, kind });
+  }
+  return due;
+}
+
+export function nextReminderKind(
+  invoice: { date: Date; dueDate: Date; reminderSentAt: Date | null; overdueSentAt: Date | null },
+  client: { paymentReminderDelay: number | null; overdueNoticeDelay: number | null },
+  now: Date,
+): ReminderKind | null {
+  if (!invoice.reminderSentAt) {
+    const graceDays = client.paymentReminderDelay ?? 5;
+    return now.getTime() >= invoice.dueDate.getTime() + graceDays * DAY_MS ? 'reminder' : null;
+  }
+  if (!invoice.overdueSentAt) {
+    const overdueDays = client.overdueNoticeDelay ?? 10;
+    return now.getTime() >= invoice.date.getTime() + overdueDays * DAY_MS ? 'overdue' : null;
+  }
+  return null;
+}
+
+type DueReminder = Awaited<ReturnType<typeof findDueReminders>>[number];
+
+/** Mark a due email as handled without sending it. */
+export async function skipDueReminder({ invoice, kind }: DueReminder, now = new Date()): Promise<void> {
+  await prisma.invoice.update({
+    where: { id: invoice.id },
+    data: kind === 'reminder' ? { reminderSentAt: now } : { overdueSentAt: now },
+  });
+}
+
+export async function sendDueReminder({ invoice: inv, kind }: DueReminder, now = new Date()): Promise<boolean> {
+  const client = inv.client;
+  if (!client.email) return false;
+
+  const settings = await prisma.agencySettings.findFirst({ select: { currency: true } });
+  const currencySymbol = settings?.currency ?? 'USD';
+  const appUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const amountFormatted = formatCents(inv.amount, currencySymbol);
+
+  if (kind === 'reminder') {
+    console.log(`Sending payment reminder for invoice ${inv.invoiceNumber} to ${client.email}`);
+    const dueDateFormatted = inv.dueDate.toISOString().split('T')[0];
+    const subject = `Payment Reminder: Invoice ${inv.invoiceNumber} is Unpaid`;
+    const contentHtml = `
+          <h2 style="color: #334155; font-size: 20px; margin-bottom: 16px;">Hello ${client.name},</h2>
+          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
+            This is a friendly reminder that invoice <strong>${inv.invoiceNumber}</strong>, which was due on <strong>${dueDateFormatted}</strong>, is still awaiting payment.
+          </p>
+          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
+            <strong>Amount Due:</strong> ${amountFormatted}<br/>
+            <strong>Subscription Plan:</strong> ${inv.items?.[0]?.description || 'Monthly Subscription'}
+          </p>
+          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
+            Please log in to your portal to make the payment or arrange a bank transfer at your earliest convenience.
+          </p>
+        `;
+    const emailHtml = await generateEmailHtml({
+      title: subject,
+      preheader: `Friendly reminder that invoice ${inv.invoiceNumber} is unpaid.`,
+      contentHtml,
+      actionButton: { label: 'View Invoice & Pay', url: `${appUrl}/dashboard/invoices` },
+    });
+    const result = await sendEmail({ to: client.email, subject, html: emailHtml });
+    if (!result.success) {
+      console.error(`Failed to send reminder for invoice ${inv.invoiceNumber}: ${result.error}`);
+      return false;
+    }
+    await prisma.invoice.update({ where: { id: inv.id }, data: { reminderSentAt: now } });
+    return true;
+  }
+
+  console.log(`Sending overdue notice for invoice ${inv.invoiceNumber} to ${client.email}`);
+  const dateFormatted = inv.date.toISOString().split('T')[0];
+  const subject = `URGENT: Invoice ${inv.invoiceNumber} is OVERDUE`;
+  const contentHtml = `
+          <h2 style="color: #dc2626; font-size: 20px; margin-bottom: 16px;">Dear ${client.name},</h2>
+          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
+            We are writing to inform you that payment for invoice <strong>${inv.invoiceNumber}</strong>, generated on <strong>${dateFormatted}</strong>, is now significantly overdue.
+          </p>
+          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6; font-weight: 600; color: #dc2626;">
+            Your subscription payment of ${amountFormatted} remains unpaid.
+          </p>
+          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
+            To prevent any disruption to your active subscription and agency services, please complete the payment immediately using the button below.
+          </p>
+          <p style="margin: 0 0 16px; color: #475569; line-height: 1.6;">
+            If you have already made the payment, please disregard this notice or contact our billing team with your proof of payment.
+          </p>
+        `;
+  const emailHtml = await generateEmailHtml({
+    title: subject,
+    preheader: `URGENT: Invoice ${inv.invoiceNumber} is overdue.`,
+    contentHtml,
+    actionButton: { label: 'Pay Now', url: `${appUrl}/dashboard/invoices` },
+  });
+  const result = await sendEmail({ to: client.email, subject, html: emailHtml });
+  if (!result.success) {
+    console.error(`Failed to send overdue notice for invoice ${inv.invoiceNumber}: ${result.error}`);
+    return false;
+  }
+  await prisma.invoice.update({
+    where: { id: inv.id },
+    data: { status: 'OVERDUE', overdueSentAt: now },
+  });
+  createNotification({
+    title: 'Invoice Overdue ⚠️',
+    message: `Invoice ${inv.invoiceNumber} for ${client.company || client.name} is now overdue.`,
+    type: 'INVOICE_OVERDUE_BILLING',
+    category: 'ACTION_REQUIRED',
+    entityType: 'INVOICE',
+    entityId: inv.invoiceNumber || inv.id,
+    actionUrl: `/dashboard/invoices/view/${inv.invoiceNumber || inv.id}`,
+  });
+  return true;
 }

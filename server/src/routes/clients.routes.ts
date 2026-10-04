@@ -135,6 +135,7 @@ const clientDtoSchema = z.object({
   invoiceGenerationDay: z.number().int().min(1).max(28).optional().nullable(),
   paymentReminderDelay: z.number().int().min(0).max(30).optional().nullable(),
   overdueNoticeDelay: z.number().int().min(0).max(60).optional().nullable(),
+  autoSendReminders: z.boolean().optional(),
   portalAccess: z.any().optional().nullable(),
 });
 

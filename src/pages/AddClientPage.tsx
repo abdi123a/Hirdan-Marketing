@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -291,7 +292,18 @@ export default function AddClientPage() {
                   value={form.overdueNoticeDelay ?? ""} 
                   onChange={(e) => set("overdueNoticeDelay", e.target.value ? parseInt(e.target.value) : null)} 
                 />
-                <p className="text-xs text-muted-foreground">Days after invoice creation to send overdue notice</p>
+                <p className="text-xs text-muted-foreground">Days after invoice date to send overdue notice (always after the reminder)</p>
+              </div>
+              <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="autoSendReminders" className="text-sm font-medium">Send reminders automatically</Label>
+                  <p className="text-xs text-muted-foreground">Off: reminder and overdue emails wait for your approval on the Invoices page</p>
+                </div>
+                <Switch
+                  id="autoSendReminders"
+                  checked={!!form.autoSendReminders}
+                  onCheckedChange={(v) => set("autoSendReminders", v)}
+                />
               </div>
             </CardContent>
           </Card>

@@ -91,6 +91,7 @@ model Client {
   invoiceGenerationDay Int?                  @map("invoice_generation_day")
   paymentReminderDelay Int?                  @map("payment_reminder_delay")
   overdueNoticeDelay   Int?                  @map("overdue_notice_delay")
+  autoSendReminders    Boolean               @default(false) @map("auto_send_reminders")
   createdAt            DateTime              @default(now()) @map("created_at")
   updatedAt            DateTime              @updatedAt @map("updated_at")
   user                 User?                 @relation(fields: [userId], references: [id])

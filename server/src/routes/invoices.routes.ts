@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireRole } from '../middleware/auth.js';
+import { findDueReminders, sendDueReminder, skipDueReminder } from '../lib/subscription-billing.js';
 import { validate } from '../middleware/validate.js';
 import { sendEmail, generateEmailHtml } from '../lib/email.js';
 import { z } from 'zod';
@@ -47,6 +48,60 @@ router.get('/', async (req: Request, res: Response, next) => {
 });
 
 // ─── GET /api/invoices/:id ────────────────────────────────────────
+
+// ─── Reminder emails waiting for approval ─────────────────────────
+// Clients without "send automatically" never get reminder/overdue emails from
+// the daily job; they land here and go out only when the user approves.
+
+router.get('/reminders/pending', requireRole('ADMIN', 'MANAGER'), async (_req: Request, res: Response, next) => {
+  try {
+    const due = await findDueReminders();
+    res.json({
+      reminders: due
+        .filter(d => !d.invoice.client.autoSendReminders)
+        .map(({ invoice, kind }) => ({
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          kind,
+          clientName: invoice.client.company || invoice.client.name,
+          clientEmail: invoice.client.email,
+          amount: invoice.amount,
+          date: invoice.date,
+          dueDate: invoice.dueDate,
+        })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const reminderDecisionSchema = z.object({
+  action: z.enum(['send', 'skip']),
+  items: z.array(z.object({ invoiceId: z.string(), kind: z.enum(['reminder', 'overdue']) })).min(1),
+});
+
+router.post('/reminders/decide', requireRole('ADMIN', 'MANAGER'), validate({ body: reminderDecisionSchema }), async (req: Request, res: Response, next) => {
+  try {
+    const { action, items } = req.body as z.infer<typeof reminderDecisionSchema>;
+    // Re-check against what is due right now, so a stale list can't email a
+    // client whose invoice was paid in the meantime.
+    const due = new Map((await findDueReminders()).map(d => [`${d.invoice.id}:${d.kind}`, d]));
+    let done = 0;
+    for (const item of items) {
+      const d = due.get(`${item.invoiceId}:${item.kind}`);
+      if (!d) continue;
+      if (action === 'skip') {
+        await skipDueReminder(d);
+        done++;
+      } else if (await sendDueReminder(d)) {
+        done++;
+      }
+    }
+    res.json({ done, requested: items.length });
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get('/:id', async (req: Request, res: Response, next) => {
   try {

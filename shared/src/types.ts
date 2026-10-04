@@ -56,6 +56,7 @@ export interface ClientSummary {
   invoiceGenerationDay?: number | null;
   paymentReminderDelay?: number | null;
   overdueNoticeDelay?: number | null;
+  autoSendReminders?: boolean;
   portalAccess?: Record<string, unknown> | null;
   /** Linked portal user id when client login is provisioned */
   userId?: string | null;
