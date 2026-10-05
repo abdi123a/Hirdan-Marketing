@@ -323,6 +323,10 @@ export default function SubscriptionDetailsPage() {
                         <AlertTriangle className="w-3.5 h-3.5 text-primary" />
                         <span>Overdue Notice: {client?.overdueNoticeDelay ?? 10} days</span>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-3.5 h-3.5 text-primary" />
+                        <span>Reminder emails: {client?.autoSendReminders ? "Sent automatically" : "Need your approval"}</span>
+                      </div>
                     </div>
                   </div>
                 </div>

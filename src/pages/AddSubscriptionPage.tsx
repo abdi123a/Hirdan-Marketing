@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,6 +82,7 @@ export default function AddSubscriptionPage() {
   const [invoiceGenerationDay, setInvoiceGenerationDay] = useState<number>(1);
   const [paymentReminderDelay, setPaymentReminderDelay] = useState<number>(5);
   const [overdueNoticeDelay, setOverdueNoticeDelay] = useState<number>(10);
+  const [autoSendReminders, setAutoSendReminders] = useState(false);
 
   useEffect(() => {
     if (preselectedPackageId && packages.length > 0) {
@@ -155,6 +157,7 @@ export default function AddSubscriptionPage() {
           invoiceGenerationDay,
           paymentReminderDelay,
           overdueNoticeDelay,
+          autoSendReminders,
         });
       }
 
@@ -276,6 +279,7 @@ export default function AddSubscriptionPage() {
                       setInvoiceGenerationDay(c.invoiceGenerationDay ?? 1);
                       setPaymentReminderDelay(c.paymentReminderDelay ?? 5);
                       setOverdueNoticeDelay(c.overdueNoticeDelay ?? 10);
+                      setAutoSendReminders(!!c.autoSendReminders);
                     }
                   }}
                 >
@@ -338,7 +342,15 @@ export default function AddSubscriptionPage() {
                     value={overdueNoticeDelay ?? ""} 
                     onChange={(e) => setOverdueNoticeDelay(e.target.value ? parseInt(e.target.value) : 0)} 
                   />
-                  <p className="text-xs text-muted-foreground">Days after invoice creation to send overdue notice</p>
+                  <p className="text-xs text-muted-foreground">Days after invoice date to send overdue notice (always after the reminder)</p>
+                </div>
+
+                <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="autoSendReminders" className="text-sm font-medium">Send reminders automatically</Label>
+                    <p className="text-xs text-muted-foreground">Off: reminder and overdue emails wait for your approval on the Subscriptions and Invoices pages</p>
+                  </div>
+                  <Switch id="autoSendReminders" checked={autoSendReminders} onCheckedChange={setAutoSendReminders} />
                 </div>
               </CardContent>
             </Card>

@@ -17,6 +17,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { PendingRemindersCard } from "@/components/PendingRemindersCard";
 
 const planColor = (plan: string) =>
   plan === "Enterprise" ? "bg-violet-100 text-violet-700 border-violet-200" :
@@ -33,14 +35,30 @@ const statusColor = (s: string) =>
           "bg-red-100 text-red-700 hover:bg-red-100";
 
 export default function SubscriptionsPage() {
-  const { subscriptions, deleteSubscription, updateSubscription, fetchSubscriptions } = useAgencyStore();
+  const { subscriptions, deleteSubscription, updateSubscription, fetchSubscriptions, clients, fetchClients, updateClient } = useAgencyStore();
   const [search, setSearch] = useState("");
   const { toast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchSubscriptions();
-  }, [fetchSubscriptions]);
+    fetchClients();
+  }, [fetchSubscriptions, fetchClients]);
+
+  // Reminder emails are a client setting: off = held for approval.
+  const handleAutoReminders = async (clientId: string, client: string, on: boolean) => {
+    try {
+      await updateClient(clientId, { autoSendReminders: on });
+      toast({
+        title: on ? "Reminders will send automatically" : "Reminders need your approval",
+        description: on
+          ? `Payment reminders for ${client} go out without asking, including any waiting now (on the next daily run).`
+          : `Payment reminders for ${client} wait for your approval first.`,
+      });
+    } catch (e) {
+      toast({ title: "Error", description: "Failed to update reminder setting.", variant: "destructive" });
+    }
+  };
 
   const filtered = subscriptions.filter((s) =>
     s.client.toLowerCase().includes(search.toLowerCase()) ||
@@ -122,6 +140,8 @@ export default function SubscriptionsPage() {
         ))}
       </div>
 
+      <PendingRemindersCard key={clients.filter((c) => c.autoSendReminders).map((c) => c.id).join()} />
+
       <Card className="shadow-card border-border">
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -143,13 +163,14 @@ export default function SubscriptionsPage() {
                 <TableHead className="hidden md:table-cell">Start Date</TableHead>
                 <TableHead className="hidden lg:table-cell">End Date</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead title="On: payment reminders send automatically. Off: they wait for your approval.">Auto-send</TableHead>
                 <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
                     No subscriptions found. <button className="text-primary underline underline-offset-2" onClick={() => navigate("/dashboard/subscriptions/add")}>Add a subscription</button>
                   </TableCell>
                 </TableRow>
@@ -177,6 +198,13 @@ export default function SubscriptionsPage() {
                   <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">{formatDate(sub.endDate)}</TableCell>
                   <TableCell>
                     <Badge className={statusColor(sub.status)}>{sub.status}</Badge>
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Switch
+                      aria-label={`Send payment reminders to ${sub.client} automatically`}
+                      checked={!!clients.find((c) => c.id === sub.clientId)?.autoSendReminders}
+                      onCheckedChange={(on) => handleAutoReminders(sub.clientId, sub.client, on)}
+                    />
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
