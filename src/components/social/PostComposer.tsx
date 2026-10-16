@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { apiUpload } from "@/lib/api-client";
+import { uploadSocialMedia } from "@/lib/api-client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { contentTypesFor, TIKTOK_POST_MODES, type TikTokPostMode } from "@/lib/platform-capabilities";
@@ -880,9 +880,7 @@ function CoverPicker({ url, coverTimeMs, setCoverTimeMs, coverImageUrl, setCover
     setUploading(true);
     setError(null);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const { url: imageUrl } = await apiUpload<{ url: string }>("/social/media/upload", formData);
+      const { url: imageUrl } = await uploadSocialMedia(file);
       setCoverImageUrl(imageUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");

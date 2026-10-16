@@ -3,7 +3,9 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { publishDestination } from '../lib/social/publish-destination.service.js';
 import { diffDestinations } from '../lib/social/destination-diff.js';
-import { uploadSocialMediaFile } from '../lib/social/storage.service.js';
+import {
+  uploadSocialMediaFile, directUploadEnabled, createDirectUpload, finishDirectUpload, MAX_SOCIAL_UPLOAD_BYTES,
+} from '../lib/social/storage.service.js';
 import { callAI, resolveProviderKey } from '../lib/ai-provider.js';
 import multer from 'multer';
 import path from 'path';
@@ -25,7 +27,7 @@ const router = Router();
 // disk/memory usage — multer's default fileSize limit is Infinity.
 const upload = multer({
   dest: path.join(PATHS.UPLOADS_ROOT, 'social-temp'),
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: MAX_SOCIAL_UPLOAD_BYTES },
 });
 
 // 1. Create a Post (Draft or Scheduled)
@@ -562,6 +564,38 @@ router.post('/media/upload', authenticate, upload.single('file'), async (req, re
     const publicUrl = await uploadSocialMediaFile(file);
     res.json({ url: publicUrl });
     return;
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 12b. Direct upload: a signed URL the browser PUTs the file to (see storage.service).
+// `direct: false` tells the client to use /media/upload instead.
+router.post('/media/upload-url', authenticate, async (req, res, next) => {
+  try {
+    if (!directUploadEnabled()) {
+      res.json({ direct: false });
+      return;
+    }
+    const size = Number(req.body?.size);
+    if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_SOCIAL_UPLOAD_BYTES) {
+      res.status(400).json({ error: 'File must be between 1 byte and 500 MB' });
+      return;
+    }
+    res.json({ direct: true, ...(await createDirectUpload(String(req.body?.filename ?? ''), size)) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/media/upload-complete', authenticate, async (req, res, next) => {
+  try {
+    const url = await finishDirectUpload(String(req.body?.key ?? ''));
+    if (!url) {
+      res.status(400).json({ error: 'Invalid upload key' });
+      return;
+    }
+    res.json({ url });
   } catch (err) {
     next(err);
   }

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { apiFetch, apiUpload } from "@/lib/api-client";
+import { apiFetch, uploadSocialMedia } from "@/lib/api-client";
 import { CardGridSkeleton } from "@/components/ui/PageSkeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuthStore } from "@/lib/auth-store";
@@ -419,17 +419,13 @@ export default function SocialPublishPage() {
         etaSeconds: null,
       }]);
 
-      const formData = new FormData();
-      formData.append("file", file);
-
       try {
         const tracker = createUploadTracker(performance.now());
         let lastPaintedPct = -1;
         let lastPaintAt = 0;
 
-        const data = await apiUpload<{ url: string }>(
-          "/social/media/upload",
-          formData,
+        const data = await uploadSocialMedia(
+          file,
           (percent, { loaded, total }) => {
             const now = performance.now();
             const s = tracker.sample(loaded, total, now);

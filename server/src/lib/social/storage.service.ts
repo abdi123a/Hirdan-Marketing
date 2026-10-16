@@ -1,7 +1,9 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import path from 'path';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -71,6 +73,63 @@ export async function uploadSocialMediaFile(file: Express.Multer.File): Promise<
     if (publicUrl) return `${publicUrl.replace(/\/$/, '')}/${filename}`;
     return `${process.env.STORAGE_ENDPOINT}/${bucket}/${filename}`;
   }
+}
+
+// ─── Direct browser uploads ───
+// Some users' routes to the VPS lose packets badly (2026-10-16: 15-40% loss
+// from Djibouti, ~12 KB/s uploads). Cloudflare R2 has an edge next to them, so
+// the browser PUTs the file there, then the server copies it onto local disk
+// over its own fast link. The file still ends up under /public-uploads, so
+// TikTok's verified-domain PULL_FROM_URL and local-file publishing stay as is.
+
+export const MAX_SOCIAL_UPLOAD_BYTES = 500 * 1024 * 1024;
+const DIRECT_UPLOAD_KEY = /^incoming\/([0-9a-f-]{36})(\.[a-z0-9]{1,8})?$/;
+
+/** On when DIRECT_UPLOAD_BUCKET and the STORAGE_* R2 credentials are set (local storage only). */
+export function directUploadEnabled(): boolean {
+  return (process.env.STORAGE_PROVIDER || 'local') === 'local'
+    && Boolean(process.env.DIRECT_UPLOAD_BUCKET && process.env.STORAGE_ENDPOINT
+      && process.env.STORAGE_ACCESS_KEY && process.env.STORAGE_SECRET_KEY);
+}
+
+export async function createDirectUpload(filename: string, size: number): Promise<{ uploadUrl: string; key: string }> {
+  const ext = path.extname(filename).toLowerCase();
+  const key = `incoming/${crypto.randomUUID()}${/^\.[a-z0-9]{1,8}$/.test(ext) ? ext : ''}`;
+  // ContentLength is signed, so R2 rejects a body of any other size.
+  const uploadUrl = await getSignedUrl(
+    getS3Client(),
+    new PutObjectCommand({ Bucket: process.env.DIRECT_UPLOAD_BUCKET, Key: key, ContentLength: size }),
+    { expiresIn: 6 * 60 * 60 },
+  );
+  return { uploadUrl, key };
+}
+
+/** Copies an uploaded object to local social storage and returns its public URL; null for a bad key. */
+export async function finishDirectUpload(key: string): Promise<string | null> {
+  const match = DIRECT_UPLOAD_KEY.exec(key);
+  if (!match) return null;
+  const client = getS3Client();
+  const bucket = process.env.DIRECT_UPLOAD_BUCKET;
+  const filename = `social-${match[1]}${match[2] ?? ''}`;
+  // Download into social-temp first: the hourly purge there cleans up after a
+  // crash, and /public-uploads never serves a half-written file.
+  const tempPath = path.join(PATHS.UPLOADS_ROOT, 'social-temp', filename);
+  try {
+    const obj = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    if ((obj.ContentLength ?? 0) > MAX_SOCIAL_UPLOAD_BYTES) throw new Error('File too large');
+    await pipeline(obj.Body as Readable, fsSync.createWriteStream(tempPath));
+    await fs.rename(tempPath, path.join(PATHS.UPLOADS_ROOT, 'social', filename));
+  } catch (err) {
+    await fs.unlink(tempPath).catch(() => {});
+    throw err;
+  } finally {
+    // The bucket is only a drop box; a lifecycle rule catches anything missed here.
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }))
+      .catch((err: any) => console.warn('[finishDirectUpload] Failed to delete', key, err.message));
+  }
+  const publicUrl = process.env.STORAGE_PUBLIC_URL || 'http://localhost:3001';
+  warnIfLocalStorageUrlInProd(publicUrl);
+  return `${publicUrl.replace(/\/$/, '')}/public-uploads/${filename}`;
 }
 
 /**

@@ -220,6 +220,55 @@ export interface UploadProgressDetail {
   total: number;
 }
 
+/**
+ * Upload social media. When the server hands back a signed storage URL the
+ * file goes straight to Cloudflare (an edge near the user) and the server then
+ * pulls it in; otherwise, or if storage refuses before any bytes move (CORS or
+ * config trouble), it falls back to posting the file to the API.
+ */
+export async function uploadSocialMedia(
+  file: File,
+  onProgress?: (progress: number, detail: UploadProgressDetail) => void
+): Promise<{ url: string }> {
+  const viaApi = () => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiUpload<{ url: string }>('/social/media/upload', formData, onProgress);
+  };
+
+  const target = await apiFetch<{ direct: boolean; uploadUrl?: string; key?: string }>(
+    '/social/media/upload-url',
+    { method: 'POST', body: JSON.stringify({ filename: file.name, size: file.size }) },
+  );
+  if (!target.direct || !target.uploadUrl) return viaApi();
+
+  let sentAny = false;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', target.uploadUrl!);
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable) return;
+        if (event.loaded > 0) sentAny = true;
+        onProgress?.(Math.round((event.loaded / event.total) * 100), { loaded: event.loaded, total: event.total });
+      };
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Storage upload failed (${xhr.status})`)));
+      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.onabort = () => reject(new Error('Upload aborted'));
+      xhr.send(file);
+    });
+  } catch (err) {
+    if (sentAny) throw err;
+    console.warn('Direct upload unavailable, sending through the API instead:', err);
+    return viaApi();
+  }
+
+  return apiFetch<{ url: string }>('/social/media/upload-complete', {
+    method: 'POST',
+    body: JSON.stringify({ key: target.key }),
+  });
+}
+
 export function apiUpload<T>(
   endpoint: string, 
   formData: FormData, 
