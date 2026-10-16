@@ -2,6 +2,7 @@ import { env } from './config/env.js';
 import app from './app.js';
 import { prisma } from './lib/prisma.js';
 import { closePdfBrowser } from './lib/pdf/puppeteer-browser.js';
+import { assertDatabaseIsUtc } from './lib/db-timezone.js';
 
 // ─── Load email credentials from DB into process.env ─────────────
 // Runs once after boot so that the sendEmail() utility works immediately
@@ -83,6 +84,7 @@ const server = app.listen(env.PORT, async () => {
   console.log(`🔧 Environment: ${env.NODE_ENV}\n`);
 
   await syncEmailEnvFromDb();
+  await assertDatabaseIsUtc();
 });
 
 // ─── Graceful Shutdown ────────────────────────────────────────────
