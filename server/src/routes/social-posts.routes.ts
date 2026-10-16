@@ -22,6 +22,33 @@ function aggregatePostStatus(published: number, failed: number, total: number): 
   return 'PUBLISHING';
 }
 
+/**
+ * Publish-now / retry: claim and publish every destination at the same time,
+ * so a post takes as long as its slowest platform, not the sum of them (an
+ * Instagram reel alone can spend a minute processing). Each destination is a
+ * different account and publishDestination() catches its own errors.
+ * Returns one "platform: error" line per destination that did not publish.
+ */
+async function claimAndPublishAll(destinations: any[], post: any): Promise<string[]> {
+  const errors = await Promise.all(destinations.map(async (dest) => {
+    // Claim atomically: if the scheduler has already claimed this destination
+    // (status flipped to PUBLISHING since the caller fetched it), skip it
+    // instead of publishing it a second time concurrently with the cron.
+    const claim = await prisma.socialPostDestination.updateMany({
+      where: { id: dest.id as string, status: { not: 'PUBLISHING' } },
+      data: { status: 'PUBLISHING', lockedAt: new Date(), lastAttemptAt: new Date() },
+    });
+    if (claim.count === 0) return null;
+
+    // One-shot: a failure here is terminal, because these routes always write a
+    // non-SCHEDULED aggregate status afterwards and the scheduler only ever
+    // claims destinations whose post is SCHEDULED.
+    const result = await publishDestination(dest, post, { maxAttempts: 1, skippedStatus: 'FAILED' });
+    return result.outcome === 'published' ? null : `${dest.platform}: ${result.error}`;
+  }));
+  return errors.filter((e): e is string => e !== null);
+}
+
 const router = Router();
 // 500MB covers any realistic social video/image upload while bounding worst-case
 // disk/memory usage — multer's default fileSize limit is Infinity.
@@ -361,26 +388,7 @@ router.post('/posts/:id/publish-now', authenticate, async (req, res, next) => {
       data: { status: 'PUBLISHING' },
     });
 
-    const errorsList: string[] = [];
-
-    for (const dest of destinationsToPublish) {
-      // Claim atomically: if the scheduler has already claimed this destination
-      // (status flipped to PUBLISHING between the fetch above and now), skip it
-      // instead of publishing it a second time concurrently with the cron.
-      const claim = await prisma.socialPostDestination.updateMany({
-        where: { id: dest.id as string, status: { not: 'PUBLISHING' } },
-        data: { status: 'PUBLISHING', lockedAt: new Date(), lastAttemptAt: new Date() },
-      });
-      if (claim.count === 0) continue;
-
-      // One-shot: a failure here is terminal, because this route always writes a
-      // non-SCHEDULED aggregate status below and the scheduler only ever claims
-      // destinations whose post is SCHEDULED.
-      const result = await publishDestination(dest, post, { maxAttempts: 1, skippedStatus: 'FAILED' });
-      if (result.outcome !== 'published') {
-        errorsList.push(`${dest.platform}: ${result.error}`);
-      }
-    }
+    const errorsList = await claimAndPublishAll(destinationsToPublish, post);
 
     // Check resulting statuses of all destinations for this post
     const allDests = await prisma.socialPostDestination.findMany({
@@ -442,23 +450,10 @@ router.post('/posts/:id/retry', authenticate, async (req, res, next) => {
       data: { status: 'PUBLISHING' },
     });
 
-    const errorsList: string[] = [];
-
-    for (const dest of post.destinations) {
-      // Claim conditionally, like publish-now. This used to be an unconditional
-      // update(), so a manual retry that overlapped a scheduler tick already
-      // holding the destination would publish it a second time.
-      const claim = await prisma.socialPostDestination.updateMany({
-        where: { id: dest.id as string, status: { not: 'PUBLISHING' } },
-        data: { status: 'PUBLISHING', lockedAt: new Date(), lastAttemptAt: new Date() },
-      });
-      if (claim.count === 0) continue;
-
-      const result = await publishDestination(dest, post, { maxAttempts: 1, skippedStatus: 'FAILED' });
-      if (result.outcome !== 'published') {
-        errorsList.push(`${dest.platform}: ${result.error}`);
-      }
-    }
+    // Claims conditionally, like publish-now. This used to be an unconditional
+    // update(), so a manual retry that overlapped a scheduler tick already
+    // holding the destination would publish it a second time.
+    const errorsList = await claimAndPublishAll(post.destinations, post);
 
     // Check resulting statuses of all destinations for this post
     const allDests = await prisma.socialPostDestination.findMany({

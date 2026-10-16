@@ -100,8 +100,13 @@ export async function processDuePosts(): Promise<void> {
     // account can become rate-limited in the window between claiming and
     // processing — publishDestination() re-checks and releases it back to QUEUED
     // without counting a failed attempt, since it never actually tried.
-    for (const dest of destinations) {
-      await publishDestination(dest, dest.post, { maxAttempts: 3, skippedStatus: 'QUEUED' });
+    // A post's destinations go out together (each is a different account), so
+    // it takes as long as its slowest platform; posts still go one at a time.
+    const byPost = new Map<string, typeof destinations>();
+    for (const dest of destinations) byPost.set(dest.postId, [...(byPost.get(dest.postId) ?? []), dest]);
+    for (const group of byPost.values()) {
+      await Promise.all(group.map(dest =>
+        publishDestination(dest, dest.post, { maxAttempts: 3, skippedStatus: 'QUEUED' })));
     }
 
     // 4. Update the main SocialPost status based on destinations results

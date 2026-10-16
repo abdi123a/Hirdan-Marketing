@@ -40,6 +40,37 @@ function isTikTokDraft(dest: { platform?: string; platformPostId?: string | null
   return platformContent?.tiktok?.postMode === "draft";
 }
 
+/**
+ * publish-now and retry answer only after every platform has finished, and
+ * Cloudflare cuts a request at 100 s (error 524) while the server carries on.
+ * If the call fails but the server is still publishing, wait for it to finish
+ * and return the settled post, rather than reporting a failure that didn't happen.
+ */
+async function publishRequest(postId: string, action: "publish-now" | "retry", body?: unknown): Promise<SocialPost> {
+  try {
+    return await apiFetch<SocialPost>(`/social/posts/${postId}/${action}`, {
+      method: "POST",
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch (err) {
+    const deadline = Date.now() + 15 * 60 * 1000;
+    let sawPublishing = false;
+    while (Date.now() < deadline) {
+      const post = await apiFetch<SocialPost>(`/social/posts/${postId}`).catch(() => null);
+      const busy = post?.destinations?.some((d) => d.status === "PUBLISHING") ?? false;
+      if (post && !busy) {
+        // Still-QUEUED destinations mean the server never started, so the error is
+        // real; otherwise it finished (possibly before this first check).
+        if (sawPublishing || !post.destinations?.some((d) => d.status === "QUEUED")) return post;
+        throw err;
+      }
+      sawPublishing ||= busy;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    throw err;
+  }
+}
+
 function buildCalendarGrid(month: number, year: number) {
   const cells: (Date | null)[] = Array(new Date(year, month, 1).getDay()).fill(null);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -836,10 +867,7 @@ export default function SocialPublishPage() {
 
       try {
         // Trigger the synchronous publish-now API call (unpublished targets only)
-        const finalPost = await apiFetch<SocialPost>(`/social/posts/${createdPostId}/publish-now`, {
-          method: "POST",
-          body: JSON.stringify({ accountIds: progressAccountIds }),
-        });
+        const finalPost = await publishRequest(createdPostId, "publish-now", { accountIds: progressAccountIds });
         clearInterval(pollInterval);
 
         const { completed, failed } = tally(finalPost.destinations);
@@ -911,7 +939,7 @@ export default function SocialPublishPage() {
         destinations: failedDests.map((d) => ({ ...toProgressDest(d), status: "QUEUED", error: null, platformPostId: undefined })),
       });
 
-      const finalPost = await apiFetch<SocialPost>(`/social/posts/${postId}/retry`, { method: "POST" });
+      const finalPost = await publishRequest(postId, "retry");
       const tracked = finalPost.destinations.filter((d) =>
         failedDests.some((f) => f.socialAccountId === d.socialAccountId) || d.status === "FAILED",
       );
