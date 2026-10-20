@@ -229,9 +229,67 @@ model TeamMember {
   activities    EmployeeActivity[]
   hrDocuments   HrDocument[]
   expenses      Expense[]           @relation("EmployeeExpenses")
+  businessCards BusinessCard[]
 
   @@index([managerId])
   @@map("team_members")
+}
+
+// Digital business card: public page at hirdan.cc/c/<slug>. Holds its own copy of the
+// person's details (prefilled from a team member) so card edits never touch HR records.
+// Company website and social links come from AgencySettings.
+model BusinessCard {
+  id        String      @id @default(uuid())
+  slug      String      @unique
+  enabled   Boolean     @default(true)
+  memberId  String?     @map("member_id")
+  name      String
+  title     String
+  phone     String?
+  whatsapp  String?
+  email     String?
+  photoUrl  String?     @map("photo_url") @db.Text
+  bio       String?     @db.Text
+  views     Int         @default(0)
+  saves     Int         @default(0)
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+  member    TeamMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  leads     CardLead[]
+  walletRegistrations WalletRegistration[]
+
+  @@index([memberId])
+  @@map("business_cards")
+}
+
+// People who sent their details from a business card
+model CardLead {
+  id        String       @id @default(uuid())
+  cardId    String       @map("card_id")
+  name      String
+  phone     String
+  email     String?
+  company   String?
+  message   String?      @db.Text
+  createdAt DateTime     @default(now()) @map("created_at")
+  card      BusinessCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId])
+  @@map("card_leads")
+}
+
+// iPhones that added a business card to Apple Wallet; used to push updates when the card changes
+model WalletRegistration {
+  id        String       @id @default(uuid())
+  deviceId  String       @map("device_id")
+  pushToken String       @map("push_token")
+  cardId    String       @map("card_id")
+  createdAt DateTime     @default(now()) @map("created_at")
+  card      BusinessCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, cardId])
+  @@index([cardId])
+  @@map("wallet_registrations")
 }
 
 // ─── Employee Files ───────────────────────────────────────────────

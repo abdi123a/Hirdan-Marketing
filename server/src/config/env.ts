@@ -52,6 +52,12 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().email().optional(),
   APP_URL: z.string().url().optional(),
 
+  // ─── Apple Wallet business-card passes — optional; the Wallet button stays hidden without them ───
+  // Certificate files (signerCert.pem, signerKey.pem, wwdr.pem) live in WALLET_CERT_DIR (default ./certs/wallet).
+  WALLET_PASS_TYPE_ID: z.string().optional(),
+  WALLET_TEAM_ID: z.string().optional(),
+  WALLET_CERT_DIR: z.string().optional(),
+
   // ─── Social Media Security & Storage ───
   // Required: this key encrypts social OAuth tokens *and* the third-party
   // credentials stored in AgencySettings (see lib/settings-secrets.ts). Booting

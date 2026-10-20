@@ -14,6 +14,9 @@ import packagesRoutes from './packages.routes.js';
 import servicesRoutes from './services.routes.js';
 import settingsRoutes from './settings.routes.js';
 import verifyRoutes from './verify.routes.js';
+import cardRoutes from './card.routes.js';
+import businessCardsRoutes from './business-cards.routes.js';
+import walletRoutes from './wallet.routes.js';
 import leadsRoutes from './leads.routes.js';
 import usersRoutes from './users.routes.js';
 import aiRoutes from './ai.routes.js';
@@ -53,7 +56,10 @@ router.use('/services', authenticate, requireModuleAccess('services'), servicesR
 // Settings has public branding endpoints — auth is enforced inside the route file
 router.use('/settings', settingsRoutes);
 router.use('/verify', verifyRoutes);
+router.use('/card', cardRoutes); // public digital business cards
+router.use('/wallet', walletRoutes); // Apple Wallet web service (auth via ApplePass token)
 router.use('/leads', authenticate, requireModuleAccess('leads'), leadsRoutes);
+router.use('/business-cards', authenticate, requireModuleAccess('business_cards'), businessCardsRoutes);
 router.use('/users', usersRoutes);
 router.use('/ai', authenticate, requireModuleAccess('ai_assistant'), aiRoutes);
 router.use('/financial', authenticate, requireModuleAccess('financial_reports'), financialRoutes);

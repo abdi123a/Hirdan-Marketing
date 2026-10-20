@@ -23,6 +23,7 @@ import { AgencyAppearanceManager } from "./components/AgencyAppearanceManager.ts
 import { GlobalUploadProgress } from "./components/GlobalUploadProgress.tsx";
 import VerifyDocumentPage from "./pages/VerifyDocumentPage.tsx";
 import ShareDownload from "./pages/ShareDownload.tsx";
+const BusinessCardPage = lazy(() => import("./pages/BusinessCardPage.tsx"));
 
 // Lazy-loaded pages (code splitting for admin/client features)
 const ClientPortalPage = lazy(() => import("./pages/ClientPortalPage.tsx"));
@@ -62,6 +63,8 @@ const SubscriptionDetailsPage = lazy(() => import("./pages/SubscriptionDetailsPa
 const PackageDetailsPage = lazy(() => import("./pages/PackageDetailsPage.tsx"));
 const ServiceDetailsPage = lazy(() => import("./pages/ServiceDetailsPage.tsx"));
 const LeadsPage = lazy(() => import("./pages/LeadsPage.tsx"));
+const BusinessCardsPage = lazy(() => import("./pages/BusinessCardsPage.tsx"));
+const BusinessCardEditPage = lazy(() => import("./pages/BusinessCardEditPage.tsx"));
 const UsersPage = lazy(() => import('./pages/UsersPage.tsx'));
 const AddUserPage = lazy(() => import('./pages/AddUserPage.tsx'));
 const SocialMediaTasksPage = lazy(() => import('./pages/SocialMediaTasksPage.tsx'));
@@ -179,6 +182,7 @@ function AppRoutes() {
       <Route path="/v/:token" element={<VerifyDocumentPage />} />
       <Route path="/share/:shareId" element={<ShareDownload />} />
       <Route path="/f/:shareId" element={<ShareDownload />} />
+      <Route path="/c/:slug" element={<BusinessCardPage />} />
 
       {/* Client portal (protected - client role) */}
       <Route
@@ -276,6 +280,9 @@ function AppRoutes() {
         <Route path="plugins" element={<Navigate to="/dashboard/settings?tab=plugins" replace />} />
         <Route path="transfers" element={<PermissionGate module="transfers"><FileTransfer /></PermissionGate>} />
         <Route path="leads" element={<PermissionGate module="leads"><LeadsPage /></PermissionGate>} />
+        <Route path="business-cards" element={<PermissionGate module="business_cards"><BusinessCardsPage /></PermissionGate>} />
+        <Route path="business-cards/new" element={<PermissionGate module="business_cards" minimum="WRITE"><BusinessCardEditPage /></PermissionGate>} />
+        <Route path="business-cards/:id" element={<PermissionGate module="business_cards"><BusinessCardEditPage /></PermissionGate>} />
         <Route path="email" element={<PermissionGate module="email"><EmailCenterPage /></PermissionGate>} />
         <Route path="email/mailboxes" element={<PermissionGate module="email" minimum="MANAGE"><EmailMailboxesPage /></PermissionGate>} />
         <Route path="email/templates" element={<PermissionGate module="email"><EmailTemplatesPage /></PermissionGate>} />

@@ -1,6 +1,6 @@
 {
   "name": "hirdan-marketing-server",
-  "version": "2.31.67",
+  "version": "2.31.68",
   "private": true,
   "type": "module",
   "scripts": {
@@ -33,6 +33,7 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.1.1",
     "node-cron": "^4.6.0",
+    "passkit-generator": "3.6.1",
     "puppeteer": "^25.4.0",
     "qrcode": "^1.5.4",
     "resend": "^6.17.2",

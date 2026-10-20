@@ -4,6 +4,7 @@ import {
   Settings, LogOut, PanelLeftClose, PanelLeft, FileText, Package, Zap, Mail, Share2,
   Presentation, BarChart3, Wallet, FolderHeart, UploadCloud, Sparkles, Inbox, ChevronDown,
   FileBarChart,
+  IdCard,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
@@ -58,6 +59,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { title: "Clients", url: "/dashboard/clients", icon: Users, module: "clients" },
       { title: "Projects", url: "/dashboard/projects", icon: Briefcase, module: "projects" },
+      { title: "Business Cards", url: "/dashboard/business-cards", icon: IdCard, module: "business_cards" },
       { title: "Email List", url: "/dashboard/leads", icon: Mail, module: "leads" },
     ],
   },
